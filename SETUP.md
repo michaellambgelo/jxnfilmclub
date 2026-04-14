@@ -83,45 +83,43 @@ Replace the two `TODO_...` placeholders.
 
 ---
 
-## 5. Generate DKIM key + set Worker secrets
+## 5. Sign up at Resend + verify domain
 
-```bash
-./scripts/generate-dkim.sh
-```
+MailChannels ended free Worker sending in 2024; we use Resend instead (3k emails/month free).
 
-This prints:
-- A DNS TXT record — add it to Cloudflare for `jxnfilm.club`.
-- A one-line private key — paste into the `wrangler secret put` prompts.
+1. Create a free Resend account: <https://resend.com/signup>.
+2. Dashboard → **Domains** → Add Domain → `jxnfilm.club`.
+3. Resend shows 3 DNS records (MX for bounce handling, TXT for SPF, TXT for DKIM). Add each to Cloudflare for `jxnfilm.club`.
+4. Click **Verify Domain** in Resend. Wait for green checkmarks.
+5. Dashboard → **API Keys** → Create → copy the `re_...` key.
 
-Also set the remaining secrets:
+Set Worker secrets:
 
 ```bash
 cd worker
 
 # Production
-npx wrangler secret put GITHUB_TOKEN        # paste PAT from step 2
-npx wrangler secret put DKIM_PRIVATE_KEY    # paste from generate-dkim.sh
-npx wrangler secret put OTP_SIGNING_KEY     # paste output of: openssl rand -hex 32
+npx wrangler secret put GITHUB_TOKEN      # paste PAT from step 2
+npx wrangler secret put RESEND_API_KEY    # paste re_... from Resend
+npx wrangler secret put OTP_SIGNING_KEY   # paste output of: openssl rand -hex 32
 
 # Staging (repeat)
-npx wrangler secret put GITHUB_TOKEN       --env staging
-npx wrangler secret put DKIM_PRIVATE_KEY   --env staging
-npx wrangler secret put OTP_SIGNING_KEY    --env staging
+npx wrangler secret put GITHUB_TOKEN     --env staging
+npx wrangler secret put RESEND_API_KEY   --env staging
+npx wrangler secret put OTP_SIGNING_KEY  --env staging
 ```
 
 ---
 
-## 6. DNS records (Cloudflare, zone `jxnfilm.club`)
+## 6. DMARC record (optional but recommended)
 
-Add these TXT records. (DKIM was handled in step 5.)
+Resend handles SPF + DKIM via step 5's records. Add DMARC on top:
 
-| Type | Name                 | Value                                                                                    | Notes |
-|------|----------------------|------------------------------------------------------------------------------------------|-------|
-| TXT  | `_mailchannels`      | `v=mc1 cfid=michaellamb.workers.dev`                                        | MailChannels domain lockdown. Find `<your-workers-subdomain>` at Cloudflare dashboard → Workers & Pages → subdomain. |
-| TXT  | `@` (apex)           | `v=spf1 include:relay.mailchannels.net ~all`                                             | SPF. If you already have a `v=spf1` record, add the `include:` clause to it — don't publish two. |
-| TXT  | `_dmarc`             | `v=DMARC1; p=none; rua=mailto:postmaster@jxnfilm.club`                                   | Optional but recommended. |
+| Type | Name     | Value                                                             |
+|------|----------|-------------------------------------------------------------------|
+| TXT  | `_dmarc` | `v=DMARC1; p=none; rua=mailto:postmaster@jxnfilm.club`            |
 
-The Worker routes (`join.jxnfilm.club`, `join-staging.jxnfilm.club`) will be created automatically on `wrangler deploy`.
+The Worker routes (`join.jxnfilm.club`, `join-staging.jxnfilm.club`) are created automatically on `wrangler deploy`.
 
 ---
 
@@ -201,7 +199,7 @@ If the email never arrives: check `npx wrangler tail` and confirm DKIM + MailCha
 ## Troubleshooting
 
 - **`wrangler deploy` fails with "route not found"** — zone isn't reachable. Confirm `jxnfilm.club` is active in Cloudflare.
-- **MailChannels 401** — domain lockdown record is missing or wrong. `dig TXT _mailchannels.jxnfilm.club` should return the `cfid=` line matching your Workers subdomain.
-- **MailChannels 550 DKIM** — public key in DNS doesn't match the private key you uploaded. Regenerate and re-sync both.
+- **Resend 401** — API key wrong or unset. `cd worker && npx wrangler secret list` should show `RESEND_API_KEY`.
+- **Resend 403 "domain not verified"** — DNS records from Resend dashboard aren't fully propagated or weren't added. Re-check in Resend → Domains.
 - **`add-member` workflow doesn't fire** — PAT permissions are wrong. It needs **Contents: Read and Write** on this repo.
 - **Tests pass but staging signup adds to prod `data/members.json`** — staging `GITHUB_TOKEN` is scoped to the same repo. That's expected; if you want full isolation, create a `jxnfilmclub-staging` repo and change staging's `GITHUB_REPO` var.

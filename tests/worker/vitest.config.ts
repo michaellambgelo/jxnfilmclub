@@ -40,7 +40,7 @@ export default defineWorkersProject({
             GITHUB_OWNER: 'testowner',
             GITHUB_REPO: 'jxnfilmclub',
             GITHUB_TOKEN: 'test-gh-token',
-            DKIM_PRIVATE_KEY: 'test-dkim-key',
+            RESEND_API_KEY: 'test-resend-key',
             OTP_SIGNING_KEY: 'test-key',
           },
         },

@@ -79,28 +79,23 @@ async function handleMemberUpdate(request, env) {
   return json(env, { ok: true })
 }
 
-// --- MailChannels ---
-// Requires a `_mailchannels` TXT lockdown record + DKIM TXT on jxnfilm.club.
+// --- Resend ---
+// Requires a verified `jxnfilm.club` domain in Resend (adds SPF + DKIM DNS).
 async function sendOtpEmail(env, to, code) {
-  const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
+  const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+    },
     body: JSON.stringify({
-      personalizations: [{
-        to: [{ email: to }],
-        dkim_domain: 'jxnfilm.club',
-        dkim_selector: 'mailchannels',
-        dkim_private_key: env.DKIM_PRIVATE_KEY,
-      }],
-      from: { email: 'noreply@jxnfilm.club', name: 'Jackson Film Club' },
+      from: 'Jackson Film Club <noreply@jxnfilm.club>',
+      to: [to],
       subject: 'Your Jackson Film Club login code',
-      content: [{
-        type: 'text/plain',
-        value: `Your login code: ${code}\n\nThis code expires in 10 minutes.\nIf you didn't request it, ignore this email.`,
-      }],
+      text: `Your login code: ${code}\n\nThis code expires in 10 minutes.\nIf you didn't request it, ignore this email.`,
     }),
   })
-  if (!res.ok) throw new Error(`MailChannels ${res.status}: ${await res.text()}`)
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`)
 }
 
 // --- GitHub dispatch ---

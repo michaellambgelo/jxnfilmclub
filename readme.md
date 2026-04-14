@@ -76,18 +76,13 @@ The GitHub Action triggered by `repo_dispatch` appends the new member to
 GitHub Pages is static, so auth needs a Worker backend.
 
 1. Member clicks "Edit my entry" → prompts for email → Worker emails a
-   one-time code via **MailChannels** (free from Cloudflare Workers; requires
-   a domain-lockdown TXT record + DKIM on `jxnfilm.club`).
+   one-time code via **Resend** (free tier: 3k emails/month).
 2. Member enters code → Worker returns a short-lived signed token.
 3. Authenticated requests to the Worker update `data/members.json` via the
    same GitHub Actions `repo_dispatch` pattern.
 4. Client stores the token in `sessionStorage` until expiry.
 
-MailChannels setup checklist:
-- `_mailchannels` TXT record on `jxnfilm.club` listing the sending Worker
-  account (domain lockdown, required since 2023).
-- DKIM key published as a TXT record; private key stored as a Worker secret.
-- SPF record authorizing `relay.mailchannels.net`.
+Resend setup is documented in [SETUP.md](SETUP.md#5-sign-up-at-resend--verify-domain).
 
 ### 5. Cleanup
 

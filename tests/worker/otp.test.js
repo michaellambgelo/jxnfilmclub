@@ -10,11 +10,11 @@ afterEach(() => {
 })
 
 describe('POST /otp/request', () => {
-  it('stores a 6-digit code with 10-minute TTL and calls MailChannels with right payload', async () => {
+  it('stores a 6-digit code with 10-minute TTL and calls Resend with right payload', async () => {
     const calls = []
     mockFetch(async (url, init) => {
       calls.push({ url: String(url), init })
-      return new Response('', { status: 202 })
+      return new Response(JSON.stringify({ id: 'test' }), { status: 200 })
     })
 
     const res = await SELF.fetch('https://join.jxnfilm.club/otp/request', {
@@ -28,13 +28,14 @@ describe('POST /otp/request', () => {
     const code = await env.MEMBERS_KV.get('otp:user@example.com')
     expect(code).toMatch(/^\d{6}$/)
 
-    const mc = calls.find(c => c.url === 'https://api.mailchannels.net/tx/v1/send')
-    expect(mc).toBeTruthy()
-    const body = JSON.parse(mc.init.body)
-    expect(body.personalizations[0].to[0].email).toBe('user@example.com')
-    expect(body.personalizations[0].dkim_domain).toBe('jxnfilm.club')
-    expect(body.personalizations[0].dkim_selector).toBe('mailchannels')
-    expect(body.content[0].value).toContain(code)
+    const resend = calls.find(c => c.url === 'https://api.resend.com/emails')
+    expect(resend).toBeTruthy()
+    expect(resend.init.headers.Authorization).toMatch(/^Bearer /)
+    const body = JSON.parse(resend.init.body)
+    expect(body.to).toEqual(['user@example.com'])
+    expect(body.from).toContain('@jxnfilm.club')
+    expect(body.subject).toContain('login code')
+    expect(body.text).toContain(code)
   })
 
   it('returns 400 if email is missing', async () => {

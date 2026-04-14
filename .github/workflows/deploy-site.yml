@@ -20,15 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Install Nue
-        run: bun add -g nuekit@0.5.3
+      - run: npm ci
 
       - name: Build site
-        run: nue build -p
+        run: npm run build
 
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, which
       # lets the client-side router handle deep links like /events.

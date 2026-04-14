@@ -11,11 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
-      - run: bun add -g nuekit@0.5.3
-      - run: nue build -p
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
 
   worker:
     runs-on: ubuntu-latest

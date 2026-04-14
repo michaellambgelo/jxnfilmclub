@@ -117,7 +117,7 @@ Add these TXT records. (DKIM was handled in step 5.)
 
 | Type | Name                 | Value                                                                                    | Notes |
 |------|----------------------|------------------------------------------------------------------------------------------|-------|
-| TXT  | `_mailchannels`      | `v=mc1 cfid=<your-workers-subdomain>.workers.dev`                                        | MailChannels domain lockdown. Find `<your-workers-subdomain>` at Cloudflare dashboard → Workers & Pages → subdomain. |
+| TXT  | `_mailchannels`      | `v=mc1 cfid=michaellamb.workers.dev`                                        | MailChannels domain lockdown. Find `<your-workers-subdomain>` at Cloudflare dashboard → Workers & Pages → subdomain. |
 | TXT  | `@` (apex)           | `v=spf1 include:relay.mailchannels.net ~all`                                             | SPF. If you already have a `v=spf1` record, add the `include:` clause to it — don't publish two. |
 | TXT  | `_dmarc`             | `v=DMARC1; p=none; rua=mailto:postmaster@jxnfilm.club`                                   | Optional but recommended. |
 

@@ -25,10 +25,10 @@ jobs:
           bun-version: latest
 
       - name: Install Nue
-        run: bun add -g nuekit
+        run: bun add -g nuekit@0.5.3
 
       - name: Build site
-        run: nue build --production
+        run: nue build -p
 
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, which
       # lets the client-side router handle deep links like /events.

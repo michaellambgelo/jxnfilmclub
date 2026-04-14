@@ -13,7 +13,7 @@ rules = [
 
 [[kv_namespaces]]
 binding = "MEMBERS_KV"
-id = "TODO_CREATE_VIA_WRANGLER"
+id = "1a7b67fcd1944f5dbfa22656f9fac4e4"
 
 [vars]
 GITHUB_OWNER = "michaellambgelo"
@@ -35,7 +35,7 @@ routes = [
 
 [[env.staging.kv_namespaces]]
 binding = "MEMBERS_KV"
-id = "TODO_CREATE_STAGING_KV"
+id = "66834b9613a34d3eba014791e3b5000f"
 
 [env.staging.vars]
 GITHUB_OWNER = "michaellambgelo"

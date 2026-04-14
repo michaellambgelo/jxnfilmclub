@@ -14,8 +14,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun add -g nuekit
-      - run: nue build --production
+      - run: bun add -g nuekit@0.5.3
+      - run: nue build -p
 
   worker:
     runs-on: ubuntu-latest

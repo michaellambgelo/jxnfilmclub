@@ -3,6 +3,12 @@ name: Deploy site
 on:
   push:
     branches: [main]
+  workflow_run:
+    # Rebuild when bot workflows commit to main (GH's default token doesn't
+    # fire push events, so chain via workflow_run instead).
+    workflows: [Add member, Update member, Refresh Letterboxd data]
+    types: [completed]
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:

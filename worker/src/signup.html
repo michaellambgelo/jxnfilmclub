@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join · Jackson Film Club</title>
+  <style>
+    body { max-width: 30rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.5 system-ui, sans-serif; color: #222; }
+    h1 { margin-bottom: 0.25rem; }
+    p.lede { color: #666; margin-top: 0; }
+    form { display: grid; gap: 1rem; margin-top: 2rem; }
+    label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: #555; }
+    input[type="text"], input[type="email"] {
+      padding: 0.6rem 0.75rem; font: inherit; border: 1px solid #ccc; border-radius: 4px;
+    }
+    button {
+      padding: 0.7rem; font: inherit; font-weight: 600;
+      background: #111; color: white; border: 0; border-radius: 4px; cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hint { color: #888; font-size: 0.85rem; }
+    .hint a { color: #0a58ca; }
+    #status { margin-top: 1rem; padding: 0.75rem; border-radius: 4px; display: none; }
+    #status.ok  { display: block; background: #e6f7ea; color: #185628; }
+    #status.err { display: block; background: #fdecec; color: #8a1f1f; }
+  </style>
+</head>
+<body>
+  <h1>Join Jackson Film Club</h1>
+  <p class="lede">List your Letterboxd profile in the member directory.</p>
+
+  <form id="signup">
+    <label>Display name
+      <input type="text" name="name" required autocomplete="name">
+    </label>
+    <label>Letterboxd username
+      <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
+             placeholder="e.g. davidehrlich" autocomplete="off">
+    </label>
+    <label>Email
+      <input type="email" name="email" required autocomplete="email">
+    </label>
+    <button type="submit">Join</button>
+    <p class="hint">
+      Your email is used only to send login codes and is never shown publicly.
+      <a href="/privacy">Privacy policy</a>.
+    </p>
+  </form>
+
+  <div id="status"></div>
+
+  <script>
+    const form = document.getElementById('signup')
+    const status = document.getElementById('status')
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const btn = form.querySelector('button')
+      btn.disabled = true
+      status.className = ''
+      status.textContent = ''
+
+      const data = Object.fromEntries(new FormData(form))
+
+      try {
+        const res = await fetch('/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        const body = await res.json()
+        if (!res.ok) throw new Error(body.error || 'Signup failed')
+        status.className = 'ok'
+        status.textContent = `Welcome, ${data.name}! You'll appear on jxnfilm.club shortly.`
+        form.reset()
+      } catch (err) {
+        status.className = 'err'
+        status.textContent = err.message
+      } finally {
+        btn.disabled = false
+      }
+    })
+  </script>
+</body>
+</html>

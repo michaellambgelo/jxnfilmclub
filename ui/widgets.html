@@ -1,0 +1,51 @@
+
+<!doctype dhtml lib>
+
+<!-- Avatar: deterministic background color from first letter of name -->
+<figure :is="avatar" class="avatar { is-dark: is_dark }" :style="bg()">
+  <b :if="letter">{ letter }</b>
+
+  <script>
+    const DARK  = '064789 679436 427AA1 D55672 481620 363946 F34213 3E2F5B'
+    const LIGHT = 'A5BE00 F1E8B8 EBF2FA 00FFC5 E0CA3C EDF4ED CAD2C5 CCFF66'
+    const COLORS = (DARK + ' ' + LIGHT).split(' ')
+
+    constructor({ name }) {
+      const letter = this.letter = (name || '?')[0]
+      const num = letter.toLowerCase().charCodeAt(0) - 97
+      const i = Math.max(0, Math.round(num / 2))
+      this.color = COLORS[i] || COLORS[0]
+      this.is_dark = i < 9
+    }
+
+    bg() {
+      return `background-color: #${this.color}`
+    }
+  </script>
+</figure>
+
+
+<!-- Timeago: relative time label -->
+<time :is="timeago">
+  { text }
+
+  <script>
+    constructor({ ts }) {
+      const when = typeof ts === 'string' ? Date.parse(ts) : ts
+      if (!when || isNaN(when)) { this.text = ''; return }
+
+      const hours = (Date.now() - when) / 3600 / 1000
+      const days = hours / 24
+      const mins = hours * 60
+
+      this.text = mins < 1 ? 'Just now' :
+        mins < 1.5 ? 'A minute ago' :
+        mins < 60 ? `${ Math.round(mins) } minutes ago` :
+        hours < 1.5 ? 'An hour ago' :
+        hours < 24 ? `${ Math.round(hours) } hours ago` :
+        days < 1.5 ? 'Yesterday' :
+        days < 10 ? `${ Math.round(days) } days ago` :
+        new Date(when).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    }
+  </script>
+</time>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy · Jackson Film Club</title>
+  <style>
+    body { max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.6 system-ui, sans-serif; color: #222; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .updated { color: #777; font-size: 0.9rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; }
+    a { color: #0a58ca; }
+    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 2026-04-14</p>
+
+  <p>
+    Jackson Film Club ("we") operates
+    <a href="https://jxnfilm.club">jxnfilm.club</a> and the signup form at
+    <a href="https://join.jxnfilm.club">join.jxnfilm.club</a>. This policy
+    explains what personal data we collect and how we use it.
+  </p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><b>Email address</b> — used only to send one-time login codes so you can edit your member entry.</li>
+    <li><b>Letterboxd username</b> — displayed publicly on the members directory and used to fetch your public Letterboxd data (last-four-watched, diary entries tagged <code>jxnfilmclub</code>).</li>
+    <li><b>Display name and optional profile fields</b> — whatever you choose to put on your member card.</li>
+  </ul>
+
+  <h2>Where it's stored</h2>
+  <p>
+    Your email address is stored privately in Cloudflare Workers KV and is
+    <b>never published in the public members list</b> or committed to the
+    public GitHub repository. Your Letterboxd username and anything you put
+    on your member card is stored in the repository's public
+    <code>data/members.json</code> and visible to anyone.
+  </p>
+
+  <h2>How we use your email</h2>
+  <p>Your email is used for exactly two things:</p>
+  <ul>
+    <li>Sending one-time login codes (OTP) when you request to edit your entry.</li>
+    <li>Occasional club announcements, if you opt in at signup.</li>
+  </ul>
+  <p>We never sell, rent, or share your email with advertisers.</p>
+
+  <h2>Third parties</h2>
+  <ul>
+    <li><b>Cloudflare</b> hosts the Worker and KV storage.</li>
+    <li><b>MailChannels</b> delivers OTP emails on our behalf (required to actually send the email to you).</li>
+    <li><b>GitHub</b> hosts the public site and member data.</li>
+    <li><b>Letterboxd</b> is the source of your public film data; we only read data you've already made public there.</li>
+  </ul>
+
+  <h2>Retention</h2>
+  <p>
+    We keep your email as long as your membership is active. One-time codes
+    expire after 10 minutes and are discarded after use.
+  </p>
+
+  <h2>Your rights</h2>
+  <p>
+    You can request deletion of your membership and email at any time by
+    emailing <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a>.
+    We'll remove your entry from the public members list and delete your
+    email from KV storage within 7 days.
+  </p>
+
+  <h2>Changes</h2>
+  <p>
+    If this policy changes, we'll update the date at the top and post a
+    notice on <a href="https://jxnfilm.club">jxnfilm.club</a>.
+  </p>
+</body>
+</html>

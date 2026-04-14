@@ -1,0 +1,37 @@
+name: Refresh Letterboxd data
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install feedparser
+
+      - name: Refresh watched + attendance
+        run: python3 scripts/refresh_letterboxd.py
+
+      - name: Commit data updates
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet data/; then
+            echo "No data changes"
+          else
+            git add data/watched.json data/attendance.json
+            git commit -m "chore: refresh Letterboxd data"
+            git push
+          fi

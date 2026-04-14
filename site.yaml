@@ -1,0 +1,9 @@
+
+meta:
+  title: Jackson Film Club
+
+import_map:
+  app: /model/index.js
+
+# Keep tests, node_modules, and the Worker source out of the static build.
+exclude: [ tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts ]

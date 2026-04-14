@@ -1,0 +1,57 @@
+name: Update member
+
+on:
+  repository_dispatch:
+    types: [update-member]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply edit to data/members.json
+        env:
+          EMAIL:   ${{ github.event.client_payload.email }}
+          UPDATES: ${{ toJSON(github.event.client_payload.updates) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          # NOTE: email -> handle lookup happens in the Worker (KV). For now,
+          # updates must include { handle, ...fields }. Lock down fields here.
+          ALLOWED = {'name', 'pronouns'}
+
+          updates = json.loads(os.environ['UPDATES'])
+          handle = updates.get('handle')
+          if not handle:
+              raise SystemExit('updates.handle is required')
+
+          path = pathlib.Path('data/members.json')
+          members = json.loads(path.read_text())
+
+          for m in members:
+              if m.get('handle') == handle:
+                  for k, v in updates.items():
+                      if k in ALLOWED:
+                          m[k] = v
+                  break
+          else:
+              raise SystemExit(f'member not found: {handle}')
+
+          path.write_text(json.dumps(members, indent=2) + '\n')
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet; then
+            echo "No changes"
+          else
+            git add data/members.json
+            git commit -m "chore: update member entry"
+            git push
+          fi

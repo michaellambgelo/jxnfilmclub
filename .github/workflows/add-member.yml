@@ -1,0 +1,51 @@
+name: Add member
+
+on:
+  repository_dispatch:
+    types: [add-member]
+
+permissions:
+  contents: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Append member to data/members.json
+        env:
+          HANDLE: ${{ github.event.client_payload.handle }}
+          NAME:   ${{ github.event.client_payload.name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, datetime, pathlib
+
+          path = pathlib.Path('data/members.json')
+          members = json.loads(path.read_text())
+          handle = os.environ['HANDLE']
+
+          if any(m.get('handle') == handle for m in members):
+              print(f'{handle} already exists; skipping')
+          else:
+              members.append({
+                  'handle': handle,
+                  'name': os.environ['NAME'],
+                  'joined': datetime.date.today().isoformat(),
+                  'pronouns': '',
+              })
+              path.write_text(json.dumps(members, indent=2) + '\n')
+              print(f'Added {handle}')
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet; then
+            echo "No changes"
+          else
+            git add data/members.json
+            git commit -m "Add member: ${{ github.event.client_payload.handle }}"
+            git push
+          fi

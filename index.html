@@ -1,0 +1,36 @@
+<!doctype dhtml>
+
+<script>
+  import { state } from 'state'
+
+  state.setup({
+    route: '/:type',
+    query: ['query', 'sort'],
+    autolink: true,
+  })
+</script>
+
+<body>
+
+  <header>
+    <nav class="mastnav wrap">
+      <a href="/" class="logo"><img src="/img/nue.svg" alt=""> Jackson Film Club</a>
+      <a href="/">Members</a>
+      <a href="/events">Events</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="wrap"/>
+  </main>
+
+  <script>
+    onmount() {
+      state.on('type', ({ type }) => {
+        this.mount(type === 'events' ? 'events-view' : 'members-view', 'article')
+      })
+      state.init()
+    }
+  </script>
+
+</body>

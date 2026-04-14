@@ -1,0 +1,7 @@
+.DS_Store
+.dist/
+node_modules/
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+*.log

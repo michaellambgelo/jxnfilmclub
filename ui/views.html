@@ -1,0 +1,128 @@
+
+<!doctype dhtml lib>
+
+<script>
+  import { state } from 'state'
+  import { getMembers, getEvents } from 'app'
+</script>
+
+
+<!-- Members list -->
+<article :is="members-view">
+  <h1>Members</h1>
+
+  <header>
+    <input type="search" name="query" placeholder="Search members"
+      value="{ state.query || '' }"
+      :oninput="state.query = $event.target.value">
+
+    <label>
+      <b>Sort by:</b>
+      <select :onchange="state.sort = $event.target.value">
+        <option value="joined" :selected="(state.sort || 'joined') === 'joined'">Join date</option>
+        <option value="name" :selected="state.sort === 'name'">Name</option>
+        <option value="handle" :selected="state.sort === 'handle'">Letterboxd handle</option>
+      </select>
+    </label>
+  </header>
+
+  <table>
+    <thead>
+      <tr>
+        <th colspan="2">{ total || 0 } members</th>
+        <th>Letterboxd</th>
+        <th>Joined</th>
+      </tr>
+    </thead>
+    <tr :each="el in items" key="{ el.handle }">
+      <td><avatar :name="el.name"/></td>
+      <td><h3>{ el.name }</h3></td>
+      <td>
+        <a href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
+      </td>
+      <td><timeago :ts="el.joined"/></td>
+    </tr>
+  </table>
+
+  <script>
+    state.on('query sort', () => this.reload())
+
+    async reload() {
+      const { items, total } = await getMembers({
+        search: state.query,
+        sort: state.sort,
+      })
+      this.update({ items, total })
+    }
+
+    async onmount() {
+      await this.reload()
+    }
+  </script>
+</article>
+
+
+<!-- Events list -->
+<article :is="events-view">
+  <h1>Events</h1>
+
+  <header>
+    <input type="search" name="query" placeholder="Search events"
+      value="{ state.query || '' }"
+      :oninput="state.query = $event.target.value">
+
+    <label>
+      <b>Sort by:</b>
+      <select :onchange="state.sort = $event.target.value">
+        <option value="date" :selected="(state.sort || 'date') === 'date'">Date</option>
+        <option value="title" :selected="state.sort === 'title'">Title</option>
+        <option value="film" :selected="state.sort === 'film'">Film</option>
+      </select>
+    </label>
+  </header>
+
+  <table>
+    <thead>
+      <tr>
+        <th colspan="2">{ total || 0 } events</th>
+        <th>Film</th>
+        <th>Venue</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tr :each="el in items" key="{ el.id }">
+      <td>
+        <img :if="el.poster" :src="el.poster" class="event-poster" alt="">
+      </td>
+      <td>
+        <h3>{ el.title }</h3>
+      </td>
+      <td>{ el.film }</td>
+      <td>{ el.venue }</td>
+      <td>{ formatDate(el.date) }</td>
+    </tr>
+  </table>
+
+  <script>
+    state.on('query sort', () => this.reload())
+
+    async reload() {
+      const { items, total } = await getEvents({
+        search: state.query,
+        sort: state.sort,
+      })
+      this.update({ items, total })
+    }
+
+    async onmount() {
+      await this.reload()
+    }
+
+    formatDate(ts) {
+      if (!ts) return ''
+      return new Date(ts).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+      })
+    }
+  </script>
+</article>

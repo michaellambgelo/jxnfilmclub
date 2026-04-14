@@ -1,0 +1,48 @@
+name = "jxnfilmclub-join"
+main = "src/index.js"
+compatibility_date = "2024-12-30"
+
+# Production (default env): deployed from `main` branch.
+routes = [
+  { pattern = "join.jxnfilm.club/*", zone_name = "jxnfilm.club" }
+]
+
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = true }
+]
+
+[[kv_namespaces]]
+binding = "MEMBERS_KV"
+id = "TODO_CREATE_VIA_WRANGLER"
+
+[vars]
+GITHUB_OWNER = "michaellambgelo"
+GITHUB_REPO = "jxnfilmclub"
+SITE_ORIGIN = "https://jxnfilm.club"
+
+# Secrets (set via `wrangler secret put`):
+#   GITHUB_TOKEN      - fine-grained PAT, repo_dispatch scope on jxnfilmclub
+#   DKIM_PRIVATE_KEY  - MailChannels DKIM signing key (PEM, no newlines)
+#   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
+
+# --- Staging env (deploys from `staging` branch) ---
+
+[env.staging]
+name = "jxnfilmclub-join-staging"
+routes = [
+  { pattern = "join-staging.jxnfilm.club/*", zone_name = "jxnfilm.club" }
+]
+
+[[env.staging.kv_namespaces]]
+binding = "MEMBERS_KV"
+id = "TODO_CREATE_STAGING_KV"
+
+[env.staging.vars]
+GITHUB_OWNER = "michaellambgelo"
+GITHUB_REPO = "jxnfilmclub"
+SITE_ORIGIN = "https://jxnfilm.club"   # staging worker still dispatches to prod repo; use a separate branch/test repo if you want isolation
+
+# Staging secrets are set separately:
+#   npx wrangler secret put GITHUB_TOKEN      --env staging
+#   npx wrangler secret put DKIM_PRIVATE_KEY  --env staging
+#   npx wrangler secret put OTP_SIGNING_KEY   --env staging

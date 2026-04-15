@@ -146,7 +146,7 @@ Expected results:
 ## 8. Smoke test the signup flow
 
 ```bash
-# 1. Form loads
+# 1. Signup form loads
 curl -I https://join.jxnfilm.club/
 # expect: 200, content-type: text/html
 
@@ -154,45 +154,74 @@ curl -I https://join.jxnfilm.club/
 curl -I https://join.jxnfilm.club/privacy
 # expect: 200
 
-# 3. Signup with a real Letterboxd handle (use your own for the first test)
+# 3. Sign up (Letterboxd handle is optional)
 curl -X POST https://join.jxnfilm.club/signup \
   -H 'content-type: application/json' \
-  -d '{"email":"you@example.com","handle":"davidehrlich","name":"Test User"}'
+  -d '{"email":"you@example.com","name":"Test User"}'
 # expect: { "ok": true }
 
-# 4. Invalid handle is rejected
+# 4. Rejects an already-registered email
 curl -X POST https://join.jxnfilm.club/signup \
   -H 'content-type: application/json' \
-  -d '{"email":"x@y.com","handle":"this-handle-does-not-exist-12345","name":"X"}'
-# expect: 400 { "error": "Letterboxd profile not found" }
+  -d '{"email":"you@example.com","name":"Dupe"}'
+# expect: 409 { "error": "this email is already a member — try signing in" }
 ```
 
-After a successful signup, the `add-member` Action fires. Watch:
+Open the 6-digit code from the email on
+`https://jxnfilm.club/verify?email=you@example.com`. On success, the
+`add-member` Action fires:
 
 ```bash
 gh run list --workflow=add-member.yml
 ```
 
-Once green, `data/members.json` has the new entry and the site rebuilds via `deploy-site.yml`.
+Once green, `data/members.json` has the new `id`-keyed entry and the
+site rebuilds via `deploy-site.yml`.
 
 ---
 
-## 9. Smoke test OTP
+## 9. Smoke test returning-member sign-in
 
 ```bash
-# Request a code (check inbox)
+# Request a login code (check inbox — separate from the signup email)
 curl -X POST https://join.jxnfilm.club/otp/request \
   -H 'content-type: application/json' \
   -d '{"email":"you@example.com"}'
+# expect: { "ok": true } — silent-200s for unknown emails too
 
 # Verify (replace CODE with the 6 digits you received)
 curl -X POST https://join.jxnfilm.club/otp/verify \
   -H 'content-type: application/json' \
   -d '{"email":"you@example.com","code":"CODE"}'
-# expect: { "token": "<payload>.<sig>" }
+# expect: { "token": "...", "email": "...", "id": "...", "handle": null|"..." }
 ```
 
-If the email never arrives: check `npx wrangler tail` and confirm Resend's SPF + DKIM records are green in the Resend dashboard.
+---
+
+## 10. Smoke test Letterboxd verification (optional)
+
+All four endpoints require the bearer token from step 9. Replace
+`$TOKEN` and `$HANDLE` below.
+
+```bash
+# Current state (verified / pending / none)
+curl https://join.jxnfilm.club/letterboxd/status \
+  -H "Authorization: Bearer $TOKEN"
+
+# Mint a fresh 48h tag for a handle
+curl -X POST https://join.jxnfilm.club/letterboxd/request \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"handle\":\"$HANDLE\"}"
+# → { "token": "jxnfc-verify-...", "handle": "...", "exp": ... }
+
+# Paste that tag into a diary entry or list on Letterboxd, then:
+curl -X POST https://join.jxnfilm.club/letterboxd/verify \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json'
+# → { "ok": true, "handle": "..." } and dispatches update-member
+```
+
+If the email never arrives: check `npx wrangler tail` and confirm
+Resend's SPF + DKIM records are green in the Resend dashboard.
 
 ---
 

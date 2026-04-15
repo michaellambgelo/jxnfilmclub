@@ -6,3 +6,6 @@ worker/.wrangler/
 worker/.dev.vars
 *.log
 bun.lock
+playwright-report/
+test-results/
+

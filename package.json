@@ -7,7 +7,9 @@
     "dev": "nue serve",
     "build": "nue build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",

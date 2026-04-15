@@ -19,7 +19,7 @@ body {
   padding: 0 4%;
 }
 
-main > header {
+body > header {
   background-color: white;
   border-bottom: 1px solid #eee;
   margin-bottom: 3rem;
@@ -45,8 +45,12 @@ main > header {
   border-color: #ddd;
 }
 
-.mastnav > a:last-child {
+/* Right-align the auth group (Join + Edit my entry). */
+.mastnav > .auth-link {
   margin-left: auto;
+}
+
+.mastnav > a:last-child {
   border-color: transparent !important;
 }
 
@@ -58,7 +62,17 @@ a.selected {
 }
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  color: #111 !important;
+  font-weight: 600 !important;
+}
+
+.logo img {
   width: 2rem;
+  height: auto;
 }
 
 h1 {

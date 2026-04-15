@@ -2,7 +2,7 @@
 <!doctype dhtml lib>
 
 <!-- Avatar: deterministic background color from first letter of name -->
-<figure :is="avatar" class="avatar { dark_mod }" :style="bg_style">
+<figure :is="avatar" class="avatar { dark_mod }" --bg="{ color }">
   <b :if="letter">{ letter }</b>
 
   <script>
@@ -13,9 +13,8 @@
     const letter = this.letter = (this.name || '?')[0]
     const num = letter.toLowerCase().charCodeAt(0) - 97
     const i = Math.max(0, Math.round(num / 2))
-    const color = COLORS[i] || COLORS[0]
+    this.color = '#' + (COLORS[i] || COLORS[0])
     this.dark_mod = i < 9 ? 'is-dark' : ''
-    this.bg_style = `background-color: #${color}`
   </script>
 </figure>
 

@@ -212,6 +212,10 @@
         <p class="ok">Verified as
           <a href="https://letterboxd.com/{ lb.handle }/" :onclick="openExternal" target="_blank" rel="noopener">@{ lb.handle }</a>.
         </p>
+        <button type="button" class="plain" :onclick="unlinkLb" :disabled="lbBusy">
+          { lbBusy ? 'Removing…' : 'Remove Letterboxd link' }
+        </button>
+        <p class="err" :if="lbError">{ lbError }</p>
       </div>
 
       <div :if="lb.pending">
@@ -337,6 +341,21 @@
 
     changeHandle() {
       this.update({ lb: { pending: true, handle: null, token: this.lb.token, exp: this.lb.exp }, lbError: '' })
+    }
+
+    async unlinkLb() {
+      if (!confirm('Remove your Letterboxd link? Your membership stays — only the @handle disappears from the public directory.')) return
+      this.update({ lbBusy: true, lbError: '' })
+      try {
+        await call('POST', '/letterboxd/unlink', {}, this.session.token)
+        this.update({
+          lbBusy: false,
+          lb: { none: true },
+          member: { ...this.member, handle: null },
+        })
+      } catch (err) {
+        this.update({ lbBusy: false, lbError: err.message })
+      }
     }
 
     signOut() {

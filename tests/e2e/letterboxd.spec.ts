@@ -1,4 +1,4 @@
-import { test, expect, signInAs, primeLbRss, seedKv } from './fixtures'
+import { test, expect, signInAs, primeLbRss, seedKv, WORKER_ORIGIN } from './fixtures'
 
 test.describe('Letterboxd verification from /edit', () => {
   test('no handle yet → request tag → RSS has token → verified', async ({ page }) => {
@@ -56,5 +56,27 @@ test.describe('Letterboxd verification from /edit', () => {
 
     await expect(page.locator('.ok')).toContainText('Verified as')
     await expect(page.getByRole('link', { name: '@avuser' })).toBeVisible()
+  })
+
+  test('verified member can unlink Letterboxd; panel flips back to none', async ({ page }) => {
+    const email = 'unlink-e2e@example.com'
+    await seedKv(page, 'email:unlinkbox', email)
+    await seedKv(page, `handle:${email}`, 'unlinkbox')
+    await signInAs(page, email, { name: 'Unlink Me', handle: 'unlinkbox' })
+
+    await expect(page.getByRole('link', { name: '@unlinkbox' })).toBeVisible()
+
+    page.on('dialog', d => d.accept())
+    await page.getByRole('button', { name: /remove letterboxd link/i }).click()
+
+    await expect(page.getByLabel('Letterboxd username')).toBeVisible()
+    await expect(page.getByRole('link', { name: '@unlinkbox' })).toHaveCount(0)
+
+    const emailRow = (await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?key=email:unlinkbox`)).json()).value
+    expect(emailRow).toBeNull()
+    const member = JSON.parse((await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?key=member:${encodeURIComponent(email)}`)).json()).value)
+    expect(member.handle).toBeNull()
   })
 })

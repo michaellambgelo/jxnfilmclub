@@ -95,7 +95,10 @@ member's email; the user pastes the tag into a diary entry or list on
 their Letterboxd profile, then clicks Verify. Worker scrapes
 `letterboxd.com/<handle>/rss/` — which picks up both tagged diary
 entries and new lists — and, on match, commits the link and dispatches
-`update-member` to add the handle to the public entry.
+`update-member` to add the handle to the public entry. A **Remove
+Letterboxd link** button on the verified panel clears the link via
+`POST /letterboxd/unlink`; membership is kept, the `@handle` just
+disappears from the public row.
 
 ### 4. Sign-in (returning members)
 

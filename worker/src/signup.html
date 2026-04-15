@@ -6,6 +6,9 @@
   <title>Join · Jackson Film Club</title>
   <style>
     body { max-width: 32rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.5 system-ui, sans-serif; color: #222; }
+    .topnav { margin-bottom: 1.25rem; font-size: 0.9rem; }
+    .topnav a { color: #0a58ca; text-decoration: none; }
+    .topnav a:hover { text-decoration: underline; }
     h1 { margin-bottom: 0.25rem; }
     p.lede { color: #666; margin-top: 0; }
     form { display: grid; gap: 1rem; margin-top: 2rem; }
@@ -37,8 +40,13 @@
   </style>
 </head>
 <body>
+  <nav class="topnav">
+    <a href="https://jxnfilm.club/">← Back to Jackson Film Club</a>
+  </nav>
+
   <h1>Join Jackson Film Club</h1>
-  <p class="lede">List your Letterboxd profile in the member directory.</p>
+  <p class="lede">List your Letterboxd profile in
+    <a href="https://jxnfilm.club/">the member directory</a>.</p>
 
   <!-- Step 1: details -->
   <form id="signup-form">
@@ -134,7 +142,11 @@
 
         panel.hidden = true
         verify.hidden = true
-        show('ok', `Welcome, ${claim.name}! You'll appear on jxnfilm.club shortly. You can remove the verification tag/list now.`)
+        status.className = 'ok'
+        status.innerHTML = `Welcome, ${claim.name}! You'll appear on
+          <a href="https://jxnfilm.club/">jxnfilm.club</a> shortly.
+          You can remove the verification tag/list now.<br><br>
+          <a href="https://jxnfilm.club/">→ See the member directory</a>`
       } catch (err) {
         show('err', err.message)
         btn.disabled = false

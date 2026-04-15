@@ -9,3 +9,9 @@ bun.lock
 playwright-report/
 test-results/
 
+# Admin-local data (emails, notes, exports). README is tracked as the
+# documented convention.
+.admin/*
+!.admin/README.md
+
+

@@ -158,3 +158,47 @@ describe('POST /letterboxd/verify', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('POST /letterboxd/unlink', () => {
+  it('clears KV links, nulls member.handle, dispatches update-member with handle:null', async () => {
+    const { token, member } = await signedInMember('unlink@example.com', 'unlinkuser')
+    await env.MEMBERS_KV.put('email:unlinkuser', 'unlink@example.com')
+    await env.MEMBERS_KV.put('handle:unlink@example.com', 'unlinkuser')
+    await env.MEMBERS_KV.put('lb_token:unlink@example.com', JSON.stringify({
+      token: 'jxnfc-verify-LEFTOVER', handle: 'unlinkuser', exp: Date.now() + 1000,
+    }))
+
+    const calls = []
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response('', { status: 204 })
+    })
+
+    const res = await fetchWith('/letterboxd/unlink', 'POST', {}, token)
+    expect(res.status).toBe(200)
+
+    expect(await env.MEMBERS_KV.get('email:unlinkuser')).toBeNull()
+    expect(await env.MEMBERS_KV.get('handle:unlink@example.com')).toBeNull()
+    expect(await env.MEMBERS_KV.get('lb_token:unlink@example.com')).toBeNull()
+    const saved = JSON.parse(await env.MEMBERS_KV.get('member:unlink@example.com'))
+    expect(saved.handle).toBeNull()
+
+    const gh = calls.find(c => c.url.includes('api.github.com'))
+    const dispatch = JSON.parse(gh.init.body)
+    expect(dispatch.event_type).toBe('update-member')
+    expect(dispatch.client_payload.id).toBe(member.id)
+    expect(dispatch.client_payload.updates).toEqual({ handle: null })
+  })
+
+  it('400 when no Letterboxd is linked', async () => {
+    const { token } = await signedInMember('nolink@example.com') // no handle
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/letterboxd/unlink', 'POST', {}, token)
+    expect(res.status).toBe(400)
+  })
+
+  it('401 without token', async () => {
+    const res = await fetchWith('/letterboxd/unlink', 'POST', {})
+    expect(res.status).toBe(401)
+  })
+})

@@ -35,7 +35,13 @@ jobs:
           for m in members:
               if m.get('id') == id_:
                   for k, v in updates.items():
-                      if k in ALLOWED and v is not None:
+                      if k not in ALLOWED:
+                          continue
+                      # Explicit null → remove the field from the public row.
+                      # Absent keys are left alone by virtue of not being in `updates`.
+                      if v is None:
+                          m.pop(k, None)
+                      else:
                           m[k] = v
                   break
           else:

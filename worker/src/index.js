@@ -29,6 +29,7 @@ export default {
     if (request.method === 'GET'  && pathname === '/letterboxd/status')  return handleLbStatus(request, env)
     if (request.method === 'POST' && pathname === '/letterboxd/request') return handleLbRequest(request, env)
     if (request.method === 'POST' && pathname === '/letterboxd/verify')  return handleLbVerify(request, env)
+    if (request.method === 'POST' && pathname === '/letterboxd/unlink')  return handleLbUnlink(request, env)
 
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
@@ -242,6 +243,34 @@ async function handleLbVerify(request, env) {
     updates: { handle },
   })
   return json(env, { ok: true, handle })
+}
+
+// POST /letterboxd/unlink — authenticated
+// Drops the verified Letterboxd link from the member row and public JSON.
+// Idempotent-ish: 400s if there's nothing to unlink.
+async function handleLbUnlink(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+  if (!member.handle) return json(env, { error: 'no Letterboxd linked' }, 400)
+
+  const handle = member.handle
+  member.handle = null
+  await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
+  await env.MEMBERS_KV.delete(`email:${handle}`)
+  await env.MEMBERS_KV.delete(`handle:${claims.email}`)
+  await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+
+  // `handle: null` tells update-member.yml to drop the field from the
+  // public members.json row.
+  await dispatchGithub(env, 'update-member', {
+    id: member.id,
+    updates: { handle: null },
+  })
+  return json(env, { ok: true })
 }
 
 // --- Member read + update ---

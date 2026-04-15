@@ -69,6 +69,7 @@ DNS records are printed in the Resend dashboard.
 | GET    | `/letterboxd/status`  | `{ verified, handle }` / `{ pending, handle, token, exp }` / `{ none: true }`. |
 | POST   | `/letterboxd/request` | `(handle)` → mints a fresh 48h `lb_token:{email}` for the given handle. |
 | POST   | `/letterboxd/verify`  | Scrapes `letterboxd.com/{handle}/rss/` for the pending token; on match commits the link + dispatches `update-member` with the handle. |
+| POST   | `/letterboxd/unlink`  | Remove the verified Letterboxd link. Clears `email:/handle:/lb_token:` rows, nulls `member.handle`, dispatches `update-member` with `{ handle: null }` so the public row drops the field. |
 
 ### Dev-only (E2E)
 

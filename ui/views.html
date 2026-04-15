@@ -51,6 +51,7 @@
       const { items, total } = await getMembers({
         search: state.query,
         sort: state.sort,
+        limit: 1000,
       })
       this.update({ items, total })
     }
@@ -134,7 +135,7 @@
 
     async reload() {
       const [{ items, total }, attendance] = await Promise.all([
-        getEvents({ search: state.query, sort: state.sort }),
+        getEvents({ search: state.query, sort: state.sort, limit: 1000 }),
         fetch('./data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
       ])
       this.update({ items, total, attendance })

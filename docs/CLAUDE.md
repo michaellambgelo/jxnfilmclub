@@ -80,7 +80,7 @@ Nue's dhtml compiler has sharp edges worth remembering:
 - **Top-level field initializers are NOT bound to `this`.** `step = 'email'` at the top of a `<script>` block does nothing; referencing `step` in the template throws `ReferenceError`. Initialize state inside `mounted()` via `this.update({ step: 'email', ... })` — that's the only pattern that reactively binds. Methods (`async foo() {}`) do get hoisted.
 - **`{...}` in attribute values is template syntax.** `pattern="[0-9]{6}"` becomes `pattern="[0-9]6"` at render. Escape via JS (`'[0-9]' + '{6}'`) or drop the attribute.
 - **`:if` on a `<form>` unmounts the form on toggle, and `:onsubmit` does not re-bind on remount.** Prefer a single form with `:if`-gated fields and a single `:onsubmit` router that branches internally (see `sign-in-view` and `edit-view` in `ui/auth.html`).
-- **`autolink: true` intercepts ALL anchor clicks, including cross-origin ones.** For links that must leave the site (e.g. Join → `join.jxnfilm.club`), attach a handler that calls `preventDefault()` + `window.location.href = ...` (see `goJoin` in `index.html`).
+- **`autolink: true` intercepts ALL anchor clicks, including cross-origin ones AND `target="_blank"`.** Every external link needs an explicit `:onclick` handler that calls `preventDefault()` + `window.open` / `window.location.href`. The `openExternal` method on `members-view`, `sign-in-view`, and `edit-view` is the pattern; `goJoin` in `index.html` is the same idea for the nav Join link. Forget it on a new external anchor and the click will feel like a silent reload.
 
 ## Testing
 

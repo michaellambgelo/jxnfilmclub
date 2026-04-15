@@ -23,6 +23,17 @@ test.describe('members view', () => {
     await page.getByRole('combobox').selectOption('name')
     await expect.poll(() => page.url()).toContain('sort=name')
   })
+
+  test('@handle link opens Letterboxd in a new tab (bypasses autolink)', async ({ page, context }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
+    const [popup] = await Promise.all([
+      context.waitForEvent('page', { timeout: 5_000 }),
+      page.getByRole('link', { name: '@michaellamb' }).click(),
+    ])
+    expect(popup.url()).toBe('https://letterboxd.com/michaellamb/')
+    await popup.close()
+  })
 })
 
 test.describe('auth nav', () => {

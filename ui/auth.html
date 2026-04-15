@@ -124,7 +124,7 @@
     <p class="err" :if="error">{ error }</p>
   </form>
 
-  <p class="hint">New here? <a href="https://join.jxnfilm.club/">Join the film club</a>.</p>
+  <p class="hint">New here? <a href="https://join.jxnfilm.club/" :onclick="openExternal">Join the film club</a>.</p>
 
   <script>
     async mounted() {
@@ -169,6 +169,13 @@
     back() {
       this.update({ step: 'email', error: '' })
     }
+
+    openExternal(e) {
+      e.preventDefault()
+      const a = e.currentTarget
+      if (a.target === '_blank') window.open(a.href, '_blank', 'noopener,noreferrer')
+      else window.location.href = a.href
+    }
   </script>
 </article>
 
@@ -203,13 +210,13 @@
 
       <div :if="lb.verified">
         <p class="ok">Verified as
-          <a href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">@{ lb.handle }</a>.
+          <a href="https://letterboxd.com/{ lb.handle }/" :onclick="openExternal" target="_blank" rel="noopener">@{ lb.handle }</a>.
         </p>
       </div>
 
       <div :if="lb.pending">
         <p class="lede">Add this tag to a diary entry or a list on
-          <a :if="lb.handle" href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">letterboxd.com/{ lb.handle }</a><span :if="!lb.handle">your Letterboxd profile</span>,
+          <a :if="lb.handle" href="https://letterboxd.com/{ lb.handle }/" :onclick="openExternal" target="_blank" rel="noopener">letterboxd.com/{ lb.handle }</a><span :if="!lb.handle">your Letterboxd profile</span>,
           then click Verify.</p>
         <p><code class="lb-token">{ lb.token }</code></p>
 
@@ -335,6 +342,13 @@
     signOut() {
       setSession(null)
       location.href = '/'
+    }
+
+    openExternal(e) {
+      e.preventDefault()
+      const a = e.currentTarget
+      if (a.target === '_blank') window.open(a.href, '_blank', 'noopener,noreferrer')
+      else window.location.href = a.href
     }
   </script>
 </article>

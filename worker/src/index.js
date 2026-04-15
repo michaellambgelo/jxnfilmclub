@@ -23,6 +23,8 @@ export default {
     if (request.method === 'POST' && pathname === '/otp/verify')    return handleOtpVerify(request, env)
     if (request.method === 'POST' && pathname === '/member/update') return handleMemberUpdate(request, env)
 
+    if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
+
     return new Response('Not Found', { status: 404 })
   },
 }
@@ -48,7 +50,8 @@ async function handleSignup(request, env) {
     return json(env, { error: 'invalid handle format' }, 400)
   }
 
-  const lb = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/`)
+  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
+  const lb = await fetch(`${lbBase}/${encodeURIComponent(handle)}/`)
   if (!lb.ok) return json(env, { error: 'Letterboxd profile not found' }, 400)
 
   // Already claimed by someone else?
@@ -87,9 +90,10 @@ async function handleSignupVerify(request, env) {
     return json(env, { error: 'email does not match the pending claim' }, 403)
   }
 
+  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
   const [rssText, listsText] = await Promise.all([
-    fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`).then(r => r.text()).catch(() => ''),
-    fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/lists/`).then(r => r.text()).catch(() => ''),
+    fetch(`${lbBase}/${encodeURIComponent(handle)}/rss/`).then(r => r.text()).catch(() => ''),
+    fetch(`${lbBase}/${encodeURIComponent(handle)}/lists/`).then(r => r.text()).catch(() => ''),
   ])
   if (!rssText.includes(token) && !listsText.includes(token)) {
     return json(env, {
@@ -104,6 +108,22 @@ async function handleSignupVerify(request, env) {
   await dispatchGithub(env, 'add-member', { handle, name: claim.name })
 
   return json(env, { ok: true })
+}
+
+// Dev-only: seed KV directly. Only enabled when wrangler is started with
+// --var E2E_MODE:true (see playwright.config.ts).
+async function handleTestKv(request, env) {
+  if (request.method === 'POST') {
+    const { key, value, ttl } = await request.json()
+    await env.MEMBERS_KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined)
+    return json(env, { ok: true })
+  }
+  if (request.method === 'DELETE') {
+    const { key } = await request.json()
+    await env.MEMBERS_KV.delete(key)
+    return json(env, { ok: true })
+  }
+  return json(env, { error: 'method not allowed' }, 405)
 }
 
 function randomToken(len) {
@@ -154,6 +174,10 @@ async function handleMemberUpdate(request, env) {
 // --- Resend ---
 // Requires a verified `jxnfilm.club` domain in Resend (adds SPF + DKIM DNS).
 async function sendOtpEmail(env, to, code) {
+  if (env.E2E_MODE === 'true') {
+    await env.MEMBERS_KV.put(`__last_otp__`, JSON.stringify({ to, code }))
+    return
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -172,6 +196,10 @@ async function sendOtpEmail(env, to, code) {
 
 // --- GitHub dispatch ---
 async function dispatchGithub(env, event_type, client_payload) {
+  if (env.E2E_MODE === 'true') {
+    await env.MEMBERS_KV.put(`__last_dispatch__`, JSON.stringify({ event_type, client_payload }))
+    return
+  }
   const res = await fetch(
     `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
     {

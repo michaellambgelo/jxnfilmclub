@@ -25,6 +25,18 @@ test.describe('members view', () => {
   })
 })
 
+test.describe('auth nav', () => {
+  test('Join click navigates to join.jxnfilm.club (bypasses autolink)', async ({ page }) => {
+    await page.goto('/')
+    const join = page.getByRole('link', { name: 'Join', exact: true })
+    await expect(join).toHaveAttribute('href', 'https://join.jxnfilm.club/')
+    await Promise.all([
+      page.waitForURL('https://join.jxnfilm.club/', { timeout: 10_000 }),
+      join.click(),
+    ])
+  })
+})
+
 test.describe('events view', () => {
   test('/events deep link loads events-view', async ({ page }) => {
     await page.goto('/events')

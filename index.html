@@ -26,7 +26,7 @@
       <a href="/" class="logo"><img src="/img/nue.svg" alt=""> Jackson Film Club</a>
       <a href="/">Members</a>
       <a href="/events">Events</a>
-      <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
+      <a :if="!signedIn" href="https://join.jxnfilm.club/" :onclick="goJoin" class="auth-link">Join</a>
       <a :if="!signedIn" href="/signin">Log in</a>
       <a :if="signedIn" href="/edit">Edit account</a>
     </nav>
@@ -50,6 +50,11 @@
     mounted() {
       this.update({ signedIn: isSignedIn() })
       state.init()
+    }
+
+    goJoin(e) {
+      e.preventDefault()
+      window.location.href = 'https://join.jxnfilm.club/'
     }
   </script>
 

@@ -46,3 +46,8 @@ SITE_ORIGIN = "https://jxnfilm.club"   # staging worker still dispatches to prod
 #   npx wrangler secret put GITHUB_TOKEN     --env staging
 #   npx wrangler secret put RESEND_API_KEY   --env staging
 #   npx wrangler secret put OTP_SIGNING_KEY  --env staging
+
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true

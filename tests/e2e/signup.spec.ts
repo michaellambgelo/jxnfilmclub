@@ -1,38 +1,91 @@
-import { test, expect, WORKER_ORIGIN } from './fixtures'
+import { test, expect, WORKER_ORIGIN, seedKv } from './fixtures'
 
-test.describe('signup form (join.jxnfilm.club)', () => {
-  test('valid submission reveals verify panel with token', async ({ page }) => {
+// Signup happens on the Worker origin (join.jxnfilm.club). On success it
+// redirects to the main site with a session token in the URL fragment.
+
+async function readPendingCode(page: any, email: string): Promise<string> {
+  const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=pending:${encodeURIComponent(email)}`)
+  const body = await res.json()
+  return JSON.parse(body.value).code
+}
+
+test.describe('signup (join.jxnfilm.club)', () => {
+  test('without a handle: signup → verify → redirect to /edit signed in', async ({ page }) => {
+    const email = 'newbie@example.com'
     await page.goto(WORKER_ORIGIN + '/')
-    await page.getByLabel('Display name').fill('Test User')
-    await page.getByLabel('Letterboxd username').fill('testuser')
-    await page.getByLabel('Email').fill('testuser@example.com')
-    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByLabel('Display name').fill('Newbie')
+    await page.getByLabel('Email').fill(email)
+    await page.getByRole('button', { name: /email me a code/i }).click()
 
-    await expect(page.locator('#verify-panel')).toBeVisible()
-    await expect(page.locator('#vtoken')).toHaveText(/^jxnfc-verify-[A-Za-z0-9]{8}$/)
+    await expect(page.getByLabel('Code')).toBeVisible()
+    const code = await readPendingCode(page, email)
+    await page.getByLabel('Code').fill(code)
+    await page.getByRole('button', { name: /confirm membership/i }).click()
+
+    // Worker redirects to main site; the URL fragment carries the session.
+    await page.waitForURL('**/edit*', { timeout: 10_000 })
+    await expect(page.locator('h1')).toHaveText('Your account')
+    await expect(page.locator('p.lede').first()).toContainText(email)
+
+    // Session persisted in localStorage after the hash handoff.
+    const session = await page.evaluate(() => localStorage.jxnfc_session)
+    expect(session).toBeTruthy()
+    expect(JSON.parse(session!).email).toBe(email)
+
+    // Member record written to KV.
+    const memRes = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=member:${encodeURIComponent(email)}`)
+    const member = JSON.parse((await memRes.json()).value)
+    expect(member.name).toBe('Newbie')
+    expect(member.handle).toBeNull()
   })
 
-  test('unknown Letterboxd handle shows error', async ({ page }) => {
+  test('with a handle: lb_token is minted for later verification', async ({ page }) => {
+    const email = 'with-handle@example.com'
     await page.goto(WORKER_ORIGIN + '/')
-    await page.getByLabel('Display name').fill('Ghost')
-    await page.getByLabel('Letterboxd username').fill('ghost')
-    await page.getByLabel('Email').fill('ghost@example.com')
-    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByLabel('Display name').fill('Handle User')
+    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Letterboxd username').fill('handleuser')
+    await page.getByRole('button', { name: /email me a code/i }).click()
 
-    await expect(page.locator('#status.err')).toContainText('Letterboxd profile not found')
-    await expect(page.locator('#verify-panel')).toBeHidden()
+    const lbRes = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=lb_token:${encodeURIComponent(email)}`)
+    const lb = JSON.parse((await lbRes.json()).value)
+    expect(lb.token).toMatch(/^jxnfc-verify-/)
+    expect(lb.handle).toBe('handleuser')
   })
 
-  test('verify step surfaces 422 when token not on profile', async ({ page }) => {
-    await page.goto(WORKER_ORIGIN + '/')
-    await page.getByLabel('Display name').fill('Token Test')
-    await page.getByLabel('Letterboxd username').fill('tokentest')
-    await page.getByLabel('Email').fill('tokentest@example.com')
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await expect(page.locator('#verify-panel')).toBeVisible()
+  test('duplicate email rejected with 409', async ({ page }) => {
+    const email = 'exists@example.com'
+    await seedKv(page, `member:${email}`, JSON.stringify({ id: 'x', email, name: 'Y' }))
 
-    await page.getByRole('button', { name: "I've added it — verify me" }).click()
-    await expect(page.locator('#status.err')).toContainText('token not found')
+    await page.goto(WORKER_ORIGIN + '/')
+    await page.getByLabel('Display name').fill('Dupe')
+    await page.getByLabel('Email').fill(email)
+    await page.getByRole('button', { name: /email me a code/i }).click()
+    await expect(page.locator('#status.err')).toContainText('already a member')
+  })
+
+  test('claimed handle rejected with 409', async ({ page }) => {
+    await seedKv(page, 'email:spoken-for', 'other@example.com')
+
+    await page.goto(WORKER_ORIGIN + '/')
+    await page.getByLabel('Display name').fill('Late')
+    await page.getByLabel('Email').fill('late@example.com')
+    await page.getByLabel('Letterboxd username').fill('spoken-for')
+    await page.getByRole('button', { name: /email me a code/i }).click()
+    await expect(page.locator('#status.err')).toContainText('already claimed')
+  })
+
+  test('wrong code on verify stays on code step with an error', async ({ page }) => {
+    const email = 'wrong-code@example.com'
+    await page.goto(WORKER_ORIGIN + '/')
+    await page.getByLabel('Display name').fill('Wrong Code')
+    await page.getByLabel('Email').fill(email)
+    await page.getByRole('button', { name: /email me a code/i }).click()
+
+    await expect(page.getByLabel('Code')).toBeVisible()
+    await page.getByLabel('Code').fill('000000')
+    await page.getByRole('button', { name: /confirm membership/i }).click()
+    await expect(page.locator('#status.err')).toContainText('invalid code')
   })
 
   test('privacy policy loads', async ({ page }) => {

@@ -6,14 +6,12 @@
 
   const WORKER_ORIGIN = globalThis.JXNFC_WORKER_ORIGIN || 'https://join.jxnfilm.club'
 
-  async function post(path, body, token) {
+  async function call(method, path, body, token) {
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers.Authorization = `Bearer ${token}`
-    const res = await fetch(`${WORKER_ORIGIN}${path}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    })
+    const init = { method, headers }
+    if (body !== undefined) init.body = JSON.stringify(body)
+    const res = await fetch(`${WORKER_ORIGIN}${path}`, init)
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     return data
@@ -33,9 +31,9 @@
 </script>
 
 
-<!-- Sign-in flow: email -> code -> token stored in localStorage, then redirect to /edit -->
+<!-- Sign-in flow (returning members): email -> code -> session -> /edit -->
 <article :is="sign-in-view" class="auth">
-  <h1>Sign in to edit your entry</h1>
+  <h1>Log in</h1>
 
   <p :if="step === 'email'" class="lede">Enter the email you signed up with.
     We'll send a 6-digit code.</p>
@@ -62,13 +60,14 @@
     <p class="err" :if="error">{ error }</p>
   </form>
 
+  <p class="hint">New here? <a href="https://join.jxnfilm.club/">Join the film club</a>.</p>
+
   <script>
     async mounted() {
       this.update({ step: 'email', email: '', busy: false, error: '' })
       const s = getSession()
       if (s?.token && s.exp > Date.now()) {
-        // Already signed in — go straight to edit.
-        location.hash = '#/edit'
+        location.href = '/edit'
       }
     }
 
@@ -82,7 +81,7 @@
       this.update({ busy: true, error: '' })
       const email = new FormData(e.target).get('email')
       try {
-        await post('/otp/request', { email })
+        await call('POST', '/otp/request', { email })
         this.update({ step: 'code', email, busy: false })
       } catch (err) {
         this.update({ busy: false, error: err.message })
@@ -94,9 +93,9 @@
       this.update({ busy: true, error: '' })
       const code = new FormData(e.target).get('code')
       try {
-        const { token, handle } = await post('/otp/verify', { email: this.email, code })
+        const { token, id, handle } = await call('POST', '/otp/verify', { email: this.email, code })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-        setSession({ token, email: this.email, handle, exp: payload.exp })
+        setSession({ token, email: this.email, id, handle, exp: payload.exp })
         location.href = '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })
@@ -110,63 +109,112 @@
 </article>
 
 
-<!-- Edit-own-entry: fetches the signed-in member, submits changes back through the Worker -->
+<!-- Account/edit view: profile edit + Letterboxd verification panel -->
 <article :is="edit-view" class="auth">
-  <h1>Edit your entry</h1>
+  <h1>Your account</h1>
 
   <p :if="loading" class="lede">Loading…</p>
 
-  <div :if="!loading && !member">
-    <p class="err">We couldn't find a member tied to your email. If you just signed up,
-      the member list may still be rebuilding — try again in a minute.</p>
-    <button :onclick="signOut" class="plain">Sign out</button>
+  <div :if="!loading">
+    <p class="lede">Signed in as <b>{ session.email }</b>.</p>
+
+    <form :onsubmit="save">
+      <label>Display name
+        <input type="text" name="name" required value="{ member.name || '' }">
+      </label>
+      <label>Pronouns
+        <input type="text" name="pronouns" placeholder="e.g. they/them"
+          value="{ member.pronouns || '' }">
+      </label>
+      <div class="actions">
+        <button type="submit" :disabled="busy">{ busy ? 'Saving…' : 'Save' }</button>
+        <button type="button" class="plain" :onclick="signOut">Sign out</button>
+      </div>
+      <p class="ok" :if="saved">Saved. The public site rebuilds in ~30 seconds.</p>
+      <p class="err" :if="error">{ error }</p>
+    </form>
+
+    <section class="lb-panel">
+      <h2>Letterboxd</h2>
+
+      <div :if="lb.verified">
+        <p class="ok">Verified as
+          <a href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">@{ lb.handle }</a>.
+        </p>
+      </div>
+
+      <div :if="lb.pending">
+        <p class="lede">Add this tag to a diary entry or a list on
+          <a :if="lb.handle" href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">letterboxd.com/{ lb.handle }</a><span :if="!lb.handle">your Letterboxd profile</span>,
+          then click Verify.</p>
+        <p><code class="lb-token">{ lb.token }</code></p>
+
+        <form :if="!lb.handle" :onsubmit="submitHandle">
+          <label>Letterboxd username
+            <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
+              placeholder="e.g. davidehrlich">
+          </label>
+          <button type="submit" :disabled="lbBusy">{ lbBusy ? 'Saving…' : 'Add handle' }</button>
+        </form>
+
+        <div :if="lb.handle" class="actions">
+          <button type="button" :onclick="verifyLb" :disabled="lbBusy">
+            { lbBusy ? 'Checking…' : 'Verify Letterboxd' }
+          </button>
+          <button type="button" class="plain" :onclick="changeHandle">Use a different handle</button>
+        </div>
+        <p class="err" :if="lbError">{ lbError }</p>
+      </div>
+
+      <div :if="lb.none">
+        <p class="lede">Verify your Letterboxd profile to show a link to it
+          on your public entry. Enter your Letterboxd username and we'll
+          give you a verification tag to add to a diary entry or list.</p>
+        <form :onsubmit="submitHandle">
+          <label>Letterboxd username
+            <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
+              placeholder="e.g. davidehrlich">
+          </label>
+          <button type="submit" :disabled="lbBusy">{ lbBusy ? 'Saving…' : 'Get verification tag' }</button>
+          <p class="err" :if="lbError">{ lbError }</p>
+        </form>
+      </div>
+    </section>
   </div>
-
-  <form :if="member" :onsubmit="save">
-    <p class="lede">Signed in as <b>{ session.email }</b>
-      · Letterboxd: <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
-    </p>
-
-    <label>Display name
-      <input type="text" name="name" required value="{ member.name }">
-    </label>
-    <label>Pronouns
-      <input type="text" name="pronouns" placeholder="e.g. they/them"
-        value="{ member.pronouns || '' }">
-    </label>
-
-    <div class="actions">
-      <button type="submit" :disabled="busy">
-        { busy ? 'Saving…' : 'Save' }
-      </button>
-      <button type="button" class="plain" :onclick="signOut">Sign out</button>
-    </div>
-
-    <p class="ok" :if="saved">Saved. The public site rebuilds in ~30 seconds.</p>
-    <p class="err" :if="error">{ error }</p>
-  </form>
 
   <script>
     async mounted() {
-      this.update({ loading: true, member: null, session: null, busy: false, saved: false, error: '' })
+      this.update({
+        loading: true, member: {}, session: null,
+        busy: false, saved: false, error: '',
+        lb: { loading: true }, lbBusy: false, lbError: '',
+      })
+
       const s = getSession()
       if (!s?.token || s.exp < Date.now()) {
         setSession(null)
         location.href = '/signin'
         return
       }
-      this.session = s
 
-      if (!s.handle) {
-        // Token is valid but the email isn't linked to a member yet.
-        this.update({ loading: false, member: null })
-        return
+      // Pull the member from the Worker's authoritative KV copy. The public
+      // JSON may lag the add-member Action by ~30s after a fresh signup, so
+      // we can't rely on it for prefill.
+      let member = { id: s.id, name: '', pronouns: '', handle: null }
+      try {
+        member = await call('GET', '/member/me', undefined, s.token)
+      } catch { /* fall through with empty defaults */ }
+
+      const lb = await this.loadLbStatus(s.token)
+      this.update({ loading: false, session: s, member, lb })
+    }
+
+    async loadLbStatus(token) {
+      try {
+        return await call('GET', '/letterboxd/status', undefined, token)
+      } catch {
+        return { none: true }
       }
-
-      // Pull current values from the public members.json so the form prefills.
-      const all = await fetch('/data/members.json').then(r => r.json()).catch(() => [])
-      const member = all.find(m => m.handle === s.handle) || { handle: s.handle, name: '', pronouns: '' }
-      this.update({ loading: false, member })
     }
 
     async save(e) {
@@ -174,19 +222,50 @@
       this.update({ busy: true, error: '', saved: false })
       const fd = new FormData(e.target)
       try {
-        const res = await post('/member/update', {
+        await call('POST', '/member/update', {
           name: fd.get('name'),
           pronouns: fd.get('pronouns'),
         }, this.session.token)
-        // Pull the resolved handle back so the header link stays correct.
         this.update({
-          busy: false,
-          saved: true,
-          member: { ...this.member, handle: res.handle, name: fd.get('name'), pronouns: fd.get('pronouns') },
+          busy: false, saved: true,
+          member: { ...this.member, name: fd.get('name'), pronouns: fd.get('pronouns') },
         })
       } catch (err) {
         this.update({ busy: false, error: err.message })
       }
+    }
+
+    async submitHandle(e) {
+      e.preventDefault()
+      this.update({ lbBusy: true, lbError: '' })
+      const handle = new FormData(e.target).get('handle')
+      try {
+        const res = await call('POST', '/letterboxd/request', { handle }, this.session.token)
+        this.update({
+          lbBusy: false,
+          lb: { pending: true, handle: res.handle, token: res.token, exp: res.exp },
+        })
+      } catch (err) {
+        this.update({ lbBusy: false, lbError: err.message })
+      }
+    }
+
+    async verifyLb() {
+      this.update({ lbBusy: true, lbError: '' })
+      try {
+        const res = await call('POST', '/letterboxd/verify', {}, this.session.token)
+        this.update({
+          lbBusy: false,
+          lb: { verified: true, handle: res.handle },
+          member: { ...this.member, handle: res.handle },
+        })
+      } catch (err) {
+        this.update({ lbBusy: false, lbError: err.message })
+      }
+    }
+
+    changeHandle() {
+      this.update({ lb: { pending: true, handle: null, token: this.lb.token, exp: this.lb.exp }, lbError: '' })
     }
 
     signOut() {

@@ -34,11 +34,11 @@
         <th>Joined</th>
       </tr>
     </thead>
-    <tr :each="el in items" key="{ el.handle }">
+    <tr :each="el in items" key="{ el.id || el.handle }">
       <td><avatar :name="el.name"/></td>
       <td><h3>{ el.name }</h3></td>
       <td>
-        <a href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
+        <a :if="el.handle" href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
       </td>
       <td><timeago :ts="el.joined"/></td>
     </tr>

@@ -4,7 +4,7 @@
 <script>
   import { state } from 'state'
 
-  const WORKER_ORIGIN = 'https://join.jxnfilm.club'
+  const WORKER_ORIGIN = globalThis.JXNFC_WORKER_ORIGIN || 'https://join.jxnfilm.club'
 
   async function post(path, body, token) {
     const headers = { 'Content-Type': 'application/json' }
@@ -40,42 +40,41 @@
   <p :if="step === 'email'" class="lede">Enter the email you signed up with.
     We'll send a 6-digit code.</p>
 
-  <form :if="step === 'email'" :onsubmit="sendCode">
-    <label>Email
+  <form :onsubmit="onSubmit">
+    <label :if="step === 'email'">Email
       <input type="email" name="email" required autocomplete="email"
         value="{ email || '' }">
     </label>
-    <button type="submit" :disabled="busy">
+
+    <p :if="step === 'code'" class="lede">Enter the 6-digit code we sent to <b>{ email }</b>.</p>
+    <label :if="step === 'code'">Code
+      <input type="text" name="code" required inputmode="numeric"
+        maxlength="6" autocomplete="one-time-code">
+    </label>
+
+    <button :if="step === 'email'" type="submit" :disabled="busy">
       { busy ? 'Sending…' : 'Email me a code' }
     </button>
-    <p class="err" :if="error">{ error }</p>
-  </form>
-
-  <form :if="step === 'code'" :onsubmit="verifyCode">
-    <p class="lede">Enter the 6-digit code we sent to <b>{ email }</b>.</p>
-    <label>Code
-      <input type="text" name="code" required inputmode="numeric"
-        pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
-    </label>
-    <button type="submit" :disabled="busy">
+    <button :if="step === 'code'" type="submit" :disabled="busy">
       { busy ? 'Verifying…' : 'Verify' }
     </button>
-    <button type="button" class="plain" :onclick="back">← Use a different email</button>
+    <button :if="step === 'code'" type="button" class="plain" :onclick="back">← Use a different email</button>
     <p class="err" :if="error">{ error }</p>
   </form>
 
   <script>
-    step = 'email'
-    email = ''
-    busy = false
-    error = ''
-
     async mounted() {
+      this.update({ step: 'email', email: '', busy: false, error: '' })
       const s = getSession()
       if (s?.token && s.exp > Date.now()) {
         // Already signed in — go straight to edit.
         location.hash = '#/edit'
       }
+    }
+
+    onSubmit(e) {
+      if (this.step === 'email') return this.sendCode(e)
+      return this.verifyCode(e)
     }
 
     async sendCode(e) {
@@ -148,14 +147,8 @@
   </form>
 
   <script>
-    loading = true
-    member = null
-    session = null
-    busy = false
-    saved = false
-    error = ''
-
     async mounted() {
+      this.update({ loading: true, member: null, session: null, busy: false, saved: false, error: '' })
       const s = getSession()
       if (!s?.token || s.exp < Date.now()) {
         setSession(null)

@@ -33,7 +33,7 @@ describe('POST /otp/request', () => {
     expect(resend.init.headers.Authorization).toMatch(/^Bearer /)
     const body = JSON.parse(resend.init.body)
     expect(body.to).toEqual(['user@example.com'])
-    expect(body.from).toContain('@jxnfilm.club')
+    expect(body.from).toContain('@join.jxnfilm.club')
     expect(body.subject).toContain('login code')
     expect(body.text).toContain(code)
   })

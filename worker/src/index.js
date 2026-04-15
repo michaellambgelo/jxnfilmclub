@@ -89,7 +89,7 @@ async function sendOtpEmail(env, to, code) {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
     },
     body: JSON.stringify({
-      from: 'Jackson Film Club <noreply@jxnfilm.club>',
+      from: 'Jackson Film Club <noreply@join.jxnfilm.club>',
       to: [to],
       subject: 'Your Jackson Film Club login code',
       text: `Your login code: ${code}\n\nThis code expires in 10 minutes.\nIf you didn't request it, ignore this email.`,

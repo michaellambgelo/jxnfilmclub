@@ -15,6 +15,10 @@ rules = [
 binding = "MEMBERS_KV"
 id = "1a7b67fcd1944f5dbfa22656f9fac4e4"
 
+[[kv_namespaces]]
+binding = "ATTENDANCE_KV"
+id = "6d5a467495fb47fcb9514e0a85bb3b20"
+
 [vars]
 GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
@@ -36,6 +40,10 @@ routes = [
 [[env.staging.kv_namespaces]]
 binding = "MEMBERS_KV"
 id = "66834b9613a34d3eba014791e3b5000f"
+
+[[env.staging.kv_namespaces]]
+binding = "ATTENDANCE_KV"
+id = "f6f23b3e546646d28a3a80f71ef35715"
 
 [env.staging.vars]
 GITHUB_OWNER = "michaellambgelo"

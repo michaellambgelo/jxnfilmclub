@@ -88,6 +88,7 @@
         <th>Film</th>
         <th>Venue</th>
         <th>Date</th>
+        <th>Attendance</th>
       </tr>
     </thead>
     <tr :each="el in items" key="{ el.id }">
@@ -97,24 +98,50 @@
       <td>
         <h3>{ el.title }</h3>
       </td>
-      <td>{ el.film }</td>
+      <td>
+        <a :if="el.letterboxd_uri" href="{ el.letterboxd_uri }" target="_blank" rel="noopener">{ el.film }</a>
+        <span :if="!el.letterboxd_uri">{ el.film }</span>
+      </td>
       <td>{ el.venue }</td>
       <td>{ formatDate(el.date) }</td>
+      <td class="attendance-cell">
+        <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
+        <div :if="attendeesFor(el.id).length" class="attendance-list">
+          <a :each="h in attendeesFor(el.id)" key="{ h }"
+            href="https://letterboxd.com/{ h }/" target="_blank" rel="noopener">@{ h }</a>
+        </div>
+        <button :if="canToggle(el.id)" type="button" class="attend-btn"
+          :disabled="busyId === el.id"
+          :onclick="toggleAttend(el.id)">
+          { attended(el.id) ? 'Remove me' : 'I was there' }
+        </button>
+      </td>
     </tr>
   </table>
 
   <script>
+    const WORKER_ORIGIN = globalThis.JXNFC_WORKER_ORIGIN || 'https://join.jxnfilm.club'
+
+    function getSession() {
+      try {
+        const raw = localStorage.jxnfc_session
+        const s = raw ? JSON.parse(raw) : null
+        return s?.token && s.exp > Date.now() ? s : null
+      } catch { return null }
+    }
+
     state.on('query sort', () => this.reload())
 
     async reload() {
-      const { items, total } = await getEvents({
-        search: state.query,
-        sort: state.sort,
-      })
-      this.update({ items, total })
+      const [{ items, total }, attendance] = await Promise.all([
+        getEvents({ search: state.query, sort: state.sort }),
+        fetch('./data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+      ])
+      this.update({ items, total, attendance })
     }
 
     async mounted() {
+      this.update({ session: getSession(), busyId: null, attendance: {} })
       await this.reload()
     }
 
@@ -123,6 +150,40 @@
       return new Date(ts).toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       })
+    }
+
+    attendeesFor(id) {
+      return (this.attendance && this.attendance[id]) || []
+    }
+
+    canToggle(id) {
+      return !!(this.session && this.session.handle)
+    }
+
+    attended(id) {
+      return this.session?.handle && this.attendeesFor(id).includes(this.session.handle)
+    }
+
+    async toggleAttend(id) {
+      if (!this.session?.handle) return
+      const method = this.attended(id) ? 'DELETE' : 'POST'
+      this.update({ busyId: id })
+      try {
+        const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(id)}/attend`, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.session.token}`,
+          },
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        const attendance = { ...this.attendance, [id]: data.attendees || [] }
+        this.update({ attendance, busyId: null })
+      } catch (err) {
+        console.error('attendance toggle failed:', err)
+        this.update({ busyId: null })
+      }
     }
   </script>
 </article>

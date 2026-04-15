@@ -21,7 +21,7 @@ jobs:
       - name: Install deps
         run: pip install feedparser
 
-      - name: Refresh watched + attendance
+      - name: Refresh watched
         run: python3 scripts/refresh_letterboxd.py
 
       - name: Commit data updates
@@ -31,7 +31,7 @@ jobs:
           if git diff --quiet data/; then
             echo "No data changes"
           else
-            git add data/watched.json data/attendance.json
+            git add data/watched.json
             git commit -m "chore: refresh Letterboxd data"
             git push
           fi

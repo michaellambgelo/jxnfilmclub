@@ -34,7 +34,7 @@ export default defineWorkersProject({
         miniflare: {
           compatibilityDate: '2026-04-14',
           compatibilityFlags: ['nodejs_compat'],
-          kvNamespaces: ['MEMBERS_KV'],
+          kvNamespaces: ['MEMBERS_KV', 'ATTENDANCE_KV'],
           bindings: {
             SITE_ORIGIN: 'https://jxnfilm.club',
             GITHUB_OWNER: 'testowner',

@@ -1,0 +1,57 @@
+name: Update attendance
+
+on:
+  repository_dispatch:
+    types: [update-attendance]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply edit to data/attendance.json
+        env:
+          EVENT_ID: ${{ github.event.client_payload.event_id }}
+          HANDLE:   ${{ github.event.client_payload.handle }}
+          ACTION:   ${{ github.event.client_payload.action }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          # Worker is the source of truth for authorization; this workflow just
+          # adds/removes a handle from the event's attendee list.
+          event_id = os.environ['EVENT_ID']
+          handle   = os.environ['HANDLE']
+          action   = os.environ['ACTION']
+          if not event_id: raise SystemExit('client_payload.event_id is required')
+          if not handle:   raise SystemExit('client_payload.handle is required')
+          if action not in ('add', 'remove'):
+              raise SystemExit(f'invalid action: {action!r}')
+
+          path = pathlib.Path('data/attendance.json')
+          data = json.loads(path.read_text())
+          attendees = data.get(event_id, [])
+
+          if action == 'add' and handle not in attendees:
+              attendees.append(handle)
+          elif action == 'remove' and handle in attendees:
+              attendees.remove(handle)
+
+          data[event_id] = attendees
+          path.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet; then
+            echo "No changes"
+          else
+            git add data/attendance.json
+            git commit -m "chore: update event attendance"
+            git push
+          fi

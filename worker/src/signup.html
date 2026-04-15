@@ -23,9 +23,7 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { color: #888; font-size: 0.85rem; }
     .hint a { color: #0a58ca; }
-    .ok { background: #e6f7ea; color: #185628; padding: 0.75rem; border-radius: 4px; }
     .err { background: #fdecec; color: #8a1f1f; padding: 0.75rem; border-radius: 4px; }
-    .back { background: none; color: #0a58ca; padding: 0; font-weight: 400; text-align: left; }
   </style>
 </head>
 <body>
@@ -37,7 +35,6 @@
   <p class="lede">Confirm your email to become a member. Letterboxd
     verification is optional and can be done any time after you sign up.</p>
 
-  <!-- Step 1: details -->
   <form id="signup-form">
     <label>Display name
       <input type="text" name="name" required autocomplete="name">
@@ -54,39 +51,20 @@
       shown publicly. <a href="/privacy">Privacy policy</a>.</p>
   </form>
 
-  <!-- Step 2: code -->
-  <form id="code-form" hidden>
-    <p class="lede">We sent a 6-digit code to <b id="code-email"></b>. It
-      expires in 10 minutes. The same email also contains a Letterboxd
-      verification tag you can optionally add to your profile.</p>
-    <label>Code
-      <input type="text" name="code" required inputmode="numeric" maxlength="6">
-    </label>
-    <button type="submit">Confirm membership</button>
-    <button type="button" class="back" id="back">← Use a different email</button>
-  </form>
-
   <div id="status"></div>
 
   <script>
-    const signup = document.getElementById('signup-form')
-    const codeForm = document.getElementById('code-form')
-    const codeEmail = document.getElementById('code-email')
+    const form = document.getElementById('signup-form')
     const status = document.getElementById('status')
-    const back = document.getElementById('back')
-    let email = ''
 
-    function show(kind, msg) {
-      status.className = kind
-      status.textContent = msg
-    }
-
-    signup.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault()
-      const btn = signup.querySelector('button')
+      const btn = form.querySelector('button[type="submit"]')
       btn.disabled = true
-      show('', '')
-      const data = Object.fromEntries(new FormData(signup))
+      status.className = ''
+      status.textContent = ''
+
+      const data = Object.fromEntries(new FormData(form))
       if (!data.handle) delete data.handle
 
       try {
@@ -98,45 +76,14 @@
         const body = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(body.error || 'Signup failed')
 
-        email = data.email
-        codeEmail.textContent = email
-        signup.hidden = true
-        codeForm.hidden = false
+        // Worker is API-only. Code entry happens on the main site so the
+        // session we create lives in the right origin's localStorage.
+        location.href = '%SITE_ORIGIN%/verify?email=' + encodeURIComponent(data.email)
       } catch (err) {
-        show('err', err.message)
+        status.className = 'err'
+        status.textContent = err.message
         btn.disabled = false
       }
-    })
-
-    codeForm.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      const btn = codeForm.querySelector('button[type="submit"]')
-      btn.disabled = true
-      show('', '')
-      const code = new FormData(codeForm).get('code')
-      try {
-        const res = await fetch('/signup/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code }),
-        })
-        const body = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(body.error || 'Verification failed')
-
-        // Hand off the session to the main site. Fragment, not query, so
-        // the token never hits a server access log.
-        location.href = '%SITE_ORIGIN%/edit#token=' + encodeURIComponent(body.token)
-      } catch (err) {
-        show('err', err.message)
-        btn.disabled = false
-      }
-    })
-
-    back.addEventListener('click', () => {
-      codeForm.hidden = true
-      signup.hidden = false
-      signup.querySelector('button').disabled = false
-      show('', '')
     })
   </script>
 </body>

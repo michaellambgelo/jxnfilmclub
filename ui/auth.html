@@ -31,6 +31,70 @@
 </script>
 
 
+<!-- Signup-verification view: lands here from join.jxnfilm.club?email=...
+     Enters the 6-digit code sent to their email, calls /signup/verify, and
+     finalizes membership + session on this origin. -->
+<article :is="verify-view" class="auth">
+  <h1>Confirm your email</h1>
+
+  <p class="lede" :if="email">We sent a 6-digit code to <b>{ email }</b>.
+    It expires in 10 minutes. The same email also contains an optional
+    Letterboxd verification tag you can add any time from your account.</p>
+  <p class="lede" :if="!email">Enter the email you just used to sign up,
+    and the 6-digit code we sent.</p>
+
+  <form :onsubmit="submit">
+    <label :if="!email">Email
+      <input type="email" name="email" required autocomplete="email">
+    </label>
+    <label>Code
+      <input type="text" name="code" required inputmode="numeric"
+        maxlength="6" autocomplete="one-time-code" autofocus>
+    </label>
+    <button type="submit" :disabled="busy">
+      { busy ? 'Verifying…' : 'Confirm membership' }
+    </button>
+    <p class="err" :if="error">{ error }</p>
+  </form>
+
+  <p class="hint">Didn't get the email?
+    <a href="https://join.jxnfilm.club/" :onclick="goJoin">Start over</a>.
+  </p>
+
+  <script>
+    async mounted() {
+      const params = new URLSearchParams(location.search)
+      this.update({
+        email: params.get('email') || '',
+        busy: false,
+        error: '',
+      })
+    }
+
+    async submit(e) {
+      e.preventDefault()
+      this.update({ busy: true, error: '' })
+      const fd = new FormData(e.target)
+      const email = this.email || fd.get('email')
+      const code = fd.get('code')
+      try {
+        const { token, id, handle } = await call('POST', '/signup/verify', { email, code })
+        const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
+        setSession({ token, email, id, handle, exp: payload.exp })
+        location.href = '/edit'
+      } catch (err) {
+        this.update({ busy: false, error: err.message })
+      }
+    }
+
+    goJoin(e) {
+      e.preventDefault()
+      window.location.href = 'https://join.jxnfilm.club/'
+    }
+  </script>
+</article>
+
+
 <!-- Sign-in flow (returning members): email -> code -> session -> /edit -->
 <article :is="sign-in-view" class="auth">
   <h1>Log in</h1>

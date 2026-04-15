@@ -5,7 +5,7 @@
 
   state.setup({
     route: '/:type',
-    query: ['query', 'sort'],
+    query: ['query', 'sort', 'email'],
     autolink: true,
   })
 
@@ -16,23 +16,6 @@
       const s = JSON.parse(raw)
       return !!(s?.token && s.exp > Date.now())
     } catch { return false }
-  }
-
-  // Accept a session handed off from join.jxnfilm.club after signup/verify:
-  //   https://jxnfilm.club/edit#token=<payload>.<sig>
-  // Store it locally, then strip the fragment so it doesn't leak into
-  // subsequent navigations or referrer headers.
-  function consumeSessionHash() {
-    const m = location.hash.match(/(?:^#|&)token=([^&]+)/)
-    if (!m) return
-    try {
-      const token = decodeURIComponent(m[1])
-      const claims = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-      localStorage.jxnfc_session = JSON.stringify({
-        token, email: claims.email, id: claims.id, exp: claims.exp,
-      })
-    } catch { /* ignore malformed hash */ }
-    history.replaceState({}, '', location.pathname + location.search)
   }
 </script>
 
@@ -59,13 +42,13 @@
       const view =
         type === 'events' ? 'events-view' :
         type === 'signin' ? 'sign-in-view' :
+        type === 'verify' ? 'verify-view' :
         type === 'edit'   ? 'edit-view' :
                             'members-view'
       this.mount(view, 'article')
     })
 
     mounted() {
-      consumeSessionHash()
       this.update({ signedIn: isSignedIn() })
       state.init()
     }

@@ -322,8 +322,8 @@ async function sendSignupEmail(env, to, code, lbToken, handle) {
   const text = [
     `Your membership code: ${code}`,
     '',
-    'Enter this 6-digit code on https://jxnfilm.club/signin to confirm your',
-    'Jackson Film Club membership. This code expires in 10 minutes.',
+    `Enter this 6-digit code on ${env.SITE_ORIGIN || 'https://jxnfilm.club'}/verify`,
+    'to confirm your Jackson Film Club membership. This code expires in 10 minutes.',
     '',
     '---',
     '',

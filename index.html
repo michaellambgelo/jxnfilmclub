@@ -10,6 +10,12 @@
   })
 </script>
 
+<link rel="stylesheet" href="/style/global.css">
+<link rel="stylesheet" href="/style/table.css">
+<link rel="stylesheet" href="/style/form.css">
+<link rel="stylesheet" href="/style/widgets.css">
+<link rel="stylesheet" href="/style/auth.css">
+
 <body>
 
   <header>
@@ -17,6 +23,7 @@
       <a href="/" class="logo"><img src="/img/nue.svg" alt=""> Jackson Film Club</a>
       <a href="/">Members</a>
       <a href="/events">Events</a>
+      <a href="/signin" class="auth-link">Edit my entry</a>
     </nav>
   </header>
 
@@ -27,7 +34,12 @@
   <script>
     onmount() {
       state.on('type', ({ type }) => {
-        this.mount(type === 'events' ? 'events-view' : 'members-view', 'article')
+        const view =
+          type === 'events' ? 'events-view' :
+          type === 'signin' ? 'sign-in-view' :
+          type === 'edit'   ? 'edit-view' :
+                              'members-view'
+        this.mount(view, 'article')
       })
       state.init()
     }

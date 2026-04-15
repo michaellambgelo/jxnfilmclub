@@ -1,0 +1,204 @@
+
+<!doctype dhtml lib>
+
+<script>
+  import { state } from 'state'
+
+  const WORKER_ORIGIN = 'https://join.jxnfilm.club'
+
+  async function post(path, body, token) {
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) headers.Authorization = `Bearer ${token}`
+    const res = await fetch(`${WORKER_ORIGIN}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    return data
+  }
+
+  function getSession() {
+    try {
+      const raw = sessionStorage.jxnfc_session
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  }
+
+  function setSession(s) {
+    if (s) sessionStorage.jxnfc_session = JSON.stringify(s)
+    else delete sessionStorage.jxnfc_session
+  }
+</script>
+
+
+<!-- Sign-in flow: email -> code -> token stored in sessionStorage, then redirect to /edit -->
+<article :is="sign-in-view" class="auth">
+  <h1>Sign in to edit your entry</h1>
+
+  <p :if="step === 'email'" class="lede">Enter the email you signed up with.
+    We'll send a 6-digit code.</p>
+
+  <form :if="step === 'email'" :onsubmit="sendCode">
+    <label>Email
+      <input type="email" name="email" required autocomplete="email"
+        value="{ email || '' }">
+    </label>
+    <button type="submit" :disabled="busy">
+      { busy ? 'Sending…' : 'Email me a code' }
+    </button>
+    <p class="err" :if="error">{ error }</p>
+  </form>
+
+  <form :if="step === 'code'" :onsubmit="verifyCode">
+    <p class="lede">Enter the 6-digit code we sent to <b>{ email }</b>.</p>
+    <label>Code
+      <input type="text" name="code" required inputmode="numeric"
+        pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+    </label>
+    <button type="submit" :disabled="busy">
+      { busy ? 'Verifying…' : 'Verify' }
+    </button>
+    <button type="button" class="plain" :onclick="back">← Use a different email</button>
+    <p class="err" :if="error">{ error }</p>
+  </form>
+
+  <script>
+    step = 'email'
+    email = ''
+    busy = false
+    error = ''
+
+    async onmount() {
+      const s = getSession()
+      if (s?.token && s.exp > Date.now()) {
+        // Already signed in — go straight to edit.
+        location.hash = '#/edit'
+      }
+    }
+
+    async sendCode(e) {
+      e.preventDefault()
+      this.update({ busy: true, error: '' })
+      const email = new FormData(e.target).get('email')
+      try {
+        await post('/otp/request', { email })
+        this.update({ step: 'code', email, busy: false })
+      } catch (err) {
+        this.update({ busy: false, error: err.message })
+      }
+    }
+
+    async verifyCode(e) {
+      e.preventDefault()
+      this.update({ busy: true, error: '' })
+      const code = new FormData(e.target).get('code')
+      try {
+        const { token, handle } = await post('/otp/verify', { email: this.email, code })
+        const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
+        setSession({ token, email: this.email, handle, exp: payload.exp })
+        state.go('/edit')
+      } catch (err) {
+        this.update({ busy: false, error: err.message })
+      }
+    }
+
+    back() {
+      this.update({ step: 'email', error: '' })
+    }
+  </script>
+</article>
+
+
+<!-- Edit-own-entry: fetches the signed-in member, submits changes back through the Worker -->
+<article :is="edit-view" class="auth">
+  <h1>Edit your entry</h1>
+
+  <p :if="loading" class="lede">Loading…</p>
+
+  <div :if="!loading && !member">
+    <p class="err">We couldn't find a member tied to your email. If you just signed up,
+      the member list may still be rebuilding — try again in a minute.</p>
+    <button :onclick="signOut" class="plain">Sign out</button>
+  </div>
+
+  <form :if="member" :onsubmit="save">
+    <p class="lede">Signed in as <b>{ session.email }</b>
+      · Letterboxd: <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
+    </p>
+
+    <label>Display name
+      <input type="text" name="name" required value="{ member.name }">
+    </label>
+    <label>Pronouns
+      <input type="text" name="pronouns" placeholder="e.g. they/them"
+        value="{ member.pronouns || '' }">
+    </label>
+
+    <div class="actions">
+      <button type="submit" :disabled="busy">
+        { busy ? 'Saving…' : 'Save' }
+      </button>
+      <button type="button" class="plain" :onclick="signOut">Sign out</button>
+    </div>
+
+    <p class="ok" :if="saved">Saved. The public site rebuilds in ~30 seconds.</p>
+    <p class="err" :if="error">{ error }</p>
+  </form>
+
+  <script>
+    loading = true
+    member = null
+    session = null
+    busy = false
+    saved = false
+    error = ''
+
+    async onmount() {
+      const s = getSession()
+      if (!s?.token || s.exp < Date.now()) {
+        setSession(null)
+        state.go('/signin')
+        return
+      }
+      this.session = s
+
+      if (!s.handle) {
+        // Token is valid but the email isn't linked to a member yet.
+        this.update({ loading: false, member: null })
+        return
+      }
+
+      // Pull current values from the public members.json so the form prefills.
+      const all = await fetch('/data/members.json').then(r => r.json()).catch(() => [])
+      const member = all.find(m => m.handle === s.handle) || { handle: s.handle, name: '', pronouns: '' }
+      this.update({ loading: false, member })
+    }
+
+    async save(e) {
+      e.preventDefault()
+      this.update({ busy: true, error: '', saved: false })
+      const fd = new FormData(e.target)
+      try {
+        const res = await post('/member/update', {
+          name: fd.get('name'),
+          pronouns: fd.get('pronouns'),
+        }, this.session.token)
+        // Pull the resolved handle back so the header link stays correct.
+        this.update({
+          busy: false,
+          saved: true,
+          member: { ...this.member, handle: res.handle, name: fd.get('name'), pronouns: fd.get('pronouns') },
+        })
+      } catch (err) {
+        this.update({ busy: false, error: err.message })
+      }
+    }
+
+    signOut() {
+      setSession(null)
+      state.go('/')
+    }
+  </script>
+</article>

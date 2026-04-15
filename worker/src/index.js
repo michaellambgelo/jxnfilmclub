@@ -69,7 +69,10 @@ async function handleOtpVerify(request, env) {
 
   await env.MEMBERS_KV.delete(`otp:${email}`)
   const token = await signToken(env, { email, exp: Date.now() + 3600_000 })
-  return json(env, { token })
+  // Include the linked handle if any — lets the client prefill the edit form
+  // without a separate round-trip. null if this email isn't linked to a member.
+  const handle = await env.MEMBERS_KV.get(`handle:${email}`)
+  return json(env, { token, handle })
 }
 
 async function handleMemberUpdate(request, env) {

@@ -1,0 +1,90 @@
+
+.auth {
+  max-width: 28rem;
+  margin: 2rem auto;
+}
+
+.auth h1 {
+  margin-bottom: 0.35rem;
+}
+
+.auth .lede {
+  color: #666;
+  margin-top: 0;
+}
+
+.auth form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.auth label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.auth input[type="email"],
+.auth input[type="text"] {
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.auth button {
+  padding: 0.7rem;
+  font: inherit;
+  font-weight: 600;
+  background: #111;
+  color: white;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.auth button.plain {
+  background: transparent;
+  color: #0a58ca;
+  font-weight: 400;
+  padding: 0.35rem 0;
+  text-align: left;
+  justify-self: start;
+}
+
+.auth button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth .actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.auth .actions button:first-child {
+  flex: 1;
+}
+
+.auth .ok {
+  background: #e6f7ea;
+  color: #185628;
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  margin: 0;
+}
+
+.auth .err {
+  background: #fdecec;
+  color: #8a1f1f;
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  margin: 0;
+}
+
+nav .auth-link {
+  margin-left: auto;
+}

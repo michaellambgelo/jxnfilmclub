@@ -32,8 +32,11 @@ describe('POST /member/update auth', () => {
     expect(res.status).toBe(401)
   })
 
-  it('accepts a valid bearer token and dispatches update-member with updates payload', async () => {
+  it('accepts a valid bearer token and dispatches update-member with server-resolved handle', async () => {
     const email = 'authed@example.com'
+    // The member must already be linked in KV (would have been done at /signup).
+    await env.MEMBERS_KV.put(`handle:${email}`, 'authedhandle')
+
     const token = await getToken(email)
     expect(token).toBeTruthy()
 
@@ -43,22 +46,69 @@ describe('POST /member/update auth', () => {
       return new Response('', { status: 204 })
     })
 
-    const updates = { pronouns: 'she/her', name: 'Authed User' }
     const res = await SELF.fetch('https://join.jxnfilm.club/member/update', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ pronouns: 'she/her', name: 'Authed User' }),
     })
     expect(res.status).toBe(200)
+    expect((await res.json()).handle).toBe('authedhandle')
 
     const gh = calls.find(c => c.url.includes('api.github.com'))
     expect(gh).toBeTruthy()
     const body = JSON.parse(gh.init.body)
     expect(body.event_type).toBe('update-member')
-    expect(body.client_payload).toEqual({ email, updates })
+    // Handle comes from KV, not the request body.
+    expect(body.client_payload.email).toBe(email)
+    expect(body.client_payload.updates).toEqual({
+      handle: 'authedhandle',
+      name: 'Authed User',
+      pronouns: 'she/her',
+    })
+  })
+
+  it('ignores a client-supplied handle and uses the KV-linked one', async () => {
+    const email = 'spoofer@example.com'
+    await env.MEMBERS_KV.put(`handle:${email}`, 'realhandle')
+    const token = await getToken(email)
+
+    const calls = []
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response('', { status: 204 })
+    })
+
+    const res = await SELF.fetch('https://join.jxnfilm.club/member/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ handle: 'someoneelse', pronouns: 'they/them' }),
+    })
+    expect(res.status).toBe(200)
+    const gh = calls.find(c => c.url.includes('api.github.com'))
+    const body = JSON.parse(gh.init.body)
+    expect(body.client_payload.updates.handle).toBe('realhandle')
+  })
+
+  it('returns 403 when the token email has no linked handle', async () => {
+    const email = 'orphan@example.com'
+    const token = await getToken(email) // no handle:${email} seeded
+    mockFetch(async () => new Response('', { status: 204 }))
+
+    const res = await SELF.fetch('https://join.jxnfilm.club/member/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ pronouns: 'x' }),
+    })
+    expect(res.status).toBe(403)
   })
 
   it('rejects a tampered token with 401', async () => {

@@ -44,7 +44,10 @@ async function handleSignup(request, env) {
   const lb = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/`)
   if (!lb.ok) return json(env, { error: 'Letterboxd profile not found' }, 400)
 
+  // Bidirectional lookup: email <-> handle. Both needed so /member/update
+  // can resolve the token's handle and reject edits targeting someone else's row.
   await env.MEMBERS_KV.put(`email:${handle}`, email)
+  await env.MEMBERS_KV.put(`handle:${email}`, handle)
   await dispatchGithub(env, 'add-member', { handle, name: name || handle })
   return json(env, { ok: true })
 }
@@ -74,9 +77,15 @@ async function handleMemberUpdate(request, env) {
   const claims = await verifyToken(env, auth)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
-  const updates = await request.json()
+  // Resolve the handle server-side from the token's email. Any client-supplied
+  // `updates.handle` is ignored — you can only edit your own row.
+  const handle = await env.MEMBERS_KV.get(`handle:${claims.email}`)
+  if (!handle) return json(env, { error: 'no member linked to this email' }, 403)
+
+  const body = await request.json()
+  const updates = { handle, name: body.name, pronouns: body.pronouns }
   await dispatchGithub(env, 'update-member', { email: claims.email, updates })
-  return json(env, { ok: true })
+  return json(env, { ok: true, handle })
 }
 
 // --- Resend ---

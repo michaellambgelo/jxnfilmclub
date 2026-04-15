@@ -39,6 +39,9 @@ describe('POST /signup', () => {
 
     const stored = await env.MEMBERS_KV.get('email:alice')
     expect(stored).toBe('alice@example.com')
+    // Inverse lookup: email -> handle, used by /member/update to resolve which row to edit.
+    const inverse = await env.MEMBERS_KV.get('handle:alice@example.com')
+    expect(inverse).toBe('alice')
 
     const lb = calls.find(c => c.url.startsWith('https://letterboxd.com/'))
     expect(lb).toBeTruthy()

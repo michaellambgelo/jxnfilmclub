@@ -79,7 +79,7 @@ diary tag). *RSS field mapping needs verification against a real feed.*
 
 `/signin` → `POST /otp/request` → Resend emails a 6-digit code → `/signin`
 code step → `POST /otp/verify` returns an HMAC-signed session token stored in
-`sessionStorage`. `/edit` view uses the token to authorize
+`localStorage`. `/edit` view uses the token to authorize
 `POST /member/update`, which dispatches the `update-member` Action. The
 resolved handle is derived server-side from the token's email — clients
 cannot edit arbitrary entries.

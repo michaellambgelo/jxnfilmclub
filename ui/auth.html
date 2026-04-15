@@ -21,19 +21,19 @@
 
   function getSession() {
     try {
-      const raw = sessionStorage.jxnfc_session
+      const raw = localStorage.jxnfc_session
       return raw ? JSON.parse(raw) : null
     } catch { return null }
   }
 
   function setSession(s) {
-    if (s) sessionStorage.jxnfc_session = JSON.stringify(s)
-    else delete sessionStorage.jxnfc_session
+    if (s) localStorage.jxnfc_session = JSON.stringify(s)
+    else delete localStorage.jxnfc_session
   }
 </script>
 
 
-<!-- Sign-in flow: email -> code -> token stored in sessionStorage, then redirect to /edit -->
+<!-- Sign-in flow: email -> code -> token stored in localStorage, then redirect to /edit -->
 <article :is="sign-in-view" class="auth">
   <h1>Sign in to edit your entry</h1>
 

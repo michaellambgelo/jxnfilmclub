@@ -8,6 +8,15 @@
     query: ['query', 'sort'],
     autolink: true,
   })
+
+  function isSignedIn() {
+    try {
+      const raw = localStorage.jxnfc_session
+      if (!raw) return false
+      const s = JSON.parse(raw)
+      return !!(s?.token && s.exp > Date.now())
+    } catch { return false }
+  }
 </script>
 
 <body>
@@ -17,8 +26,9 @@
       <a href="/" class="logo"><img src="/img/nue.svg" alt=""> Jackson Film Club</a>
       <a href="/">Members</a>
       <a href="/events">Events</a>
-      <a href="https://join.jxnfilm.club/" class="auth-link">Join</a>
-      <a href="/signin">Edit my entry</a>
+      <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
+      <a :if="!signedIn" href="/signin">Log in</a>
+      <a :if="signedIn" href="/edit">Edit account</a>
     </nav>
   </header>
 
@@ -28,6 +38,7 @@
 
   <script>
     state.on('type', ({ type }) => {
+      this.update({ signedIn: isSignedIn() })
       const view =
         type === 'events' ? 'events-view' :
         type === 'signin' ? 'sign-in-view' :
@@ -37,6 +48,7 @@
     })
 
     mounted() {
+      this.update({ signedIn: isSignedIn() })
       state.init()
     }
   </script>

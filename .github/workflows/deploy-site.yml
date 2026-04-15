@@ -21,7 +21,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    # Only gate on tests for direct pushes/manual. Bot-driven workflow_run
+    # re-deploys don't change code and shouldn't re-run the full test suite.
+    if: github.event_name != 'workflow_run'
+    uses: ./.github/workflows/test.yml
+
   build:
+    needs: [test]
+    # `needs` + `if: always()` pattern: run build if test passed, OR if we
+    # skipped test entirely (bot-driven redeploy).
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

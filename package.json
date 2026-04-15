@@ -4,20 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nue",
-    "build": "nue build -p",
+    "dev": "nue serve",
+    "build": "nue build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",
-    "nuekit": "0.5.3",
+    "nuekit": "2.0.0-beta.2",
     "vitest": "^2.1.0",
     "wrangler": "^3.80.0"
-  },
-  "overrides": {
-    "nuemark": "0.3.1",
-    "nue-glow": "0.1.3",
-    "nuejs-core": "0.4.0"
   }
 }

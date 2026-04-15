@@ -33,7 +33,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.1.20'
+          bun-version: '1.3.12'
 
       - run: npm ci
 
@@ -43,13 +43,13 @@ jobs:
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, which
       # lets the client-side router handle deep links like /events.
       - name: Copy index.html to 404.html for SPA routing
-        run: cp .dist/prod/index.html .dist/prod/404.html
+        run: cp .dist/index.html .dist/404.html
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .dist/prod
+          path: .dist
 
   deploy:
     needs: build

@@ -5,5 +5,10 @@ meta:
 import_map:
   app: /model/index.js
 
+# Force-include the dhtml component libs (Nue 2.x's SPA dep walker excludes
+# everything when any .md exists at the project; without this our ui/ files
+# build but aren't listed in the page's `libs` meta).
+include: [ ui/, css/ ]
+
 # Keep tests, node_modules, and the Worker source out of the static build.
-exclude: [ tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts ]
+exclude: [ tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts, '.md' ]

@@ -17,10 +17,11 @@ export default {
     if (request.method === 'GET' && pathname === '/')        return html(signupHtml)
     if (request.method === 'GET' && pathname === '/privacy') return html(privacyHtml)
 
-    if (request.method === 'POST' && pathname === '/signup')       return handleSignup(request, env)
-    if (request.method === 'POST' && pathname === '/otp/request')  return handleOtpRequest(request, env)
-    if (request.method === 'POST' && pathname === '/otp/verify')   return handleOtpVerify(request, env)
-    if (request.method === 'POST' && pathname === '/member/update')return handleMemberUpdate(request, env)
+    if (request.method === 'POST' && pathname === '/signup')        return handleSignup(request, env)
+    if (request.method === 'POST' && pathname === '/signup/verify') return handleSignupVerify(request, env)
+    if (request.method === 'POST' && pathname === '/otp/request')   return handleOtpRequest(request, env)
+    if (request.method === 'POST' && pathname === '/otp/verify')    return handleOtpVerify(request, env)
+    if (request.method === 'POST' && pathname === '/member/update') return handleMemberUpdate(request, env)
 
     return new Response('Not Found', { status: 404 })
   },
@@ -37,19 +38,78 @@ function json(env, data, status = 200) {
   })
 }
 
+// Step 1 of signup: validate handle, check for duplicates, issue a verify
+// token. Caller has 1 hour to either log a diary entry tagged with the token
+// or create a Letterboxd list named with the token, then call /signup/verify.
 async function handleSignup(request, env) {
   const { email, handle, name } = await request.json()
   if (!email || !handle) return json(env, { error: 'email and handle required' }, 400)
+  if (!/^[a-zA-Z0-9_-]+$/.test(handle)) {
+    return json(env, { error: 'invalid handle format' }, 400)
+  }
 
   const lb = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/`)
   if (!lb.ok) return json(env, { error: 'Letterboxd profile not found' }, 400)
 
-  // Bidirectional lookup: email <-> handle. Both needed so /member/update
-  // can resolve the token's handle and reject edits targeting someone else's row.
+  // Already claimed by someone else?
+  if (await env.MEMBERS_KV.get(`email:${handle}`)) {
+    return json(env, { error: 'this Letterboxd handle is already claimed by a member' }, 409)
+  }
+
+  const token = `jxnfc-verify-${randomToken(8)}`
+  const pending = JSON.stringify({ email, handle, name: name || handle })
+  await env.MEMBERS_KV.put(`verify:${handle}`, JSON.stringify({ token, pending }), {
+    expirationTtl: 3600,
+  })
+
+  return json(env, {
+    ok: true,
+    token,
+    instructions:
+      `Add ${token} to your Letterboxd account in one of two ways, then return here and click Verify:\n` +
+      `  - Tag any diary entry with: ${token}\n` +
+      `  - Or create a list named: ${token}\n` +
+      `You can remove it after verification.`,
+  })
+}
+
+// Step 2 of signup: scrape the Letterboxd profile and look for the token.
+async function handleSignupVerify(request, env) {
+  const { email, handle } = await request.json()
+  if (!email || !handle) return json(env, { error: 'email and handle required' }, 400)
+
+  const raw = await env.MEMBERS_KV.get(`verify:${handle}`)
+  if (!raw) return json(env, { error: 'no pending verification — start over' }, 404)
+
+  const { token, pending } = JSON.parse(raw)
+  const claim = JSON.parse(pending)
+  if (claim.email !== email) {
+    return json(env, { error: 'email does not match the pending claim' }, 403)
+  }
+
+  const [rssText, listsText] = await Promise.all([
+    fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`).then(r => r.text()).catch(() => ''),
+    fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/lists/`).then(r => r.text()).catch(() => ''),
+  ])
+  if (!rssText.includes(token) && !listsText.includes(token)) {
+    return json(env, {
+      error: 'token not found on the Letterboxd profile yet — make sure the diary entry or list was saved',
+    }, 422)
+  }
+
+  // Verified — write KV bidirectionally and dispatch.
   await env.MEMBERS_KV.put(`email:${handle}`, email)
   await env.MEMBERS_KV.put(`handle:${email}`, handle)
-  await dispatchGithub(env, 'add-member', { handle, name: name || handle })
+  await env.MEMBERS_KV.delete(`verify:${handle}`)
+  await dispatchGithub(env, 'add-member', { handle, name: claim.name })
+
   return json(env, { ok: true })
+}
+
+function randomToken(len) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(len))
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
 }
 
 async function handleOtpRequest(request, env) {

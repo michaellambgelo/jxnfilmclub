@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join · Jackson Film Club</title>
   <style>
-    body { max-width: 30rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.5 system-ui, sans-serif; color: #222; }
+    body { max-width: 32rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.5 system-ui, sans-serif; color: #222; }
     h1 { margin-bottom: 0.25rem; }
     p.lede { color: #666; margin-top: 0; }
     form { display: grid; gap: 1rem; margin-top: 2rem; }
@@ -20,16 +20,28 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { color: #888; font-size: 0.85rem; }
     .hint a { color: #0a58ca; }
-    #status { margin-top: 1rem; padding: 0.75rem; border-radius: 4px; display: none; }
-    #status.ok  { display: block; background: #e6f7ea; color: #185628; }
-    #status.err { display: block; background: #fdecec; color: #8a1f1f; }
+    .panel {
+      margin-top: 1.5rem; padding: 1rem 1.25rem; border-radius: 6px;
+      background: #f3f4f6; border: 1px solid #e5e7eb;
+    }
+    .panel code {
+      display: inline-block; padding: 0.15em 0.45em;
+      background: #fff; border: 1px solid #ddd; border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.95em;
+    }
+    .panel ul { padding-left: 1.25rem; margin: 0.5rem 0; }
+    .panel li { margin: 0.4rem 0; }
+    .ok { background: #e6f7ea; color: #185628; padding: 0.75rem; border-radius: 4px; }
+    .err { background: #fdecec; color: #8a1f1f; padding: 0.75rem; border-radius: 4px; }
   </style>
 </head>
 <body>
   <h1>Join Jackson Film Club</h1>
   <p class="lede">List your Letterboxd profile in the member directory.</p>
 
-  <form id="signup">
+  <!-- Step 1: details -->
+  <form id="signup-form">
     <label>Display name
       <input type="text" name="name" required autocomplete="name">
     </label>
@@ -40,27 +52,51 @@
     <label>Email
       <input type="email" name="email" required autocomplete="email">
     </label>
-    <button type="submit">Join</button>
+    <button type="submit">Continue</button>
     <p class="hint">
       Your email is used only to send login codes and is never shown publicly.
       <a href="/privacy">Privacy policy</a>.
     </p>
   </form>
 
+  <!-- Step 2: verify ownership (hidden until step 1 succeeds) -->
+  <div id="verify-panel" hidden>
+    <div class="panel">
+      <p><b>One last step.</b> Prove you own this Letterboxd profile by
+         placing your verification token somewhere on it:</p>
+      <ul>
+        <li>Tag any diary entry with <code id="vtoken"></code></li>
+        <li><b>or</b> create a Letterboxd list named <code id="vtoken2"></code> (it can be empty)</li>
+      </ul>
+      <p class="hint">You can remove the tag/list right after we verify it.
+         The token expires in 1 hour.</p>
+    </div>
+    <form id="verify-form">
+      <button type="submit">I've added it — verify me</button>
+      <button type="button" class="hint" onclick="location.reload()">← Start over</button>
+    </form>
+  </div>
+
   <div id="status"></div>
 
   <script>
-    const form = document.getElementById('signup')
+    const signup = document.getElementById('signup-form')
+    const verify = document.getElementById('verify-form')
+    const panel  = document.getElementById('verify-panel')
     const status = document.getElementById('status')
+    let claim = null
 
-    form.addEventListener('submit', async (e) => {
+    function show(kind, msg) {
+      status.className = kind
+      status.textContent = msg
+    }
+
+    signup.addEventListener('submit', async (e) => {
       e.preventDefault()
-      const btn = form.querySelector('button')
+      const btn = signup.querySelector('button')
       btn.disabled = true
-      status.className = ''
-      status.textContent = ''
-
-      const data = Object.fromEntries(new FormData(form))
+      show('', '')
+      const data = Object.fromEntries(new FormData(signup))
 
       try {
         const res = await fetch('/signup', {
@@ -70,13 +106,37 @@
         })
         const body = await res.json()
         if (!res.ok) throw new Error(body.error || 'Signup failed')
-        status.className = 'ok'
-        status.textContent = `Welcome, ${data.name}! You'll appear on jxnfilm.club shortly.`
-        form.reset()
+
+        claim = data
+        document.getElementById('vtoken').textContent = body.token
+        document.getElementById('vtoken2').textContent = body.token
+        signup.hidden = true
+        panel.hidden = false
       } catch (err) {
-        status.className = 'err'
-        status.textContent = err.message
-      } finally {
+        show('err', err.message)
+        btn.disabled = false
+      }
+    })
+
+    verify.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const btn = verify.querySelector('button[type="submit"]')
+      btn.disabled = true
+      show('', '')
+      try {
+        const res = await fetch('/signup/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: claim.email, handle: claim.handle }),
+        })
+        const body = await res.json()
+        if (!res.ok) throw new Error(body.error || 'Verification failed')
+
+        panel.hidden = true
+        verify.hidden = true
+        show('ok', `Welcome, ${claim.name}! You'll appear on jxnfilm.club shortly. You can remove the verification tag/list now.`)
+      } catch (err) {
+        show('err', err.message)
         btn.disabled = false
       }
     })

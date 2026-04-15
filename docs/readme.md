@@ -4,101 +4,107 @@ Public membership directory for the Jackson Film Club. Each member lists their
 Letterboxd profile; the site surfaces their last-four-watched films and event
 attendance (Letterboxd diary entries tagged `jxnfilmclub`).
 
-> **Status: scaffolded, not yet functional.** The app is currently the stock
-> Nue.js `simple-admin` template populated with ~7k fake members and
-> "customers". None of the film-club features below are implemented yet. See
-> the [roadmap](#roadmap) for the completion plan.
-
 ## Stack
 
-- [Nue.js](https://nuejs.org) — component-driven SSG (`.nue` single-file components)
+- [Nue.js](https://nuejs.org) 2.x SPA — `<!doctype dhtml>` HTML components + built-in `state` module
 - TypeScript model layer (`model/`)
-- Vanilla CSS (`style/`)
-- Deploys to GitHub Pages
+- Vanilla CSS (`css/`)
+- Signup/auth backend: Cloudflare Worker (`worker/`), deploys to `join.jxnfilm.club`
+- Email: [Resend](https://resend.com) (3k/mo free tier)
+- Tests: Vitest (unit + Workers) + Playwright (E2E)
+- Deploys: GitHub Pages (site) + Cloudflare (Worker), both via GitHub Actions
 
 ## Develop
 
-No `package.json` — install the Nue CLI globally, then:
+Two terminals in parallel:
 
 ```bash
-nue           # dev server
-nue build     # compile to .dist/nuejs/
+# Terminal 1 — static site
+npx nue            # dev server on http://localhost:4000 (HMR)
+
+# Terminal 2 — Worker (signup/OTP backend)
+cd worker
+npx wrangler dev   # http://localhost:8787
 ```
 
-## Architecture (current)
+If `nue` dev server misbehaves, use the production build instead:
 
-- `view/index.nue` — layout + client-side router (simple-admin controller)
-- `view/people.nue` — list view: search, sort, paginate
-- `view/avatar.nue`, `view/timeago.nue` — leaf components
-- `model/index.ts` — `fetchPeople` / `getPeople`; loads `model/mocks/*.json` +
-  lazy-loads `*-tail.csv` into `sessionStorage`
-- `site.yaml` — defines the `members` and `customers` views + sort columns
-- `nuejs.yaml` — `base: /@simple-admin`, `dist: .dist/nuejs`, `inline_css: true`
+```bash
+npx nue build
+npx nue preview    # serves .dist/ on http://localhost:4000
+```
 
-## Roadmap
+## Commands
 
-MVP is three features plus a Cloudflare-Worker-backed signup flow. Target
-deploy is GitHub Pages; data refresh runs on GitHub Actions.
+```bash
+npm test              # vitest (model + worker endpoints)
+npm run test:e2e      # Playwright E2E (boots nue + wrangler + LB stub)
+npm run test:e2e:ui   # Playwright interactive UI mode
+npx nue build         # static build → .dist/
+```
 
-### 1. Signup pipeline (`join.jxnfilm.club`)
+See [CLAUDE.md](CLAUDE.md) for layout + architecture, [SETUP.md](SETUP.md) for
+one-time deploy setup.
 
-The signup app is a Cloudflare Worker living in `/worker` in this repo.
-The Worker serves:
+## Features
 
-- `GET /` — signup form (Letterboxd handle + email).
-- `POST /signup` — verifies the Letterboxd profile exists, then dispatches
-  a `repo_dispatch` event to this repo's GitHub Actions.
-- `POST /otp/request`, `POST /otp/verify` — email-OTP login (see §4).
-- `GET /privacy` — serves `worker/privacy.html`.
+### 1. Members directory
 
-The GitHub Action triggered by `repo_dispatch` appends the new member to
-`data/members.json` and commits to `main`.
+`data/members.json` is the source of truth. Rendered by `ui/views.html`
+(`members-view`) with search + sort, URL-bound via Nue's `state` module.
 
-### 2. Last Four Watched
+### 2. Signup pipeline (`join.jxnfilm.club`)
 
-- Replace `model/mocks/members.json` with a real `data/members.json`.
-- Add a GitHub Actions cron (every 6 hours, matching `letterboxd-viewer`) that
-  walks each member's Letterboxd RSS, extracts the four most recent diary
-  entries, and writes `data/watched.json`.
-- Render a poster row per member in `view/people.nue`.
+Cloudflare Worker at `worker/`. Two-step flow:
 
-### 3. Events + attendance (replaces Customers view)
+1. `POST /signup` — validates handle format + Letterboxd profile exists, issues
+   a `jxnfc-verify-<token>` and stores the pending claim in KV (1-hour TTL).
+2. Member places the token on their Letterboxd profile (diary-entry tag or
+   list name).
+3. `POST /signup/verify` — scrapes the profile for the token, writes KV
+   bidirectionally (`email:<handle>`, `handle:<email>`), dispatches
+   `add-member` to GitHub Actions.
+4. Action appends the entry to `data/members.json` and commits to `main`,
+   which triggers the site redeploy.
 
-- Rename the `customers` view in `site.yaml` to `events`.
-- Add `data/events.json` — manually curated (film, date, venue, poster).
-- The same 6-hour cron scans each member's RSS for diary entries tagged
-  `jxnfilmclub`, matches them to known events by film + date, and writes
-  `data/attendance.json` (event → member list).
-- New `view/events.nue` renders events with attending-member avatars.
+### 3. Last Four Watched + event attendance
 
-### 4. Email/OTP auth (edit-your-own-entry)
+`scripts/refresh_letterboxd.py` runs on a 6-hour GitHub Actions cron
+(`.github/workflows/refresh-letterboxd.yml`). Walks each member's Letterboxd
+RSS, writes `data/watched.json` (4 most recent diary entries per member) and
+`data/attendance.json` (events → member list, matched by the `jxnfilmclub`
+diary tag). *RSS field mapping needs verification against a real feed.*
 
-GitHub Pages is static, so auth needs a Worker backend.
+### 4. Email/OTP edit flow
 
-1. Member clicks "Edit my entry" → prompts for email → Worker emails a
-   one-time code via **Resend** (free tier: 3k emails/month).
-2. Member enters code → Worker returns a short-lived signed token.
-3. Authenticated requests to the Worker update `data/members.json` via the
-   same GitHub Actions `repo_dispatch` pattern.
-4. Client stores the token in `sessionStorage` until expiry.
+`/signin` → `POST /otp/request` → Resend emails a 6-digit code → `/signin`
+code step → `POST /otp/verify` returns an HMAC-signed session token stored in
+`sessionStorage`. `/edit` view uses the token to authorize
+`POST /member/update`, which dispatches the `update-member` Action. The
+resolved handle is derived server-side from the token's email — clients
+cannot edit arbitrary entries.
 
-Resend setup is documented in [SETUP.md](SETUP.md#5-sign-up-at-resend--verify-domain).
+## Testing
 
-### 5. Cleanup
+- **Unit + Workers** (`tests/model/`, `tests/worker/`): Vitest with
+  `@cloudflare/vitest-pool-workers` for realistic KV + fetch mocking.
+- **E2E** (`tests/e2e/`): Playwright boots `nue`, `wrangler dev`, and a
+  Letterboxd fixture HTTP stub; covers SPA views, signup form, OTP → edit
+  flow. CI gates both deploy workflows on these suites passing. See
+  [playwright.config.ts](../playwright.config.ts) for the multi-server setup.
 
-- Remove `model/mocks/` once real data exists.
-- Drop `customers-tail.csv`, `members-tail.csv` and the `setupMocks` /
-  `PLANS` / `CARDS` mock logic in `model/index.ts`.
-- `git init` and push to GitHub (the repo is not yet under version control).
+The Worker exposes a dev-only `/__test/kv` endpoint gated by
+`env.E2E_MODE === 'true'` for seeding KV directly from tests.
 
 ## Privacy
 
-Member emails are stored only in Cloudflare Workers KV (Worker-side). The
-public `data/members.json` never contains email addresses. Full policy is
-served at `join.jxnfilm.club/privacy` (source: `worker/src/privacy.html`).
+Member emails live only in Workers KV. The public `data/members.json` never
+contains emails. Policy served at `join.jxnfilm.club/privacy`.
 
 ## Deploy
 
-One-time setup (DNS, Cloudflare token, GitHub PAT, KV namespaces, DKIM) is
-documented in [SETUP.md](SETUP.md). After that, `git push origin main`
-triggers the site + worker deploys via GitHub Actions.
+One-time setup (DNS, Cloudflare token, GitHub PAT, KV namespaces, Resend
+DKIM) is in [SETUP.md](SETUP.md). After that, `git push origin main`
+triggers `deploy-site.yml` + `deploy-worker.yml`, both gated on `test.yml`
+(Vitest + Playwright) passing. `staging` branch deploys a parallel Worker at
+`join-staging.jxnfilm.club`.

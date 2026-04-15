@@ -192,7 +192,7 @@ curl -X POST https://join.jxnfilm.club/otp/verify \
 # expect: { "token": "<payload>.<sig>" }
 ```
 
-If the email never arrives: check `npx wrangler tail` and confirm DKIM + MailChannels lockdown records have propagated (`dig TXT _mailchannels.jxnfilm.club`).
+If the email never arrives: check `npx wrangler tail` and confirm Resend's SPF + DKIM records are green in the Resend dashboard.
 
 ---
 
@@ -201,5 +201,6 @@ If the email never arrives: check `npx wrangler tail` and confirm DKIM + MailCha
 - **`wrangler deploy` fails with "route not found"** — zone isn't reachable. Confirm `jxnfilm.club` is active in Cloudflare.
 - **Resend 401** — API key wrong or unset. `cd worker && npx wrangler secret list` should show `RESEND_API_KEY`.
 - **Resend 403 "domain not verified"** — DNS records from Resend dashboard aren't fully propagated or weren't added. Re-check in Resend → Domains.
+- **Email never arrives** — check `cd worker && npx wrangler tail` and confirm SPF + DKIM records in Resend are green.
 - **`add-member` workflow doesn't fire** — PAT permissions are wrong. It needs **Contents: Read and Write** on this repo.
 - **Tests pass but staging signup adds to prod `data/members.json`** — staging `GITHUB_TOKEN` is scoped to the same repo. That's expected; if you want full isolation, create a `jxnfilmclub-staging` repo and change staging's `GITHUB_REPO` var.

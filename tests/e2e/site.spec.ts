@@ -70,7 +70,7 @@ test.describe('events view', () => {
   test('/events deep link loads events-view', async ({ page }) => {
     await page.goto('/events')
     await expect(page.locator('h1')).toHaveText('Events')
-    await expect(page.getByRole('heading', { name: 'Sample Screening' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'November 2020 Screening' })).toBeVisible()
   })
 
   test('nav link from / to /events routes without full reload', async ({ page }) => {

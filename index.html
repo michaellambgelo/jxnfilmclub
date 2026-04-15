@@ -26,15 +26,16 @@
   </main>
 
   <script>
-    onmount() {
-      state.on('type', ({ type }) => {
-        const view =
-          type === 'events' ? 'events-view' :
-          type === 'signin' ? 'sign-in-view' :
-          type === 'edit'   ? 'edit-view' :
-                              'members-view'
-        this.mount(view, 'article')
-      })
+    state.on('type', ({ type }) => {
+      const view =
+        type === 'events' ? 'events-view' :
+        type === 'signin' ? 'sign-in-view' :
+        type === 'edit'   ? 'edit-view' :
+                            'members-view'
+      this.mount(view, 'article')
+    })
+
+    mounted() {
       state.init()
     }
   </script>

@@ -70,7 +70,7 @@
     busy = false
     error = ''
 
-    async onmount() {
+    async mounted() {
       const s = getSession()
       if (s?.token && s.exp > Date.now()) {
         // Already signed in — go straight to edit.
@@ -98,7 +98,7 @@
         const { token, handle } = await post('/otp/verify', { email: this.email, code })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
         setSession({ token, email: this.email, handle, exp: payload.exp })
-        state.go('/edit')
+        location.href = '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })
       }
@@ -155,11 +155,11 @@
     saved = false
     error = ''
 
-    async onmount() {
+    async mounted() {
       const s = getSession()
       if (!s?.token || s.exp < Date.now()) {
         setSession(null)
-        state.go('/signin')
+        location.href = '/signin'
         return
       }
       this.session = s
@@ -198,7 +198,7 @@
 
     signOut() {
       setSession(null)
-      state.go('/')
+      location.href = '/'
     }
   </script>
 </article>

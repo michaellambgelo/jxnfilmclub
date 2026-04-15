@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "@playwright/test": "^1.59.1",
     "nuekit": "2.0.0-beta.2",
     "vitest": "^2.1.0",
     "wrangler": "^3.80.0"

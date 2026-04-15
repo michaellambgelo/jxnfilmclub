@@ -36,6 +36,24 @@ test.describe('members view', () => {
   })
 })
 
+test.describe('signed-in nav', () => {
+  test('Edit account click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
+    // Seed a session so the nav shows Edit account instead of Join/Log in.
+    await page.goto('/')
+    await page.evaluate(() => {
+      localStorage.jxnfc_session = JSON.stringify({
+        token: 'bogus.sig', email: 'x@example.com', id: 'x',
+        handle: 'x', exp: Date.now() + 3600_000,
+      })
+    })
+    await page.reload()
+    await page.getByRole('link', { name: 'Edit account' }).click()
+    await page.waitForURL(/\/edit/, { timeout: 5_000 })
+    expect(page.url()).toContain('/edit')
+    expect(page.url()).not.toContain('join.jxnfilm.club')
+  })
+})
+
 test.describe('auth nav', () => {
   test('Join click navigates to join.jxnfilm.club (bypasses autolink)', async ({ page }) => {
     await page.goto('/')

@@ -15,27 +15,31 @@ jobs:
 
       - name: Append member to data/members.json
         env:
-          HANDLE: ${{ github.event.client_payload.handle }}
+          ID:     ${{ github.event.client_payload.id }}
           NAME:   ${{ github.event.client_payload.name }}
+          JOINED: ${{ github.event.client_payload.joined }}
         run: |
           python3 - <<'PY'
           import json, os, datetime, pathlib
 
+          id_ = os.environ['ID']
+          if not id_:
+              raise SystemExit('client_payload.id is required')
+
           path = pathlib.Path('data/members.json')
           members = json.loads(path.read_text())
-          handle = os.environ['HANDLE']
 
-          if any(m.get('handle') == handle for m in members):
-              print(f'{handle} already exists; skipping')
+          if any(m.get('id') == id_ for m in members):
+              print(f'{id_} already exists; skipping')
           else:
               members.append({
-                  'handle': handle,
+                  'id': id_,
                   'name': os.environ['NAME'],
-                  'joined': datetime.date.today().isoformat(),
+                  'joined': os.environ.get('JOINED') or datetime.date.today().isoformat(),
                   'pronouns': '',
               })
               path.write_text(json.dumps(members, indent=2) + '\n')
-              print(f'Added {handle}')
+              print(f'Added {id_}')
           PY
 
       - name: Commit
@@ -46,6 +50,6 @@ jobs:
             echo "No changes"
           else
             git add data/members.json
-            git commit -m "Add member: ${{ github.event.client_payload.handle }}"
+            git commit -m "Add member: ${{ github.event.client_payload.id }}"
             git push
           fi

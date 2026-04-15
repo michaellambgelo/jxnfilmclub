@@ -15,31 +15,31 @@ jobs:
 
       - name: Apply edit to data/members.json
         env:
-          EMAIL:   ${{ github.event.client_payload.email }}
+          ID:      ${{ github.event.client_payload.id }}
           UPDATES: ${{ toJSON(github.event.client_payload.updates) }}
         run: |
           python3 - <<'PY'
           import json, os, pathlib
-          # NOTE: email -> handle lookup happens in the Worker (KV). For now,
-          # updates must include { handle, ...fields }. Lock down fields here.
-          ALLOWED = {'name', 'pronouns'}
+          # Worker is the source of truth for authorization; this workflow just
+          # applies an allow-listed set of fields to the matching member row.
+          ALLOWED = {'name', 'pronouns', 'handle'}
 
+          id_ = os.environ['ID']
+          if not id_:
+              raise SystemExit('client_payload.id is required')
           updates = json.loads(os.environ['UPDATES'])
-          handle = updates.get('handle')
-          if not handle:
-              raise SystemExit('updates.handle is required')
 
           path = pathlib.Path('data/members.json')
           members = json.loads(path.read_text())
 
           for m in members:
-              if m.get('handle') == handle:
+              if m.get('id') == id_:
                   for k, v in updates.items():
-                      if k in ALLOWED:
+                      if k in ALLOWED and v is not None:
                           m[k] = v
                   break
           else:
-              raise SystemExit(f'member not found: {handle}')
+              raise SystemExit(f'member not found: {id_}')
 
           path.write_text(json.dumps(members, indent=2) + '\n')
           PY

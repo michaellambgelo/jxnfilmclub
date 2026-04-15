@@ -1,9 +1,12 @@
 import privacyHtml from './privacy.html'
 import signupHtml from './signup.html'
 
+const OTP_TTL = 600         // 10 min
+const LB_TOKEN_TTL = 172800 // 48 hours
+
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 })
 
@@ -14,14 +17,21 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors(env) })
 
-    if (request.method === 'GET' && pathname === '/')        return html(signupHtml)
+    if (request.method === 'GET' && pathname === '/')        return html(render(signupHtml, env))
     if (request.method === 'GET' && pathname === '/privacy') return html(privacyHtml)
 
-    if (request.method === 'POST' && pathname === '/signup')        return handleSignup(request, env)
-    if (request.method === 'POST' && pathname === '/signup/verify') return handleSignupVerify(request, env)
-    if (request.method === 'POST' && pathname === '/otp/request')   return handleOtpRequest(request, env)
-    if (request.method === 'POST' && pathname === '/otp/verify')    return handleOtpVerify(request, env)
-    if (request.method === 'POST' && pathname === '/member/update') return handleMemberUpdate(request, env)
+    if (request.method === 'POST' && pathname === '/signup')         return handleSignup(request, env)
+    if (request.method === 'POST' && pathname === '/signup/verify')  return handleSignupVerify(request, env)
+
+    if (request.method === 'POST' && pathname === '/otp/request')    return handleOtpRequest(request, env)
+    if (request.method === 'POST' && pathname === '/otp/verify')     return handleOtpVerify(request, env)
+
+    if (request.method === 'GET'  && pathname === '/letterboxd/status')  return handleLbStatus(request, env)
+    if (request.method === 'POST' && pathname === '/letterboxd/request') return handleLbRequest(request, env)
+    if (request.method === 'POST' && pathname === '/letterboxd/verify')  return handleLbVerify(request, env)
+
+    if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
+    if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
 
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
 
@@ -33,6 +43,10 @@ function html(body) {
   return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
 
+function render(template, env) {
+  return template.replaceAll('%SITE_ORIGIN%', env.SITE_ORIGIN || 'https://jxnfilm.club')
+}
+
 function json(env, data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -40,105 +54,93 @@ function json(env, data, status = 200) {
   })
 }
 
-// Step 1 of signup: validate handle, check for duplicates, issue a verify
-// token. Caller has 1 hour to either log a diary entry tagged with the token
-// or create a Letterboxd list named with the token, then call /signup/verify.
+const HANDLE_RE = /^[a-zA-Z0-9_-]+$/
+
+// --- Signup ---
+
+// POST /signup — (email, name, handle?)
+// Creates pending:{email} with OTP code. Also mints an LB verification tag
+// (always, even when handle is omitted — user may add one later from /edit).
+// Sends a single email containing both the code and the tag instructions.
 async function handleSignup(request, env) {
-  const { email, handle, name } = await request.json()
-  if (!email || !handle) return json(env, { error: 'email and handle required' }, 400)
-  if (!/^[a-zA-Z0-9_-]+$/.test(handle)) {
+  const { email, name, handle } = await request.json()
+  if (!email || !name) return json(env, { error: 'email and name required' }, 400)
+  if (handle && !HANDLE_RE.test(handle)) {
     return json(env, { error: 'invalid handle format' }, 400)
   }
 
-  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
-  const lb = await fetch(`${lbBase}/${encodeURIComponent(handle)}/`)
-  if (!lb.ok) return json(env, { error: 'Letterboxd profile not found' }, 400)
-
-  // Already claimed by someone else?
-  if (await env.MEMBERS_KV.get(`email:${handle}`)) {
-    return json(env, { error: 'this Letterboxd handle is already claimed by a member' }, 409)
+  if (await env.MEMBERS_KV.get(`member:${email}`)) {
+    return json(env, { error: 'this email is already a member — try signing in' }, 409)
+  }
+  if (handle) {
+    const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
+    if (claimedBy && claimedBy !== email) {
+      return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
+    }
   }
 
-  const token = `jxnfc-verify-${randomToken(8)}`
-  const pending = JSON.stringify({ email, handle, name: name || handle })
-  await env.MEMBERS_KV.put(`verify:${handle}`, JSON.stringify({ token, pending }), {
-    expirationTtl: 3600,
-  })
+  const code = randomCode()
+  const lbToken = `jxnfc-verify-${randomToken(8)}`
 
-  return json(env, {
-    ok: true,
-    token,
-    instructions:
-      `Add ${token} to your Letterboxd account in one of two ways, then return here and click Verify:\n` +
-      `  - Tag any diary entry with: ${token}\n` +
-      `  - Or create a list named: ${token}\n` +
-      `You can remove it after verification.`,
-  })
-}
+  await env.MEMBERS_KV.put(
+    `pending:${email}`,
+    JSON.stringify({ name, handle: handle || null, code }),
+    { expirationTtl: OTP_TTL },
+  )
+  await env.MEMBERS_KV.put(
+    `lb_token:${email}`,
+    JSON.stringify({ token: lbToken, handle: handle || null, exp: Date.now() + LB_TOKEN_TTL * 1000 }),
+    { expirationTtl: LB_TOKEN_TTL },
+  )
 
-// Step 2 of signup: scrape the Letterboxd profile and look for the token.
-async function handleSignupVerify(request, env) {
-  const { email, handle } = await request.json()
-  if (!email || !handle) return json(env, { error: 'email and handle required' }, 400)
-
-  const raw = await env.MEMBERS_KV.get(`verify:${handle}`)
-  if (!raw) return json(env, { error: 'no pending verification — start over' }, 404)
-
-  const { token, pending } = JSON.parse(raw)
-  const claim = JSON.parse(pending)
-  if (claim.email !== email) {
-    return json(env, { error: 'email does not match the pending claim' }, 403)
-  }
-
-  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
-  const [rssText, listsText] = await Promise.all([
-    fetch(`${lbBase}/${encodeURIComponent(handle)}/rss/`).then(r => r.text()).catch(() => ''),
-    fetch(`${lbBase}/${encodeURIComponent(handle)}/lists/`).then(r => r.text()).catch(() => ''),
-  ])
-  if (!rssText.includes(token) && !listsText.includes(token)) {
-    return json(env, {
-      error: 'token not found on the Letterboxd profile yet — make sure the diary entry or list was saved',
-    }, 422)
-  }
-
-  // Verified — write KV bidirectionally and dispatch.
-  await env.MEMBERS_KV.put(`email:${handle}`, email)
-  await env.MEMBERS_KV.put(`handle:${email}`, handle)
-  await env.MEMBERS_KV.delete(`verify:${handle}`)
-  await dispatchGithub(env, 'add-member', { handle, name: claim.name })
-
+  await sendSignupEmail(env, email, code, lbToken, handle)
   return json(env, { ok: true })
 }
 
-// Dev-only: seed KV directly. Only enabled when wrangler is started with
-// --var E2E_MODE:true (see playwright.config.ts).
-async function handleTestKv(request, env) {
-  if (request.method === 'POST') {
-    const { key, value, ttl } = await request.json()
-    await env.MEMBERS_KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined)
-    return json(env, { ok: true })
+// POST /signup/verify — (email, code)
+// Promotes pending:{email} to member:{email}, dispatches add-member with a
+// new random member id, and returns a session token. The LB token (if any)
+// stays alive for 48h so the user can complete Letterboxd verification from
+// their account page.
+async function handleSignupVerify(request, env) {
+  const { email, code } = await request.json()
+  const pendingRaw = await env.MEMBERS_KV.get(`pending:${email}`)
+  if (!pendingRaw) return json(env, { error: 'no pending signup — start over' }, 404)
+
+  const pending = JSON.parse(pendingRaw)
+  if (pending.code !== code) return json(env, { error: 'invalid code' }, 401)
+
+  const id = randomToken(10)
+  const member = {
+    id,
+    email,
+    name: pending.name,
+    pronouns: null,
+    handle: null,
+    joined: new Date().toISOString().slice(0, 10),
   }
-  if (request.method === 'DELETE') {
-    const { key } = await request.json()
-    await env.MEMBERS_KV.delete(key)
-    return json(env, { ok: true })
-  }
-  return json(env, { error: 'method not allowed' }, 405)
+  await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
+  await env.MEMBERS_KV.delete(`pending:${email}`)
+  await dispatchGithub(env, 'add-member', { id, name: member.name, joined: member.joined })
+
+  const token = await signToken(env, { email, id, exp: Date.now() + 3600_000 })
+  return json(env, { token, email, id, handle: null })
 }
 
-function randomToken(len) {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(len))
-  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
-}
+// --- Sign-in (returning members) ---
 
 async function handleOtpRequest(request, env) {
   const { email } = await request.json()
   if (!email) return json(env, { error: 'email required' }, 400)
+  if (!(await env.MEMBERS_KV.get(`member:${email}`))) {
+    // Don't leak membership existence; silently 200. The UI will just say
+    // "if this email is on file, we sent a code".
+    return json(env, { ok: true })
+  }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000))
-  await env.MEMBERS_KV.put(`otp:${email}`, code, { expirationTtl: 600 })
-  await sendOtpEmail(env, email, code)
+  const code = randomCode()
+  await env.MEMBERS_KV.put(`otp:${email}`, code, { expirationTtl: OTP_TTL })
+  await sendLoginEmail(env, email, code)
   return json(env, { ok: true })
 }
 
@@ -148,34 +150,210 @@ async function handleOtpVerify(request, env) {
   if (!stored || stored !== code) return json(env, { error: 'invalid code' }, 401)
 
   await env.MEMBERS_KV.delete(`otp:${email}`)
-  const token = await signToken(env, { email, exp: Date.now() + 3600_000 })
-  // Include the linked handle if any — lets the client prefill the edit form
-  // without a separate round-trip. null if this email isn't linked to a member.
-  const handle = await env.MEMBERS_KV.get(`handle:${email}`)
-  return json(env, { token, handle })
+  const memberRaw = await env.MEMBERS_KV.get(`member:${email}`)
+  const member = memberRaw ? JSON.parse(memberRaw) : null
+  if (!member) return json(env, { error: 'no member linked to this email' }, 403)
+
+  const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000 })
+  return json(env, { token, email, id: member.id, handle: member.handle })
 }
 
-async function handleMemberUpdate(request, env) {
-  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
-  const claims = await verifyToken(env, auth)
+// --- Letterboxd verification ---
+
+// GET /letterboxd/status — authenticated
+async function handleLbStatus(request, env) {
+  const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
-  // Resolve the handle server-side from the token's email. Any client-supplied
-  // `updates.handle` is ignored — you can only edit your own row.
-  const handle = await env.MEMBERS_KV.get(`handle:${claims.email}`)
-  if (!handle) return json(env, { error: 'no member linked to this email' }, 403)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
 
-  const body = await request.json()
-  const updates = { handle, name: body.name, pronouns: body.pronouns }
-  await dispatchGithub(env, 'update-member', { email: claims.email, updates })
+  if (member.handle) {
+    return json(env, { verified: true, handle: member.handle })
+  }
+  const lbRaw = await env.MEMBERS_KV.get(`lb_token:${claims.email}`)
+  if (lbRaw) {
+    const lb = JSON.parse(lbRaw)
+    return json(env, { pending: true, handle: lb.handle, token: lb.token, exp: lb.exp })
+  }
+  return json(env, { none: true })
+}
+
+// POST /letterboxd/request — authenticated, (handle)
+// Issues a fresh LB token with a 48h TTL, tied to the given handle.
+async function handleLbRequest(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  const { handle } = await request.json()
+  if (!handle || !HANDLE_RE.test(handle)) {
+    return json(env, { error: 'invalid handle format' }, 400)
+  }
+  const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
+  if (claimedBy && claimedBy !== claims.email) {
+    return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
+  }
+
+  const token = `jxnfc-verify-${randomToken(8)}`
+  const exp = Date.now() + LB_TOKEN_TTL * 1000
+  await env.MEMBERS_KV.put(
+    `lb_token:${claims.email}`,
+    JSON.stringify({ token, handle, exp }),
+    { expirationTtl: LB_TOKEN_TTL },
+  )
+  return json(env, { token, handle, exp })
+}
+
+// POST /letterboxd/verify — authenticated
+// Scrapes letterboxd.com/<handle>/rss/ for the pending token. RSS covers both
+// tagged diary entries and list-creation events, so a single feed check suffices.
+async function handleLbVerify(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  const lbRaw = await env.MEMBERS_KV.get(`lb_token:${claims.email}`)
+  if (!lbRaw) return json(env, { error: 'no pending verification — request a new tag' }, 410)
+  const { token, handle } = JSON.parse(lbRaw)
+  if (!handle) return json(env, { error: 'add your Letterboxd handle first' }, 400)
+
+  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
+  const rssText = await fetch(`${lbBase}/${encodeURIComponent(handle)}/rss/`)
+    .then(r => r.text())
+    .catch(() => '')
+  if (!rssText.includes(token)) {
+    return json(env, {
+      error: 'token not found on your Letterboxd RSS feed yet — make sure the diary entry or list was saved, then try again',
+    }, 422)
+  }
+
+  // Commit the link.
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+  member.handle = handle
+  await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
+  await env.MEMBERS_KV.put(`email:${handle}`, claims.email)
+  await env.MEMBERS_KV.put(`handle:${claims.email}`, handle)
+  await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+
+  await dispatchGithub(env, 'update-member', {
+    id: member.id,
+    updates: { handle },
+  })
   return json(env, { ok: true, handle })
 }
 
-// --- Resend ---
-// Requires a verified `jxnfilm.club` domain in Resend (adds SPF + DKIM DNS).
-async function sendOtpEmail(env, to, code) {
+// --- Member read + update ---
+
+async function handleMemberMe(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const raw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!raw) return json(env, { error: 'member not found' }, 404)
+  return json(env, JSON.parse(raw))
+}
+
+
+
+async function handleMemberUpdate(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  const body = await request.json()
+  const updates = {}
+  if (typeof body.name === 'string' && body.name.length) updates.name = body.name
+  if (typeof body.pronouns === 'string') updates.pronouns = body.pronouns
+  if (!Object.keys(updates).length) return json(env, { error: 'no updates' }, 400)
+
+  Object.assign(member, updates)
+  await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
+  await dispatchGithub(env, 'update-member', { id: member.id, updates })
+  return json(env, { ok: true, id: member.id })
+}
+
+// --- E2E / dev helper ---
+
+async function handleTestKv(request, env) {
+  if (request.method === 'POST') {
+    const { key, value, ttl } = await request.json()
+    await env.MEMBERS_KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined)
+    return json(env, { ok: true })
+  }
+  if (request.method === 'DELETE' && request.headers.get('Content-Type') === 'application/json') {
+    const { key } = await request.json()
+    await env.MEMBERS_KV.delete(key)
+    return json(env, { ok: true })
+  }
+  if (request.method === 'GET') {
+    const url = new URL(request.url)
+    const key = url.searchParams.get('key')
+    const prefix = url.searchParams.get('prefix')
+    if (prefix !== null) {
+      const list = await env.MEMBERS_KV.list({ prefix })
+      return json(env, { keys: list.keys.map(k => k.name) })
+    }
+    const value = await env.MEMBERS_KV.get(key)
+    return json(env, { key, value })
+  }
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url)
+    const prefix = url.searchParams.get('prefix')
+    if (prefix !== null) {
+      const list = await env.MEMBERS_KV.list({ prefix })
+      await Promise.all(list.keys.map(k => env.MEMBERS_KV.delete(k.name)))
+      return json(env, { deleted: list.keys.length })
+    }
+  }
+  return json(env, { error: 'method not allowed' }, 405)
+}
+
+// --- Email ---
+
+async function sendSignupEmail(env, to, code, lbToken, handle) {
+  const subject = 'Your Jackson Film Club membership code'
+  const lbLine = handle
+    ? `letterboxd.com/${handle}`
+    : 'your Letterboxd profile'
+  const text = [
+    `Your membership code: ${code}`,
+    '',
+    'Enter this 6-digit code on https://jxnfilm.club/signin to confirm your',
+    'Jackson Film Club membership. This code expires in 10 minutes.',
+    '',
+    '---',
+    '',
+    'Optional — verify your Letterboxd profile',
+    '',
+    `To add a verified link to ${lbLine} on your member entry, add this tag`,
+    'to a diary entry or a list on your Letterboxd profile:',
+    '',
+    `  ${lbToken}`,
+    '',
+    `(expires in 48 hours)`,
+    '',
+    'Then visit https://jxnfilm.club/edit and click "Verify Letterboxd".',
+  ].join('\n')
+  await sendEmail(env, to, subject, text)
+}
+
+async function sendLoginEmail(env, to, code) {
+  const text = [
+    `Your login code: ${code}`,
+    '',
+    'This code expires in 10 minutes.',
+    "If you didn't request it, ignore this email.",
+  ].join('\n')
+  await sendEmail(env, to, 'Your Jackson Film Club login code', text)
+}
+
+async function sendEmail(env, to, subject, text) {
   if (env.E2E_MODE === 'true') {
-    await env.MEMBERS_KV.put(`__last_otp__`, JSON.stringify({ to, code }))
+    await env.MEMBERS_KV.put('__last_email__', JSON.stringify({ to, subject, text }))
     return
   }
   const res = await fetch('https://api.resend.com/emails', {
@@ -187,17 +365,18 @@ async function sendOtpEmail(env, to, code) {
     body: JSON.stringify({
       from: 'Jackson Film Club <noreply@join.jxnfilm.club>',
       to: [to],
-      subject: 'Your Jackson Film Club login code',
-      text: `Your login code: ${code}\n\nThis code expires in 10 minutes.\nIf you didn't request it, ignore this email.`,
+      subject,
+      text,
     }),
   })
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`)
 }
 
 // --- GitHub dispatch ---
+
 async function dispatchGithub(env, event_type, client_payload) {
   if (env.E2E_MODE === 'true') {
-    await env.MEMBERS_KV.put(`__last_dispatch__`, JSON.stringify({ event_type, client_payload }))
+    await env.MEMBERS_KV.put('__last_dispatch__', JSON.stringify({ event_type, client_payload }))
     return
   }
   const res = await fetch(
@@ -215,7 +394,13 @@ async function dispatchGithub(env, event_type, client_payload) {
   if (!res.ok) throw new Error(`GitHub dispatch ${res.status}: ${await res.text()}`)
 }
 
-// --- Tokens: HMAC-SHA256 over base64url(JSON) ---
+// --- Tokens ---
+
+async function authorize(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  return verifyToken(env, auth)
+}
+
 async function signToken(env, claims) {
   const payload = b64u(JSON.stringify(claims))
   const sig = await hmac(env.OTP_SIGNING_KEY, payload)
@@ -243,4 +428,14 @@ async function hmac(secret, message) {
 
 function b64u(s) {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function randomCode() {
+  return String(Math.floor(100000 + Math.random() * 900000))
+}
+
+function randomToken(len) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(len))
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
 }

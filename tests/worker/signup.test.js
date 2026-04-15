@@ -5,195 +5,155 @@ function mockFetch(handler) {
   globalThis.fetch = vi.fn(handler)
 }
 
+function post(path, body) {
+  return SELF.fetch(`https://join.jxnfilm.club${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('POST /signup (request)', () => {
-  it('happy path: valid + unclaimed handle returns a verify token, stores pending KV, no GH dispatch yet', async () => {
+describe('POST /signup', () => {
+  it('stores pending + lb_token, sends combined email, no GH dispatch', async () => {
     const calls = []
-    mockFetch(async (url) => {
-      calls.push(String(url))
-      if (String(url).startsWith('https://letterboxd.com/')) {
-        return new Response('<html>ok</html>', { status: 200 })
-      }
-      throw new Error(`unexpected fetch: ${url}`)
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response(JSON.stringify({ id: 'x' }), { status: 200 })
     })
 
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'alice', name: 'Alice', email: 'alice@example.com' }),
+    const res = await post('/signup', {
+      email: 'alice@example.com', name: 'Alice', handle: 'alice',
     })
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.ok).toBe(true)
-    expect(body.token).toMatch(/^jxnfc-verify-[A-Za-z0-9]{8}$/)
+    expect((await res.json()).ok).toBe(true)
 
-    // Pending verification stored in KV
-    const stored = await env.MEMBERS_KV.get('verify:alice')
-    expect(stored).toBeTruthy()
-    const parsed = JSON.parse(stored)
-    expect(parsed.token).toBe(body.token)
-    expect(JSON.parse(parsed.pending)).toEqual({
-      email: 'alice@example.com',
-      handle: 'alice',
-      name: 'Alice',
-    })
+    const pending = JSON.parse(await env.MEMBERS_KV.get('pending:alice@example.com'))
+    expect(pending.name).toBe('Alice')
+    expect(pending.handle).toBe('alice')
+    expect(pending.code).toMatch(/^\d{6}$/)
 
-    // Real KV mappings NOT yet written, no GH dispatch
-    expect(await env.MEMBERS_KV.get('email:alice')).toBeNull()
-    expect(calls.some(u => u.includes('api.github.com'))).toBe(false)
+    const lb = JSON.parse(await env.MEMBERS_KV.get('lb_token:alice@example.com'))
+    expect(lb.token).toMatch(/^jxnfc-verify-[A-Za-z0-9]{8}$/)
+    expect(lb.handle).toBe('alice')
+
+    const resend = calls.find(c => c.url === 'https://api.resend.com/emails')
+    expect(resend).toBeTruthy()
+    const body = JSON.parse(resend.init.body)
+    expect(body.to).toEqual(['alice@example.com'])
+    expect(body.text).toContain(pending.code)
+    expect(body.text).toContain(lb.token)
+    expect(body.text).toContain('letterboxd.com/alice')
+    expect(body.text).toContain('a diary entry or a list')
+
+    expect(calls.some(c => c.url.includes('api.github.com'))).toBe(false)
   })
 
-  it('returns 409 if the handle is already claimed', async () => {
-    await env.MEMBERS_KV.put('email:taken', 'someone@example.com')
-    mockFetch(async () => new Response('ok', { status: 200 }))
+  it('still issues an lb_token when no handle is given (user may add one later)', async () => {
+    const calls = []
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response(JSON.stringify({ id: 'x' }), { status: 200 })
+    })
 
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'taken', email: 'me@example.com' }),
+    await post('/signup', { email: 'nolb@example.com', name: 'Charlie' })
+
+    const lb = JSON.parse(await env.MEMBERS_KV.get('lb_token:nolb@example.com'))
+    expect(lb.token).toMatch(/^jxnfc-verify-/)
+    expect(lb.handle).toBeNull()
+
+    const body = JSON.parse(calls.find(c => c.url === 'https://api.resend.com/emails').init.body)
+    expect(body.text).toContain(lb.token)
+    expect(body.text).toContain('your Letterboxd profile')
+  })
+
+  it('rejects when email is already a member', async () => {
+    await env.MEMBERS_KV.put('member:existing@example.com', JSON.stringify({ id: 'x' }))
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup', { email: 'existing@example.com', name: 'X' })
+    expect(res.status).toBe(409)
+  })
+
+  it('rejects when handle is claimed by a different email', async () => {
+    await env.MEMBERS_KV.put('email:taken', 'someone@example.com')
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup', {
+      email: 'me@example.com', name: 'Me', handle: 'taken',
     })
     expect(res.status).toBe(409)
-    const body = await res.json()
-    expect(body.error).toMatch(/already claimed/)
   })
 
-  it('returns 400 for invalid handle format', async () => {
-    mockFetch(async () => new Response('ok', { status: 200 }))
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'has spaces', email: 'x@y.com' }),
-    })
-    expect(res.status).toBe(400)
-  })
-
-  it('returns 400 when email is missing', async () => {
+  it('rejects invalid handle format', async () => {
     mockFetch(async () => new Response('', { status: 200 }))
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'alice' }),
+    const res = await post('/signup', {
+      email: 'x@y.com', name: 'X', handle: 'has spaces',
     })
     expect(res.status).toBe(400)
   })
 
-  it('returns 400 "Letterboxd profile not found" on LB 404', async () => {
-    mockFetch(async (url) => {
-      if (String(url).startsWith('https://letterboxd.com/')) {
-        return new Response('not found', { status: 404 })
-      }
-      throw new Error(`unexpected fetch: ${url}`)
-    })
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'ghost', email: 'g@example.com' }),
-    })
-    expect(res.status).toBe(400)
+  it('rejects missing fields', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
+    expect((await post('/signup', { email: 'a@b.com' })).status).toBe(400)
+    expect((await post('/signup', { name: 'X' })).status).toBe(400)
   })
 })
 
 describe('POST /signup/verify', () => {
-  async function startSignup(handle, email, name = 'X') {
-    mockFetch(async () => new Response('ok', { status: 200 }))
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle, email, name }),
-    })
-    return (await res.json()).token
+  async function startSignup(email, name, handle) {
+    mockFetch(async () => new Response('', { status: 200 }))
+    await post('/signup', { email, name, handle })
+    return JSON.parse(await env.MEMBERS_KV.get(`pending:${email}`)).code
   }
 
-  it('verifies via diary RSS containing the token, dispatches add-member, writes both KV directions', async () => {
-    const token = await startSignup('rssuser', 'rss@example.com', 'RSS User')
+  it('valid code promotes pending → member, dispatches add-member, issues token', async () => {
+    const code = await startSignup('bob@example.com', 'Bob')
 
     const calls = []
-    mockFetch(async (url) => {
-      const u = String(url)
-      calls.push(u)
-      if (u.endsWith('/rss/')) {
-        return new Response(`<rss><item><category>${token}</category></item></rss>`, { status: 200 })
-      }
-      if (u.endsWith('/lists/')) {
-        return new Response('<html>nothing</html>', { status: 200 })
-      }
-      if (u.includes('api.github.com')) return new Response('', { status: 204 })
-      throw new Error(`unexpected fetch: ${u}`)
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      if (String(url).includes('api.github.com')) return new Response('', { status: 204 })
+      return new Response('', { status: 200 })
     })
 
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'rssuser', email: 'rss@example.com' }),
-    })
+    const res = await post('/signup/verify', { email: 'bob@example.com', code })
     expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.token.split('.').length).toBe(2)
+    expect(body.id).toMatch(/^[A-Za-z0-9]{10}$/)
+    expect(body.handle).toBeNull()
 
-    expect(await env.MEMBERS_KV.get('email:rssuser')).toBe('rss@example.com')
-    expect(await env.MEMBERS_KV.get('handle:rss@example.com')).toBe('rssuser')
-    expect(await env.MEMBERS_KV.get('verify:rssuser')).toBeNull()
+    const member = JSON.parse(await env.MEMBERS_KV.get('member:bob@example.com'))
+    expect(member.name).toBe('Bob')
+    expect(member.handle).toBeNull()
+    expect(member.id).toBe(body.id)
+    expect(await env.MEMBERS_KV.get('pending:bob@example.com')).toBeNull()
 
-    const gh = calls.find(u => u.includes('api.github.com'))
+    // lb_token persists for 48h so user can still verify Letterboxd later.
+    expect(await env.MEMBERS_KV.get('lb_token:bob@example.com')).toBeTruthy()
+
+    const gh = calls.find(c => c.url.includes('api.github.com'))
     expect(gh).toBeTruthy()
+    const dispatch = JSON.parse(gh.init.body)
+    expect(dispatch.event_type).toBe('add-member')
+    expect(dispatch.client_payload.id).toBe(body.id)
+    expect(dispatch.client_payload.name).toBe('Bob')
   })
 
-  it('verifies via lists page containing the token', async () => {
-    const token = await startSignup('listuser', 'list@example.com')
-    mockFetch(async (url) => {
-      const u = String(url)
-      if (u.endsWith('/rss/')) return new Response('<rss/>', { status: 200 })
-      if (u.endsWith('/lists/')) return new Response(`<html>list named ${token}</html>`, { status: 200 })
-      if (u.includes('api.github.com')) return new Response('', { status: 204 })
-      throw new Error(`unexpected fetch: ${u}`)
-    })
-
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'listuser', email: 'list@example.com' }),
-    })
-    expect(res.status).toBe(200)
-  })
-
-  it('returns 422 when token is not present anywhere on the profile', async () => {
-    await startSignup('forgetful', 'forget@example.com')
-    mockFetch(async (url) => {
-      if (String(url).endsWith('/rss/'))   return new Response('<rss/>', { status: 200 })
-      if (String(url).endsWith('/lists/')) return new Response('<html/>', { status: 200 })
-      throw new Error(`unexpected fetch: ${url}`)
-    })
-
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'forgetful', email: 'forget@example.com' }),
-    })
-    expect(res.status).toBe(422)
-
-    // No KV writes, no dispatch
-    expect(await env.MEMBERS_KV.get('email:forgetful')).toBeNull()
-  })
-
-  it('returns 404 when there is no pending verification', async () => {
+  it('rejects wrong code with 401 and leaves pending intact', async () => {
+    await startSignup('wrong@example.com', 'W')
     mockFetch(async () => new Response('', { status: 200 }))
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'nobody', email: 'x@y.com' }),
-    })
+    const res = await post('/signup/verify', { email: 'wrong@example.com', code: '000000' })
+    expect(res.status).toBe(401)
+    expect(await env.MEMBERS_KV.get('pending:wrong@example.com')).toBeTruthy()
+    expect(await env.MEMBERS_KV.get('member:wrong@example.com')).toBeNull()
+  })
+
+  it('returns 404 when there is no pending signup', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup/verify', { email: 'nobody@example.com', code: '123456' })
     expect(res.status).toBe(404)
-  })
-
-  it('returns 403 if a different email tries to verify a pending claim', async () => {
-    await startSignup('contested', 'first@example.com')
-    mockFetch(async () => new Response('', { status: 200 }))
-    const res = await SELF.fetch('https://join.jxnfilm.club/signup/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: 'contested', email: 'attacker@example.com' }),
-    })
-    expect(res.status).toBe(403)
   })
 })

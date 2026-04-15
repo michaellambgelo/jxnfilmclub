@@ -23,76 +23,58 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { color: #888; font-size: 0.85rem; }
     .hint a { color: #0a58ca; }
-    .panel {
-      margin-top: 1.5rem; padding: 1rem 1.25rem; border-radius: 6px;
-      background: #f3f4f6; border: 1px solid #e5e7eb;
-    }
-    .panel code {
-      display: inline-block; padding: 0.15em 0.45em;
-      background: #fff; border: 1px solid #ddd; border-radius: 3px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.95em;
-    }
-    .panel ul { padding-left: 1.25rem; margin: 0.5rem 0; }
-    .panel li { margin: 0.4rem 0; }
     .ok { background: #e6f7ea; color: #185628; padding: 0.75rem; border-radius: 4px; }
     .err { background: #fdecec; color: #8a1f1f; padding: 0.75rem; border-radius: 4px; }
+    .back { background: none; color: #0a58ca; padding: 0; font-weight: 400; text-align: left; }
   </style>
 </head>
 <body>
   <nav class="topnav">
-    <a href="https://jxnfilm.club/">← Back to Jackson Film Club</a>
+    <a href="%SITE_ORIGIN%/">← Back to Jackson Film Club</a>
   </nav>
 
   <h1>Join Jackson Film Club</h1>
-  <p class="lede">List your Letterboxd profile in
-    <a href="https://jxnfilm.club/">the member directory</a>.</p>
+  <p class="lede">Confirm your email to become a member. Letterboxd
+    verification is optional and can be done any time after you sign up.</p>
 
   <!-- Step 1: details -->
   <form id="signup-form">
     <label>Display name
       <input type="text" name="name" required autocomplete="name">
     </label>
-    <label>Letterboxd username
-      <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
-             placeholder="e.g. davidehrlich" autocomplete="off">
-    </label>
     <label>Email
       <input type="email" name="email" required autocomplete="email">
     </label>
-    <button type="submit">Continue</button>
-    <p class="hint">
-      Your email is used only to send login codes and is never shown publicly.
-      <a href="/privacy">Privacy policy</a>.
-    </p>
+    <label>Letterboxd username <span class="hint">— optional</span>
+      <input type="text" name="handle" pattern="[a-zA-Z0-9_-]+"
+             placeholder="e.g. davidehrlich" autocomplete="off">
+    </label>
+    <button type="submit">Email me a code</button>
+    <p class="hint">Your email is used only for login codes and is never
+      shown publicly. <a href="/privacy">Privacy policy</a>.</p>
   </form>
 
-  <!-- Step 2: verify ownership (hidden until step 1 succeeds) -->
-  <div id="verify-panel" hidden>
-    <div class="panel">
-      <p><b>One last step.</b> Prove you own this Letterboxd profile by
-         placing your verification token somewhere on it:</p>
-      <ul>
-        <li>Tag any diary entry with <code id="vtoken"></code></li>
-        <li><b>or</b> create a Letterboxd list named <code id="vtoken2"></code> (it can be empty)</li>
-      </ul>
-      <p class="hint">You can remove the tag/list right after we verify it.
-         The token expires in 1 hour.</p>
-    </div>
-    <form id="verify-form">
-      <button type="submit">I've added it — verify me</button>
-      <button type="button" class="hint" onclick="location.reload()">← Start over</button>
-    </form>
-  </div>
+  <!-- Step 2: code -->
+  <form id="code-form" hidden>
+    <p class="lede">We sent a 6-digit code to <b id="code-email"></b>. It
+      expires in 10 minutes. The same email also contains a Letterboxd
+      verification tag you can optionally add to your profile.</p>
+    <label>Code
+      <input type="text" name="code" required inputmode="numeric" maxlength="6">
+    </label>
+    <button type="submit">Confirm membership</button>
+    <button type="button" class="back" id="back">← Use a different email</button>
+  </form>
 
   <div id="status"></div>
 
   <script>
     const signup = document.getElementById('signup-form')
-    const verify = document.getElementById('verify-form')
-    const panel  = document.getElementById('verify-panel')
+    const codeForm = document.getElementById('code-form')
+    const codeEmail = document.getElementById('code-email')
     const status = document.getElementById('status')
-    let claim = null
+    const back = document.getElementById('back')
+    let email = ''
 
     function show(kind, msg) {
       status.className = kind
@@ -105,6 +87,7 @@
       btn.disabled = true
       show('', '')
       const data = Object.fromEntries(new FormData(signup))
+      if (!data.handle) delete data.handle
 
       try {
         const res = await fetch('/signup', {
@@ -112,45 +95,48 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         })
-        const body = await res.json()
+        const body = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(body.error || 'Signup failed')
 
-        claim = data
-        document.getElementById('vtoken').textContent = body.token
-        document.getElementById('vtoken2').textContent = body.token
+        email = data.email
+        codeEmail.textContent = email
         signup.hidden = true
-        panel.hidden = false
+        codeForm.hidden = false
       } catch (err) {
         show('err', err.message)
         btn.disabled = false
       }
     })
 
-    verify.addEventListener('submit', async (e) => {
+    codeForm.addEventListener('submit', async (e) => {
       e.preventDefault()
-      const btn = verify.querySelector('button[type="submit"]')
+      const btn = codeForm.querySelector('button[type="submit"]')
       btn.disabled = true
       show('', '')
+      const code = new FormData(codeForm).get('code')
       try {
         const res = await fetch('/signup/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: claim.email, handle: claim.handle }),
+          body: JSON.stringify({ email, code }),
         })
-        const body = await res.json()
+        const body = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(body.error || 'Verification failed')
 
-        panel.hidden = true
-        verify.hidden = true
-        status.className = 'ok'
-        status.innerHTML = `Welcome, ${claim.name}! You'll appear on
-          <a href="https://jxnfilm.club/">jxnfilm.club</a> shortly.
-          You can remove the verification tag/list now.<br><br>
-          <a href="https://jxnfilm.club/">→ See the member directory</a>`
+        // Hand off the session to the main site. Fragment, not query, so
+        // the token never hits a server access log.
+        location.href = '%SITE_ORIGIN%/edit#token=' + encodeURIComponent(body.token)
       } catch (err) {
         show('err', err.message)
         btn.disabled = false
       }
+    })
+
+    back.addEventListener('click', () => {
+      codeForm.hidden = true
+      signup.hidden = false
+      signup.querySelector('button').disabled = false
+      show('', '')
     })
   </script>
 </body>

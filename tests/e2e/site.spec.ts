@@ -2,7 +2,7 @@ import { test, expect } from './fixtures'
 
 test.describe('members view', () => {
   test('renders members from data/members.json', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/members')
     await expect(page.locator('h1')).toHaveText('Members')
     await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
     await expect(page.getByRole('link', { name: '@michaellamb' })).toHaveAttribute(
@@ -11,7 +11,7 @@ test.describe('members view', () => {
   })
 
   test('search updates ?query= and filters rows', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/members')
     await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
     await page.getByPlaceholder('Search members').fill('nobody-matches-this')
     await expect.poll(() => page.url()).toContain('query=nobody-matches-this')
@@ -19,13 +19,13 @@ test.describe('members view', () => {
   })
 
   test('sort select updates ?sort=', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/members')
     await page.getByRole('combobox').selectOption('name')
     await expect.poll(() => page.url()).toContain('sort=name')
   })
 
   test('@handle link opens Letterboxd in a new tab (bypasses autolink)', async ({ page, context }) => {
-    await page.goto('/')
+    await page.goto('/members')
     await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
     const [popup] = await Promise.all([
       context.waitForEvent('page', { timeout: 5_000 }),
@@ -85,7 +85,7 @@ test.describe('events view', () => {
 
 test.describe('avatar widget', () => {
   test('renders with deterministic background color', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/members')
     const avatar = page.locator('figure.avatar').first()
     await expect(avatar).toBeVisible()
     const bg = await avatar.getAttribute('style')

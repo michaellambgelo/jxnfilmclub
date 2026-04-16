@@ -38,7 +38,7 @@
   <header>
     <nav class="mastnav wrap">
       <a href="/" class="logo"><img src="/img/logo.png" alt=""> Jackson Film Club</a>
-      <a href="/">Members</a>
+      <a href="/members">Members</a>
       <a href="/events">Events</a>
       <a href="/watched">Watched</a>
       <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
@@ -55,12 +55,13 @@
     state.on('type', ({ type }) => {
       this.update({ signedIn: isSignedIn() })
       const view =
+        type === 'members' ? 'members-view' :
         type === 'events'  ? 'events-view' :
         type === 'watched' ? 'watched-view' :
         type === 'signin'  ? 'sign-in-view' :
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :
-                             'members-view'
+                             'home-view'
       this.mount(view, 'article')
     })
 

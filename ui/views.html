@@ -7,6 +7,80 @@
 </script>
 
 
+<!-- Home / landing page -->
+<article :is="home-view" class="home">
+
+  <section class="home-hero">
+    <h1>Jackson Film Club</h1>
+    <p>
+      A community space for analytical conversations about cinema, founded in Jackson, Mississippi in 2018.
+      Sign up for email alerts to participate in screenings, discussions, and events.
+    </p>
+    <p>
+      Membership is public — pick a display name that represents you however you like.
+      Your email address is always private. Link a Letterboxd account if you want, or don't.
+      Anyone who wants a purely anonymous experience can choose a creative display name
+      with no connection to their real-life persona.
+    </p>
+    <a href="https://join.jxnfilm.club/" class="join-btn">Join Jackson Film Club</a>
+  </section>
+
+  <section class="home-podcast">
+    <h2>Podcast</h2>
+    <p>
+      The audio series launched in 2021 to extend JXN Film Club discussions to a broader audience.
+    </p>
+
+    <div class="podcast-embed" id="spotify-embed"></div>
+
+    <h3>All Episodes</h3>
+    <ul class="episode-list">
+      <li :each="ep in episodes" key="{ ep.url }">
+        <a href="{ ep.url }" target="_blank" rel="noopener">{ ep.title }</a>
+        <span>{ formatDate(ep.date) }</span>
+      </li>
+    </ul>
+    <p class="podcast-cta">
+      <a href="https://open.spotify.com/show/6iL1D2abg8G8JQqvJa3XBp" target="_blank" rel="noopener">Follow on Spotify</a>
+    </p>
+  </section>
+
+  <script>
+    async mounted() {
+      const data = await fetch('/data/episodes.json')
+        .then(r => r.ok ? r.json() : {}).catch(() => ({}))
+      const episodes = data.episodes || []
+      const featuredId = data.featured_id
+      this.update({ episodes })
+
+      const el = this.root.querySelector('#spotify-embed')
+      if (el) {
+        const iframe = document.createElement('iframe')
+        iframe.src = featuredId
+          ? `https://open.spotify.com/embed/episode/${featuredId}/video?utm_source=generator`
+          : 'https://open.spotify.com/embed/show/6iL1D2abg8G8JQqvJa3XBp?utm_source=generator'
+        iframe.width = '100%'
+        iframe.height = '351'
+        iframe.frameBorder = '0'
+        iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture'
+        iframe.allowFullscreen = true
+        iframe.loading = 'lazy'
+        iframe.style.borderRadius = '12px'
+        el.appendChild(iframe)
+      }
+    }
+
+    formatDate(ts) {
+      if (!ts) return ''
+      return new Date(ts + 'T00:00:00').toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short',
+      })
+    }
+  </script>
+
+</article>
+
+
 <!-- Members list -->
 <article :is="members-view">
   <h1>Members</h1>

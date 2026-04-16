@@ -75,9 +75,16 @@
     <label>
       <b>Sort by:</b>
       <select :onchange="state.sort = $event.target.value">
-        <option value="date" :selected="(state.sort || 'date') === 'date'">Date</option>
-        <option value="title" :selected="state.sort === 'title'">Title</option>
-        <option value="film" :selected="state.sort === 'film'">Film</option>
+        <option value="date-desc" :selected="(state.sort || 'date-desc') === 'date-desc'">Date (Latest first)</option>
+        <option value="date-asc" :selected="state.sort === 'date-asc'">Date (Earliest first)</option>
+      </select>
+    </label>
+
+    <label>
+      <b>Venue:</b>
+      <select :onchange="state.venue = $event.target.value">
+        <option value="" :selected="!state.venue">All venues</option>
+        <option :each="v in venues" key="{ v }" value="{ v }" :selected="state.venue === v">{ v }</option>
       </select>
     </label>
   </header>
@@ -131,18 +138,26 @@
       } catch { return null }
     }
 
-    state.on('query sort', () => this.reload())
+    state.on('query sort venue', () => this.reload())
 
     async reload() {
       const [{ items, total }, attendance] = await Promise.all([
-        getEvents({ search: state.query, sort: state.sort, limit: 1000 }),
+        getEvents({
+          search: state.query,
+          sort: state.sort || 'date-desc',
+          venue: state.venue,
+          limit: 1000,
+        }),
         fetch('./data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
       ])
       this.update({ items, total, attendance })
     }
 
     async mounted() {
-      this.update({ session: getSession(), busyId: null, attendance: {} })
+      this.update({ session: getSession(), busyId: null, attendance: {}, venues: [] })
+      const all = await getEvents({ limit: 1000 })
+      const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
+      this.update({ venues })
       await this.reload()
     }
 

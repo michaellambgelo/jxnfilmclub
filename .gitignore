@@ -1,4 +1,5 @@
 .DS_Store
+.claude/
 .dist/
 node_modules/
 worker/node_modules/

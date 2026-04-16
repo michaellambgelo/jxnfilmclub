@@ -128,7 +128,16 @@
   </table>
 
   <script>
-    const WORKER_ORIGIN = globalThis.JXNFC_WORKER_ORIGIN || 'https://join.jxnfilm.club'
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
 
     function getSession() {
       try {

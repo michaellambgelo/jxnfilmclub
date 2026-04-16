@@ -6,7 +6,7 @@ on:
   workflow_run:
     # Rebuild when bot workflows commit to main (GH's default token doesn't
     # fire push events, so chain via workflow_run instead).
-    workflows: [Add member, Update member, Refresh Letterboxd data]
+    workflows: [Add member, Update member, Refresh Letterboxd data, Refresh Spotify episodes]
     types: [completed]
     branches: [main]
   workflow_dispatch: {}
@@ -63,6 +63,9 @@ jobs:
 
   deploy:
     needs: build
+    # Bot-driven redeploys skip the `test` job, which causes GitHub to mark
+    # this job as skipped by default even though `build` succeeded. Force it.
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

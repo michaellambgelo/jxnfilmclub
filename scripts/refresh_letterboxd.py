@@ -16,6 +16,7 @@ RSS field names need verification against a real feed.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -33,16 +34,25 @@ def dump(name: str, value: Any) -> None:
     (DATA / name).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
 
+def extract_poster(description: str) -> str | None:
+    m = re.search(r'<img\s[^>]*src="([^"]+)"', description or '')
+    return m.group(1) if m else None
+
+
 def last_four_watched(handle: str) -> list[dict]:
     feed = feedparser.parse(f'https://letterboxd.com/{handle}/rss/')
     out = []
     for entry in feed.entries[:4]:
-        out.append({
+        film: dict[str, Any] = {
             'title': entry.get('letterboxd_filmtitle', entry.title),
             'year':  entry.get('letterboxd_filmyear'),
             'link':  entry.link,
             'watched_date': entry.get('letterboxd_watcheddate'),
-        })
+        }
+        poster = extract_poster(entry.get('summary', ''))
+        if poster:
+            film['poster'] = poster
+        out.append(film)
     return out
 
 

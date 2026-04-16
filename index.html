@@ -40,6 +40,7 @@
       <a href="/" class="logo"><img src="/img/logo.png" alt=""> Jackson Film Club</a>
       <a href="/">Members</a>
       <a href="/events">Events</a>
+      <a href="/watched">Watched</a>
       <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
       <a :if="!signedIn" href="/signin">Log in</a>
       <a :if="signedIn" href="/edit">Edit account</a>
@@ -54,11 +55,12 @@
     state.on('type', ({ type }) => {
       this.update({ signedIn: isSignedIn() })
       const view =
-        type === 'events' ? 'events-view' :
-        type === 'signin' ? 'sign-in-view' :
-        type === 'verify' ? 'verify-view' :
-        type === 'edit'   ? 'edit-view' :
-                            'members-view'
+        type === 'events'  ? 'events-view' :
+        type === 'watched' ? 'watched-view' :
+        type === 'signin'  ? 'sign-in-view' :
+        type === 'verify'  ? 'verify-view' :
+        type === 'edit'    ? 'edit-view' :
+                             'members-view'
       this.mount(view, 'article')
     })
 

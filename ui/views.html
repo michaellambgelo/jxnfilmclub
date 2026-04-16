@@ -63,6 +63,51 @@
 </article>
 
 
+<!-- Last Four Watched -->
+<article :is="watched-view">
+  <h1>Last Four Watched</h1>
+
+  <section :each="member in members" key="{ member.handle }" class="watched-member">
+    <header class="watched-member-header">
+      <avatar :name="member.name"/>
+      <div>
+        <h2>{ member.name }</h2>
+        <a :if="member.handle" href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
+      </div>
+    </header>
+
+    <div class="film-grid">
+      <a :each="film in member.films" key="{ film.link }" class="film-card"
+        href="{ film.link }" target="_blank" rel="noopener">
+        <img :if="film.poster" src="{ film.poster }" alt="{ film.title }" class="film-poster">
+        <div :if="!film.poster" class="film-poster film-poster-placeholder">
+          <span>{ film.title }</span>
+        </div>
+        <div class="film-info">
+          <h3>{ film.title }</h3>
+          <span :if="film.year">{ film.year }</span>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <p :if="members && !members.length" class="empty-state">No watched films to show yet.</p>
+
+  <script>
+    async mounted() {
+      const [{ items }, watched] = await Promise.all([
+        getMembers({ limit: 1000 }),
+        fetch('/data/watched.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+      ])
+      const members = items
+        .filter(m => m.handle && watched[m.handle]?.length)
+        .map(m => ({ ...m, films: watched[m.handle] }))
+      this.update({ members })
+    }
+  </script>
+</article>
+
+
 <!-- Events list -->
 <article :is="events-view">
   <h1>Events</h1>
@@ -157,7 +202,7 @@
           venue: state.venue,
           limit: 1000,
         }),
-        fetch('./data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
       ])
       this.update({ items, total, attendance })
     }

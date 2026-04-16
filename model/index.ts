@@ -2,7 +2,7 @@
 const is_browser = typeof window == 'object'
 
 async function fetchJson(path: string) {
-  const url = is_browser ? `./${path}` : `file:${process.cwd()}/${path}`
+  const url = is_browser ? `/${path}` : `file:${process.cwd()}/${path}`
   const res = await fetch(url)
   return await res.json()
 }

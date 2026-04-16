@@ -1,0 +1,37 @@
+name: Refresh Spotify episodes
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'   # weekly, Monday at noon UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install feedparser
+
+      - name: Refresh episodes
+        run: python3 scripts/refresh_spotify.py
+
+      - name: Commit data updates
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet data/; then
+            echo "No data changes"
+          else
+            git add data/episodes.json
+            git commit -m "chore: refresh Spotify episodes"
+            git push
+          fi

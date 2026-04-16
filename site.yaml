@@ -1,6 +1,7 @@
 
 meta:
   title: Jackson Film Club
+  favicon: /img/favicon.ico
 
 import_map:
   app: /model/index.js

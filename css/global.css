@@ -1,4 +1,11 @@
 
+:root {
+  --brand: #009898;
+  --brand-dark: #007a7a;
+  --accent: #e00000;
+  --ink: #222;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -56,8 +63,8 @@ body > header {
 
 
 a.selected {
-  color: black;
-  border-color: black;
+  color: var(--brand);
+  border-color: var(--brand);
   cursor: default;
 }
 

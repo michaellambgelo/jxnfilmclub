@@ -59,64 +59,67 @@ describe('POST /events/:id/attend', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 403 when member has no linked Letterboxd handle', async () => {
-    const { token } = await getTokenFor('nohandle@example.com')
-    const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'POST', {}, token)
-    expect(res.status).toBe(403)
-  })
-
-  it('appends handle, writes KV, dispatches update-attendance', async () => {
-    const { token, member } = await getTokenFor('attend@example.com', { handle: 'alice' })
+  it('appends name, writes KV, dispatches update-attendance', async () => {
+    const { token, member } = await getTokenFor('attend@example.com', { name: 'Alice Test' })
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
 
     const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'POST', {}, token)
     expect(res.status).toBe(200)
-    expect((await res.json()).attendees).toEqual(['alice'])
+    expect((await res.json()).attendees).toEqual(['Alice Test'])
 
     const stored = JSON.parse(await env.ATTENDANCE_KV.get(`attend:${EVENT_ID}`))
-    expect(stored).toEqual(['alice'])
+    expect(stored).toEqual(['Alice Test'])
 
     const gh = calls.find(c => c.url.includes('api.github.com'))
     const dispatch = JSON.parse(gh.init.body)
     expect(dispatch.event_type).toBe('update-attendance')
-    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, handle: 'alice', action: 'add' })
+    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, name: 'Alice Test', action: 'add' })
     expect(member.id).toBeTruthy()
   })
 
+  it('works for members without a Letterboxd handle', async () => {
+    const { token } = await getTokenFor('nohandle@example.com', { name: 'No Handle' })
+    mockFetch(async () => new Response('', { status: 204 }))
+
+    const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'POST', {}, token)
+    expect(res.status).toBe(200)
+    expect((await res.json()).attendees).toEqual(['No Handle'])
+  })
+
   it('is idempotent — second attend does not duplicate or re-dispatch', async () => {
-    const { token } = await getTokenFor('idem@example.com', { handle: 'bob' })
-    await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['bob']))
+    const { token } = await getTokenFor('idem@example.com', { name: 'Bob Test' })
+    await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['Bob Test']))
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
 
     const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'POST', {}, token)
     expect(res.status).toBe(200)
-    expect((await res.json()).attendees).toEqual(['bob'])
+    expect((await res.json()).attendees).toEqual(['Bob Test'])
     expect(calls.find(c => c.url.includes('api.github.com'))).toBeUndefined()
   })
 })
 
 describe('DELETE /events/:id/attend', () => {
-  it('removes handle and dispatches when present', async () => {
-    const { token } = await getTokenFor('rem@example.com', { handle: 'cara' })
-    await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['cara', 'dan']))
+  it('removes name and dispatches when present', async () => {
+    const { token } = await getTokenFor('rem@example.com', { name: 'Cara Test' })
+    await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['Cara Test', 'Dan Test']))
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
 
     const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'DELETE', undefined, token)
     expect(res.status).toBe(200)
-    expect((await res.json()).attendees).toEqual(['dan'])
+    expect((await res.json()).attendees).toEqual(['Dan Test'])
 
     const stored = JSON.parse(await env.ATTENDANCE_KV.get(`attend:${EVENT_ID}`))
-    expect(stored).toEqual(['dan'])
+    expect(stored).toEqual(['Dan Test'])
 
     const dispatch = JSON.parse(calls.find(c => c.url.includes('api.github.com')).init.body)
-    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, handle: 'cara', action: 'remove' })
+    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, name: 'Cara Test', action: 'remove' })
   })
 
-  it('is a no-op (no dispatch) when handle was not attending', async () => {
-    const { token } = await getTokenFor('noop@example.com', { handle: 'eve' })
+  it('is a no-op (no dispatch) when name was not attending', async () => {
+    const { token } = await getTokenFor('noop@example.com', { name: 'Eve Test' })
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
 

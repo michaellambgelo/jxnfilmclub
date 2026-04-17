@@ -234,8 +234,7 @@
       <td class="attendance-cell">
         <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
         <div :if="attendeesFor(el.id).length" class="attendance-list">
-          <a :each="h in attendeesFor(el.id)" key="{ h }"
-            href="https://letterboxd.com/{ h }/" target="_blank" rel="noopener">@{ h }</a>
+          <span :each="n in attendeesFor(el.id)" key="{ n }">{ n }</span>
         </div>
         <button :if="canToggle(el.id)" type="button" class="attend-btn"
           :disabled="busyId === el.id"
@@ -301,15 +300,15 @@
     }
 
     canToggle(id) {
-      return !!(this.session && this.session.handle)
+      return !!this.session
     }
 
     attended(id) {
-      return this.session?.handle && this.attendeesFor(id).includes(this.session.handle)
+      return this.session?.name && this.attendeesFor(id).includes(this.session.name)
     }
 
     async toggleAttend(id) {
-      if (!this.session?.handle) return
+      if (!this.session) return
       const method = this.attended(id) ? 'DELETE' : 'POST'
       this.update({ busyId: id })
       try {

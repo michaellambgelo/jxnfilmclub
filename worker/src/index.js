@@ -133,7 +133,7 @@ async function handleSignupVerify(request, env) {
   await dispatchGithub(env, 'add-member', { id, name: member.name, joined: member.joined })
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000 })
-  return json(env, { token, email, id, handle: null })
+  return json(env, { token, email, id, name: member.name, handle: null })
 }
 
 // --- Sign-in (returning members) ---
@@ -164,7 +164,7 @@ async function handleOtpVerify(request, env) {
   if (!member) return json(env, { error: 'no member linked to this email' }, 403)
 
   const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000 })
-  return json(env, { token, email, id: member.id, handle: member.handle })
+  return json(env, { token, email, id: member.id, name: member.name, handle: member.handle })
 }
 
 // --- Letterboxd verification ---
@@ -322,7 +322,7 @@ async function handleAttendanceGet(env, eventId) {
   return json(env, { attendees: raw ? JSON.parse(raw) : [] })
 }
 
-// POST /events/:id/attend — authenticated; member must have a verified handle.
+// POST /events/:id/attend — authenticated
 async function handleAttend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -330,20 +330,19 @@ async function handleAttend(request, env, eventId) {
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
   if (!memberRaw) return json(env, { error: 'member not found' }, 404)
   const member = JSON.parse(memberRaw)
-  if (!member.handle) return json(env, { error: 'link your Letterboxd handle first' }, 403)
 
   const attendees = await readAttendees(env, eventId)
-  if (!attendees.includes(member.handle)) {
-    attendees.push(member.handle)
+  if (!attendees.includes(member.name)) {
+    attendees.push(member.name)
     await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
     await dispatchGithub(env, 'update-attendance', {
-      event_id: eventId, handle: member.handle, action: 'add',
+      event_id: eventId, name: member.name, action: 'add',
     })
   }
   return json(env, { ok: true, attendees })
 }
 
-// DELETE /events/:id/attend — authenticated; member must have a verified handle.
+// DELETE /events/:id/attend — authenticated
 async function handleUnattend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -351,15 +350,14 @@ async function handleUnattend(request, env, eventId) {
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
   if (!memberRaw) return json(env, { error: 'member not found' }, 404)
   const member = JSON.parse(memberRaw)
-  if (!member.handle) return json(env, { error: 'link your Letterboxd handle first' }, 403)
 
   const attendees = await readAttendees(env, eventId)
-  const idx = attendees.indexOf(member.handle)
+  const idx = attendees.indexOf(member.name)
   if (idx !== -1) {
     attendees.splice(idx, 1)
     await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
     await dispatchGithub(env, 'update-attendance', {
-      event_id: eventId, handle: member.handle, action: 'remove',
+      event_id: eventId, name: member.name, action: 'remove',
     })
   }
   return json(env, { ok: true, attendees })

@@ -87,9 +87,9 @@
       const email = this.email || fd.get('email')
       const code = fd.get('code')
       try {
-        const { token, id, handle } = await call('POST', '/signup/verify', { email, code })
+        const { token, id, name, handle } = await call('POST', '/signup/verify', { email, code })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-        setSession({ token, email, id, handle, exp: payload.exp })
+        setSession({ token, email, id, name, handle, exp: payload.exp })
         location.href = '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })
@@ -162,9 +162,9 @@
       this.update({ busy: true, error: '' })
       const code = new FormData(e.target).get('code')
       try {
-        const { token, id, handle } = await call('POST', '/otp/verify', { email: this.email, code })
+        const { token, id, name, handle } = await call('POST', '/otp/verify', { email: this.email, code })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-        setSession({ token, email: this.email, id, handle, exp: payload.exp })
+        setSession({ token, email: this.email, id, name, handle, exp: payload.exp })
         location.href = '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })

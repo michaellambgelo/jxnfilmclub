@@ -291,7 +291,7 @@
     state.on('query sort venue', () => this.reload())
 
     async reload() {
-      const [{ items, total }, attendance] = await Promise.all([
+      const [{ items, total }, fresh] = await Promise.all([
         getEvents({
           search: state.query,
           sort: state.sort || 'date-desc',
@@ -300,7 +300,14 @@
         }),
         loadAttendance(),
       ])
-      this.update({ items, total, attendance })
+      // Mutate the existing attendance object in place rather than replacing
+      // it. Nue's click listeners close over a per-iteration snapshot of
+      // component state at render time, so reassigning this.attendance would
+      // leave old closures pointing at a stale object. Same-reference mutation
+      // keeps them in sync.
+      for (const k of Object.keys(this.attendance)) delete this.attendance[k]
+      Object.assign(this.attendance, fresh)
+      this.update({ items, total, attendance: this.attendance })
     }
 
     async mounted() {
@@ -358,14 +365,13 @@
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-        // Optimistic update for the clicked event so the button flips immediately,
-        // then reconcile the whole map against the authoritative bulk endpoint.
-        // Nue's diff preserves per-row button DOM across renders, and without this
-        // reconcile, successive toggles can render the wrong button on untouched rows.
-        const optimistic = { ...this.attendance, [id]: data.attendees || [] }
-        this.update({ attendance: optimistic })
-        const fresh = await loadAttendance()
-        this.update({ attendance: fresh, busyId: null })
+        // The POST handler read-modify-wrote KV in a single Worker invocation
+        // and returned the authoritative list. Trust it. Mutate this.attendance
+        // in place so Nue's render-time snapshot closures see the update via
+        // the shared reference; a no-reassign update avoids the stale-closure
+        // quirk that would otherwise require a full reload.
+        this.attendance[id] = data.attendees || []
+        this.update({ attendance: this.attendance, busyId: null })
       } catch (err) {
         console.error(`attendance ${method} failed:`, err)
         this.update({ busyId: null })

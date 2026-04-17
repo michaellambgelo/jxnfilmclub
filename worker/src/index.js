@@ -34,6 +34,8 @@ export default {
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
 
+    if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
+
     const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance)$/)
     if (eventMatch) {
       const [, eventId, suffix] = eventMatch
@@ -315,11 +317,32 @@ async function handleMemberUpdate(request, env) {
 
 // --- Attendance ---
 
-// GET /events/:id/attendance — public; returns { attendees: [...handles] }.
-// Reads from KV so the UI sees self-report changes before the workflow commits.
+// GET /events/:id/attendance — public; returns { attendees: [...names] }.
+// Reads from KV; on a cache miss, seeds KV from data/attendance.json in the
+// repo so the UI always sees at least the committed baseline.
 async function handleAttendanceGet(env, eventId) {
-  const raw = await env.ATTENDANCE_KV.get(`attend:${eventId}`)
-  return json(env, { attendees: raw ? JSON.parse(raw) : [] })
+  const attendees = await readAttendees(env, eventId)
+  return json(env, { attendees })
+}
+
+// GET /events/attendance — public; bulk read { [eventId]: [...names] }.
+// Merges the committed data/attendance.json baseline with any KV overrides,
+// so the UI hydrates in one request and sees live self-reports before the
+// workflow commits.
+async function handleAttendanceMap(env) {
+  const baseline = await fetchAttendanceBaseline(env)
+  const merged = { ...baseline }
+
+  const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
+  const kvEntries = await Promise.all(
+    list.keys.map(async k => [k.name.slice('attend:'.length), await env.ATTENDANCE_KV.get(k.name)]),
+  )
+  for (const [eventId, raw] of kvEntries) {
+    if (raw) {
+      try { merged[eventId] = JSON.parse(raw) } catch { /* skip corrupt entry */ }
+    }
+  }
+  return json(env, { attendance: merged })
 }
 
 // POST /events/:id/attend — authenticated
@@ -365,7 +388,33 @@ async function handleUnattend(request, env, eventId) {
 
 async function readAttendees(env, eventId) {
   const raw = await env.ATTENDANCE_KV.get(`attend:${eventId}`)
-  return raw ? JSON.parse(raw) : []
+  if (raw) return JSON.parse(raw)
+
+  const baseline = await fetchAttendanceBaseline(env)
+  const seeded = Array.isArray(baseline[eventId]) ? baseline[eventId] : []
+  await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(seeded))
+  return seeded
+}
+
+// Fetches data/attendance.json from GitHub raw content. In E2E mode we never
+// reach out — tests control KV directly and don't want network calls. On any
+// failure we return {} so the worker stays available; the next request will
+// retry.
+async function fetchAttendanceBaseline(env) {
+  if (env.E2E_MODE === 'true') return {}
+  const owner = env.GITHUB_OWNER
+  const repo = env.GITHUB_REPO
+  const branch = env.GITHUB_BRANCH || 'main'
+  if (!owner || !repo) return {}
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/data/attendance.json`,
+      { headers: { 'User-Agent': 'jxnfilmclub-join' }, cf: { cacheTtl: 60, cacheEverything: true } },
+    )
+    if (!res.ok) return {}
+    const data = await res.json()
+    return data && typeof data === 'object' ? data : {}
+  } catch { return {} }
 }
 
 // --- E2E / dev helper ---
@@ -471,6 +520,9 @@ async function dispatchGithub(env, event_type, client_payload) {
     await env.MEMBERS_KV.put('__last_dispatch__', JSON.stringify({ event_type, client_payload }))
     return
   }
+  // Staging writes to KV but never commits to the shared data/*.json ledger in
+  // main. Skip the dispatch entirely so staging activity stays isolated.
+  if (env.ENVIRONMENT === 'staging') return
   const res = await fetch(
     `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
     {

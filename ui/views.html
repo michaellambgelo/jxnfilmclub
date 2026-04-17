@@ -243,11 +243,13 @@
         <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
           :disabled="busyId === el.id"
           :onclick="markAttend(el.id)">
-          I was there
+          { busyId === el.id ? 'Saving…' : 'I was there' }
         </button>
-        <a :if="canToggle(el.id) && attended(el.id)" href="/edit?event={ el.id }" class="attend-edit-link">
-          Edit
-        </a>
+        <button :if="canToggle(el.id) && attended(el.id)" type="button" class="attend-btn attend-btn-remove"
+          :disabled="busyId === el.id"
+          :onclick="removeAttend(el.id)">
+          { busyId === el.id ? 'Removing…' : 'Remove me' }
+        </button>
       </td>
     </tr>
   </table>
@@ -272,6 +274,20 @@
       } catch { return null }
     }
 
+    // Worker is the primary source of attendance (KV-backed, reflects live
+    // self-reports). Static JSON is only used if the Worker is unreachable,
+    // e.g. offline preview.
+    async function loadAttendance() {
+      try {
+        const res = await fetch(`${WORKER_ORIGIN}/events/attendance`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.attendance) return data.attendance
+        }
+      } catch {}
+      return fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+    }
+
     state.on('query sort venue', () => this.reload())
 
     async reload() {
@@ -282,7 +298,7 @@
           venue: state.venue,
           limit: 1000,
         }),
-        fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        loadAttendance(),
       ])
       this.update({ items, total, attendance })
     }
@@ -322,11 +338,19 @@
     }
 
     async markAttend(id) {
+      return this.toggleAttend(id, 'POST')
+    }
+
+    async removeAttend(id) {
+      return this.toggleAttend(id, 'DELETE')
+    }
+
+    async toggleAttend(id, method) {
       if (!this.session) return
       this.update({ busyId: id })
       try {
         const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(id)}/attend`, {
-          method: 'POST',
+          method,
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.session.token}`,
@@ -334,10 +358,16 @@
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-        const attendance = { ...this.attendance, [id]: data.attendees || [] }
-        this.update({ attendance, busyId: null })
+        // Optimistic update for the clicked event so the button flips immediately,
+        // then reconcile the whole map against the authoritative bulk endpoint.
+        // Nue's diff preserves per-row button DOM across renders, and without this
+        // reconcile, successive toggles can render the wrong button on untouched rows.
+        const optimistic = { ...this.attendance, [id]: data.attendees || [] }
+        this.update({ attendance: optimistic })
+        const fresh = await loadAttendance()
+        this.update({ attendance: fresh, busyId: null })
       } catch (err) {
-        console.error('attendance mark failed:', err)
+        console.error(`attendance ${method} failed:`, err)
         this.update({ busyId: null })
       }
     }

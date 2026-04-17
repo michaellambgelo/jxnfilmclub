@@ -225,10 +225,139 @@ Resend's SPF + DKIM records are green in the Resend dashboard.
 
 ---
 
+## 11. Smoke test OTP sign-in locally (E2E_MODE)
+
+`wrangler dev` does not read Cloudflare secrets, so by default `RESEND_API_KEY` is undefined and `POST /otp/request` returns **500 Resend 401**. For local dev you don't need real secrets — use `E2E_MODE=true` and the Worker short-circuits Resend + GitHub dispatch, writing the would-be email to KV sentinel `__last_email__` instead. The `/__test/kv` debug route is gated on `E2E_MODE=true` and exposes KV read/write.
+
+Create `worker/.dev.vars` (gitignored):
+
+```
+SITE_ORIGIN=http://localhost:4000
+E2E_MODE=true
+OTP_SIGNING_KEY=local-dev-signing-key
+GITHUB_OWNER=test
+GITHUB_REPO=test
+```
+
+Two-terminal loop:
+
+```bash
+# Terminal 1 (worker)
+cd worker && npx wrangler dev
+# → Ready on http://localhost:8787
+
+# Terminal 2: trigger OTP request for an existing member email
+curl -i -X POST http://localhost:8787/otp/request \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:4000' \
+  -d '{"email":"<your-member-email>"}'
+# → expect HTTP 200 (and 200 is also returned for unknown emails — anti-enumeration)
+```
+
+Retrieve the OTP code — two equivalent ways, both via the `/__test/kv` route:
+
+```bash
+# Option A: read the full rendered email (subject + body with code)
+curl -s 'http://localhost:8787/__test/kv?key=__last_email__' | jq .
+
+# Option B: read the stored OTP row directly
+curl -s 'http://localhost:8787/__test/kv?key=otp:<your-member-email>' | jq .
+```
+
+Then complete the flow:
+
+```bash
+curl -i -X POST http://localhost:8787/otp/verify \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:4000' \
+  -d '{"email":"<your-member-email>","code":"<6-digit-code>"}'
+# → expect HTTP 200 with session token + member id/handle
+```
+
+Worker log should show `POST /otp/request 200 OK` (no Resend 401). No outbound requests to `api.resend.com` or `api.github.com`.
+
+> If the member row doesn't exist yet in local KV, seed it first:
+> ```bash
+> curl -sS -X POST http://localhost:8787/__test/kv \
+>   -H 'Content-Type: application/json' \
+>   -d '{"key":"member:you@example.com","value":"{\"id\":\"u_test\",\"email\":\"you@example.com\",\"name\":\"Test\",\"pronouns\":\"\",\"handle\":null,\"joined\":\"2026-04-17\"}"}'
+> ```
+> `value` must be a string — `/__test/kv` passes it straight to `KV.put`.
+
+---
+
+## 12. Smoke test attendance locally with `act`
+
+`repository_dispatch` workflows never fire from a local `wrangler dev`, so to
+verify the `update-attendance` workflow end-to-end without waiting on a real
+dispatch (and without polluting `data/attendance.json` on `main`), run the
+workflow against a disposable copy of the file with [nektos/act](https://github.com/nektos/act).
+
+One-time setup:
+
+```bash
+brew install act          # or: https://github.com/nektos/act#installation
+```
+
+Typical loop:
+
+```bash
+# 1. Make a disposable copy of the ledger so act commits can't reach origin.
+cp data/attendance.json /tmp/attendance.json
+
+# 2. Hand-craft the repository_dispatch payload act should simulate.
+cat > /tmp/attend-payload.json <<'JSON'
+{
+  "action": "update-attendance",
+  "client_payload": {
+    "event_id": "2026-04-14-sample",
+    "name": "Test User",
+    "action": "add"
+  }
+}
+JSON
+
+# 3. Run the workflow locally. `-b` binds the working tree read-write so the
+#    workflow's commit step applies in-place (you can inspect the diff, then
+#    `git checkout -- data/attendance.json` to throw it away).
+act repository_dispatch \
+  -W .github/workflows/update-attendance.yml \
+  -e /tmp/attend-payload.json \
+  -b
+
+# 4. Inspect + revert.
+git diff data/attendance.json
+git checkout -- data/attendance.json
+```
+
+To exercise the whole loop (Worker → act) without touching prod:
+
+1. Point staging wrangler at the same GitHub repo but rely on `ENVIRONMENT=staging`
+   so the Worker never dispatches. Staging KV writes stand alone.
+2. For the workflow half, drive `act` manually with hand-written payloads as
+   above. Mirror the KV state by seeding your local wrangler's attendance KV
+   with a clone of prod data:
+
+```bash
+# Prime local KV from the current prod ledger so the UI hydrates with real
+# baseline values during dev:
+cd worker
+python3 -c 'import json; data=json.load(open("../data/attendance.json")); \
+  [print(f"attend:{k}\t{json.dumps(v)}") for k,v in data.items()]' \
+  | while IFS=$'\t' read -r key value; do
+    npx wrangler kv key put --binding=ATTENDANCE_KV --local "$key" "$value"
+  done
+```
+
+Running without `--local` would write to your real Cloudflare namespace — don't
+do that unless you actually want to backfill production.
+
+---
+
 ## Troubleshooting
 
 - **`wrangler deploy` fails with "route not found"** — zone isn't reachable. Confirm `jxnfilm.club` is active in Cloudflare.
-- **Resend 401** — API key wrong or unset. `cd worker && npx wrangler secret list` should show `RESEND_API_KEY`.
+- **Resend 401** — remote: API key wrong or unset, `cd worker && npx wrangler secret list` should show `RESEND_API_KEY`. Local `wrangler dev`: secrets aren't read from Cloudflare — see [§11](#11-smoke-test-otp-sign-in-locally-e2e_mode) and set `E2E_MODE=true` in `worker/.dev.vars`.
 - **Resend 403 "domain not verified"** — DNS records from Resend dashboard aren't fully propagated or weren't added. Re-check in Resend → Domains.
 - **Email never arrives** — check `cd worker && npx wrangler tail` and confirm SPF + DKIM records in Resend are green.
 - **`add-member` workflow doesn't fire** — PAT permissions are wrong. It needs **Contents: Read and Write** on this repo.

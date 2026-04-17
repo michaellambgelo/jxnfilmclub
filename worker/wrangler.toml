@@ -20,8 +20,10 @@ binding = "ATTENDANCE_KV"
 id = "6d5a467495fb47fcb9514e0a85bb3b20"
 
 [vars]
+ENVIRONMENT = "production"
 GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
+GITHUB_BRANCH = "main"
 SITE_ORIGIN = "https://jxnfilm.club"
 
 # Secrets (set via `wrangler secret put`):
@@ -46,9 +48,11 @@ binding = "ATTENDANCE_KV"
 id = "f6f23b3e546646d28a3a80f71ef35715"
 
 [env.staging.vars]
+ENVIRONMENT = "staging"                 # staging writes KV only; no repository_dispatch (prod JSON stays clean)
 GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
-SITE_ORIGIN = "https://jxnfilm.club"   # staging worker still dispatches to prod repo; use a separate branch/test repo if you want isolation
+GITHUB_BRANCH = "main"                  # source branch for seeding KV from data/attendance.json
+SITE_ORIGIN = "https://jxnfilm.club"
 
 # Staging secrets are set separately:
 #   npx wrangler secret put GITHUB_TOKEN     --env staging

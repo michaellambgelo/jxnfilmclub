@@ -7,6 +7,12 @@ on:
 permissions:
   contents: write
 
+# Serialize runs so concurrent dispatches can't race on data/attendance.json.
+# Queue them (cancel-in-progress: false) — every click must be applied.
+concurrency:
+  group: update-attendance
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest

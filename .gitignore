@@ -1,5 +1,6 @@
 .DS_Store
-.claude/
+.claude/*
+!.claude/settings.json
 .dist/
 node_modules/
 worker/node_modules/

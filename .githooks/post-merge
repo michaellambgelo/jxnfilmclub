@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Sync production member KV to local after pulling new data.
+# Runs silently in the background so it doesn't slow down git pull.
+node scripts/admin/seed-local-kv.mjs &>/dev/null &

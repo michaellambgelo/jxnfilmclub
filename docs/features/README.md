@@ -34,7 +34,7 @@ flowchart TB
     subgraph Pipelines["GitHub Actions"]
         AddMember[add-member]
         UpdateMember[update-member]
-        UpdateAttend[update-attendance]
+        SnapshotAttend[snapshot-attendance<br/>every 10 min]
         RefreshLB[refresh-letterboxd<br/>every 6h]
         RefreshSpotify[refresh-spotify<br/>weekly]
         Deploy[deploy-site]
@@ -44,8 +44,9 @@ flowchart TB
     User --> API
     SPA --> Data
     API --> KV
-    API -->|dispatch| AddMember & UpdateMember & UpdateAttend
-    AddMember & UpdateMember & UpdateAttend -->|commit| Data
+    API -->|dispatch| AddMember & UpdateMember
+    SnapshotAttend -->|GET bulk| API
+    AddMember & UpdateMember & SnapshotAttend -->|commit| Data
     RefreshLB & RefreshSpotify -->|commit| Data
     Data -->|workflow_run| Deploy
     Deploy -->|publish| SPA

@@ -6,7 +6,8 @@ Letterboxd RSS feed and collect the last four watched films -> data/watched.json
 
 Attendance is no longer derived here. RSS does not expose diary tags, so
 attendance is now self-reported via the events page (POST /events/:id/attend
-on the worker, mirrored to data/attendance.json by update-attendance.yml).
+on the worker, periodically snapshotted to data/attendance.json by
+snapshot-attendance.yml).
 
 RSS URL: https://letterboxd.com/<handle>/rss/
 

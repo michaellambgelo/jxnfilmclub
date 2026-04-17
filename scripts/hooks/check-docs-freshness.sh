@@ -24,7 +24,7 @@ docs_for_file() {
     .github/workflows/test.yml)    echo "deployment" ;;
     .github/workflows/add-member*) echo "signup" ;;
     .github/workflows/update-member*) echo "member-profile" ;;
-    .github/workflows/update-attendance*) echo "attendance" ;;
+    .github/workflows/snapshot-attendance*) echo "attendance" ;;
     .github/workflows/refresh-letterboxd*) echo "watched" ;;
     .github/workflows/refresh-spotify*) echo "home" ;;
     index.html)                    echo "navigation" ;;

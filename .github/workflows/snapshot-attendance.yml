@@ -1,0 +1,66 @@
+name: Snapshot attendance
+
+# KV is the live source of truth. Every 10 minutes we snapshot the Worker's
+# bulk /events/attendance endpoint (which merges committed baseline + KV
+# overrides) and commit data/attendance.json if anything changed. This
+# replaces the per-click repository_dispatch model so rapid toggles don't
+# queue independent workflow runs.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot-attendance
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch current attendance snapshot from Worker
+        env:
+          WORKER_ORIGIN: https://join.jxnfilm.club
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            "$WORKER_ORIGIN/events/attendance" \
+            -o /tmp/snapshot.json
+          # Sanity: must be a JSON object with an `attendance` object field.
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('/tmp/snapshot.json'))
+          attendance = data.get('attendance')
+          if not isinstance(attendance, dict):
+              sys.exit('snapshot missing `attendance` object')
+          PY
+
+      - name: Rewrite data/attendance.json
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          snap = json.load(open('/tmp/snapshot.json'))['attendance']
+          # Deterministic: sort event keys, preserve attendee order as emitted
+          # by the Worker (insertion order from KV writes).
+          pathlib.Path('data/attendance.json').write_text(
+              json.dumps(snap, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet -- data/attendance.json; then
+            echo "No attendance changes to commit"
+          else
+            git add data/attendance.json
+            git commit -m "chore: snapshot event attendance"
+            git push
+          fi

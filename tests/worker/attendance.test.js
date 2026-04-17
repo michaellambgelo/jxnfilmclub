@@ -114,7 +114,7 @@ describe('POST /events/:id/attend', () => {
     expect(res.status).toBe(401)
   })
 
-  it('appends name, writes KV, dispatches update-attendance', async () => {
+  it('appends name, writes KV, does NOT dispatch (snapshot workflow handles persistence)', async () => {
     const { token, member } = await getTokenFor('attend@example.com', { name: 'Alice Test' })
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
@@ -126,10 +126,7 @@ describe('POST /events/:id/attend', () => {
     const stored = JSON.parse(await env.ATTENDANCE_KV.get(`attend:${EVENT_ID}`))
     expect(stored).toEqual(['Alice Test'])
 
-    const gh = calls.find(c => c.url.includes('api.github.com'))
-    const dispatch = JSON.parse(gh.init.body)
-    expect(dispatch.event_type).toBe('update-attendance')
-    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, name: 'Alice Test', action: 'add' })
+    expect(calls.find(c => c.url.includes('api.github.com'))).toBeUndefined()
     expect(member.id).toBeTruthy()
   })
 
@@ -156,26 +153,19 @@ describe('POST /events/:id/attend', () => {
     expect((await res.json()).attendees).toEqual(['No Handle'])
   })
 
-  it('is idempotent — second attend does not duplicate or re-dispatch', async () => {
+  it('is idempotent — second attend does not duplicate', async () => {
     const { token } = await getTokenFor('idem@example.com', { name: 'Bob Test' })
     await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['Bob Test']))
-    const calls = []
-    mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
+    mockFetch(async () => new Response('', { status: 204 }))
 
     const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'POST', {}, token)
     expect(res.status).toBe(200)
     expect((await res.json()).attendees).toEqual(['Bob Test'])
-    expect(calls.find(c => c.url.includes('api.github.com'))).toBeUndefined()
   })
-
-  // Staging no-dispatch behavior (`ENVIRONMENT=staging`) is enforced in
-  // worker/wrangler.toml + dispatchGithub(). The pool worker's env is frozen,
-  // so we verify it via code review + the wrangler config rather than a unit
-  // test that mutates env at runtime.
 })
 
 describe('DELETE /events/:id/attend', () => {
-  it('removes name and dispatches when present', async () => {
+  it('removes name from KV when present', async () => {
     const { token } = await getTokenFor('rem@example.com', { name: 'Cara Test' })
     await env.ATTENDANCE_KV.put(`attend:${EVENT_ID}`, JSON.stringify(['Cara Test', 'Dan Test']))
     const calls = []
@@ -188,17 +178,15 @@ describe('DELETE /events/:id/attend', () => {
     const stored = JSON.parse(await env.ATTENDANCE_KV.get(`attend:${EVENT_ID}`))
     expect(stored).toEqual(['Dan Test'])
 
-    const dispatch = JSON.parse(calls.find(c => c.url.includes('api.github.com')).init.body)
-    expect(dispatch.client_payload).toEqual({ event_id: EVENT_ID, name: 'Cara Test', action: 'remove' })
+    // Snapshot workflow (not this request) commits to data/attendance.json.
+    expect(calls.find(c => c.url.includes('api.github.com'))).toBeUndefined()
   })
 
-  it('is a no-op (no dispatch) when name was not attending', async () => {
+  it('is a no-op when name was not attending', async () => {
     const { token } = await getTokenFor('noop@example.com', { name: 'Eve Test' })
-    const calls = []
-    mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
+    mockFetch(async () => new Response('', { status: 204 }))
 
     const res = await fetchWith(`/events/${EVENT_ID}/attend`, 'DELETE', undefined, token)
     expect(res.status).toBe(200)
-    expect(calls.find(c => c.url.includes('api.github.com'))).toBeUndefined()
   })
 })

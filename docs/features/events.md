@@ -33,8 +33,8 @@ flowchart TD
     J -->|Yes| L{Already attended?}
     L -->|No| M["I was there" button]
     L -->|Yes| N[Name in list + "Remove me" button]
-    M -->|Click| O[POST Worker /events/:id/attend<br/>KV updated, dispatch fired]
-    N -->|Click Remove me| Q[DELETE Worker /events/:id/attend<br/>KV updated, dispatch fired]
+    M -->|Click| O[POST Worker /events/:id/attend<br/>KV updated]
+    N -->|Click Remove me| Q[DELETE Worker /events/:id/attend<br/>KV updated]
 ```
 
 ## Data Sources
@@ -42,7 +42,7 @@ flowchart TD
 | Data | Source | Refresh |
 |------|--------|---------|
 | Events | `data/events.json` | Manual commits |
-| Attendance | Worker `GET /events/attendance` (KV + JSON overlay) | Live on click; JSON committed by GitHub Action |
+| Attendance | Worker `GET /events/attendance` (KV + JSON overlay) | Live on click; JSON snapshot committed every 10 min |
 | Members (for handle lookup) | `data/members.json` | On member changes |
 
 ## URL Parameters

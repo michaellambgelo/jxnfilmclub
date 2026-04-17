@@ -288,10 +288,10 @@ Worker log should show `POST /otp/request 200 OK` (no Resend 401). No outbound r
 
 ## 12. Smoke test attendance locally with `act`
 
-`repository_dispatch` workflows never fire from a local `wrangler dev`, so to
-verify the `update-attendance` workflow end-to-end without waiting on a real
-dispatch (and without polluting `data/attendance.json` on `main`), run the
-workflow against a disposable copy of the file with [nektos/act](https://github.com/nektos/act).
+The `snapshot-attendance` workflow runs on a cron in production and pulls live
+state from the prod Worker. To exercise it locally without waiting on a scheduled
+run (and without committing to prod's `main`), fire it manually with
+[nektos/act](https://github.com/nektos/act) pointed at a disposable working tree.
 
 One-time setup:
 
@@ -303,44 +303,29 @@ Typical loop:
 
 ```bash
 # 1. Make a disposable copy of the ledger so act commits can't reach origin.
-cp data/attendance.json /tmp/attendance.json
+cp data/attendance.json /tmp/attendance.json.bak
 
-# 2. Hand-craft the repository_dispatch payload act should simulate.
-cat > /tmp/attend-payload.json <<'JSON'
-{
-  "action": "update-attendance",
-  "client_payload": {
-    "event_id": "2026-04-14-sample",
-    "name": "Test User",
-    "action": "add"
-  }
-}
-JSON
-
-# 3. Run the workflow locally. `-b` binds the working tree read-write so the
-#    workflow's commit step applies in-place (you can inspect the diff, then
-#    `git checkout -- data/attendance.json` to throw it away).
-act repository_dispatch \
-  -W .github/workflows/update-attendance.yml \
-  -e /tmp/attend-payload.json \
+# 2. Run the snapshot workflow. It will curl the real prod Worker for the
+#    /events/attendance snapshot and rewrite data/attendance.json.
+act workflow_dispatch \
+  -W .github/workflows/snapshot-attendance.yml \
   -b
 
-# 4. Inspect + revert.
+# 3. Inspect the diff, then revert.
 git diff data/attendance.json
 git checkout -- data/attendance.json
 ```
 
-To exercise the whole loop (Worker → act) without touching prod:
+To drive the full loop (local Worker → local ledger) without the prod endpoint:
 
-1. Point staging wrangler at the same GitHub repo but rely on `ENVIRONMENT=staging`
-   so the Worker never dispatches. Staging KV writes stand alone.
-2. For the workflow half, drive `act` manually with hand-written payloads as
-   above. Mirror the KV state by seeding your local wrangler's attendance KV
-   with a clone of prod data:
+1. Run `wrangler dev` locally and seed `ATTENDANCE_KV`.
+2. Override `WORKER_ORIGIN` in the workflow step before running, e.g. with
+   `act -s WORKER_ORIGIN=http://host.docker.internal:8787`, or edit the env
+   block in the workflow to point at localhost temporarily (don't commit that).
+3. Prime local KV from the current prod ledger so the UI hydrates with real
+   baseline values during dev:
 
 ```bash
-# Prime local KV from the current prod ledger so the UI hydrates with real
-# baseline values during dev:
 cd worker
 python3 -c 'import json; data=json.load(open("../data/attendance.json")); \
   [print(f"attend:{k}\t{json.dumps(v)}") for k,v in data.items()]' \

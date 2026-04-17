@@ -345,7 +345,10 @@ async function handleAttendanceMap(env) {
   return json(env, { attendance: merged })
 }
 
-// POST /events/:id/attend — authenticated
+// POST /events/:id/attend — authenticated.
+// Writes to ATTENDANCE_KV only. The snapshot-attendance workflow runs on a
+// cron and flushes KV to data/attendance.json; there is no per-click workflow
+// dispatch, so rapid toggles don't queue individual GitHub Actions runs.
 async function handleAttend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -358,14 +361,11 @@ async function handleAttend(request, env, eventId) {
   if (!attendees.includes(member.name)) {
     attendees.push(member.name)
     await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
-    await dispatchGithub(env, 'update-attendance', {
-      event_id: eventId, name: member.name, action: 'add',
-    })
   }
   return json(env, { ok: true, attendees })
 }
 
-// DELETE /events/:id/attend — authenticated
+// DELETE /events/:id/attend — authenticated. KV-only, same reasoning as attend.
 async function handleUnattend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -379,9 +379,6 @@ async function handleUnattend(request, env, eventId) {
   if (idx !== -1) {
     attendees.splice(idx, 1)
     await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
-    await dispatchGithub(env, 'update-attendance', {
-      event_id: eventId, name: member.name, action: 'remove',
-    })
   }
   return json(env, { ok: true, attendees })
 }

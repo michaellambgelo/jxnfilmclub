@@ -234,13 +234,20 @@
       <td class="attendance-cell">
         <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
         <div :if="attendeesFor(el.id).length" class="attendance-list">
-          <span :each="n in attendeesFor(el.id)" key="{ n }">{ n }</span>
+          <a :each="n in attendeesFor(el.id)" key="{ n }"
+            :if="handlesByName[n]"
+            href="https://letterboxd.com/{ handlesByName[n] }/" target="_blank" rel="noopener">{ n }</a>
+          <span :each="n in attendeesFor(el.id)" key="{ n }-nolink"
+            :if="!handlesByName[n]">{ n }</span>
         </div>
-        <button :if="canToggle(el.id)" type="button" class="attend-btn"
+        <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
           :disabled="busyId === el.id"
-          :onclick="toggleAttend(el.id)">
-          { attended(el.id) ? 'Remove me' : 'I was there' }
+          :onclick="markAttend(el.id)">
+          I was there
         </button>
+        <a :if="canToggle(el.id) && attended(el.id)" href="/edit?event={ el.id }" class="attend-edit-link">
+          Edit
+        </a>
       </td>
     </tr>
   </table>
@@ -281,10 +288,17 @@
     }
 
     async mounted() {
-      this.update({ session: getSession(), busyId: null, attendance: {}, venues: [] })
-      const all = await getEvents({ limit: 1000 })
+      this.update({ session: getSession(), busyId: null, attendance: {}, venues: [], handlesByName: {} })
+      const [all, { items: members }] = await Promise.all([
+        getEvents({ limit: 1000 }),
+        getMembers({ limit: 1000 }),
+      ])
       const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
-      this.update({ venues })
+      const handlesByName = {}
+      for (const m of members) {
+        if (m.handle) handlesByName[m.name] = m.handle
+      }
+      this.update({ venues, handlesByName })
       await this.reload()
     }
 
@@ -307,13 +321,12 @@
       return this.session?.name && this.attendeesFor(id).includes(this.session.name)
     }
 
-    async toggleAttend(id) {
+    async markAttend(id) {
       if (!this.session) return
-      const method = this.attended(id) ? 'DELETE' : 'POST'
       this.update({ busyId: id })
       try {
         const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(id)}/attend`, {
-          method,
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.session.token}`,
@@ -324,7 +337,7 @@
         const attendance = { ...this.attendance, [id]: data.attendees || [] }
         this.update({ attendance, busyId: null })
       } catch (err) {
-        console.error('attendance toggle failed:', err)
+        console.error('attendance mark failed:', err)
         this.update({ busyId: null })
       }
     }

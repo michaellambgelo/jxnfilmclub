@@ -253,6 +253,19 @@
         </form>
       </div>
     </section>
+
+    <section :if="eventToEdit" class="attendance-panel">
+      <h2>Event attendance</h2>
+      <p class="lede">You marked attendance for <b>{ eventToEdit.title }</b>
+        <span :if="eventToEdit.film"> ({ eventToEdit.film })</span>
+        on { formatEventDate(eventToEdit.date) }.</p>
+      <div class="actions">
+        <button type="button" class="plain" :disabled="attendBusy"
+          :onclick="removeAttendance">{ attendBusy ? 'Removing…' : 'Remove my attendance' }</button>
+      </div>
+      <p class="ok" :if="attendRemoved">Removed. Returning to events…</p>
+      <p class="err" :if="attendError">{ attendError }</p>
+    </section>
   </div>
 
   <script>
@@ -261,6 +274,7 @@
         loading: true, member: {}, session: null,
         busy: false, saved: false, error: '',
         lb: { loading: true }, lbBusy: false, lbError: '',
+        eventToEdit: null, attendBusy: false, attendRemoved: false, attendError: '',
       })
 
       const s = getSession()
@@ -280,6 +294,8 @@
 
       const lb = await this.loadLbStatus(s.token)
       this.update({ loading: false, session: s, member, lb })
+
+      if (state.event) await this.loadEvent(state.event, s)
     }
 
     async loadLbStatus(token) {
@@ -354,6 +370,46 @@
       } catch (err) {
         this.update({ lbBusy: false, lbError: err.message })
       }
+    }
+
+    async loadEvent(eventId, session) {
+      try {
+        const events = await fetch('/data/events.json').then(r => r.json())
+        const ev = events.find(e => e.id === eventId)
+        if (!ev) return
+        const attendance = await fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+        const attendees = attendance[eventId] || []
+        if (attendees.includes(session.name)) {
+          this.update({ eventToEdit: ev })
+        }
+      } catch {}
+    }
+
+    async removeAttendance() {
+      this.update({ attendBusy: true, attendError: '' })
+      try {
+        const eventId = state.event
+        const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(eventId)}/attend`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.session.token}`,
+          },
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        this.update({ attendBusy: false, attendRemoved: true })
+        setTimeout(() => { location.href = '/events' }, 1500)
+      } catch (err) {
+        this.update({ attendBusy: false, attendError: err.message })
+      }
+    }
+
+    formatEventDate(ts) {
+      if (!ts) return ''
+      return new Date(ts).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+      })
     }
 
     signOut() {

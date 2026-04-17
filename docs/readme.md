@@ -3,8 +3,12 @@
 Public membership directory for the Jackson Film Club. Joining the club
 only requires an email. Members who have a Letterboxd profile can
 optionally verify it to surface a link to their profile on the public
-directory, last-four-watched films, and event attendance (diary entries
-tagged `jxnfilmclub`).
+directory, last-four-watched films, and other features coming soon. Any
+logged-in member can mark their attendance at an event. This feature is
+self-reported for now, but may evolve some moderation controls over time.
+
+This site is in an active public beta. Please open an issue or start a discussion 
+for bug reports or feature requests, respectively.
 
 ## Stack
 

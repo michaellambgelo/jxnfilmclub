@@ -234,11 +234,11 @@
       <td class="attendance-cell">
         <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
         <div :if="attendeesFor(el.id).length" class="attendance-list">
-          <a :each="n in attendeesFor(el.id)" key="{ n }"
-            :if="handlesByName[n]"
-            href="https://letterboxd.com/{ handlesByName[n] }/" target="_blank" rel="noopener">{ n }</a>
-          <span :each="n in attendeesFor(el.id)" key="{ n }-nolink"
-            :if="!handlesByName[n]">{ n }</span>
+          <span :each="n in attendeesFor(el.id)" key="{ n }" class="attendee">
+            <a :if="handlesByName[n]" href="https://letterboxd.com/{ handlesByName[n] }/"
+              target="_blank" rel="noopener">{ n }</a>
+            <span :if="!handlesByName[n]">{ n }</span>
+          </span>
         </div>
         <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
           :disabled="busyId === el.id"

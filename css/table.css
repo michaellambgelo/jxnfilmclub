@@ -90,6 +90,54 @@ th:last-child, td:last-child {
 }
 
 
+/* Attendance cell: allow the list to wrap so many attendees don't blow out
+   the column width. Overrides `td { white-space: nowrap }` above. */
+.attendance-cell {
+  white-space: normal;
+  max-width: 16rem;
+}
+
+.attendance-count {
+  color: #888;
+  margin-bottom: .4em;
+}
+
+.attendance-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .15em .4em;
+  margin-bottom: .5em;
+}
+
+.attendance-list .attendee:not(:last-child)::after {
+  content: ",";
+  color: #aaa;
+}
+
+.attend-btn {
+  font-size: 90%;
+  padding: .3em .8em;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.attend-btn:hover:not(:disabled) {
+  border-color: #888;
+}
+
+.attend-btn:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.attend-btn-remove {
+  color: #a33;
+  border-color: #e0bcbc;
+}
+
 /* animation */
 tbody tr {
   opacity: 0;

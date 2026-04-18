@@ -19,7 +19,7 @@ Each card stacks:
   (handles linked to Letterboxd), and the "I was there" / "Remove me"
   action button anchored full-width
 
-Above the grid: a result-count line ("{N} events") plus the search +
+Above the grid: a result-count line (`N events`) plus the search +
 sort + venue filter header.
 
 ## Interaction Flow

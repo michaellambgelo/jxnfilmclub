@@ -14,9 +14,9 @@ Each card shows:
 - Display name
 - Letterboxd handle (linked to profile, if verified; or muted
   "no Letterboxd" label otherwise)
-- "Joined {relative time}" via `<timeago>` widget
+- `Joined <relative time>` via the `<timeago>` widget
 
-Above the grid: a result-count line ("{N} members") plus the search +
+Above the grid: a result-count line (`N members`) plus the search +
 sort header.
 
 ## Interaction Flow

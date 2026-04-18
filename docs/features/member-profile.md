@@ -52,31 +52,46 @@ sequenceDiagram
     actor User
     participant Site as jxnfilm.club/edit
     participant Worker as Cloudflare Worker
-    participant LB as Letterboxd RSS
+    participant LB as Letterboxd (page or RSS)
 
     User->>Site: Enters Letterboxd username
     User->>Site: Clicks "Get verification tag"
     Site->>Worker: POST /letterboxd/request { handle }
     Worker->>Worker: Generate jxnfc-verify-XXXXXXXX (48h TTL)
     Worker-->>Site: { token, handle, exp }
-    Site->>User: "Add this tag to a diary entry or list,<br/>then click Verify."
+    Site->>User: "Add this tag to a diary entry or list,<br/>then paste the URL of that page below."
     Site->>User: Shows tag: jxnfc-verify-XXXXXXXX
 
-    Note over User,LB: User adds tag to Letterboxd
+    Note over User,LB: User adds tag to a Letterboxd page (review or list)
 
-    User->>Site: Clicks "Verify Letterboxd"
-    Site->>Worker: POST /letterboxd/verify
-    Worker->>LB: Fetch https://letterboxd.com/{handle}/rss/
-    alt Tag found in RSS
+    User->>Site: Pastes page URL, clicks "Verify Letterboxd"
+    Site->>Worker: POST /letterboxd/verify { url }
+    Worker->>Worker: Validate url origin + /<handle>/ prefix
+    Worker->>LB: Fetch the pasted page (fallback: /<handle>/rss/)
+    alt Tag found on page
         Worker->>Worker: Store email:{handle} + handle:{email}
         Worker->>Worker: Update member.handle in KV
+        Worker->>Worker: Refresh session:{id}
         Worker-->>Site: { verified: true, handle }
         Site->>User: "Verified as @{handle}" with profile link
-    else Tag not found
-        Worker-->>Site: 422 "token not found on your<br/>Letterboxd RSS feed yet"
+    else Wrong origin or wrong handle in URL
+        Worker-->>Site: 400 "URL must be under letterboxd.com/{handle}"
+        Site->>User: Error shown, can correct and retry
+    else Tag not found on page
+        Worker-->>Site: 422 "couldn't find the tag on that page"
         Site->>User: Error shown, can retry
     end
 ```
+
+URL-based verification is the primary path because Letterboxd's RSS feed
+lags real-time edits and some list/diary shapes never surface there. The
+Worker still accepts `POST /letterboxd/verify` with an empty body as a
+compatibility fallback, in which case it scrapes `/<handle>/rss/`.
+
+**SSRF safety**: the Worker only fetches URLs whose origin matches
+`LETTERBOXD_BASE` (defaults to `https://letterboxd.com`) AND whose path
+begins with `/<handle>/` (case-insensitive). A user can't claim another
+handle by pointing at someone else's page.
 
 ### Unlink Confirmation
 
@@ -90,7 +105,11 @@ When removing a Letterboxd link, the user sees:
 | Handle claimed by another member | 409 | "this Letterboxd handle is already claimed" |
 | No pending verification tag | 410 | "no pending verification -- request a new tag" |
 | Handle not provided for verify | 400 | "add your Letterboxd handle first" |
-| Tag not in RSS feed | 422 | "token not found..." (can retry) |
+| Malformed URL in verify body | 400 | "that doesn't look like a valid URL" |
+| URL off letterboxd.com | 400 | "the URL must be on letterboxd.com" |
+| URL path not under `/<handle>/` | 400 | "the URL must be under letterboxd.com/{handle}" |
+| Tag not on pasted page | 422 | "couldn't find the tag on that page..." (can retry) |
+| Tag not in RSS feed (fallback path) | 422 | "token not found on your Letterboxd RSS feed yet..." |
 | No Letterboxd to unlink | 400 | "no Letterboxd linked" |
 
 ## Timing

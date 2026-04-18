@@ -220,8 +220,14 @@ async function handleLbRequest(request, env) {
 }
 
 // POST /letterboxd/verify — authenticated
-// Scrapes letterboxd.com/<handle>/rss/ for the pending token. RSS covers both
-// tagged diary entries and list-creation events, so a single feed check suffices.
+// Two modes:
+//   1. { url } — scrape the given Letterboxd page directly for the token.
+//      This is the UI default because RSS lags real-time edits and some
+//      list/diary shapes never surface there. The URL must be on the
+//      configured Letterboxd origin AND under /<handle>/ so a user can't
+//      claim someone else's profile by pointing at their page.
+//   2. {} — fall back to scraping /<handle>/rss/. Kept for backward
+//      compatibility and for clients that don't have a specific URL.
 async function handleLbVerify(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -232,13 +238,41 @@ async function handleLbVerify(request, env) {
   if (!handle) return json(env, { error: 'add your Letterboxd handle first' }, 400)
 
   const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
-  const rssText = await fetch(`${lbBase}/${encodeURIComponent(handle)}/rss/`)
-    .then(r => r.text())
-    .catch(() => '')
-  if (!rssText.includes(token)) {
-    return json(env, {
-      error: 'token not found on your Letterboxd RSS feed yet — make sure the diary entry or list was saved, then try again',
-    }, 422)
+  const body = await request.json().catch(() => ({}))
+  const pastedUrl = typeof body?.url === 'string' ? body.url.trim() : ''
+
+  let fetchUrl
+  let notFoundMsg
+  if (pastedUrl) {
+    let parsed
+    try { parsed = new URL(pastedUrl) } catch {
+      return json(env, { error: "that doesn't look like a valid URL" }, 400)
+    }
+    const base = new URL(lbBase)
+    if (parsed.origin !== base.origin) {
+      return json(env, { error: 'the URL must be on letterboxd.com' }, 400)
+    }
+    // Case-insensitive handle match — Letterboxd normalizes handles to
+    // lowercase on profile URLs but the user's canonical handle on record
+    // may have preserved case from input.
+    const handlePrefix = `/${handle.toLowerCase()}/`
+    if (!parsed.pathname.toLowerCase().startsWith(handlePrefix)) {
+      return json(env, { error: `the URL must be under letterboxd.com/${handle}` }, 400)
+    }
+    fetchUrl = parsed.toString()
+    notFoundMsg = "couldn't find the tag on that page — make sure you saved the diary entry or list, then try again"
+  } else {
+    fetchUrl = `${lbBase}/${encodeURIComponent(handle)}/rss/`
+    notFoundMsg = 'token not found on your Letterboxd RSS feed yet — make sure the diary entry or list was saved, then try again'
+  }
+
+  // Case-insensitive: Letterboxd lowercases every tag it renders (both in
+  // the URL path and the visible text), so a historically mixed-case token
+  // would never match. New tokens are lowercase-only (see randomToken), but
+  // this keeps any still-pending 48h tokens from before the change working.
+  const pageText = await fetch(fetchUrl).then(r => r.text()).catch(() => '')
+  if (!pageText.toLowerCase().includes(token.toLowerCase())) {
+    return json(env, { error: notFoundMsg }, 422)
   }
 
   // Commit the link.
@@ -510,7 +544,8 @@ async function sendSignupEmail(env, to, code, lbToken, handle) {
     '',
     `(expires in 48 hours)`,
     '',
-    'Then visit https://jxnfilm.club/edit and click "Verify Letterboxd".',
+    'Then visit https://jxnfilm.club/edit, paste the URL of that entry or list,',
+    'and click "Verify Letterboxd". You can delete the tag once verified.',
   ].join('\n')
   await sendEmail(env, to, subject, text)
 }
@@ -611,8 +646,12 @@ function randomCode() {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
+// Lowercase alphanumeric only: Letterboxd flattens tag text/URLs to
+// lowercase, and member ids end up in public JSON + URL fragments, so
+// lowercase keeps everything round-trippable without case mismatch.
+// 36 chars × 8 positions = 2.8e12 combos for LB tokens — plenty.
 function randomToken(len) {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
   const bytes = crypto.getRandomValues(new Uint8Array(len))
   return Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
 }

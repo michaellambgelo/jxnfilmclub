@@ -255,23 +255,29 @@
       <div :if="lb.pending">
         <p class="lede">Add this tag to a diary entry or a list on
           <a :if="lb.handle" href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">letterboxd.com/{ lb.handle }</a><span :if="!lb.handle">your Letterboxd profile</span>,
-          then click Verify.</p>
+          then paste the URL of that page below. Once verified, you can
+          delete the tag if you like.</p>
         <p><code class="lb-token">{ lb.token }</code></p>
 
-        <form :if="!lb.handle" :onsubmit="submitHandle">
-          <label>Letterboxd username
+        <!-- Single form with :if-gated fields and a branching submit
+             handler. A :if directly on <form> unmounts it on toggle and
+             :onsubmit doesn't re-bind on remount (see docs/CLAUDE.md),
+             which bites when a user clicks "Use a different handle" and
+             later re-enters the URL step. -->
+        <form :onsubmit="onLbSubmit">
+          <label :if="!lb.handle">Letterboxd username
             <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
               placeholder="e.g. davidehrlich">
           </label>
-          <button type="submit" :disabled="lbBusy">{ lbBusy ? 'Saving…' : 'Add handle' }</button>
+          <label :if="lb.handle">Diary entry or list URL
+            <input type="url" name="url" required
+              placeholder="https://letterboxd.com/your-handle/film/...">
+          </label>
+          <div class="actions">
+            <button type="submit" :disabled="lbBusy">{ lbSubmitLabel() }</button>
+            <button :if="lb.handle" type="button" class="plain" :onclick="changeHandle">Use a different handle</button>
+          </div>
         </form>
-
-        <div :if="lb.handle" class="actions">
-          <button type="button" :onclick="verifyLb" :disabled="lbBusy">
-            { lbBusy ? 'Checking…' : 'Verify Letterboxd' }
-          </button>
-          <button type="button" class="plain" :onclick="changeHandle">Use a different handle</button>
-        </div>
         <p class="err" :if="lbError">{ lbError }</p>
       </div>
 
@@ -375,10 +381,24 @@
       }
     }
 
-    async verifyLb() {
+    onLbSubmit(e) {
+      if (this.lb?.handle) return this.verifyLb(e)
+      return this.submitHandle(e)
+    }
+
+    lbSubmitLabel() {
+      if (this.lbBusy) return this.lb?.handle ? 'Checking…' : 'Saving…'
+      return this.lb?.handle ? 'Verify Letterboxd' : 'Add handle'
+    }
+
+    async verifyLb(e) {
+      if (e && e.preventDefault) e.preventDefault()
       this.update({ lbBusy: true, lbError: '' })
+      const fd = e && e.target ? new FormData(e.target) : null
+      const url = fd ? (fd.get('url') || '').toString().trim() : ''
       try {
-        const res = await call('POST', '/letterboxd/verify', {}, this.session.token)
+        const res = await call('POST', '/letterboxd/verify',
+          url ? { url } : {}, this.session.token)
         this.update({
           lbBusy: false,
           lb: { verified: true, handle: res.handle },

@@ -91,6 +91,95 @@ describe('POST /letterboxd/request', () => {
   })
 })
 
+describe('POST /letterboxd/verify — URL mode', () => {
+  async function armPending(email, handle = 'urluser') {
+    const signed = await signedInMember(email)
+    const lb = { token: 'jxnfc-verify-URLXXXXX', handle, exp: Date.now() + 1000 }
+    await env.MEMBERS_KV.put(`lb_token:${email}`, JSON.stringify(lb))
+    return { ...signed, lb }
+  }
+
+  it('scrapes the pasted URL and verifies when the page contains the token', async () => {
+    const { token: session, lb, member } = await armPending('url-happy@example.com', 'happyuser')
+    const calls = []
+    mockFetch(async (url) => {
+      calls.push(String(url))
+      if (String(url).includes('happyuser')) {
+        return new Response(`<html><body>${lb.token}</body></html>`, { status: 200 })
+      }
+      if (String(url).includes('api.github.com')) return new Response('', { status: 204 })
+      return new Response('', { status: 200 })
+    })
+
+    const res = await fetchWith('/letterboxd/verify', 'POST',
+      { url: 'https://letterboxd.com/happyuser/film/heroic-times/' }, session)
+    expect(res.status).toBe(200)
+    expect((await res.json()).handle).toBe('happyuser')
+
+    // Worker fetched the pasted URL, not the RSS feed.
+    expect(calls.some(u => u === 'https://letterboxd.com/happyuser/film/heroic-times/')).toBe(true)
+    expect(calls.some(u => u.endsWith('/rss/'))).toBe(false)
+
+    const saved = JSON.parse(await env.MEMBERS_KV.get(`member:url-happy@example.com`))
+    expect(saved.handle).toBe('happyuser')
+    expect(await env.MEMBERS_KV.get(`session:${member.id}`)).toBeTruthy()
+  })
+
+  it('rejects URLs off of letterboxd.com with 400', async () => {
+    const { token: session } = await armPending('url-origin@example.com', 'originuser')
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await fetchWith('/letterboxd/verify', 'POST',
+      { url: 'https://evil.example.com/originuser/film/phish/' }, session)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/letterboxd\.com/)
+  })
+
+  it('rejects URLs outside the user\'s own handle with 400', async () => {
+    const { token: session } = await armPending('url-hijack@example.com', 'mineuser')
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await fetchWith('/letterboxd/verify', 'POST',
+      { url: 'https://letterboxd.com/someoneelse/film/foo/' }, session)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/under letterboxd\.com\/mineuser/)
+  })
+
+  it('rejects clearly malformed URLs with 400', async () => {
+    const { token: session } = await armPending('url-bad@example.com')
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await fetchWith('/letterboxd/verify', 'POST', { url: 'not a url' }, session)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/valid URL/)
+  })
+
+  it('422 with a URL-specific message when the page does not contain the token', async () => {
+    const { token: session } = await armPending('url-empty@example.com', 'emptyuser')
+    mockFetch(async (url) => {
+      if (String(url).includes('emptyuser')) {
+        return new Response('<html><body>nothing to see</body></html>', { status: 200 })
+      }
+      return new Response('', { status: 200 })
+    })
+    const res = await fetchWith('/letterboxd/verify', 'POST',
+      { url: 'https://letterboxd.com/emptyuser/film/x/' }, session)
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toMatch(/couldn't find the tag on that page/)
+  })
+
+  it('accepts case-insensitive handle prefixes (Letterboxd lowercases profile URLs)', async () => {
+    const { token: session, lb } = await armPending('url-case@example.com', 'CasedUser')
+    mockFetch(async (url) => {
+      if (String(url).includes('caseduser')) {
+        return new Response(`<html>${lb.token}</html>`, { status: 200 })
+      }
+      if (String(url).includes('api.github.com')) return new Response('', { status: 204 })
+      return new Response('', { status: 200 })
+    })
+    const res = await fetchWith('/letterboxd/verify', 'POST',
+      { url: 'https://letterboxd.com/caseduser/list/top-picks/' }, session)
+    expect(res.status).toBe(200)
+  })
+})
+
 describe('POST /letterboxd/verify', () => {
   it('happy path: RSS contains token → dispatch update-member, write KV, clear lb_token', async () => {
     const { token, member } = await signedInMember('verify@example.com')

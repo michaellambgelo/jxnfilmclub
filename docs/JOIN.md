@@ -50,9 +50,10 @@ How to join Jackson Film Club + link your Letterboxd:
    into either:
    - A diary entry's review/notes field, OR
    - A new list on your profile.
-   Then go to jxnfilm.club/edit and click "Verify Letterboxd". Once it
-   matches, your @handle shows up on the directory and you can delete
-   the verification tag from Letterboxd if you want.
+   Then go to jxnfilm.club/edit, paste the URL of that diary entry or
+   list into the form, and click "Verify Letterboxd". Once it matches,
+   your @handle shows up on the directory and you can delete the
+   verification tag from Letterboxd.
 
 The tag is good for 48 hours. If it expires, you can request a fresh
 one from the same Edit page.

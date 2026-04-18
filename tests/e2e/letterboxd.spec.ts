@@ -1,7 +1,7 @@
-import { test, expect, signInAs, primeLbRss, seedKv, WORKER_ORIGIN } from './fixtures'
+import { test, expect, signInAs, primeLbRss, seedKv, WORKER_ORIGIN, LB_STUB_ORIGIN } from './fixtures'
 
 test.describe('Letterboxd verification from /edit', () => {
-  test('no handle yet → request tag → RSS has token → verified', async ({ page }) => {
+  test('no handle yet → request tag → paste diary URL → verified', async ({ page }) => {
     const email = 'lb-flow@example.com'
     await signInAs(page, email)
 
@@ -13,24 +13,24 @@ test.describe('Letterboxd verification from /edit', () => {
     await page.getByLabel('Letterboxd username').fill('flowuser')
     await page.getByRole('button', { name: /get verification tag/i }).click()
 
-    // Tag appears. Capture it and prime the stub's RSS to include it.
+    // Tag appears. Capture it and prime the stub so the diary URL scrape finds it.
     const tokenEl = page.locator('.lb-token')
     await expect(tokenEl).toBeVisible()
     const token = (await tokenEl.textContent())!.trim()
     expect(token).toMatch(/^jxnfc-verify-[A-Za-z0-9]{8}$/)
     await primeLbRss(page, token)
 
-    // Verify now → success.
+    // Paste a diary URL and submit. Worker's LETTERBOXD_BASE points at the
+    // local stub origin for E2E, so the pasted URL must share that origin
+    // to pass the Worker's SSRF/origin check.
+    await page.getByLabel('Diary entry or list URL').fill(
+      `${LB_STUB_ORIGIN}/flowuser/film/heroic-times/`)
     await page.getByRole('button', { name: /verify letterboxd/i }).click()
     await expect(page.locator('.ok')).toContainText('Verified as')
     await expect(page.getByRole('link', { name: '@flowuser' })).toBeVisible()
-
-    // KV reflects the link.
-    const { LB_STUB_ORIGIN } = await import('./fixtures')
-    void LB_STUB_ORIGIN
   })
 
-  test('tag not on RSS → 422 error surfaced, lb_token kept', async ({ page }) => {
+  test('tag missing on pasted page → 422 error surfaced, lb_token kept', async ({ page }) => {
     const email = 'lb-missing@example.com'
     await signInAs(page, email)
 
@@ -38,12 +38,28 @@ test.describe('Letterboxd verification from /edit', () => {
     await page.getByRole('button', { name: /get verification tag/i }).click()
     await expect(page.locator('.lb-token')).toBeVisible()
 
-    // RSS stub is empty by default.
+    // Stub serves a page without the token by default.
     await primeLbRss(page, null)
+    await page.getByLabel('Diary entry or list URL').fill(
+      `${LB_STUB_ORIGIN}/missinguser/film/untagged/`)
     await page.getByRole('button', { name: /verify letterboxd/i }).click()
-    await expect(page.locator('.err')).toContainText(/token not found/)
+    await expect(page.locator('.err')).toContainText(/couldn't find the tag/)
     // Still showing the tag (pending state intact)
     await expect(page.locator('.lb-token')).toBeVisible()
+  })
+
+  test('pasted URL pointing at another handle is rejected before any fetch', async ({ page }) => {
+    const email = 'lb-hijack@example.com'
+    await signInAs(page, email)
+
+    await page.getByLabel('Letterboxd username').fill('rightfuluser')
+    await page.getByRole('button', { name: /get verification tag/i }).click()
+    await expect(page.locator('.lb-token')).toBeVisible()
+
+    await page.getByLabel('Diary entry or list URL').fill(
+      `${LB_STUB_ORIGIN}/someoneelse/film/foo/`)
+    await page.getByRole('button', { name: /verify letterboxd/i }).click()
+    await expect(page.locator('.err')).toContainText(/under letterboxd\.com\/rightfuluser/)
   })
 
   test('already-verified members see the verified state', async ({ page }) => {

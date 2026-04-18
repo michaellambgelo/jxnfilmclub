@@ -4,13 +4,21 @@ const port = Number(process.argv[2] || 8788)
 
 // Tiny Letterboxd stand-in for E2E.
 //
-// - GET /<handle>/        → 200 stub profile (404 for "ghost")
+// - GET /<handle>/        → 200 stub profile (404 for "ghost"). If a token
+//                           is primed, it's embedded in the HTML so that
+//                           URL-based verification (scraping the page) also
+//                           sees it.
 // - GET /<handle>/rss/    → 200 RSS body. If a token has been primed via
 //                           POST /__prime, embed it in a <category>; else
 //                           empty feed.
+// - GET /<handle>/film/<slug>/ (or any other deep path)
+//                         → 200 HTML. If a token is primed, it's embedded
+//                           in the body so the Worker's URL-verify path
+//                           finds it.
 // - GET /<handle>/lists/  → 200 empty HTML (kept for older paths)
 // - POST /__prime         → { token?: string } — set or clear the token
-//                           that should appear on the next RSS fetch
+//                           that should appear on the next RSS fetch AND
+//                           any HTML response from this stub
 // - DELETE /__prime       → clear
 
 let primedToken = null
@@ -61,9 +69,15 @@ const server = createServer(async (req, res) => {
     res.end('<html><body>no lists</body></html>')
     return
   }
-  // Default: any /<handle>/ returns a 200 stub profile
+  // Default: any /<handle>/... returns a 200 stub HTML page. When a token
+  // is primed, embed it so URL-based verification (Worker scrapes the
+  // pasted page) can find it — same priming switch as the RSS branch.
   res.writeHead(200, { 'Content-Type': 'text/html' })
-  res.end('<html><body>stub profile</body></html>')
+  if (primedToken) {
+    res.end(`<html><body><p>stub page</p><p class="lb-tag">${primedToken}</p></body></html>`)
+  } else {
+    res.end('<html><body>stub profile</body></html>')
+  }
 })
 
 server.listen(port, () => {

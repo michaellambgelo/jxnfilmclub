@@ -117,6 +117,10 @@ describe('POST /letterboxd/verify', () => {
     const saved = JSON.parse(await env.MEMBERS_KV.get('member:verify@example.com'))
     expect(saved.handle).toBe('verifyuser')
 
+    // session:{id} refreshed with the newly-linked handle.
+    const session = JSON.parse(await env.MEMBERS_KV.get(`session:${member.id}`))
+    expect(session.handle).toBe('verifyuser')
+
     const gh = calls.find(c => c.url.includes('api.github.com'))
     const dispatch = JSON.parse(gh.init.body)
     expect(dispatch.event_type).toBe('update-member')
@@ -182,6 +186,10 @@ describe('POST /letterboxd/unlink', () => {
     expect(await env.MEMBERS_KV.get('lb_token:unlink@example.com')).toBeNull()
     const saved = JSON.parse(await env.MEMBERS_KV.get('member:unlink@example.com'))
     expect(saved.handle).toBeNull()
+
+    // session:{id} refreshed with handle: null after unlink.
+    const session = JSON.parse(await env.MEMBERS_KV.get(`session:${member.id}`))
+    expect(session.handle).toBeNull()
 
     const gh = calls.find(c => c.url.includes('api.github.com'))
     const dispatch = JSON.parse(gh.init.body)

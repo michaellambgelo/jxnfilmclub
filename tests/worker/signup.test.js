@@ -131,6 +131,13 @@ describe('POST /signup/verify', () => {
     expect(member.id).toBe(body.id)
     expect(await env.MEMBERS_KV.get('pending:bob@example.com')).toBeNull()
 
+    // session:{id} snapshot is seeded on verify so /member/me is fast
+    // without waiting on the add-member workflow.
+    const session = JSON.parse(await env.MEMBERS_KV.get(`session:${body.id}`))
+    expect(session.id).toBe(body.id)
+    expect(session.email).toBe('bob@example.com')
+    expect(session.name).toBe('Bob')
+
     // lb_token persists for 48h so user can still verify Letterboxd later.
     expect(await env.MEMBERS_KV.get('lb_token:bob@example.com')).toBeTruthy()
 

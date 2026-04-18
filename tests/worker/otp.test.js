@@ -72,6 +72,11 @@ describe('POST /otp/verify', () => {
     expect(body.id).toBe(member.id)
     expect(body.handle).toBe('v1user')
     expect(await env.MEMBERS_KV.get(`otp:${member.email}`)).toBeNull()
+
+    // session:{id} snapshot primes /member/me for this session.
+    const session = JSON.parse(await env.MEMBERS_KV.get(`session:${member.id}`))
+    expect(session.email).toBe(member.email)
+    expect(session.handle).toBe('v1user')
   })
 
   it('rejects wrong code with 401 and keeps KV entry', async () => {

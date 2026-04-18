@@ -28,6 +28,7 @@ sequenceDiagram
     Site->>Worker: POST /signup/verify
     Worker->>Worker: Validate code against pending:{email}
     Worker->>Worker: Create member:{email} in KV
+    Worker->>Worker: Seed session:{id} snapshot (1h TTL)
     Worker->>Worker: Generate session token (1h expiry)
     Worker->>GH: Dispatch add-member workflow
     Worker-->>Site: { token, email, id, name, handle }

@@ -64,12 +64,13 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 - **KV schema**:
   - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Written on `/signup`, consumed by `/signup/verify`.
   - `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Authoritative member row (source-of-truth for the Worker; `data/members.json` is the public projection).
+  - `session:{id}` — full member snapshot keyed by member id, 1h TTL (matches JWT exp). Write-through overlay refreshed on `/signup/verify`, `/otp/verify`, `/member/update`, `/letterboxd/verify`, `/letterboxd/unlink`. `/member/me` reads this first and falls back to `member:{email}` on miss, reseeding — same baseline-on-miss pattern as `readAttendees`.
   - `lb_token:{email}` — `{ token, handle?, exp }`, 48h TTL. Issued on signup and on `/letterboxd/request`.
   - `email:{handle}` / `handle:{email}` — bidirectional handle ↔ email link, written on `/letterboxd/verify`.
   - `otp:{email}` — 6-digit login code for returning members, 10min TTL.
 - **Routing (SPA)**: `state.setup({ route: '/:type', query: ['query', 'sort', 'email'], autolink: true })`. `state.on('type', ...)` dispatches to `members-view` (default), `events-view`, `sign-in-view`, `verify-view`, or `edit-view`.
 - **Conditional nav**: `index.html`'s root component derives `signedIn` from `localStorage.jxnfc_session`. Nav renders Join + Log in when signed out, Edit account when signed in. Refreshed on every route change.
-- **Session**: `localStorage.jxnfc_session = { token, email, id, handle?, exp }`. The `token` is `base64url(JSON(claims)).HMAC-SHA256`, signed with `OTP_SIGNING_KEY`. Claims include `email`, `id`, and `exp`.
+- **Session**: `localStorage.jxnfc_session = { token, email, id, handle?, exp }`. The `token` is `base64url(JSON(claims)).HMAC-SHA256`, signed with `OTP_SIGNING_KEY`. Claims include `email`, `id`, and `exp`. The Worker mirrors an authoritative snapshot at `session:{id}` (see KV schema) so `/member/me` reads are fast and reflect the latest mutation immediately.
 - **Server-resolved identity**: `/member/update` and `/letterboxd/verify` look up the member from the bearer token's email, not from request body fields. Clients can't edit anyone else's entry.
 - **Email templates**: two — `sendSignupEmail` (OTP + 48h LB tag + instructions) and `sendLoginEmail` (OTP only). Different Resend subjects.
 

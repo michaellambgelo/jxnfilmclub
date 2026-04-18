@@ -68,7 +68,7 @@ base.beforeAll(async ({ request }) => {
 // instances don't leak pending/member/otp/lb_token entries between runs.
 // In CI (fresh server), this is a no-op.
 test.beforeEach(async ({ request }) => {
-  for (const prefix of ['pending:', 'member:', 'otp:', 'lb_token:', 'email:', 'handle:', '__last_']) {
+  for (const prefix of ['pending:', 'member:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', '__last_']) {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
   }
 })

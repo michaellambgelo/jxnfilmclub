@@ -3,6 +3,7 @@ import signupHtml from './signup.html'
 
 const OTP_TTL = 600         // 10 min
 const LB_TOKEN_TTL = 172800 // 48 hours
+const SESSION_TTL = 3600    // 1 hour — matches JWT exp
 
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
@@ -132,6 +133,7 @@ async function handleSignupVerify(request, env) {
   }
   await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
   await env.MEMBERS_KV.delete(`pending:${email}`)
+  await writeSession(env, member)
   await dispatchGithub(env, 'add-member', { id, name: member.name, joined: member.joined })
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000 })
@@ -165,6 +167,7 @@ async function handleOtpVerify(request, env) {
   const member = memberRaw ? JSON.parse(memberRaw) : null
   if (!member) return json(env, { error: 'no member linked to this email' }, 403)
 
+  await writeSession(env, member)
   const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000 })
   return json(env, { token, email, id: member.id, name: member.name, handle: member.handle })
 }
@@ -247,6 +250,7 @@ async function handleLbVerify(request, env) {
   await env.MEMBERS_KV.put(`email:${handle}`, claims.email)
   await env.MEMBERS_KV.put(`handle:${claims.email}`, handle)
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+  await writeSession(env, member)
 
   await dispatchGithub(env, 'update-member', {
     id: member.id,
@@ -273,6 +277,7 @@ async function handleLbUnlink(request, env) {
   await env.MEMBERS_KV.delete(`email:${handle}`)
   await env.MEMBERS_KV.delete(`handle:${claims.email}`)
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+  await writeSession(env, member)
 
   // `handle: null` tells update-member.yml to drop the field from the
   // public members.json row.
@@ -285,15 +290,17 @@ async function handleLbUnlink(request, env) {
 
 // --- Member read + update ---
 
+// /member/me reads the per-session snapshot first (session:{id}) so a recent
+// write lands in subsequent reads without waiting on the update-member
+// workflow. On a session-KV miss we fall back to member:{email} and reseed,
+// mirroring readAttendees' baseline-on-miss pattern.
 async function handleMemberMe(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
-  const raw = await env.MEMBERS_KV.get(`member:${claims.email}`)
-  if (!raw) return json(env, { error: 'member not found' }, 404)
-  return json(env, JSON.parse(raw))
+  const member = await readSession(env, claims)
+  if (!member) return json(env, { error: 'member not found' }, 404)
+  return json(env, member)
 }
-
-
 
 async function handleMemberUpdate(request, env) {
   const claims = await authorize(request, env)
@@ -311,8 +318,37 @@ async function handleMemberUpdate(request, env) {
 
   Object.assign(member, updates)
   await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
+  await writeSession(env, member)
   await dispatchGithub(env, 'update-member', { id: member.id, updates })
   return json(env, { ok: true, id: member.id })
+}
+
+// Session KV overlay — session:{id} holds a short-TTL (1h) snapshot of the
+// member row so authenticated reads don't need to re-resolve the email from
+// the token or merge with the still-propagating public members.json.
+//
+// Write-through: every handler that mutates member:{email} also refreshes
+// the session snapshot, so the next /member/me reflects the change without
+// waiting on the update-member workflow. Read path mirrors readAttendees —
+// fall back to member:{email} on a session-KV miss and reseed.
+async function writeSession(env, member) {
+  if (!member?.id) return
+  await env.MEMBERS_KV.put(
+    `session:${member.id}`,
+    JSON.stringify(member),
+    { expirationTtl: SESSION_TTL },
+  )
+}
+
+async function readSession(env, claims) {
+  const sessionRaw = await env.MEMBERS_KV.get(`session:${claims.id}`)
+  if (sessionRaw) return JSON.parse(sessionRaw)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return null
+  const member = JSON.parse(memberRaw)
+  await writeSession(env, member)
+  return member
 }
 
 // --- Attendance ---

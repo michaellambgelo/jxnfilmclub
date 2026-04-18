@@ -37,6 +37,7 @@ sequenceDiagram
     alt Valid code
         Worker->>Worker: Delete otp:{email}
         Worker->>Worker: Load member record from KV
+        Worker->>Worker: Seed session:{id} snapshot (1h TTL)
         Worker->>Worker: Generate session token (1h expiry)
         Worker-->>Site: { token, email, id, name, handle }
         Site->>Site: Store session in localStorage

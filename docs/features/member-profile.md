@@ -12,12 +12,14 @@ sequenceDiagram
     participant GH as GitHub Actions
 
     Site->>Worker: GET /member/me (with session token)
+    Worker->>Worker: Read session:{id} (fall back to<br/>member:{email} on miss; reseed)
     Worker-->>Site: { name, pronouns, handle, ... }
     Site->>User: Prefills form fields
 
     User->>Site: Edits name/pronouns, clicks "Save"
     Site->>Worker: POST /member/update { name, pronouns }
     Worker->>Worker: Update member:{email} in KV
+    Worker->>Worker: Refresh session:{id} snapshot
     Worker->>GH: Dispatch update-member workflow
     Worker-->>Site: 200 OK
 
@@ -95,6 +97,7 @@ When removing a Letterboxd link, the user sees:
 
 - Letterboxd verification tag expires in **48 hours**
 - Tag is preserved across sessions (set at signup or from /edit)
+- `session:{id}` snapshot expires in **1 hour** (matches JWT exp); refreshed on every member-mutating write so the client sees its own updates on the next `/member/me`.
 
 ## Key Files
 

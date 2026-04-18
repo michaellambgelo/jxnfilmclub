@@ -100,23 +100,18 @@
     </label>
   </header>
 
-  <table>
-    <thead>
-      <tr>
-        <th colspan="2">{ total || 0 } members</th>
-        <th>Letterboxd</th>
-        <th>Joined</th>
-      </tr>
-    </thead>
-    <tr :each="el in items" key="{ el.id || el.handle }">
-      <td><avatar :name="el.name"/></td>
-      <td><h3>{ el.name }</h3></td>
-      <td>
-        <a :if="el.handle" href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
-      </td>
-      <td><timeago :ts="el.joined"/></td>
-    </tr>
-  </table>
+  <p class="result-count">{ total || 0 } members</p>
+
+  <div class="card-grid member-grid">
+    <article :each="el in items" key="{ el.id || el.handle }" class="member-card">
+      <avatar :name="el.name"/>
+      <h3>{ el.name }</h3>
+      <a :if="el.handle" class="handle"
+        href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
+      <span :if="!el.handle" class="handle -none">no Letterboxd</span>
+      <p class="joined">Joined <timeago :ts="el.joined"/></p>
+    </article>
+  </div>
 
   <script>
     state.on('query sort', () => this.reload())
@@ -208,51 +203,46 @@
     </label>
   </header>
 
-  <table>
-    <thead>
-      <tr>
-        <th colspan="2">{ total || 0 } events</th>
-        <th>Film</th>
-        <th>Venue</th>
-        <th>Date</th>
-        <th>Attendance</th>
-      </tr>
-    </thead>
-    <tr :each="el in items" key="{ el.id }">
-      <td>
+  <p class="result-count">{ total || 0 } events</p>
+
+  <div class="card-grid event-grid">
+    <article :each="el in items" key="{ el.id }" class="event-card">
+      <div class="event-poster-wrap">
         <img :if="el.poster" :src="el.poster" class="event-poster" alt="">
-      </td>
-      <td>
+      </div>
+      <div class="event-body">
         <h3>{ el.title }</h3>
-      </td>
-      <td>
-        <a :if="el.letterboxd_uri" href="{ el.letterboxd_uri }" target="_blank" rel="noopener">{ el.film }</a>
-        <span :if="!el.letterboxd_uri">{ el.film }</span>
-      </td>
-      <td>{ el.venue }</td>
-      <td>{ formatDate(el.date) }</td>
-      <td class="attendance-cell">
-        <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
-        <div :if="attendeesFor(el.id).length" class="attendance-list">
-          <span :each="n in attendeesFor(el.id)" key="{ n }" class="attendee">
-            <a :if="handlesByName[n]" href="https://letterboxd.com/{ handlesByName[n] }/"
-              target="_blank" rel="noopener">{ n }</a>
-            <span :if="!handlesByName[n]">{ n }</span>
-          </span>
+        <p class="event-film">
+          <a :if="el.letterboxd_uri" href="{ el.letterboxd_uri }" target="_blank" rel="noopener">{ el.film }</a>
+          <span :if="!el.letterboxd_uri">{ el.film }</span>
+        </p>
+        <p class="event-meta">
+          <span class="event-venue">{ el.venue }</span>
+          <span class="event-date">{ formatDate(el.date) }</span>
+        </p>
+        <div class="event-attendance">
+          <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
+          <div :if="attendeesFor(el.id).length" class="attendance-list">
+            <span :each="n in attendeesFor(el.id)" key="{ n }" class="attendee">
+              <a :if="handlesByName[n]" href="https://letterboxd.com/{ handlesByName[n] }/"
+                target="_blank" rel="noopener">{ n }</a>
+              <span :if="!handlesByName[n]">{ n }</span>
+            </span>
+          </div>
+          <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
+            :disabled="busyId === el.id"
+            :onclick="markAttend(el.id)">
+            { busyId === el.id ? 'Saving…' : 'I was there' }
+          </button>
+          <button :if="canToggle(el.id) && attended(el.id)" type="button" class="attend-btn attend-btn-remove"
+            :disabled="busyId === el.id"
+            :onclick="removeAttend(el.id)">
+            { busyId === el.id ? 'Removing…' : 'Remove me' }
+          </button>
         </div>
-        <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
-          :disabled="busyId === el.id"
-          :onclick="markAttend(el.id)">
-          { busyId === el.id ? 'Saving…' : 'I was there' }
-        </button>
-        <button :if="canToggle(el.id) && attended(el.id)" type="button" class="attend-btn attend-btn-remove"
-          :disabled="busyId === el.id"
-          :onclick="removeAttend(el.id)">
-          { busyId === el.id ? 'Removing…' : 'Remove me' }
-        </button>
-      </td>
-    </tr>
-  </table>
+      </div>
+    </article>
+  </div>
 
   <script>
     const WORKER_ORIGIN = resolveWorkerOrigin()

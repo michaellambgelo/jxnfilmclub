@@ -1,0 +1,203 @@
+/* Card grids for members-view and events-view.
+ *
+ * Uses CSS Grid `auto-fit` + `minmax()` so the column count responds to
+ * viewport width without explicit breakpoints — one card on phones, a row
+ * of three or four on wide screens.
+ */
+
+.card-grid {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 3rem;
+}
+
+.result-count {
+  color: #888;
+  font-size: 88%;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 0 0 1rem;
+}
+
+/* ------- member cards ------- */
+
+.member-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.member-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: .9rem;
+  row-gap: .15rem;
+  align-content: center;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+
+.member-card figure.avatar {
+  grid-row: 1 / span 3;
+  align-self: center;
+  margin: 0;
+}
+
+.member-card h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #222;
+}
+
+.member-card .handle {
+  font-size: 90%;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.member-card .handle:hover {
+  text-decoration: underline;
+}
+
+.member-card .handle.-none {
+  color: #aaa;
+  font-style: italic;
+}
+
+.member-card .joined {
+  margin: 0;
+  font-size: 85%;
+  color: #888;
+}
+
+/* ------- event cards ------- */
+
+.event-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.event-card {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.event-poster-wrap {
+  aspect-ratio: 16 / 9;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+
+.event-poster-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.event-body {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  padding: 1rem 1.2rem 1.2rem;
+  flex: 1;
+}
+
+.event-body h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: #222;
+}
+
+.event-film {
+  margin: 0;
+  font-size: 95%;
+  color: #555;
+}
+
+.event-film a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.event-film a:hover {
+  text-decoration: underline;
+}
+
+.event-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+  font-size: 88%;
+  color: #888;
+}
+
+.event-attendance {
+  margin-top: auto;
+  padding-top: .75rem;
+  border-top: 1px solid #f0f0f0;
+}
+
+.attendance-count {
+  color: #666;
+  font-size: 88%;
+  margin-bottom: .5em;
+}
+
+.attendance-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .15em .4em;
+  margin-bottom: .75em;
+  font-size: 88%;
+}
+
+.attendance-list .attendee:not(:last-child)::after {
+  content: ",";
+  color: #aaa;
+}
+
+.attendance-list a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.attendance-list a:hover {
+  text-decoration: underline;
+}
+
+.attend-btn {
+  width: 100%;
+  font-size: 90%;
+  padding: .55em 1em;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.attend-btn:hover:not(:disabled) {
+  border-color: #888;
+}
+
+.attend-btn:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.attend-btn-remove {
+  color: #a33;
+  border-color: #e0bcbc;
+}
+
+/* Filter header shared by members + events views: allow controls to wrap
+ * onto multiple rows on narrow screens rather than overflowing. */
+
+article > header {
+  flex-wrap: wrap;
+}

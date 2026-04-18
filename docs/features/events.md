@@ -4,20 +4,30 @@ A public listing of all club screenings and events with search, venue filtering,
 
 ## Page Layout
 
-The events view at `/events` displays a table with:
-- Event poster thumbnail (if available)
-- Event title
+Events render as a responsive card grid (`.card-grid.event-grid` in
+`css/cards.css`), using CSS `grid-template-columns: repeat(auto-fit,
+minmax(300px, 1fr))` so the layout flows from a single column on phones
+to two or three across on desktop.
+
+Each card stacks:
+- Event poster in a fixed 16:9 banner (`object-fit: cover`), with a
+  neutral placeholder when no image is available
+- Event title as the heading
 - Film name (linked to Letterboxd if URI available)
-- Venue
-- Date (formatted as "Mon DD, YYYY")
-- Attendance count + attendee names + action button
+- Venue + date row
+- Attendance block at the bottom: count, comma-separated attendee list
+  (handles linked to Letterboxd), and the "I was there" / "Remove me"
+  action button anchored full-width
+
+Above the grid: a result-count line ("{N} events") plus the search +
+sort + venue filter header.
 
 ## Interaction Flow
 
 ```mermaid
 flowchart TD
     A[User navigates to /events] --> B[Load events + attendance data]
-    B --> C[Render table with filters]
+    B --> C[Render card grid with filters]
 
     C --> D{Search field}
     D -->|Type query| E[Filter by title, film, or venue<br/>Updates ?query= param]
@@ -58,6 +68,7 @@ flowchart TD
 | File | Role |
 |------|------|
 | `ui/views.html` | `events-view` component |
+| `css/cards.css` | `.event-grid` + `.event-card` layout |
 | `model/index.ts` | `getEvents()` with search, sort, venue filter |
 | `data/events.json` | Event records |
 | `data/attendance.json` | Attendance lists by event ID |

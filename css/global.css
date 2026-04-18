@@ -103,12 +103,6 @@ article > header > :nth-child(2) {
   margin: 0 1rem 0 auto;
 }
 
-@media (max-width: 750px) {
-  article header > :last-child {
-    display: none;
-  }
-}
-
 img {
   max-width: 100%;
   height: auto;

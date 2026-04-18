@@ -4,20 +4,27 @@ A public, searchable, sortable directory of all club members at `/members`.
 
 ## Page Layout
 
-The members view displays a table with:
+Members render as a responsive card grid (`.card-grid.member-grid` in
+`css/cards.css`), using CSS `grid-template-columns: repeat(auto-fit,
+minmax(220px, 1fr))` so the column count follows viewport width without
+explicit breakpoints — one column on phones, three to five on desktop.
+
+Each card shows:
 - Avatar (deterministic background color from first letter of name)
 - Display name
-- Letterboxd handle (linked to profile, if verified)
-- Join date (relative time via `<timeago>` widget)
+- Letterboxd handle (linked to profile, if verified; or muted
+  "no Letterboxd" label otherwise)
+- "Joined {relative time}" via `<timeago>` widget
 
-Header shows total count: "{N} members".
+Above the grid: a result-count line ("{N} members") plus the search +
+sort header.
 
 ## Interaction Flow
 
 ```mermaid
 flowchart TD
     A[User navigates to /members] --> B[Load members from data/members.json]
-    B --> C[Render table]
+    B --> C[Render card grid]
 
     C --> D{Search field}
     D -->|Type query| E[Filter by name or handle<br/>Updates ?query= param]
@@ -48,6 +55,7 @@ Each member gets a deterministic avatar with a colored background:
 |------|------|
 | `ui/views.html` | `members-view` component |
 | `ui/widgets.html` | `avatar` and `timeago` widgets |
+| `css/cards.css` | `.member-grid` + `.member-card` layout |
 | `model/index.ts` | `getMembers()` with search and sort |
 | `data/members.json` | Member records |
 | `tests/e2e/site.spec.ts` | 4 members-view + 1 avatar test |

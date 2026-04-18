@@ -71,6 +71,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 - **Routing (SPA)**: `state.setup({ route: '/:type', query: ['query', 'sort', 'email'], autolink: true })`. `state.on('type', ...)` dispatches to `members-view` (default), `events-view`, `sign-in-view`, `verify-view`, or `edit-view`.
 - **Conditional nav**: `index.html`'s root component derives `signedIn` from `localStorage.jxnfc_session`. Nav renders Join + Log in when signed out, Edit account when signed in. Refreshed on every route change.
 - **Session**: `localStorage.jxnfc_session = { token, email, id, handle?, exp }`. The `token` is `base64url(JSON(claims)).HMAC-SHA256`, signed with `OTP_SIGNING_KEY`. Claims include `email`, `id`, and `exp`. The Worker mirrors an authoritative snapshot at `session:{id}` (see KV schema) so `/member/me` reads are fast and reflect the latest mutation immediately.
+- **OTP in-flight**: `localStorage.jxnfc_otp_inflight = { email, sentAt }` — written by `sign-in-view` after `/otp/request`, expires client-side after 10 minutes, lets returning users resume the code-entry step without re-typing their email.
 - **Server-resolved identity**: `/member/update` and `/letterboxd/verify` look up the member from the bearer token's email, not from request body fields. Clients can't edit anyone else's entry.
 - **Email templates**: two — `sendSignupEmail` (OTP + 48h LB tag + instructions) and `sendLoginEmail` (OTP only). Different Resend subjects.
 

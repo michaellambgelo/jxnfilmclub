@@ -41,12 +41,22 @@ sequenceDiagram
         Worker->>Worker: Generate session token (1h expiry)
         Worker-->>Site: { token, email, id, name, handle }
         Site->>Site: Store session in localStorage
+        Site->>Site: Clear jxnfc_otp_inflight
         Site->>Site: Redirect to /edit
     else Wrong code
         Worker-->>Site: 401 "invalid code"
         Site->>User: Shows error, OTP preserved for retry
     end
 ```
+
+## In-flight Resume
+
+When `POST /otp/request` returns 200, the site writes
+`localStorage.jxnfc_otp_inflight = { email, sentAt }`. On subsequent `/signin`
+mounts with no active session, the view skips straight to the code-entry step
+with the email pre-filled — matching the Worker's 10-minute OTP TTL. The
+entry is cleared on verify success, on "Use a different email", and on sign
+out; it naturally expires client-side after 10 minutes.
 
 ## Anti-Enumeration Design
 

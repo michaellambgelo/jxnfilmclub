@@ -205,43 +205,14 @@
 
   <p class="result-count">{ total || 0 } events</p>
 
+  <p :if="attendanceError" class="attendance-unavailable">Attendance data is temporarily unavailable.</p>
+
   <div class="card-grid event-grid">
-    <article :each="el in items" key="{ el.id }" class="event-card">
-      <div class="event-poster-wrap">
-        <img :if="el.poster" :src="el.poster" class="event-poster" alt="">
-      </div>
-      <div class="event-body">
-        <h3>{ el.title }</h3>
-        <p class="event-film">
-          <a :if="el.letterboxd_uri" href="{ el.letterboxd_uri }" target="_blank" rel="noopener">{ el.film }</a>
-          <span :if="!el.letterboxd_uri">{ el.film }</span>
-        </p>
-        <p class="event-meta">
-          <span class="event-venue">{ el.venue }</span>
-          <span class="event-date">{ formatDate(el.date) }</span>
-        </p>
-        <div class="event-attendance">
-          <div class="attendance-count">{ attendeesFor(el.id).length } attended</div>
-          <div :if="attendeesFor(el.id).length" class="attendance-list">
-            <span :each="n in attendeesFor(el.id)" key="{ n }" class="attendee">
-              <a :if="handlesByName[n]" href="https://letterboxd.com/{ handlesByName[n] }/"
-                target="_blank" rel="noopener">{ n }</a>
-              <span :if="!handlesByName[n]">{ n }</span>
-            </span>
-          </div>
-          <button :if="canToggle(el.id) && !attended(el.id)" type="button" class="attend-btn"
-            :disabled="busyId === el.id"
-            :onclick="markAttend(el.id)">
-            { busyId === el.id ? 'Saving…' : 'I was there' }
-          </button>
-          <button :if="canToggle(el.id) && attended(el.id)" type="button" class="attend-btn attend-btn-remove"
-            :disabled="busyId === el.id"
-            :onclick="removeAttend(el.id)">
-            { busyId === el.id ? 'Removing…' : 'Remove me' }
-          </button>
-        </div>
-      </div>
-    </article>
+    <event-card :each="el in items" key="{ el.id }"
+      :event="el"
+      :session="session"
+      :handles="handlesByName"
+      :attendees="attendance[el.id] || []"/>
   </div>
 
   <script>
@@ -264,24 +235,21 @@
       } catch { return null }
     }
 
-    // Worker is the primary source of attendance (KV-backed, reflects live
-    // self-reports). Static JSON is only used if the Worker is unreachable,
-    // e.g. offline preview.
     async function loadAttendance() {
       try {
         const res = await fetch(`${WORKER_ORIGIN}/events/attendance`)
         if (res.ok) {
           const data = await res.json()
-          if (data?.attendance) return data.attendance
+          if (data?.attendance) return { attendance: data.attendance, error: false }
         }
       } catch {}
-      return fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+      return { attendance: {}, error: true }
     }
 
     state.on('query sort venue', () => this.reload())
 
     async reload() {
-      const [{ items, total }, fresh] = await Promise.all([
+      const [{ items, total }, { attendance, error }] = await Promise.all([
         getEvents({
           search: state.query,
           sort: state.sort || 'date-desc',
@@ -290,18 +258,11 @@
         }),
         loadAttendance(),
       ])
-      // Mutate the existing attendance object in place rather than replacing
-      // it. Nue's click listeners close over a per-iteration snapshot of
-      // component state at render time, so reassigning this.attendance would
-      // leave old closures pointing at a stale object. Same-reference mutation
-      // keeps them in sync.
-      for (const k of Object.keys(this.attendance)) delete this.attendance[k]
-      Object.assign(this.attendance, fresh)
-      this.update({ items, total, attendance: this.attendance })
+      this.update({ items, total, attendance, attendanceError: error })
     }
 
     async mounted() {
-      this.update({ session: getSession(), busyId: null, attendance: {}, venues: [], handlesByName: {} })
+      this.update({ session: getSession(), attendance: {}, attendanceError: false, venues: [], handlesByName: {} })
       const [all, { items: members }] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
@@ -314,6 +275,63 @@
       this.update({ venues, handlesByName })
       await this.reload()
     }
+  </script>
+</article>
+
+
+<!-- Single event card. Owns its own attendees + busy state so clicks only
+     trigger a diff of this subtree — Nue's keyed child reconciliation
+     detaches every sibling on the parent's update(), which on the full
+     events grid manifests as scroll-reset-to-top. -->
+<article :is="event-card" class="event-card">
+  <div class="event-poster-wrap">
+    <img :if="event.poster" :src="event.poster" class="event-poster" alt="">
+  </div>
+  <div class="event-body">
+    <h3>{ event.title }</h3>
+    <p class="event-film">
+      <a :if="event.letterboxd_uri" href="{ event.letterboxd_uri }" target="_blank" rel="noopener">{ event.film }</a>
+      <span :if="!event.letterboxd_uri">{ event.film }</span>
+    </p>
+    <p class="event-meta">
+      <span class="event-venue">{ event.venue }</span>
+      <span class="event-date">{ formatDate(event.date) }</span>
+    </p>
+    <div class="event-attendance">
+      <div class="attendance-count">{ (attendees || []).length } attended</div>
+      <div :if="(attendees || []).length" class="attendance-list">
+        <span :each="n in attendees" key="{ n }" class="attendee">
+          <a :if="handles[n]" href="https://letterboxd.com/{ handles[n] }/"
+            target="_blank" rel="noopener">{ n }</a>
+          <span :if="!handles[n]">{ n }</span>
+        </span>
+      </div>
+      <button :if="canToggle() && !attended()" type="button" class="attend-btn"
+        :disabled="busy"
+        :onclick="toggle('POST')">
+        { busy ? 'Saving…' : 'I was there' }
+      </button>
+      <button :if="canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
+        :disabled="busy"
+        :onclick="toggle('DELETE')">
+        { busy ? 'Removing…' : 'Remove me' }
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    this.busy = false
 
     formatDate(ts) {
       if (!ts) return ''
@@ -322,31 +340,19 @@
       })
     }
 
-    attendeesFor(id) {
-      return (this.attendance && this.attendance[id]) || []
-    }
-
-    canToggle(id) {
+    canToggle() {
       return !!this.session
     }
 
-    attended(id) {
-      return this.session?.name && this.attendeesFor(id).includes(this.session.name)
+    attended() {
+      return this.session && this.session.name && (this.attendees || []).includes(this.session.name)
     }
 
-    async markAttend(id) {
-      return this.toggleAttend(id, 'POST')
-    }
-
-    async removeAttend(id) {
-      return this.toggleAttend(id, 'DELETE')
-    }
-
-    async toggleAttend(id, method) {
+    async toggle(method) {
       if (!this.session) return
-      this.update({ busyId: id })
+      this.update({ busy: true })
       try {
-        const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(id)}/attend`, {
+        const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(this.event.id)}/attend`, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -354,17 +360,11 @@
           },
         })
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-        // The POST handler read-modify-wrote KV in a single Worker invocation
-        // and returned the authoritative list. Trust it. Mutate this.attendance
-        // in place so Nue's render-time snapshot closures see the update via
-        // the shared reference; a no-reassign update avoids the stale-closure
-        // quirk that would otherwise require a full reload.
-        this.attendance[id] = data.attendees || []
-        this.update({ attendance: this.attendance, busyId: null })
+        if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`)
+        this.update({ attendees: data.attendees || [], busy: false })
       } catch (err) {
         console.error(`attendance ${method} failed:`, err)
-        this.update({ busyId: null })
+        this.update({ busy: false })
       }
     }
   </script>

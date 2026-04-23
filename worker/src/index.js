@@ -386,33 +386,31 @@ async function readSession(env, claims) {
 }
 
 // --- Attendance ---
+//
+// KV-first architecture: ATTENDANCE_KV is the single live source of truth.
+// `data/attendance.json` in the repo is an archival snapshot committed by the
+// snapshot-attendance workflow and a one-shot bootstrap source when a KV
+// namespace is empty (first deploy, new staging namespace, manual wipe).
+//
+// KV layout:
+//   attend:{eventId}        — canonical per-event attendee array
+//   attendance:all          — aggregate map { eventId: [names] } for O(1) bulk reads
+//   attendance:bootstrapped — marker; presence means the repo→KV seed has run
+//
+// Reads never touch the repo on the hot path. The aggregate is refreshed
+// write-through on every mutation, mirroring the session:{id} overlay pattern.
 
 // GET /events/:id/attendance — public; returns { attendees: [...names] }.
-// Reads from KV; on a cache miss, seeds KV from data/attendance.json in the
-// repo so the UI always sees at least the committed baseline.
 async function handleAttendanceGet(env, eventId) {
   const attendees = await readAttendees(env, eventId)
   return json(env, { attendees })
 }
 
 // GET /events/attendance — public; bulk read { [eventId]: [...names] }.
-// Merges the committed data/attendance.json baseline with any KV overrides,
-// so the UI hydrates in one request and sees live self-reports before the
-// workflow commits.
+// Single KV GET in the steady state.
 async function handleAttendanceMap(env) {
-  const baseline = await fetchAttendanceBaseline(env)
-  const merged = { ...baseline }
-
-  const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
-  const kvEntries = await Promise.all(
-    list.keys.map(async k => [k.name.slice('attend:'.length), await env.ATTENDANCE_KV.get(k.name)]),
-  )
-  for (const [eventId, raw] of kvEntries) {
-    if (raw) {
-      try { merged[eventId] = JSON.parse(raw) } catch { /* skip corrupt entry */ }
-    }
-  }
-  return json(env, { attendance: merged })
+  const all = await readAttendanceAll(env)
+  return json(env, { attendance: all })
 }
 
 // POST /events/:id/attend — authenticated.
@@ -430,7 +428,7 @@ async function handleAttend(request, env, eventId) {
   const attendees = await readAttendees(env, eventId)
   if (!attendees.includes(member.name)) {
     attendees.push(member.name)
-    await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
+    await writeAttendees(env, eventId, attendees)
   }
   return json(env, { ok: true, attendees })
 }
@@ -448,25 +446,85 @@ async function handleUnattend(request, env, eventId) {
   const idx = attendees.indexOf(member.name)
   if (idx !== -1) {
     attendees.splice(idx, 1)
-    await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
+    await writeAttendees(env, eventId, attendees)
   }
   return json(env, { ok: true, attendees })
 }
 
+// Per-event read: canonical attend:{id} first, then aggregate overlay as a
+// fallback for events that predate the per-event key being written. No repo
+// fetch — if both are missing, the event simply has no attendees.
 async function readAttendees(env, eventId) {
   const raw = await env.ATTENDANCE_KV.get(`attend:${eventId}`)
-  if (raw) return JSON.parse(raw)
-
-  const baseline = await fetchAttendanceBaseline(env)
-  const seeded = Array.isArray(baseline[eventId]) ? baseline[eventId] : []
-  await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(seeded))
-  return seeded
+  if (raw) {
+    try { return JSON.parse(raw) } catch { /* fall through */ }
+  }
+  const all = await readAttendanceAll(env)
+  return Array.isArray(all[eventId]) ? all[eventId] : []
 }
 
-// Fetches data/attendance.json from GitHub raw content. In E2E mode we never
-// reach out — tests control KV directly and don't want network calls. On any
-// failure we return {} so the worker stays available; the next request will
-// retry.
+// Aggregate read with one-shot bootstrap. Returns {} on total cold start if
+// the repo baseline is unreachable; the next request retries the bootstrap.
+async function readAttendanceAll(env) {
+  const raw = await env.ATTENDANCE_KV.get('attendance:all')
+  if (raw) {
+    try { return JSON.parse(raw) } catch { /* fall through to bootstrap */ }
+  }
+  return await bootstrapAttendance(env)
+}
+
+// Write-through: canonical per-event key + patch the aggregate overlay so the
+// next bulk read reflects this change in a single KV GET.
+async function writeAttendees(env, eventId, attendees) {
+  await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
+  const allRaw = await env.ATTENDANCE_KV.get('attendance:all')
+  const all = allRaw ? safeParseObject(allRaw) : await bootstrapAttendance(env)
+  all[eventId] = attendees
+  await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(all))
+}
+
+// One-shot per KV namespace: seed attendance:all + each attend:{id} from
+// data/attendance.json, then mark bootstrapped. Any per-event KV entries that
+// already exist win over baseline — that covers the case where a write lands
+// before the first read triggers bootstrap. Subsequent calls return the
+// cached aggregate without re-seeding. Returns the aggregate (possibly {}).
+async function bootstrapAttendance(env) {
+  if (await env.ATTENDANCE_KV.get('attendance:bootstrapped')) {
+    const raw = await env.ATTENDANCE_KV.get('attendance:all')
+    return raw ? safeParseObject(raw) : {}
+  }
+  const baseline = await fetchAttendanceBaseline(env)
+  const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
+  const existing = await Promise.all(
+    list.keys.map(async k => [k.name.slice('attend:'.length), await env.ATTENDANCE_KV.get(k.name)]),
+  )
+  const merged = { ...baseline }
+  for (const [eventId, raw] of existing) {
+    if (raw) {
+      try { merged[eventId] = JSON.parse(raw) } catch { /* skip corrupt entry */ }
+    }
+  }
+  await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(merged))
+  await Promise.all(
+    Object.entries(merged).map(([id, attendees]) =>
+      env.ATTENDANCE_KV.put(`attend:${id}`, JSON.stringify(Array.isArray(attendees) ? attendees : [])),
+    ),
+  )
+  await env.ATTENDANCE_KV.put('attendance:bootstrapped', '1')
+  return merged
+}
+
+function safeParseObject(raw) {
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+  } catch { return {} }
+}
+
+// Reads data/attendance.json from GitHub raw content. Only invoked by
+// bootstrapAttendance on a fresh KV namespace. In E2E mode the network is
+// suppressed — tests seed KV directly. On any failure we return {} so the
+// worker stays available; the next request retries the bootstrap.
 async function fetchAttendanceBaseline(env) {
   if (env.E2E_MODE === 'true') return {}
   const owner = env.GITHUB_OWNER
@@ -480,7 +538,7 @@ async function fetchAttendanceBaseline(env) {
     )
     if (!res.ok) return {}
     const data = await res.json()
-    return data && typeof data === 'object' ? data : {}
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
   } catch { return {} }
 }
 

@@ -195,6 +195,12 @@
   border-color: #e0bcbc;
 }
 
+.attendance-unavailable {
+  color: #a33;
+  font-size: 88%;
+  margin: 0 0 1em;
+}
+
 /* Filter header shared by members + events views: allow controls to wrap
  * onto multiple rows on narrow screens rather than overflowing. */
 

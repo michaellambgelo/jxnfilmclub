@@ -52,7 +52,7 @@ flowchart TD
 | Data | Source | Refresh |
 |------|--------|---------|
 | Events | `data/events.json` | Manual commits |
-| Attendance | Worker `GET /events/attendance` (KV + JSON overlay) | Live on click; JSON snapshot committed every 10 min |
+| Attendance | Worker `GET /events/attendance` (KV `attendance:all` overlay) | Live on click; JSON snapshot committed every 10 min |
 | Members (for handle lookup) | `data/members.json` | On member changes |
 
 ## URL Parameters
@@ -67,10 +67,14 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| `ui/views.html` | `events-view` component |
+| `ui/views.html` | `events-view` (list + filters) + `event-card` (per-event subcomponent that owns attendees / busy state) |
 | `css/cards.css` | `.event-grid` + `.event-card` layout |
 | `model/index.ts` | `getEvents()` with search, sort, venue filter |
 | `data/events.json` | Event records |
 | `data/attendance.json` | Attendance lists by event ID |
 | `tests/e2e/site.spec.ts` | 2 e2e tests |
 | `tests/model/model.test.ts` | 4 getEvents tests |
+
+### Why `event-card` is its own component
+
+Every `:onclick` handler in Nue auto-calls `update()` on the component that owns it (`node_modules/nuedom/src/dom/node.js:98–102`). If the attend button lived in `events-view`, each click would trigger a parent update, and `diffChildrenByKey` (`node_modules/nuedom/src/dom/diff.js:69–79`) would detach every keyed card from the grid before re-appending them — which collapses the document briefly and causes the browser to clamp `scrollY` to 0. Scoping the click handler to a per-card subcomponent means the post-click update diffs only the card's own subtree (non-keyed children → positional diff, no detach), so the scroll position is preserved.

@@ -1,6 +1,13 @@
 {
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/paprika-2006/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/0/2/3/49023-paprika-0-600-0-900-crop.jpg?v=bdcabb9981",
+      "title": "Paprika",
+      "watched_date": "2026-04-23",
+      "year": "2006"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/fckups-anonymous/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/0/7/2/6/2/1507262-fckups-anonymous-0-600-0-900-crop.jpg?v=fe736c9f92",
       "title": "F*ckUps Anonymous",
@@ -20,13 +27,6 @@
       "title": "Spirited Away",
       "watched_date": "2026-04-21",
       "year": "2001"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/inception/2/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/sv/95/s9/4j/inception-0-600-0-900-crop.jpg?v=30d7224316",
-      "title": "Inception",
-      "watched_date": "2026-04-21",
-      "year": "2010"
     }
   ]
 }

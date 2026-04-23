@@ -1,16 +1,17 @@
 {
   "2020-11-10-boys-state": [
-    "Michael Lamb",
-    "Test User"
+    "Michael Lamb"
   ],
   "2020-12-15-hereditary": [
-    "Michael Lamb"
+    "Michael Lamb",
+    "Test User"
   ],
   "2021-01-13-whiplash": [
     "Michael Lamb"
   ],
   "2021-02-09-first-cow": [
-    "Michael Lamb"
+    "Michael Lamb",
+    "Test User"
   ],
   "2021-03-09-blocks": [
     "Michael Lamb"
@@ -108,16 +109,13 @@
     "Michael Lamb"
   ],
   "2024-05-18-bottoms": [
-    "Michael Lamb",
-    "Test User"
+    "Michael Lamb"
   ],
   "2024-07-25-sing-sing": [
-    "Michael Lamb",
-    "Test User"
+    "Michael Lamb"
   ],
   "2026-02-04-hamnet": [
-    "Michael Lamb",
-    "Test User"
+    "Michael Lamb"
   ],
   "2026-04-14-sample": []
 }

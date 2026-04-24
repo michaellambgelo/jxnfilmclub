@@ -1,6 +1,6 @@
 # Event Attendance
 
-Authenticated members can self-report attendance at events. The button on each event row toggles between "I was there" and "Remove me" based on the signed-in member's current state. `ATTENDANCE_KV` is the single live source of truth; a scheduled workflow snapshots KV into the archival `data/attendance.json` ledger every 10 minutes, and the ledger seeds KV exactly once when a new namespace is brought up.
+Authenticated members can self-report attendance at events. The button on each event row toggles between "I was there" and "Remove me" based on the signed-in member's current state. `ATTENDANCE_KV` is the single live source of truth; a scheduled workflow snapshots KV into the archival `data/attendance.json` ledger every 6 hours, and the ledger seeds KV exactly once when a new namespace is brought up.
 
 ## Mark Attendance
 
@@ -9,7 +9,7 @@ sequenceDiagram
     actor User
     participant Events as jxnfilm.club/events
     participant Worker as Cloudflare Worker
-    participant Cron as Snapshot workflow<br/>(every 10 min)
+    participant Cron as Snapshot workflow<br/>(every 6h)
     participant JSON as data/attendance.json
 
     User->>Events: Sees "I was there" on an event
@@ -80,7 +80,7 @@ The attendee identifier is the member's **display name** (not Letterboxd handle)
 
 ## Persistence Cadence
 
-`.github/workflows/snapshot-attendance.yml` runs every 10 minutes (and on-demand via `workflow_dispatch`). It:
+`.github/workflows/snapshot-attendance.yml` runs every 6 hours (and on-demand via `workflow_dispatch`). It:
 
 1. `GET`s `https://join.jxnfilm.club/events/attendance` (one KV read of `attendance:all`).
 2. Sanity-checks the response shape.

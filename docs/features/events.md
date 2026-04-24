@@ -52,7 +52,7 @@ flowchart TD
 | Data | Source | Refresh |
 |------|--------|---------|
 | Events | `data/events.json` | Manual commits |
-| Attendance | Worker `GET /events/attendance` (KV `attendance:all` overlay) | Live on click; JSON snapshot committed every 10 min |
+| Attendance | Worker `GET /events/attendance` (KV `attendance:all` overlay) | Live on click; JSON snapshot committed every 6h |
 | Members (for handle lookup) | `data/members.json` | On member changes |
 
 ## URL Parameters

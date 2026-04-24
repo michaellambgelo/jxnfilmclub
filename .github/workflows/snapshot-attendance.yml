@@ -1,14 +1,15 @@
 name: Snapshot attendance
 
-# KV is the live source of truth. Every 10 minutes we snapshot the Worker's
-# bulk /events/attendance endpoint (which merges committed baseline + KV
-# overrides) and commit data/attendance.json if anything changed. This
-# replaces the per-click repository_dispatch model so rapid toggles don't
-# queue independent workflow runs.
+# KV is the live source of truth. Every 6 hours we snapshot the Worker's
+# bulk /events/attendance endpoint and commit data/attendance.json if
+# anything changed. The committed file is the bootstrap seed for fresh KV
+# namespaces (see bootstrapAttendance in worker/src/index.js) and a git
+# audit trail — it is no longer read on the hot path, so near-live
+# freshness isn't required.
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:

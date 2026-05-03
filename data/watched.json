@@ -1,6 +1,13 @@
 {
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/the-devil-wears-prada-2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/5/5/8/6/1195586-the-devil-wears-prada-2-0-600-0-900-crop.jpg?v=0d955add69",
+      "title": "The Devil Wears Prada 2",
+      "watched_date": "2026-05-02",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/marty-supreme/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/7/4/9/9/1197499-marty-supreme-0-600-0-900-crop.jpg?v=b14a26bb43",
       "title": "Marty Supreme",
@@ -20,13 +27,6 @@
       "title": "Interstellar",
       "watched_date": "2026-05-01",
       "year": "2014"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/the-drama/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/5/4/9/4/1205494-the-drama-0-600-0-900-crop.jpg?v=2320acafd5",
-      "title": "The Drama",
-      "watched_date": "2026-05-01",
-      "year": "2026"
     }
   ]
 }

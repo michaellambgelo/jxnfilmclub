@@ -36,6 +36,11 @@ body > header {
   display: flex;
   align-items: center;
   gap: 1.3em;
+  flex-wrap: wrap;
+}
+
+.mastnav-links {
+  display: contents;
 }
 
 .mastnav a {
@@ -53,12 +58,81 @@ body > header {
 }
 
 /* Right-align the auth group (Join + Edit my entry). */
-.mastnav > .auth-link {
+.mastnav .auth-link {
   margin-left: auto;
 }
 
-.mastnav > a:last-child {
+.mastnav-links > a:last-child {
   border-color: transparent !important;
+}
+
+.nav-toggle {
+  display: none;
+  margin-left: auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+}
+
+.nav-toggle-bar {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #444;
+  border-radius: 2px;
+}
+
+@media (max-width: 640px) {
+  .mastnav {
+    gap: 0;
+    padding-top: .25rem;
+    padding-bottom: .25rem;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .mastnav-links {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    flex-basis: 100%;
+    border-top: 1px solid #eee;
+    margin-top: .25rem;
+  }
+
+  .mastnav.open .mastnav-links {
+    display: flex;
+  }
+
+  .mastnav-links a {
+    padding: .9rem .25rem;
+    border-bottom: 1px solid #f0f0f0;
+    border-left: 2px solid transparent;
+    font-size: 1rem;
+  }
+
+  .mastnav-links a:last-child {
+    border-bottom: 0;
+  }
+
+  .mastnav-links a.selected {
+    border-bottom-color: #f0f0f0;
+    border-left-color: var(--brand);
+  }
+
+  .mastnav .auth-link {
+    margin-left: 0;
+  }
 }
 
 

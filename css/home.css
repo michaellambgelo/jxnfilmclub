@@ -144,3 +144,19 @@
     display: none;
   }
 }
+
+@media (max-width: 380px) {
+  .home-hero,
+  .home-podcast {
+    padding: 1.25em 1em;
+  }
+
+  .home-hero h1 {
+    font-size: 1.15rem;
+  }
+
+  .home-hero p,
+  .home-podcast > p {
+    font-size: 90%;
+  }
+}

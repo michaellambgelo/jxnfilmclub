@@ -58,3 +58,14 @@
 .readme a:hover {
   color: black;
 }
+
+@media (max-width: 480px) {
+  .readme {
+    margin: 1em auto;
+    padding: 1.25em 1.25em;
+  }
+
+  .readme h1 {
+    font-size: 1.8em;
+  }
+}

@@ -33,7 +33,7 @@
 
 .film-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 1rem;
 }
 
@@ -95,11 +95,13 @@
 }
 
 @media (max-width: 750px) {
-  .film-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .watched-member {
     padding: 1em 1.25em 1.5em;
+  }
+}
+
+@media (max-width: 380px) {
+  .film-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

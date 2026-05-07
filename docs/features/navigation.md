@@ -24,6 +24,10 @@ stateDiagram-v2
 - **Anonymous**: "Join" links to `https://join.jxnfilm.club/` (external), "Log in" links to `/signin`
 - **Signed in**: "Edit account" links to `/edit` (on jxnfilm.club, not join.jxnfilm.club)
 
+## Responsive Behavior
+
+The mastnav is a horizontal flex row above 640px. At `max-width: 640px` it collapses behind a hamburger toggle (`.nav-toggle`); the link group (`.mastnav-links`) is hidden and revealed by toggling `.open` on the nav, driven by a `menuOpen` flag on `index.html`'s root component. The flag is reset to `false` on every route change so the menu auto-closes after navigation.
+
 ## Session Management
 
 Sessions are stored in `localStorage.jxnfc_session` with the following structure:

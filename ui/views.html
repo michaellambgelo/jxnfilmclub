@@ -285,7 +285,7 @@
      events grid manifests as scroll-reset-to-top. -->
 <article :is="event-card" class="event-card">
   <div class="event-poster-wrap">
-    <img :if="event.poster" :src="event.poster" class="event-poster" alt="">
+    <img :if="event.poster" src="{ event.poster }" alt="{ event.film }" class="event-poster">
   </div>
   <div class="event-body">
     <h3>{ event.title }</h3>

@@ -184,6 +184,46 @@ describe('POST /member/delete', () => {
         .toEqual(['Loud Member', 'Bob'])
     })
 
+    it('best-effort dispatch: a 401 from GitHub still returns 200 to the client and records dispatch_failed:* audit', async () => {
+      // E2E_MODE short-circuits dispatch in tests, so we temporarily disable
+      // it to exercise the real dispatch path. Restore at the end.
+      const { env } = await import('cloudflare:test')
+      const prev = env.E2E_MODE
+      env.E2E_MODE = 'false'
+      try {
+        const { token, member } = await getTokenFor('paterror@example.com', { name: 'Locked Out' })
+        const calls = []
+        mockFetch(async (url, init) => {
+          calls.push({ url: String(url), init })
+          if (String(url).includes('api.github.com')) {
+            return new Response('{"message":"Bad credentials"}', { status: 401 })
+          }
+          return new Response('', { status: 200 })
+        })
+        // Without best-effort, this would 500. With it, the KV cascade
+        // completes and the client gets a clean 200.
+        const res = await fetchWith('/member/delete', 'POST', {}, token)
+        expect(res.status).toBe(200)
+
+        // Member row was still removed (cascade ran).
+        expect(await env.MEMBERS_KV.get(`member:${member.email}`)).toBeNull()
+
+        // GitHub was actually called (we didn't silently skip the dispatch).
+        expect(calls.some(c => c.url.includes('api.github.com'))).toBe(true)
+
+        // The audit key is present and parseable so an operator can find drift.
+        const auditKeys = await env.MEMBERS_KV.list({ prefix: 'dispatch_failed:remove-member:' })
+        expect(auditKeys.keys.length).toBeGreaterThanOrEqual(1)
+        const auditRaw = await env.MEMBERS_KV.get(auditKeys.keys[0].name)
+        const audit = JSON.parse(auditRaw)
+        expect(audit.event_type).toBe('remove-member')
+        expect(audit.client_payload.id).toBe(member.id)
+        expect(audit.reason).toMatch(/401/)
+      } finally {
+        env.E2E_MODE = prev
+      }
+    })
+
     it('an empty body (no anonymize key) is treated as opt-out', async () => {
       const { token } = await getTokenFor('emptybody@example.com', { name: 'Quiet Member' })
       await seedAttendance('evt-1', ['Quiet Member'])

@@ -905,6 +905,13 @@ async function sendEmail(env, to, subject, text) {
 }
 
 // --- GitHub dispatch ---
+//
+// Best-effort: KV is the source of truth, the data/*.json projection is
+// downstream. A throw here would block the KV cascade in callers mid-flight
+// (an expired PAT once half-deleted a real member — KV gone, JSON intact).
+// Instead we log and write a `dispatch_failed:` audit row that
+// scripts/admin/kv-audit.mjs and the local admin dashboard can pick up to
+// reconcile drift.
 
 async function dispatchGithub(env, event_type, client_payload) {
   if (env.E2E_MODE === 'true') {
@@ -914,19 +921,40 @@ async function dispatchGithub(env, event_type, client_payload) {
   // Staging writes to KV but never commits to the shared data/*.json ledger in
   // main. Skip the dispatch entirely so staging activity stays isolated.
   if (env.ENVIRONMENT === 'staging') return
-  const res = await fetch(
-    `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'jxnfilmclub-join',
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'jxnfilmclub-join',
+        },
+        body: JSON.stringify({ event_type, client_payload }),
       },
-      body: JSON.stringify({ event_type, client_payload }),
-    },
-  )
-  if (!res.ok) throw new Error(`GitHub dispatch ${res.status}: ${await res.text()}`)
+    )
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      await recordDispatchFailure(env, event_type, client_payload, `${res.status}: ${detail}`)
+    }
+  } catch (err) {
+    await recordDispatchFailure(env, event_type, client_payload, `threw: ${err && err.message || err}`)
+  }
+}
+
+async function recordDispatchFailure(env, event_type, client_payload, reason) {
+  console.error(`GitHub dispatch ${event_type} failed (${reason})`)
+  // 7-day TTL so the audit log is bounded but easy to inspect from the local
+  // admin dashboard via /api/kv?prefix=dispatch_failed:.
+  try {
+    const key = `dispatch_failed:${event_type}:${Date.now()}`
+    await env.MEMBERS_KV.put(
+      key,
+      JSON.stringify({ event_type, client_payload, reason, at: new Date().toISOString() }),
+      { expirationTtl: 7 * 24 * 3600 },
+    )
+  } catch { /* audit failure is non-fatal — KV cascade has already succeeded */ }
 }
 
 // --- Tokens ---

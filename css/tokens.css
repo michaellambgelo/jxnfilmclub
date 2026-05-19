@@ -1,0 +1,178 @@
+/* ============================================================
+   Jackson Film Club — Design Tokens
+   Colors, typography, spacing, radii, shadows, motion.
+   Source of truth: ~/Workspace/Jackson Film Club Design System/colors_and_type.css
+   ============================================================ */
+
+/* ---------- Fonts ---------- */
+
+@font-face {
+  font-family: "Helvetica Now Display";
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/HelveticaNowDisplayXBlk.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Skyfont";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/Skyfont-NonCommercial.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Fira Code";
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/FiraCode-VariableFont_wght.ttf") format("truetype-variations");
+}
+
+:root {
+
+  /* =========================================================
+     COLOR — Brand
+     The teal and red live in the logo's projector and rays.
+     ========================================================= */
+
+  --brand:           #009898;   /* teal — primary action, links */
+  --brand-dark:      #007a7a;   /* hover state for teal CTAs */
+  --brand-tint:      #dff7ff;   /* tag / chip background */
+  --brand-tint-fg:   #0090c0;   /* tag text on tint */
+
+  --accent:          #e00000;   /* projector-ray red — reserved for the logo */
+  --accent-dark:     #b80000;
+
+  /* =========================================================
+     COLOR — Neutrals
+     Bone-white app background, near-black ink, warm greys.
+     ========================================================= */
+
+  --bg:              #f9fafb;   /* app background */
+  --surface:         #ffffff;   /* cards, sheets, hero panels */
+  --surface-2:       #f3f4f6;   /* poster wells, empty states */
+
+  --ink:             #222222;   /* primary text */
+  --ink-strong:      #111111;   /* headings, logotype */
+  --ink-2:           #444444;   /* secondary text */
+  --ink-3:           #6b7280;   /* nav links, helper text */
+  --ink-4:           #888888;   /* meta, "joined", result counts */
+  --ink-5:           #999999;   /* placeholders, year stamps */
+  --ink-6:           #bbbbbb;   /* placeholder text */
+
+  --line:            #eeeeee;   /* card borders, dividers */
+  --line-2:          #dddddd;   /* input borders */
+  --line-3:          #f0f0f0;   /* faintest hairlines */
+
+  /* =========================================================
+     COLOR — Semantic
+     ========================================================= */
+
+  --ok-bg:           #e6f7ea;
+  --ok-fg:           #185628;
+  --err-bg:          #fdecec;
+  --err-fg:          #8a1f1f;
+  --err-border:      #e0bcbc;
+
+  --focus-ring:      #dbf4ff;
+  --focus-border:    #00afff;
+
+  /* =========================================================
+     TYPE — Stacks
+     ========================================================= */
+
+  --font-display:   "Helvetica Now Display", "Helvetica Neue", "Inter Tight",
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --font-body:      -apple-system, BlinkMacSystemFont, "Avenir Next", "Segoe UI",
+                    "Helvetica Neue", Roboto, system-ui, sans-serif;
+
+  --font-mono:      "Fira Code", ui-monospace, "SF Mono", Menlo,
+                    Consolas, monospace;
+
+  --font-marquee:   "Skyfont", "Helvetica Now Display", "Helvetica Neue",
+                    sans-serif;
+
+  /* =========================================================
+     TYPE — Scale
+     Mostly small + tight. The site rarely shouts; it whispers.
+     ========================================================= */
+
+  --fs-12:  0.75rem;
+  --fs-13:  0.83rem;
+  --fs-14:  0.875rem;
+  --fs-15:  0.95rem;
+  --fs-16:  1rem;
+  --fs-17:  1.05rem;
+  --fs-18:  1.15rem;
+  --fs-22:  1.3rem;
+  --fs-26:  1.6rem;
+  --fs-37:  2.3rem;
+
+  --lh-tight:  1.15;
+  --lh-snug:   1.3;
+  --lh-body:   1.5;
+  --lh-loose:  1.65;
+
+  --tracking-tight:   -0.02em;
+  --tracking-normal:  0;
+  --tracking-wide:    0.08em;
+  --tracking-wider:   0.1em;
+
+  /* =========================================================
+     SPACING
+     ========================================================= */
+
+  --space-0:  0;
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* =========================================================
+     RADII
+     ========================================================= */
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  /* =========================================================
+     SHADOWS — restrained. Borders preferred over shadows.
+     ========================================================= */
+
+  --shadow-none:   none;
+  --shadow-card:   0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lift:   0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-sheet:  0 2px 1em rgba(0, 0, 0, 0.13);
+
+  /* =========================================================
+     LAYOUT
+     ========================================================= */
+
+  --wrap-max:        1300px;
+  --wrap-padding:    4%;
+  --column-narrow:   28rem;
+  --column-prose:    42em;
+  --column-readme:   600px;
+
+  /* =========================================================
+     MOTION
+     ========================================================= */
+
+  --ease:           ease;
+  --ease-out:       cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-fast:       0.15s;
+  --dur-base:       0.2s;
+}

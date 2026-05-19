@@ -1,6 +1,6 @@
 
 .auth {
-  max-width: 28rem;
+  max-width: var(--column-narrow);
   margin: 2rem auto;
 }
 
@@ -27,21 +27,22 @@
 }
 
 .auth input[type="email"],
-.auth input[type="text"] {
+.auth input[type="text"],
+.auth input[type="url"] {
   padding: 0.6rem 0.75rem;
   font: inherit;
   border: 1px solid #ccc;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .auth button {
   padding: 0.7rem;
   font: inherit;
   font-weight: 600;
-  background: #111;
+  background: var(--ink-strong);
   color: white;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -70,33 +71,44 @@
 }
 
 .auth .ok {
-  background: #e6f7ea;
-  color: #185628;
+  background: var(--ok-bg);
+  color: var(--ok-fg);
   padding: 0.6rem 0.75rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
 .auth .err {
-  background: #fdecec;
-  color: #8a1f1f;
+  background: var(--err-bg);
+  color: var(--err-fg);
   padding: 0.6rem 0.75rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin: 0;
+}
+
+/* The verification token chip rendered in the Letterboxd pending panel.
+   Fira Code makes the tag visually distinct from prose and aligns with
+   the brand mono treatment for any jxnfc-verify-XXXX string. */
+.auth .lb-token {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  padding: 0.15em 0.4em;
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+  color: var(--ink-strong);
 }
 
 .auth .danger-zone {
   margin-top: 3rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #f1c2c2;
+  border-top: 1px solid var(--err-border);
 }
 
 .auth .danger-zone h2 {
-  color: #8a1f1f;
+  color: var(--err-fg);
   margin: 0 0 0.35rem;
 }
 
 .auth .danger-zone button[type="submit"] {
-  background: #8a1f1f;
+  background: var(--err-fg);
 }
-

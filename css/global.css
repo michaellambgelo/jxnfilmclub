@@ -1,35 +1,28 @@
 
-:root {
-  --brand: #009898;
-  --brand-dark: #007a7a;
-  --accent: #e00000;
-  --ink: #222;
-}
-
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-
 html {
-  background-color: #f9fafb;
+  background-color: var(--bg);
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, Avenir Next, Segoe UI, Roboto;
+  font-family: var(--font-body);
+  color: var(--ink);
   margin: 0;
 }
 
 .wrap {
-  max-width: 1300px;
+  max-width: var(--wrap-max);
   margin: 0 auto;
-  padding: 0 4%;
+  padding: 0 var(--wrap-padding);
 }
 
 body > header {
-  background-color: white;
-  border-bottom: 1px solid #eee;
-  margin-bottom: 3rem;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-12);
 }
 
 .mastnav {
@@ -44,7 +37,7 @@ body > header {
 }
 
 .mastnav a {
-  color: #6b7280;
+  color: var(--ink-3);
   font-size: 95%;
   font-weight: 500;
   text-decoration: none;
@@ -54,7 +47,7 @@ body > header {
 
 .mastnav a:not(.selected):hover {
   color: #333;
-  border-color: #ddd;
+  border-color: var(--line-2);
 }
 
 /* Right-align the auth group (Join + Edit my entry). */
@@ -85,7 +78,7 @@ body > header {
   display: block;
   width: 22px;
   height: 2px;
-  background: #444;
+  background: var(--ink-2);
   border-radius: 2px;
 }
 
@@ -106,7 +99,7 @@ body > header {
     align-items: stretch;
     width: 100%;
     flex-basis: 100%;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--line);
     margin-top: .25rem;
   }
 
@@ -116,7 +109,7 @@ body > header {
 
   .mastnav-links a {
     padding: .9rem .25rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--line-3);
     border-left: 2px solid transparent;
     font-size: 1rem;
   }
@@ -126,7 +119,7 @@ body > header {
   }
 
   .mastnav-links a.selected {
-    border-bottom-color: #f0f0f0;
+    border-bottom-color: var(--line-3);
     border-left-color: var(--brand);
   }
 
@@ -147,7 +140,7 @@ a.selected {
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
-  color: #111 !important;
+  color: var(--ink-strong) !important;
   font-weight: 600 !important;
 }
 
@@ -158,7 +151,7 @@ a.selected {
 
 h1 {
   margin: 0 0 .7em;
-  font-size: 1.15rem;
+  font-size: var(--fs-18);
   font-weight: 600;
 }
 
@@ -183,5 +176,5 @@ img {
 }
 
 main > nav {
-  border-bottom: 1px solid #ccc
+  border-bottom: 1px solid #ccc;
 }

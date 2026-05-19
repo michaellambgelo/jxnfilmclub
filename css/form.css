@@ -1,8 +1,8 @@
 
 /* form elements  */
 :focus-visible {
-  outline: 2px solid #dbf4ff;
-  border-color: #00afff;
+  outline: 2px solid var(--focus-ring);
+  border-color: var(--focus-border);
   outline-offset: 2px;
 }
 
@@ -16,7 +16,7 @@ input, textarea, select {
 }
 
 input, textarea {
-  border: 1px solid #ddd;
+  border: 1px solid var(--line-2);
   border-radius: 5px;
   padding: .7em 1em;
   width: 100%;
@@ -31,7 +31,7 @@ select {
   background: url(../img/angle-down.svg) 100% 60% no-repeat;
   background-size: 1.2rem;
   appearance: none;
-  border: 0;;
+  border: 0;
   padding-right: 1.5rem;
   height: 2em;
 }
@@ -39,9 +39,9 @@ select {
 [type=search] {
   background: url(../img/search.svg) .7rem 52% no-repeat;
   background-size: 1.2rem;
-  background-color: white;
+  background-color: var(--surface);
   padding-left: 2.5rem;
-  transition: width .2s;
+  transition: width var(--dur-base) var(--ease);
   width: min(100%, 22em);
 }
 
@@ -50,5 +50,5 @@ select {
 }
 
 ::placeholder {
-  color: #bbb;
+  color: var(--ink-6);
 }

@@ -1,8 +1,8 @@
 
 .watched-member {
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 1.5em 2em 2em;
   margin-bottom: 1.5rem;
 }
@@ -40,14 +40,14 @@
 .film-card {
   text-decoration: none;
   color: inherit;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .film-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lift);
 }
 
 .film-poster {
@@ -55,8 +55,8 @@
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  background: #e5e7eb;
-  border-radius: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .film-poster-placeholder {
@@ -66,7 +66,7 @@
   text-align: center;
   padding: 1em;
   font-size: 83%;
-  color: #999;
+  color: var(--ink-5);
 }
 
 .film-info {
@@ -77,7 +77,7 @@
   font-size: 83%;
   font-weight: 600;
   margin: 0;
-  color: #444;
+  color: var(--ink-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -85,12 +85,12 @@
 
 .film-info span {
   font-size: 75%;
-  color: #999;
+  color: var(--ink-5);
 }
 
 .empty-state {
   text-align: center;
-  color: #999;
+  color: var(--ink-5);
   padding: 3rem 0;
 }
 

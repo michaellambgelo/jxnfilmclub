@@ -5,7 +5,7 @@
   text-align: center;
   margin: 0;
   border-radius: 2rem;
-  background-color: var(--bg, #ddd);
+  background-color: var(--bg-color, var(--line-2));
 }
 
 /* kamis */
@@ -22,20 +22,20 @@
 
 
 .tag {
-  background-color: #dff7ff;
+  background-color: var(--brand-tint);
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: .3em .6em;
-  border-radius: .3em;
+  border-radius: var(--radius-xs);
   font-weight: 500;
-  color: #0090c0;
+  color: var(--brand-tint-fg);
   font-size: 75%;
   display: inline-block;
 }
 
 .plan-free {
-  border: 1px solid #eee;
-  background: #fff;
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: #333;
 }
 
@@ -59,4 +59,3 @@
   width: 2.4em;
   min-width: 2.4em;
 }
-

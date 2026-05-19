@@ -508,6 +508,15 @@ async function handleMemberDelete(request, env) {
   if (!memberRaw) return json(env, { error: 'member not found' }, 404)
   const member = JSON.parse(memberRaw)
 
+  // Opt-in attendance scrub. Past `attend:{eventId}` arrays default to keeping
+  // the member's name as historical record; with `anonymize: true` we replace
+  // each occurrence of member.name with a generic "former member" label so the
+  // event count is preserved while the identity is removed.
+  const body = await request.json().catch(() => ({}))
+  if (body && body.anonymize === true && member.name) {
+    await anonymizeAttendance(env, member.name)
+  }
+
   // KV cascade. Order doesn't matter for correctness — each delete is
   // independent — but doing the canonical row first means a mid-flight
   // crash leaves nothing reachable rather than a dangling reverse index.
@@ -528,6 +537,35 @@ async function handleMemberDelete(request, env) {
 
   await dispatchGithub(env, 'remove-member', { id: member.id })
   return json(env, { ok: true })
+}
+
+// Attendance is stored as `attend:{eventId} -> [name, name, ...]`, name-keyed
+// (not id-keyed). Walking the entire prefix is the only way to find a
+// member's past attendance — there's no per-member index. For a small club
+// this is cheap; a 1000-member future would want an `attended_by:{name}` index.
+//
+// Collision note: members are de-duped by display name on attend, so two
+// members sharing a name would already be conflated in attendance lists.
+// Scrubbing by name will remove all of them. The signup flow doesn't enforce
+// unique names — picking a creative-but-unique display name is on the user.
+const FORMER_MEMBER_LABEL = 'former member'
+
+async function anonymizeAttendance(env, memberName) {
+  const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
+  for (const k of list.keys) {
+    const raw = await env.ATTENDANCE_KV.get(k.name)
+    if (!raw) continue
+    let arr
+    try { arr = JSON.parse(raw) } catch { continue }
+    if (!Array.isArray(arr)) continue
+    const idx = arr.indexOf(memberName)
+    if (idx === -1) continue
+    arr.splice(idx, 1)
+    if (!arr.includes(FORMER_MEMBER_LABEL)) arr.push(FORMER_MEMBER_LABEL)
+    const eventId = k.name.slice('attend:'.length)
+    // Reuse writeAttendees so attendance:all aggregate stays in lockstep.
+    await writeAttendees(env, eventId, arr)
+  }
 }
 
 // POST /session/revoke — authenticated.
@@ -739,37 +777,57 @@ async function fetchAttendanceBaseline(env) {
 // --- E2E / dev helper ---
 
 async function handleTestKv(request, env) {
+  // Default to MEMBERS_KV for back-compat with existing fixtures; tests that
+  // need attendance state pass ?ns=ATTENDANCE_KV (or { ns: ... } in the body).
+  const url = new URL(request.url)
+  const resolveNs = (raw) => {
+    if (!raw || raw === 'MEMBERS_KV') return env.MEMBERS_KV
+    if (raw === 'ATTENDANCE_KV') return env.ATTENDANCE_KV
+    throw new HttpErrorLite(400, `invalid ns: ${raw}`)
+  }
+  // POST body or DELETE-with-body can override too — keeps the seed helper
+  // signatures flat (no extra query stringification).
+  const nsFromQuery = url.searchParams.get('ns')
+
   if (request.method === 'POST') {
-    const { key, value, ttl } = await request.json()
-    await env.MEMBERS_KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined)
+    const { key, value, ttl, ns } = await request.json()
+    const kv = resolveNs(ns || nsFromQuery)
+    await kv.put(key, value, ttl ? { expirationTtl: ttl } : undefined)
     return json(env, { ok: true })
   }
   if (request.method === 'DELETE' && request.headers.get('Content-Type') === 'application/json') {
-    const { key } = await request.json()
-    await env.MEMBERS_KV.delete(key)
+    const { key, ns } = await request.json()
+    const kv = resolveNs(ns || nsFromQuery)
+    await kv.delete(key)
     return json(env, { ok: true })
   }
   if (request.method === 'GET') {
-    const url = new URL(request.url)
+    const kv = resolveNs(nsFromQuery)
     const key = url.searchParams.get('key')
     const prefix = url.searchParams.get('prefix')
     if (prefix !== null) {
-      const list = await env.MEMBERS_KV.list({ prefix })
+      const list = await kv.list({ prefix })
       return json(env, { keys: list.keys.map(k => k.name) })
     }
-    const value = await env.MEMBERS_KV.get(key)
+    const value = await kv.get(key)
     return json(env, { key, value })
   }
   if (request.method === 'DELETE') {
-    const url = new URL(request.url)
+    const kv = resolveNs(nsFromQuery)
     const prefix = url.searchParams.get('prefix')
     if (prefix !== null) {
-      const list = await env.MEMBERS_KV.list({ prefix })
-      await Promise.all(list.keys.map(k => env.MEMBERS_KV.delete(k.name)))
+      const list = await kv.list({ prefix })
+      await Promise.all(list.keys.map(k => kv.delete(k.name)))
       return json(env, { deleted: list.keys.length })
     }
   }
   return json(env, { error: 'method not allowed' }, 405)
+}
+
+// Lightweight throw helper used only inside the E2E shim; the dispatcher's
+// existing try/catch surfaces it as the right JSON shape.
+class HttpErrorLite extends Error {
+  constructor(status, msg) { super(msg); this.status = status }
 }
 
 // --- Email ---

@@ -71,6 +71,11 @@ test.beforeEach(async ({ request }) => {
   for (const prefix of ['pending:', 'member:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', '__last_']) {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
   }
+  // ATTENDANCE_KV (separate namespace) — wipe attend:* and the aggregate so
+  // anonymize / unattend tests don't see stale entries between runs.
+  for (const prefix of ['attend:', 'attendance:']) {
+    await request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent(prefix)}`)
+  }
 })
 
 export { expect }

@@ -313,12 +313,23 @@
       <h2>Remove membership</h2>
       <p class="lede">Permanently removes your member entry from the public
         directory and clears any Letterboxd link. Past event attendance is
-        kept as part of the club archive.</p>
+        kept as part of the club archive by default.</p>
       <p class="lede">Type <b>{ session.email }</b> to confirm.</p>
       <form :onsubmit="deleteMembership">
         <label>
           <input type="text" name="confirm" autocomplete="off" spellcheck="false"
             :oninput="onDeleteInput" placeholder="your-email@example.com">
+        </label>
+        <!-- Anonymize is gated on the same typed-email match as the submit
+             button. The checkbox stays visible but inert until then so the
+             member sees the option without being able to flip it on by
+             accident. -->
+        <label class="anonymize-row">
+          <input type="checkbox" name="anonymize"
+            :disabled="deleteConfirmInput !== session.email">
+          <span>Also remove my name from past event attendance
+            <small>(replaces it with “former member”; event counts stay intact)</small>
+          </span>
         </label>
         <div class="actions">
           <button type="submit"
@@ -512,9 +523,14 @@
       // The submit button is :disabled when the typed value diverges, but a
       // second check here guards against keyboard-submit edge cases.
       if (this.deleteConfirmInput !== this.session.email) return
+      // Read the anonymize checkbox straight off the submitted form. The
+      // checkbox itself is :disabled until the typed-email gate clears, so
+      // a stale-state submit can't accidentally turn it on.
+      const fd = (e && e.target) ? new FormData(e.target) : null
+      const anonymize = fd ? !!fd.get('anonymize') : false
       this.update({ deleteBusy: true, deleteError: '' })
       try {
-        await call('POST', '/member/delete', {}, this.session.token)
+        await call('POST', '/member/delete', { anonymize }, this.session.token)
         setSession(null)
         clearOtpInflight()
         location.href = '/'

@@ -89,4 +89,73 @@ test.describe('remove membership (/edit danger zone)', () => {
     const reverseIdx = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=email:${member.handle}`)
     expect((await reverseIdx.json()).value).toBeNull()
   })
+
+  test('Anonymize checkbox is disabled until email matches, and scrubs past attendance when ticked', async ({ page, request }) => {
+    const EMAIL = 'anonymize-e2e@example.com'
+    const NAME = 'Quiet Departure'
+    await signInAs(page, EMAIL, { name: NAME })
+
+    // Seed past attendance for this member directly in ATTENDANCE_KV via the
+    // E2E shim. Two events with the member's name, one without.
+    const seedAttend = async (eventId: string, attendees: string[]) =>
+      request.post(`${WORKER_ORIGIN}/__test/kv`, {
+        data: { ns: 'ATTENDANCE_KV', key: `attend:${eventId}`, value: JSON.stringify(attendees) },
+      })
+    await seedAttend('past-evt-a', [NAME, 'Other Member'])
+    await seedAttend('past-evt-b', ['Other Member', NAME, 'Third Person'])
+    await seedAttend('past-evt-c', ['Other Member'])
+
+    const checkbox = page.locator('input[type="checkbox"][name="anonymize"]')
+
+    // Pre-match: checkbox is disabled. Even forcing a state change shouldn't
+    // matter — the Worker only acts on `{ anonymize: true }` in the POST body.
+    await expect(checkbox).toBeDisabled()
+
+    // Type the correct email — checkbox becomes interactive.
+    await page.locator('input[name="confirm"]').fill(EMAIL)
+    await expect(checkbox).toBeEnabled()
+    await checkbox.check()
+    await expect(checkbox).toBeChecked()
+
+    // Capture the outbound POST body so we can confirm the UI actually sent
+    // anonymize:true. If it didn't, the assertion failure later would be
+    // ambiguous between a UI-side bug and a Worker-side bug.
+    const deletePostPromise = page.waitForRequest(
+      (req) => req.url().endsWith('/member/delete') && req.method() === 'POST',
+    )
+    await page.getByRole('button', { name: /remove my membership/i }).click()
+    const deletePost = await deletePostPromise
+    expect(JSON.parse(deletePost.postData() || '{}')).toMatchObject({ anonymize: true })
+    await page.waitForURL((url) => url.pathname === '/' || url.pathname === '')
+
+    // Events that listed the member now show "former member" instead.
+    const readAttend = async (eventId: string) => {
+      const res = await request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=attend:${eventId}`)
+      const { value } = await res.json()
+      return value ? JSON.parse(value) : null
+    }
+    expect(await readAttend('past-evt-a')).toEqual(['Other Member', 'former member'])
+    expect(await readAttend('past-evt-b')).toEqual(['Other Member', 'Third Person', 'former member'])
+    // Event that did NOT list the member is untouched.
+    expect(await readAttend('past-evt-c')).toEqual(['Other Member'])
+  })
+
+  test('Anonymize defaults to opt-out: clicking Remove without ticking leaves attendance intact', async ({ page, request }) => {
+    const EMAIL = 'optout@example.com'
+    const NAME = 'Stays In Archive'
+    await signInAs(page, EMAIL, { name: NAME })
+    await request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: 'attend:optout-evt', value: JSON.stringify([NAME, 'Bystander']) },
+    })
+
+    await page.locator('input[name="confirm"]').fill(EMAIL)
+    // Do NOT tick the checkbox. Submit.
+    await page.getByRole('button', { name: /remove my membership/i }).click()
+    await page.waitForURL((url) => url.pathname === '/' || url.pathname === '')
+
+    const res = await request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=attend:optout-evt`)
+    const attendees = JSON.parse((await res.json()).value)
+    // The member's name stays in the archive; "former member" never appears.
+    expect(attendees).toEqual([NAME, 'Bystander'])
+  })
 })

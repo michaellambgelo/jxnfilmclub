@@ -125,4 +125,78 @@ describe('POST /member/delete', () => {
     const res = await fetchWith('/member/delete', 'POST', {}, `${evil}.${sig}`)
     expect(res.status).toBe(401)
   })
+
+  describe('with { anonymize: true }', () => {
+    async function seedAttendance(eventId, names) {
+      await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(names))
+    }
+
+    it('replaces the member name with "former member" across every attend:* key', async () => {
+      const { token } = await getTokenFor('scrub@example.com', { name: 'Alice Scrub' })
+      await seedAttendance('evt-1', ['Alice Scrub', 'Bob', 'Carol'])
+      await seedAttendance('evt-2', ['Dan', 'Alice Scrub'])
+      await seedAttendance('evt-3', ['Bob', 'Carol']) // does NOT include the member
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      const res = await fetchWith('/member/delete', 'POST', { anonymize: true }, token)
+      expect(res.status).toBe(200)
+
+      // Each event that previously listed Alice now has "former member" in
+      // her slot; event without her is untouched.
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
+        .toEqual(['Bob', 'Carol', 'former member'])
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-2')))
+        .toEqual(['Dan', 'former member'])
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-3')))
+        .toEqual(['Bob', 'Carol'])
+
+      // attendance:all aggregate stays in sync with the per-event keys.
+      const all = JSON.parse(await env.ATTENDANCE_KV.get('attendance:all'))
+      expect(all['evt-1']).toContain('former member')
+      expect(all['evt-1']).not.toContain('Alice Scrub')
+      expect(all['evt-2']).toContain('former member')
+
+      // Member row still removed.
+      expect(await env.MEMBERS_KV.get('member:scrub@example.com')).toBeNull()
+    })
+
+    it('is idempotent when "former member" already exists from a previous anonymizer', async () => {
+      const { token } = await getTokenFor('second@example.com', { name: 'Second Leaver' })
+      // evt-1 already shows a former-member entry from someone earlier.
+      await env.ATTENDANCE_KV.put('attend:evt-1', JSON.stringify(['Second Leaver', 'former member', 'Charlie']))
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      await fetchWith('/member/delete', 'POST', { anonymize: true }, token)
+      // Single "former member" entry — no duplicate added.
+      const attendees = JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1'))
+      expect(attendees.filter(n => n === 'former member')).toHaveLength(1)
+      expect(attendees).not.toContain('Second Leaver')
+    })
+
+    it('default { anonymize: false } leaves attendance untouched (prior behavior preserved)', async () => {
+      const { token } = await getTokenFor('keepname@example.com', { name: 'Loud Member' })
+      await seedAttendance('evt-1', ['Loud Member', 'Bob'])
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      const res = await fetchWith('/member/delete', 'POST', { anonymize: false }, token)
+      expect(res.status).toBe(200)
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
+        .toEqual(['Loud Member', 'Bob'])
+    })
+
+    it('an empty body (no anonymize key) is treated as opt-out', async () => {
+      const { token } = await getTokenFor('emptybody@example.com', { name: 'Quiet Member' })
+      await seedAttendance('evt-1', ['Quiet Member'])
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      const res = await SELF.fetch('https://join.jxnfilm.club/member/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: '',
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
+        .toEqual(['Quiet Member'])
+    })
+  })
 })

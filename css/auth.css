@@ -112,3 +112,28 @@
 .auth .danger-zone button[type="submit"] {
   background: var(--err-fg);
 }
+
+.auth .anonymize-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+.auth .anonymize-row input[type="checkbox"] {
+  width: auto;
+  margin-top: 0.15rem;
+  accent-color: var(--err-fg);
+}
+
+.auth .anonymize-row input[type="checkbox"]:disabled + span {
+  color: var(--ink-5);
+}
+
+.auth .anonymize-row small {
+  display: block;
+  color: var(--ink-4);
+  font-size: 0.85em;
+  margin-top: 0.1rem;
+}

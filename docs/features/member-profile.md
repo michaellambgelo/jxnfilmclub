@@ -118,11 +118,29 @@ until the typed email exactly matches the signed-in email
 4. **Client** clears `localStorage.jxnfc_session`, the OTP in-flight
    marker, and redirects to `/`.
 
-**Past attendance is intentionally kept.** `attend:{eventId}` arrays in
-`ATTENDANCE_KV` are NOT touched — event-by-event attendance lists are
-part of the club archive. To remove the deleted member's name from a
-specific event, use the local admin dashboard's "remove attendee"
-action on that event.
+**Past attendance defaults to kept.** `attend:{eventId}` arrays in
+`ATTENDANCE_KV` are NOT touched by default — event-by-event attendance
+lists are part of the club archive.
+
+**Opt-in attendance scrub.** The danger-zone form includes an
+*"Also remove my name from past event attendance"* checkbox that is
+disabled until the typed-email gate clears. When ticked, the client
+posts `{ anonymize: true }` to `/member/delete`; the Worker then walks
+every `attend:*` key in `ATTENDANCE_KV`, replaces the member's display
+name with the literal label `former member`, and patches the
+`attendance:all` aggregate to match. Event counts stay intact; the
+identity is gone.
+
+Implementation notes:
+
+- The scrub matches on `member.name`, not `member.id` (attendance is
+  name-keyed). Members sharing a display name would be conflated; the
+  signup flow does not enforce unique display names.
+- Idempotent: if a previous departing member already left a
+  `former member` token in the same event, the new scrub doesn't add a
+  duplicate.
+- The standalone "kept as historical record" option is still the
+  default — anonymization is strictly opt-in.
 
 ## Error States
 

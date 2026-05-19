@@ -103,6 +103,7 @@ Staging shares the prod ledger only for seeding (read-only). Staging clicks stay
 
 - Members with a linked Letterboxd handle: name rendered as a link to their Letterboxd profile
 - Members without Letterboxd: name rendered as plain text
+- The literal string `former member` may appear when a deleted member opted into anonymization (see [member-profile.md](./member-profile.md)). It is rendered as plain text, never linked.
 - The list comma-separates and wraps inside the attendance cell so many attendees don't blow out the column
 
 ## Error States

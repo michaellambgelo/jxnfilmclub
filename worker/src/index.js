@@ -1,9 +1,17 @@
 import privacyHtml from './privacy.html'
 import signupHtml from './signup.html'
 
-const OTP_TTL = 600         // 10 min
-const LB_TOKEN_TTL = 172800 // 48 hours
-const SESSION_TTL = 3600    // 1 hour — matches JWT exp
+const OTP_TTL = 600          // 10 min
+const LB_TOKEN_TTL = 172800  // 48 hours
+const SESSION_TTL = 3600     // 1 hour — matches JWT exp
+// Cloudflare KV enforces a 60s minimum expirationTtl, so 60 is the floor for
+// both knobs. Throttle is permissive on the user side — a single stuck code
+// is still valid for OTP_TTL.
+const SEND_THROTTLE = 60
+const SIGNUP_THROTTLE = 60
+const MAX_OTP_FAILURES = 5   // wrong-code lockout per email per OTP window
+const LB_VERIFY_WINDOW = 3600
+const MAX_LB_VERIFY = 10     // /letterboxd/verify attempts/hour — bounds scraping abuse
 
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
@@ -11,12 +19,58 @@ const cors = (env) => ({
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 })
 
+function originOk(request, env) {
+  const origin = request.headers.get('Origin')
+  if (!origin) return true
+  if (origin === env.SITE_ORIGIN) return true
+  // The Worker also serves the signup form at its own root (`GET /`); that
+  // form POSTs back to /signup, so same-origin requests must pass too.
+  if (origin === new URL(request.url).origin) return true
+  return false
+}
+
+// --- Rate limiting (KV-backed, eventually consistent) ---
+//
+// KV writes race, so concurrent callers can both pass `throttle()` once. That's
+// fine — the goal is to bound abuse, not to be a hard mutex. Counters live
+// long enough to span the threat window; legitimate users recover after TTL.
+
+async function throttle(env, key, windowSec) {
+  if (await env.MEMBERS_KV.get(key)) return false
+  await env.MEMBERS_KV.put(key, '1', { expirationTtl: windowSec })
+  return true
+}
+
+async function checkAttempts(env, key, max) {
+  const raw = await env.MEMBERS_KV.get(key)
+  return (raw ? Number(raw) : 0) < max
+}
+
+async function recordFailure(env, key, windowSec) {
+  const raw = await env.MEMBERS_KV.get(key)
+  const count = (raw ? Number(raw) : 0) + 1
+  await env.MEMBERS_KV.put(key, String(count), { expirationTtl: windowSec })
+}
+
+async function clearAttempts(env, key) {
+  await env.MEMBERS_KV.delete(key)
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     const { pathname } = url
 
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors(env) })
+
+    // Defense-in-depth: if a browser sent an Origin header, it must match
+    // SITE_ORIGIN. Bearer-token auth already blocks classic CSRF, but this
+    // rejects cross-origin browser POSTs even if CORS is somehow misconfigured.
+    // Non-browser callers (curl, server-to-server, unit tests via SELF.fetch)
+    // typically omit Origin and pass through.
+    if (request.method !== 'GET' && request.method !== 'OPTIONS' && !originOk(request, env)) {
+      return json(env, { error: 'invalid origin' }, 403)
+    }
 
     if (request.method === 'GET' && pathname === '/')        return html(render(signupHtml, env))
     if (request.method === 'GET' && pathname === '/privacy') return html(privacyHtml)
@@ -34,6 +88,8 @@ export default {
 
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
+
+    if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
 
     if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
 
@@ -66,7 +122,22 @@ function json(env, data, status = 200) {
   })
 }
 
-const HANDLE_RE = /^[a-zA-Z0-9_-]+$/
+// Letterboxd handles top out around 15 chars in practice; 30 is generous.
+const HANDLE_RE = /^[a-zA-Z0-9_-]{1,30}$/
+const MAX_EMAIL = 254       // RFC 5321 max length for a forward-path
+const MAX_NAME = 80
+const MAX_PRONOUNS = 32
+// Loose RFC-5322-lite: rejects obvious garbage without descending into the
+// full grammar. Resend will bounce anything that survives this.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function isValidEmail(s) {
+  return typeof s === 'string' && s.length <= MAX_EMAIL && EMAIL_RE.test(s)
+}
+
+function isValidName(s) {
+  return typeof s === 'string' && s.length > 0 && s.length <= MAX_NAME
+}
 
 // --- Signup ---
 
@@ -77,6 +148,8 @@ const HANDLE_RE = /^[a-zA-Z0-9_-]+$/
 async function handleSignup(request, env) {
   const { email, name, handle } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
+  if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
+  if (!isValidName(name)) return json(env, { error: 'invalid name' }, 400)
   if (handle && !HANDLE_RE.test(handle)) {
     return json(env, { error: 'invalid handle format' }, 400)
   }
@@ -89,6 +162,12 @@ async function handleSignup(request, env) {
     if (claimedBy && claimedBy !== email) {
       return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
     }
+  }
+
+  // Throttle email sends so a single email can't be used to spam a victim's
+  // inbox or burn through the Resend monthly quota.
+  if (!(await throttle(env, `rate:signup_send:${email}`, SIGNUP_THROTTLE))) {
+    return json(env, { error: 'please wait a moment before requesting another code' }, 429)
   }
 
   const code = randomCode()
@@ -116,11 +195,22 @@ async function handleSignup(request, env) {
 // their account page.
 async function handleSignupVerify(request, env) {
   const { email, code } = await request.json()
+  if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
+
+  const attemptsKey = `rate:signup_verify_fail:${email}`
+  if (!(await checkAttempts(env, attemptsKey, MAX_OTP_FAILURES))) {
+    return json(env, { error: 'too many attempts — request a new code' }, 429)
+  }
+
   const pendingRaw = await env.MEMBERS_KV.get(`pending:${email}`)
   if (!pendingRaw) return json(env, { error: 'no pending signup — start over' }, 404)
 
   const pending = JSON.parse(pendingRaw)
-  if (pending.code !== code) return json(env, { error: 'invalid code' }, 401)
+  if (pending.code !== code) {
+    await recordFailure(env, attemptsKey, OTP_TTL)
+    return json(env, { error: 'invalid code' }, 401)
+  }
+  await clearAttempts(env, attemptsKey)
 
   const id = randomToken(10)
   const member = {
@@ -136,7 +226,7 @@ async function handleSignupVerify(request, env) {
   await writeSession(env, member)
   await dispatchGithub(env, 'add-member', { id, name: member.name, joined: member.joined })
 
-  const token = await signToken(env, { email, id, exp: Date.now() + 3600_000 })
+  const token = await signToken(env, { email, id, exp: Date.now() + 3600_000, jti: randomToken(16) })
   return json(env, { token, email, id, name: member.name, handle: null })
 }
 
@@ -145,9 +235,17 @@ async function handleSignupVerify(request, env) {
 async function handleOtpRequest(request, env) {
   const { email } = await request.json()
   if (!email) return json(env, { error: 'email required' }, 400)
+  if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
   if (!(await env.MEMBERS_KV.get(`member:${email}`))) {
     // Don't leak membership existence; silently 200. The UI will just say
     // "if this email is on file, we sent a code".
+    return json(env, { ok: true })
+  }
+
+  // Throttle email sends. Silent 200 on throttle so we don't reveal via timing
+  // or status code whether this address is being throttled (would leak
+  // membership). Legit users who legitimately want a fresh code wait ~30s.
+  if (!(await throttle(env, `rate:otp_send:${email}`, SEND_THROTTLE))) {
     return json(env, { ok: true })
   }
 
@@ -159,16 +257,27 @@ async function handleOtpRequest(request, env) {
 
 async function handleOtpVerify(request, env) {
   const { email, code } = await request.json()
+  if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
+
+  const attemptsKey = `rate:otp_verify_fail:${email}`
+  if (!(await checkAttempts(env, attemptsKey, MAX_OTP_FAILURES))) {
+    return json(env, { error: 'too many attempts — request a new code' }, 429)
+  }
+
   const stored = await env.MEMBERS_KV.get(`otp:${email}`)
-  if (!stored || stored !== code) return json(env, { error: 'invalid code' }, 401)
+  if (!stored || stored !== code) {
+    await recordFailure(env, attemptsKey, OTP_TTL)
+    return json(env, { error: 'invalid code' }, 401)
+  }
 
   await env.MEMBERS_KV.delete(`otp:${email}`)
+  await clearAttempts(env, attemptsKey)
   const memberRaw = await env.MEMBERS_KV.get(`member:${email}`)
   const member = memberRaw ? JSON.parse(memberRaw) : null
   if (!member) return json(env, { error: 'no member linked to this email' }, 403)
 
   await writeSession(env, member)
-  const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000 })
+  const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000, jti: randomToken(16) })
   return json(env, { token, email, id: member.id, name: member.name, handle: member.handle })
 }
 
@@ -232,6 +341,13 @@ async function handleLbVerify(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
+  // Each verify attempt fetches a Letterboxd URL; without a cap a hostile
+  // signed-in user could use us as a free proxy/scraper.
+  const attemptsKey = `rate:lb_verify:${claims.email}`
+  if (!(await checkAttempts(env, attemptsKey, MAX_LB_VERIFY))) {
+    return json(env, { error: 'too many verification attempts — try again later' }, 429)
+  }
+
   const lbRaw = await env.MEMBERS_KV.get(`lb_token:${claims.email}`)
   if (!lbRaw) return json(env, { error: 'no pending verification — request a new tag' }, 410)
   const { token, handle } = JSON.parse(lbRaw)
@@ -272,7 +388,19 @@ async function handleLbVerify(request, env) {
   // this keeps any still-pending 48h tokens from before the change working.
   const pageText = await fetch(fetchUrl).then(r => r.text()).catch(() => '')
   if (!pageText.toLowerCase().includes(token.toLowerCase())) {
+    await recordFailure(env, attemptsKey, LB_VERIFY_WINDOW)
     return json(env, { error: notFoundMsg }, 422)
+  }
+
+  // Re-check the reverse index right before commit. /letterboxd/request only
+  // checks at issue time, leaving a 48h window in which two users could each
+  // hold a pending token for the same handle. Whoever scrapes successfully
+  // first wins; subsequent verifiers get a clean 409 instead of silently
+  // clobbering the first user's link. (KV is eventually consistent, so this
+  // narrows the race to milliseconds, not eliminates it — good enough.)
+  const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
+  if (claimedBy && claimedBy !== claims.email) {
+    return json(env, { error: 'this Letterboxd handle was just claimed by someone else' }, 409)
   }
 
   // Commit the link.
@@ -284,6 +412,7 @@ async function handleLbVerify(request, env) {
   await env.MEMBERS_KV.put(`email:${handle}`, claims.email)
   await env.MEMBERS_KV.put(`handle:${claims.email}`, handle)
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+  await clearAttempts(env, attemptsKey)
   await writeSession(env, member)
 
   await dispatchGithub(env, 'update-member', {
@@ -346,8 +475,14 @@ async function handleMemberUpdate(request, env) {
 
   const body = await request.json()
   const updates = {}
-  if (typeof body.name === 'string' && body.name.length) updates.name = body.name
-  if (typeof body.pronouns === 'string') updates.pronouns = body.pronouns
+  if (typeof body.name === 'string' && body.name.length) {
+    if (body.name.length > MAX_NAME) return json(env, { error: 'name too long' }, 400)
+    updates.name = body.name
+  }
+  if (typeof body.pronouns === 'string') {
+    if (body.pronouns.length > MAX_PRONOUNS) return json(env, { error: 'pronouns too long' }, 400)
+    updates.pronouns = body.pronouns
+  }
   if (!Object.keys(updates).length) return json(env, { error: 'no updates' }, 400)
 
   Object.assign(member, updates)
@@ -355,6 +490,27 @@ async function handleMemberUpdate(request, env) {
   await writeSession(env, member)
   await dispatchGithub(env, 'update-member', { id: member.id, updates })
   return json(env, { ok: true, id: member.id })
+}
+
+// POST /session/revoke — authenticated.
+// Drops the current bearer token by recording its jti in revoked:{jti} with a
+// TTL matching the token's remaining lifetime. verifyToken consults this on
+// every authenticated read. Idempotent; replays just refresh the same key.
+async function handleSessionRevoke(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  // Tokens issued before jti was added can't be revoked server-side; the
+  // client should still drop its localStorage session so this is best-effort
+  // from their side. Return ok so the UI button always succeeds.
+  if (!claims.jti) return json(env, { ok: true })
+  // KV minimum TTL is 60s; clamp anything shorter (token would expire before
+  // a meaningful next request anyway).
+  const remainingSec = Math.max(60, Math.ceil((claims.exp - Date.now()) / 1000))
+  await env.MEMBERS_KV.put(`revoked:${claims.jti}`, '1', { expirationTtl: remainingSec })
+  // Also evict the session snapshot so /member/me can't serve cached data to
+  // an attacker who somehow replays before the revocation propagates.
+  if (claims.id) await env.MEMBERS_KV.delete(`session:${claims.id}`)
+  return json(env, { ok: true })
 }
 
 // Session KV overlay — session:{id} holds a short-TTL (1h) snapshot of the
@@ -684,7 +840,11 @@ async function verifyToken(env, token) {
   const expected = await hmac(env.OTP_SIGNING_KEY, payload)
   if (sig !== expected) return null
   const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-  return claims.exp > Date.now() ? claims : null
+  if (!(claims.exp > Date.now())) return null
+  // Server-side revocation overlay. Tokens issued before this commit have no
+  // jti and can't be revoked — they still expire on schedule.
+  if (claims.jti && await env.MEMBERS_KV.get(`revoked:${claims.jti}`)) return null
+  return claims
 }
 
 async function hmac(secret, message) {

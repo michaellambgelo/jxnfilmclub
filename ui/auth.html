@@ -468,7 +468,14 @@
       })
     }
 
-    signOut() {
+    async signOut() {
+      // Revoke server-side first so a copied token can't be replayed for the
+      // remaining ~1h. Best-effort: if the network is offline we still drop
+      // the local session — the token will still expire on schedule.
+      const s = this.session
+      if (s?.token) {
+        try { await call('POST', '/session/revoke', {}, s.token) } catch { /* ignore */ }
+      }
       setSession(null)
       clearOtpInflight()
       location.href = '/'

@@ -102,7 +102,8 @@ When removing a Letterboxd link, the user sees:
 
 | Condition | HTTP | User sees |
 |-----------|------|-----------|
-| Handle claimed by another member | 409 | "this Letterboxd handle is already claimed" |
+| Handle claimed by another member (at request time) | 409 | "this Letterboxd handle is already claimed" |
+| Handle claimed by another member (between request and verify — S3 race fix) | 409 | "this Letterboxd handle was just claimed by someone else" |
 | No pending verification tag | 410 | "no pending verification -- request a new tag" |
 | Handle not provided for verify | 400 | "add your Letterboxd handle first" |
 | Malformed URL in verify body | 400 | "that doesn't look like a valid URL" |
@@ -110,7 +111,19 @@ When removing a Letterboxd link, the user sees:
 | URL path not under `/<handle>/` | 400 | "the URL must be under letterboxd.com/{handle}" |
 | Tag not on pasted page | 422 | "couldn't find the tag on that page..." (can retry) |
 | Tag not in RSS feed (fallback path) | 422 | "token not found on your Letterboxd RSS feed yet..." |
+| 10+ verify attempts within an hour | 429 | "too many verification attempts — try again later" |
 | No Letterboxd to unlink | 400 | "no Letterboxd linked" |
+| `name` longer than 80 chars on `/member/update` | 400 | "name too long" |
+| `pronouns` longer than 32 chars on `/member/update` | 400 | "pronouns too long" |
+
+## Handle Uniqueness Race Window (S3)
+
+The reverse index `email:{handle}` is checked twice:
+
+1. At `/letterboxd/request` — rejects if the handle is already claimed by another member.
+2. At `/letterboxd/verify` — rechecks right before writing. The 48h gap between request and verify means two members could simultaneously hold pending tokens for the same handle; the second to verify gets a clean 409 rather than silently clobbering the first member's link.
+
+KV is eventually consistent so this narrows the race to milliseconds rather than eliminating it.
 
 ## Timing
 

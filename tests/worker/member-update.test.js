@@ -91,6 +91,22 @@ describe('POST /member/update', () => {
     const res = await fetchWith('/member/update', 'POST', {}, token)
     expect(res.status).toBe(400)
   })
+
+  it('rejects overlong name (>80 chars) without persisting any change', async () => {
+    const { token } = await getTokenFor('toolong@example.com', { name: 'Original' })
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/member/update', 'POST', { name: 'A'.repeat(200) }, token)
+    expect(res.status).toBe(400)
+    const saved = JSON.parse(await env.MEMBERS_KV.get('member:toolong@example.com'))
+    expect(saved.name).toBe('Original')
+  })
+
+  it('rejects overlong pronouns (>32 chars)', async () => {
+    const { token } = await getTokenFor('pronouns@example.com')
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/member/update', 'POST', { pronouns: 'x'.repeat(50) }, token)
+    expect(res.status).toBe(400)
+  })
 })
 
 describe('GET /member/me', () => {

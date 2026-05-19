@@ -46,10 +46,20 @@ sequenceDiagram
 |-----------|------|-----------|
 | Email already registered | 409 | "this email is already a member -- try signing in" |
 | Letterboxd handle claimed | 409 | "this Letterboxd handle is already claimed" |
-| Invalid handle format | 400 | Form validation error |
+| Invalid handle format (incl. >30 chars) | 400 | Form validation error |
+| Malformed email | 400 | "invalid email format" |
+| Name longer than 80 chars | 400 | "invalid name" |
 | Missing name or email | 400 | "email required" / "name required" |
+| Re-submitting signup within 60s | 429 | "please wait a moment before requesting another code" |
 | Wrong verification code | 401 | "invalid code" |
+| 5+ wrong codes for same email | 429 | "too many attempts — request a new code" |
 | Expired or missing pending signup | 404 | "no pending signup -- start over" |
+
+## Input Limits (S4 hardening)
+
+- `name`: 1–80 chars
+- `email`: ≤254 chars, matches `^[^\s@]+@[^\s@]+\.[^\s@]+$`
+- `handle`: 1–30 chars matching `[a-zA-Z0-9_-]`
 
 ## Timing
 

@@ -57,6 +57,14 @@ describe('POST /otp/request (returning members only)', () => {
     mockFetch(async () => new Response('', { status: 200 }))
     expect((await post('/otp/request', {})).status).toBe(400)
   })
+
+  it('400 when email is malformed (no KV write, no email sent)', async () => {
+    const calls = []
+    mockFetch(async (url) => { calls.push(String(url)); return new Response('', { status: 200 }) })
+    const res = await post('/otp/request', { email: 'bogus' })
+    expect(res.status).toBe(400)
+    expect(calls.some(u => u.includes('resend'))).toBe(false)
+  })
 })
 
 describe('POST /otp/verify', () => {

@@ -70,13 +70,27 @@ The `POST /otp/request` endpoint always returns `200 OK` whether or not the emai
 | Wrong code | 401 | "invalid code" |
 | Correct code but no member record | 403 | "no member linked to this email" |
 | Missing email | 400 | "email required" |
-| Tampered/expired token | 401 | Unauthorized |
+| Malformed email | 400 | "invalid email format" |
+| 5+ wrong codes for same email | 429 | "too many attempts — request a new code" |
+| Tampered/expired/revoked token | 401 | Unauthorized |
+
+## Rate Limits (S1 hardening)
+
+- `POST /otp/request` is throttled to **one email per 60 seconds per address**. Repeats inside the window silently 200 (no email sent) to preserve anti-enumeration.
+- `POST /otp/verify` and `POST /signup/verify` track failed-code attempts in `rate:otp_verify_fail:{email}` and `rate:signup_verify_fail:{email}`. After **5 failures within the 10-minute OTP window**, further attempts return 429 until the window expires.
+- A successful verify clears the counter.
+
+## Session Revocation (S2 hardening)
+
+- Issued JWTs carry a random `jti`. `POST /session/revoke` (authenticated) writes `revoked:{jti}` with TTL matching the token's remaining lifetime; `verifyToken` consults this on every authenticated read.
+- Revoking a session also deletes the `session:{id}` snapshot so cached reads can't be replayed.
+- Sessions are per-token: revoking one device does not log out another. To "log out everywhere", revoke each token in turn.
 
 ## Timing
 
 - OTP code expires in **10 minutes**
 - Session token expires in **1 hour**
-- OTP is preserved on wrong-code attempts (user can retry)
+- OTP is preserved on wrong-code attempts (user can retry, up to 5)
 
 ## Key Files
 

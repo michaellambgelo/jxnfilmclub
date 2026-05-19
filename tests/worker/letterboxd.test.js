@@ -229,6 +229,31 @@ describe('POST /letterboxd/verify', () => {
     expect(await env.MEMBERS_KV.get('lb_token:notfound@example.com')).toBeTruthy()
   })
 
+  it('409 when another email claimed the handle between /letterboxd/request and /letterboxd/verify', async () => {
+    const { token } = await signedInMember('loser@example.com')
+    // Simulate user A racing user B: both held pending tokens; user A verified
+    // first, so email:{handle} now points elsewhere. User B's verify must NOT
+    // silently clobber the first claim.
+    await env.MEMBERS_KV.put('lb_token:loser@example.com', JSON.stringify({
+      token: 'jxnfc-verify-RACEEEEE', handle: 'contested', exp: Date.now() + 1000,
+    }))
+    await env.MEMBERS_KV.put('email:contested', 'winner@example.com')
+
+    mockFetch(async (url) => {
+      if (String(url).endsWith('/rss/')) {
+        return new Response('<rss><item><category>jxnfc-verify-RACEEEEE</category></item></rss>', { status: 200 })
+      }
+      return new Response('', { status: 200 })
+    })
+
+    const res = await fetchWith('/letterboxd/verify', 'POST', {}, token)
+    expect(res.status).toBe(409)
+    // Reverse index intact, loser's member row unchanged.
+    expect(await env.MEMBERS_KV.get('email:contested')).toBe('winner@example.com')
+    const loser = JSON.parse(await env.MEMBERS_KV.get('member:loser@example.com'))
+    expect(loser.handle).toBeNull()
+  })
+
   it('410 when there is no pending lb_token', async () => {
     const { token } = await signedInMember('orph@example.com')
     mockFetch(async () => new Response('', { status: 200 }))

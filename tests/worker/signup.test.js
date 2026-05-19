@@ -99,6 +99,27 @@ describe('POST /signup', () => {
     expect((await post('/signup', { email: 'a@b.com' })).status).toBe(400)
     expect((await post('/signup', { name: 'X' })).status).toBe(400)
   })
+
+  it('rejects malformed email format', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup', { email: 'not-an-email', name: 'X' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/email/)
+    expect(await env.MEMBERS_KV.get('pending:not-an-email')).toBeNull()
+  })
+
+  it('rejects overlong name (DoS guard on the public members.json projection)', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup', { email: 'long@example.com', name: 'A'.repeat(200) })
+    expect(res.status).toBe(400)
+    expect(await env.MEMBERS_KV.get('pending:long@example.com')).toBeNull()
+  })
+
+  it('rejects overlong handle (Letterboxd handles max ~15 chars)', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
+    const res = await post('/signup', { email: 'h@example.com', name: 'X', handle: 'a'.repeat(50) })
+    expect(res.status).toBe(400)
+  })
 })
 
 describe('POST /signup/verify', () => {

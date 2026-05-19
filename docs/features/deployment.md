@@ -9,7 +9,7 @@ flowchart TD
     A{Trigger} --> B
 
     A1[Push to main] --> A
-    A2[Bot workflow completes:<br/>add-member, update-member,<br/>refresh-letterboxd,<br/>refresh-spotify] --> A
+    A2[Bot workflow completes:<br/>add-member, update-member, remove-member,<br/>refresh-letterboxd,<br/>refresh-spotify] --> A
     A3[Manual dispatch] --> A
 
     B{Direct push?}

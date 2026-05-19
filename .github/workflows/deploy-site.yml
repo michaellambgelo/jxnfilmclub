@@ -6,7 +6,7 @@ on:
   workflow_run:
     # Rebuild when bot workflows commit to main (GH's default token doesn't
     # fire push events, so chain via workflow_run instead).
-    workflows: [Add member, Update member, Refresh Letterboxd data, Refresh Spotify episodes]
+    workflows: [Add member, Update member, Remove member, Refresh Letterboxd data, Refresh Spotify episodes]
     types: [completed]
     branches: [main]
   workflow_dispatch: {}

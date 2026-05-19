@@ -11,5 +11,6 @@ import_map:
 # build but aren't listed in the page's `libs` meta).
 include: [ ui/, css/ ]
 
-# Keep tests, node_modules, and the Worker source out of the static build.
-exclude: [ tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts, playwright.config.ts, playwright-report, test-results, '.md' ]
+# Keep tests, node_modules, Worker source, and the local admin dashboard
+# out of the static build.
+exclude: [ admin, tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts, playwright.config.ts, playwright-report, test-results, '.md' ]

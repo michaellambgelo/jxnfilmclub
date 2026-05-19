@@ -1,0 +1,220 @@
+#!/usr/bin/env node
+// Local admin dashboard server. Shells to `wrangler` for KV ops and writes
+// `data/*.json` files directly. No auth in this process — the user's local
+// `wrangler` login is the trust boundary. Binds to 127.0.0.1 only.
+
+import { createServer } from 'node:http'
+import { readFile, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { resolve, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const ROOT = resolve(HERE, '..')
+const WORKER_DIR = resolve(ROOT, 'worker')
+const PORT = Number(process.env.ADMIN_PORT || 5174)
+
+// Allowlists. Anything else in the corresponding query param hard-fails 400
+// so a typo can't accidentally shell-inject or escape the admin's surface.
+const VALID_ENVS = new Set(['production', 'staging'])
+const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
+const VALID_FILES = new Set(['data/events.json', 'data/members.json'])
+const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json'])
+
+class HttpError extends Error {
+  constructor(status, msg) { super(msg); this.status = status }
+}
+
+function envFlags(env) {
+  if (!VALID_ENVS.has(env)) throw new HttpError(400, `invalid env: ${env}`)
+  return env === 'staging' ? ['--env', 'staging'] : []
+}
+
+function checkBinding(b) {
+  if (!VALID_BINDINGS.has(b)) throw new HttpError(400, `invalid binding: ${b}`)
+}
+
+function runWrangler(args, stdinBody) {
+  return new Promise((res, rej) => {
+    const child = spawn('npx', ['wrangler', ...args], {
+      cwd: WORKER_DIR,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = '', stderr = ''
+    child.stdout.on('data', d => { stdout += d })
+    child.stderr.on('data', d => { stderr += d })
+    child.on('error', rej)
+    child.on('close', code => {
+      if (code !== 0) {
+        const detail = (stderr || stdout).trim() || `exit ${code}`
+        rej(new HttpError(502, `wrangler ${args.join(' ')}\n${detail}`))
+      } else {
+        res(stdout)
+      }
+    })
+    if (stdinBody !== undefined) child.stdin.end(stdinBody)
+    else child.stdin.end()
+  })
+}
+
+// --- KV helpers ---
+
+async function kvList(env, binding, prefix) {
+  checkBinding(binding)
+  const args = ['kv', 'key', 'list', '--binding', binding, ...envFlags(env)]
+  if (prefix) args.push('--prefix', prefix)
+  const out = await runWrangler(args)
+  return JSON.parse(out)
+}
+
+async function kvGet(env, binding, key) {
+  checkBinding(binding)
+  // wrangler exits non-zero on "key not found", which we surface as null.
+  try {
+    return await runWrangler(['kv', 'key', 'get', '--binding', binding, key, ...envFlags(env)])
+  } catch (e) {
+    if (e.status === 502 && /not found/i.test(e.message)) return null
+    throw e
+  }
+}
+
+async function kvBulkGet(env, binding, keys) {
+  // Parallelize with a cap so we don't spawn hundreds of procs simultaneously.
+  // wrangler has no native bulk-get; each `kv key get` is ~1s of process
+  // startup. With cap=8 a 50-key load takes ~7s; with cap=1 it'd take ~50s.
+  const cap = 8
+  const out = {}
+  let i = 0
+  async function worker() {
+    while (true) {
+      const idx = i++
+      if (idx >= keys.length) return
+      const key = keys[idx]
+      try { out[key] = await kvGet(env, binding, key) }
+      catch (e) { out[key] = { __error: e.message || String(e) } }
+    }
+  }
+  await Promise.all(Array.from({ length: cap }, worker))
+  return out
+}
+
+async function kvPut(env, binding, key, value) {
+  checkBinding(binding)
+  await runWrangler(['kv', 'key', 'put', '--binding', binding, key, value, ...envFlags(env)])
+}
+
+async function kvDelete(env, binding, key) {
+  checkBinding(binding)
+  await runWrangler(['kv', 'key', 'delete', '--binding', binding, key, ...envFlags(env)])
+}
+
+// --- File helpers ---
+
+async function fileGet(relPath) {
+  if (!READABLE_FILES.has(relPath)) throw new HttpError(400, `file not allowed: ${relPath}`)
+  return await readFile(resolve(ROOT, relPath), 'utf8')
+}
+
+async function filePut(relPath, body) {
+  if (!VALID_FILES.has(relPath)) throw new HttpError(400, `file not allowed: ${relPath}`)
+  // Round-trip parse to validate it's well-formed JSON before persisting.
+  try { JSON.parse(body) } catch (e) { throw new HttpError(400, `invalid JSON: ${e.message}`) }
+  await writeFile(resolve(ROOT, relPath), body)
+}
+
+// --- HTTP routing ---
+
+function json(res, status, body) {
+  const payload = JSON.stringify(body)
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(payload),
+  })
+  res.end(payload)
+}
+
+function readBody(req) {
+  return new Promise((res, rej) => {
+    const chunks = []
+    req.on('data', c => chunks.push(c))
+    req.on('end', () => res(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', rej)
+  })
+}
+
+async function serveStatic(req, res, urlPath) {
+  const relPath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '')
+  // Allowlist the static files the admin UI ships.
+  if (!/^[a-z0-9_.-]+$/i.test(relPath)) return json(res, 404, { error: 'not found' })
+  try {
+    const buf = await readFile(join(HERE, relPath))
+    const type = relPath.endsWith('.html') ? 'text/html; charset=utf-8'
+      : relPath.endsWith('.css') ? 'text/css; charset=utf-8'
+      : relPath.endsWith('.js')  ? 'application/javascript; charset=utf-8'
+      : 'application/octet-stream'
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' })
+    res.end(buf)
+  } catch {
+    json(res, 404, { error: 'not found' })
+  }
+}
+
+async function handle(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`)
+  const method = req.method
+  const q = Object.fromEntries(url.searchParams)
+
+  // GET /api/kv?env=&binding=&prefix=  → { keys, values }
+  if (method === 'GET' && url.pathname === '/api/kv') {
+    const keys = await kvList(q.env, q.binding, q.prefix || '')
+    const names = keys.map(k => k.name)
+    const values = await kvBulkGet(q.env, q.binding, names)
+    return json(res, 200, { keys, values })
+  }
+  // DELETE /api/kv?env=&binding=&key=
+  if (method === 'DELETE' && url.pathname === '/api/kv') {
+    if (!q.key) throw new HttpError(400, 'key required')
+    await kvDelete(q.env, q.binding, q.key)
+    return json(res, 200, { ok: true })
+  }
+  // PUT /api/kv?env=&binding=&key=  body = raw value
+  if (method === 'PUT' && url.pathname === '/api/kv') {
+    if (!q.key) throw new HttpError(400, 'key required')
+    const body = await readBody(req)
+    await kvPut(q.env, q.binding, q.key, body)
+    return json(res, 200, { ok: true })
+  }
+  // GET /api/file?path=  → { content }
+  if (method === 'GET' && url.pathname === '/api/file') {
+    const content = await fileGet(q.path)
+    return json(res, 200, { content })
+  }
+  // PUT /api/file?path=  body = raw JSON
+  if (method === 'PUT' && url.pathname === '/api/file') {
+    const body = await readBody(req)
+    await filePut(q.path, body)
+    return json(res, 200, { ok: true })
+  }
+  // Lightweight liveness probe.
+  if (method === 'GET' && url.pathname === '/api/whoami') {
+    const out = await runWrangler(['whoami']).catch(e => `not authenticated: ${e.message}`)
+    return json(res, 200, { wrangler: out.trim() })
+  }
+  // Static files.
+  if (method === 'GET') return serveStatic(req, res, url.pathname)
+  json(res, 405, { error: 'method not allowed' })
+}
+
+const server = createServer(async (req, res) => {
+  try {
+    await handle(req, res)
+  } catch (e) {
+    const status = e?.status || 500
+    json(res, status, { error: e?.message || String(e) })
+  }
+})
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`jxnfilmclub admin → http://localhost:${PORT}`)
+  console.log(`  (wrangler whoami: run \`npx wrangler whoami\` if KV calls fail)`)
+})

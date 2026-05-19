@@ -1,0 +1,184 @@
+:root {
+  --brand: #009898;
+  --brand-dark: #007a7a;
+  --accent: #e00000;
+  --ink: #222;
+  --bg: #f5f5f5;
+  --card: #fff;
+  --muted: #666;
+  --border: #ddd;
+  --warn: #b35900;
+  --danger: #c00;
+}
+
+* { box-sizing: border-box }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.45;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--ink);
+  color: #fff;
+  padding: 0.6rem 1rem;
+}
+.brand { font-weight: 700; letter-spacing: 0.04em }
+.controls { display: flex; align-items: center; gap: 1rem }
+.env-label { display: flex; align-items: center; gap: 0.4rem }
+.env-label select { padding: 0.2rem 0.4rem }
+.controls button { padding: 0.3rem 0.8rem; cursor: pointer }
+.muted { color: var(--muted); font-size: 0.85rem }
+.controls .muted { color: #ccc }
+
+/* Strong visual cue when targeting prod */
+body[data-env="production"] .topbar { background: var(--accent) }
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1rem;
+  background: #eee;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+}
+.tabs button:hover { color: var(--ink) }
+.tabs button.active {
+  color: var(--brand-dark);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+
+main {
+  padding: 1rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+h2 { margin: 0 0 0.8rem; font-size: 1.1rem }
+.section-hint { color: var(--muted); margin: 0 0 1rem }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th {
+  background: #fafafa;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+tbody tr:hover { background: #fafafa }
+td.actions { white-space: nowrap }
+td.actions button { margin-right: 0.3rem }
+
+code, .id { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em }
+.id { color: var(--muted) }
+
+button {
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover { background: #f0f0f0 }
+button.danger { color: var(--danger); border-color: var(--danger) }
+button.danger:hover { background: #fff0f0 }
+button.primary { background: var(--brand); color: #fff; border-color: var(--brand) }
+button.primary:hover { background: var(--brand-dark) }
+
+input[type="text"], input[type="url"], input[type="date"], input[type="number"], textarea {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  font: inherit;
+  border-radius: 3px;
+}
+textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em }
+
+.search {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+.search input { max-width: 380px }
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.event-form {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.event-form .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+.event-form label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.2rem }
+
+.attendance {
+  background: #fafafa;
+  padding: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+.attendance ul { margin: 0; padding-left: 1.2rem }
+
+dialog { border: 1px solid var(--border); border-radius: 4px; padding: 1rem; max-width: 800px; max-height: 80vh }
+dialog pre { background: #f8f8f8; padding: 0.7rem; overflow: auto; max-height: 60vh; font-size: 0.85em }
+dialog menu { padding: 0; margin: 0.5rem 0 0 }
+
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.7rem 1rem;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  z-index: 1000;
+}
+.toast.err { background: var(--danger) }
+
+.empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--muted);
+}

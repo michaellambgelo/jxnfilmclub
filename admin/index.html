@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JxN Film Club — admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">JxN admin</div>
+  <div class="controls">
+    <label class="env-label">env
+      <select id="env">
+        <option value="production">production</option>
+        <option value="staging">staging</option>
+      </select>
+    </label>
+    <button id="refresh" type="button" title="reload current tab">⟳ refresh</button>
+    <span id="whoami" class="muted"></span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="members" class="active">Members</button>
+  <button data-tab="pending">Pending</button>
+  <button data-tab="sessions">Sessions</button>
+  <button data-tab="revoked">Revoked</button>
+  <button data-tab="rate">Rate limits</button>
+  <button data-tab="letterboxd">Letterboxd</button>
+  <button data-tab="events">Events</button>
+</nav>
+
+<main id="content"><p class="muted">Loading…</p></main>
+
+<dialog id="modal">
+  <form method="dialog">
+    <h2 id="modal-title"></h2>
+    <pre id="modal-body"></pre>
+    <menu><button value="close">Close</button></menu>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="admin.js" type="module"></script>
+</body>
+</html>

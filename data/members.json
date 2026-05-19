@@ -1,21 +1,21 @@
 [
   {
     "id": "ml-seed001",
-    "handle": "michaellamb",
     "name": "Michael Lamb",
     "joined": "2026-04-14",
-    "pronouns": "he/him"
-  },
-  {
-    "id": "bxM5wfvY8U",
-    "name": "Jeana Smith",
-    "joined": "2026-04-16",
-    "pronouns": "she/her"
+    "pronouns": "he/him",
+    "handle": "michaellamb"
   },
   {
     "id": "Md9orjQMjl",
     "name": "Morgan Sumner",
     "joined": "2026-04-16",
     "pronouns": "He/Him"
+  },
+  {
+    "id": "bxM5wfvY8U",
+    "name": "Jeana Smith",
+    "joined": "2026-04-16",
+    "pronouns": "she/her"
   }
 ]

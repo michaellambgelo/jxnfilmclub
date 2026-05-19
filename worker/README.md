@@ -60,13 +60,22 @@ DNS records are printed in the Resend dashboard.
 | POST   | `/otp/request`      | `(email)` — returning members only; silently 200s for unknown emails so the endpoint can't enumerate. |
 | POST   | `/otp/verify`       | `(email, code)` → returns session token + member `id`/`handle`. |
 
+### Public live reads (no auth; SPA consumes these on every page load)
+
+| Method | Path                       | Purpose |
+|--------|----------------------------|---------|
+| GET    | `/members`                 | Array of public member projections `[{ id, name, joined, pronouns?, handle? }]`. Emails are never on the wire. Reads from `members:all` aggregate; bootstraps from `data/members.json` on cold KV. |
+| GET    | `/events`                  | Array of events `[{ id, title, film, year, date, venue, poster, letterboxd_uri }]`. Reads from `events:all` aggregate (in `ATTENDANCE_KV`); bootstraps from `data/events.json` on cold KV. |
+| GET    | `/events/attendance`       | Bulk attendance map (existing). |
+| GET    | `/events/:id/attendance`   | Per-event attendees (existing). |
+
 ### Authenticated (bearer token from `/signup/verify` or `/otp/verify`)
 
 | Method | Path                  | Purpose |
 |--------|-----------------------|---------|
 | GET    | `/member/me`          | Full `member:{email}` row (authoritative copy). |
-| POST   | `/member/update`      | `(name?, pronouns?, handle?)` → writes KV + dispatches `update-member`. Handle is self-asserted: the Worker validates format + uniqueness via `email:{handle}` and swaps reverse indices in lockstep when it changes. |
-| POST   | `/letterboxd/unlink`  | Remove the Letterboxd link. Clears `email:/handle:` rows, nulls `member.handle`, dispatches `update-member` with `{ handle: null }` so the public row drops the field. |
+| POST   | `/member/update`      | `(name?, pronouns?, handle?)` → writes KV + dispatches `update-member`. Patches the `members:all` aggregate in lockstep so the next public `/members` read reflects the change. Handle is self-asserted; uniqueness via `email:{handle}` reverse index. |
+| POST   | `/letterboxd/unlink`  | Remove the Letterboxd link. Clears `email:/handle:` rows, nulls `member.handle`, patches `members:all`, dispatches `update-member` with `{ handle: null }`. |
 
 ### Dev-only (E2E)
 
@@ -87,10 +96,19 @@ Set in `wrangler.toml` per env:
 
 ## KV schema
 
+**MEMBERS_KV:**
 - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Consumed by `/signup/verify`.
-- `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Authoritative member row.
+- `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Canonical per-member row (holds the email).
+- `members:all` — public projection array served by `GET /members`. Patched in lockstep by every mutating handler.
+- `members:bootstrapped` — `'1'` marker; presence means JSON→KV seed has run.
 - `email:{handle}` / `handle:{email}` — bidirectional link, written on `/signup/verify` (when the signup carried a handle) and on `/member/update`.
 - `otp:{email}` — 6-digit login code, 10min TTL.
+
+**ATTENDANCE_KV:**
+- `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot (unchanged).
+- `event:{id}` — canonical per-event row written by the admin dashboard.
+- `events:all` — public projection array served by `GET /events`. Patched in lockstep by `event:{id}` writes.
+- `events:bootstrapped` — `'1'` marker.
 
 ## Tests
 

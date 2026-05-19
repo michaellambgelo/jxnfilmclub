@@ -23,8 +23,10 @@ sort header.
 
 ```mermaid
 flowchart TD
-    A[User navigates to /members] --> B[Load members from data/members.json]
-    B --> C[Render card grid]
+    A[User navigates to /members] --> B[getMembers fetches GET /members from Worker]
+    B -->|Worker reachable| C[Render card grid from live KV aggregate]
+    B -->|Worker down/error| Bfb[Fallback to /data/members.json static snapshot]
+    Bfb --> C
 
     C --> D{Search field}
     D -->|Type query| E[Filter by name or handle<br/>Updates ?query= param]
@@ -56,7 +58,9 @@ Each member gets a deterministic avatar with a colored background:
 | `ui/views.html` | `members-view` component |
 | `ui/widgets.html` | `avatar` and `timeago` widgets |
 | `css/cards.css` | `.member-grid` + `.member-card` layout |
-| `model/index.ts` | `getMembers()` with search and sort |
-| `data/members.json` | Member records |
+| `model/index.ts` | `getMembers()` with search and sort; fetches the Worker first, falls back to `/data/members.json` |
+| `worker/src/index.js` | `GET /members` → `members:all` aggregate; bootstrap from `data/members.json` on cold KV |
+| `data/members.json` | Archival snapshot, refreshed every 6h by `.github/workflows/snapshot-members.yml` |
+| `tests/worker/members-events.test.js` | Worker-side coverage of `GET /members` |
 | `tests/e2e/site.spec.ts` | 4 members-view + 1 avatar test |
 | `tests/model/model.test.ts` | 4 getMembers tests |

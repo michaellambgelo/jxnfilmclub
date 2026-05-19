@@ -60,10 +60,12 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 ## Architecture Notes
 
 - **Two origins**: `jxnfilm.club` owns every UI view including code entry and sessions. `join.jxnfilm.club` hosts the top-level signup form and the API. After `POST /signup` the Worker redirects the browser to `jxnfilm.club/verify?email=...`, so session creation (`/signup/verify`) and `localStorage` live in one origin.
-- **Data model**: members are keyed by a random `id` string, not by Letterboxd handle. `data/members.json` rows have `{ id, name, joined, pronouns, handle? }`. The handle is self-asserted via `/member/update` (or at signup time) and moderated by club organizers through the local admin dashboard; there is no automated proof-of-ownership step.
+- **Data model**: members are keyed by a random `id` string, not by Letterboxd handle. The Worker's KV is the live source of truth for both members and events — the SPA fetches `GET /members` and `GET /events` on every page load, so new signups + admin edits appear immediately. `data/members.json` and `data/events.json` are cron-snapshotted archives (every 6h) that also serve as the bootstrap baseline for fresh KV namespaces and the SPA's fallback when the Worker is unreachable.
 - **KV schema**:
   - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Written on `/signup`, consumed by `/signup/verify`.
-  - `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Authoritative member row (source-of-truth for the Worker; `data/members.json` is the public projection).
+  - `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Canonical per-member row (holds the email, which never leaves KV).
+  - `members:all` — array of public projections `[{ id, name, joined, pronouns?, handle? }]` served verbatim by `GET /members`. Patched in lockstep by every mutating handler (`/signup/verify`, `/member/update`, `/letterboxd/unlink`, `/member/delete`). Bootstrapped from `data/members.json` on cold KV via `bootstrapMembers` (mirrors `bootstrapAttendance`).
+  - `members:bootstrapped` — `'1'` marker; presence means the JSON→KV seed has run.
   - `session:{id}` — full member snapshot keyed by member id, 1h TTL (matches JWT exp). Write-through overlay refreshed on `/signup/verify`, `/otp/verify`, `/member/update`, `/letterboxd/unlink`. `/member/me` reads this first and falls back to `member:{email}` on miss, reseeding — same baseline-on-miss pattern as `readAttendees`. `/session/revoke` deletes this so a stale snapshot can't be replayed before revocation propagates.
   - `email:{handle}` / `handle:{email}` — bidirectional handle ↔ email link. Written on `/signup/verify` (when the signup payload carried a handle) and on `/member/update` whenever a member sets or changes their handle. The reverse index enforces handle uniqueness across the directory.
   - `otp:{email}` — 6-digit login code for returning members, 10min TTL.
@@ -108,7 +110,7 @@ Nue's dhtml compiler has sharp edges worth remembering:
 
 **Worker-side override**: `worker/src/signup.html` contains literal `%SITE_ORIGIN%` strings that are substituted with `env.SITE_ORIGIN` at response time, so the signup form's redirect + back-link target the correct origin in tests / staging / prod.
 
-**State isolation**: reused wrangler-dev instances would otherwise carry KV state between test runs, so `fixtures.ts` has a `beforeEach` that wipes all `pending:/member:/otp:/email:/handle:/session:/rate:/revoked:/__last_*` prefixes in MEMBERS_KV and `attend:/attendance:` in ATTENDANCE_KV.
+**State isolation**: reused wrangler-dev instances would otherwise carry KV state between test runs, so `fixtures.ts` has a `beforeEach` that wipes all `pending:/member:/members:/otp:/email:/handle:/session:/rate:/revoked:/__last_*` prefixes in MEMBERS_KV and `attend:/attendance:/event:/events:` in ATTENDANCE_KV. After the wipe it re-seeds `members:all` and `events:all` from `data/{members,events}.json` so SPA tests that expect the production directory contents work the same way they did when the SPA read those files directly.
 
 **OTP sequencing**: `POST /otp/request` overwrites whatever's at `otp:{email}`, so the helper pattern in `signInAs()` is: click "Email me a code" → immediately re-seed `otp:{email}` with a known value → then submit. `POST /signup` behaves similarly with `pending:{email}`.
 

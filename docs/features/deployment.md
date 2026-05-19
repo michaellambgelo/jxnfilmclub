@@ -9,7 +9,7 @@ flowchart TD
     A{Trigger} --> B
 
     A1[Push to main] --> A
-    A2[Bot workflow completes:<br/>add-member, update-member, remove-member,<br/>refresh-letterboxd,<br/>refresh-spotify] --> A
+    A2[Bot workflow completes:<br/>snapshot-members, snapshot-events,<br/>refresh-letterboxd, refresh-spotify] --> A
     A3[Manual dispatch] --> A
 
     B{Direct push?}
@@ -67,7 +67,9 @@ flowchart TD
 
 ## Timing
 
-The user-facing message "The public site rebuilds in ~30 seconds" reflects the approximate pipeline: GitHub Action dispatch -> workflow pickup -> build -> deploy.
+Member and event changes appear in the SPA **immediately** — the Worker is the live read source via `GET /members` and `GET /events`. The deploy chain no longer gates user-facing freshness; it only refreshes the static fallback JSON in `data/*.json`. The 6h `snapshot-members.yml` + `snapshot-events.yml` cron workflows commit the bot snapshot, then trigger `deploy-site.yml` via `workflow_run` so the static JSON catches up on the CDN.
+
+`Add member` / `Update member` / `Remove member` workflows still fire on every member event but are no longer in `deploy-site.yml`'s `workflow_run` trigger list — they keep a near-realtime git audit trail of membership changes without burning CI minutes on a redeploy that produces no user-visible change.
 
 ## Key Files
 
@@ -77,3 +79,6 @@ The user-facing message "The public site rebuilds in ~30 seconds" reflects the a
 | `.github/workflows/deploy-worker.yml` | Worker deploy (prod/staging) |
 | `.github/workflows/build-check.yml` | PR validation |
 | `.github/workflows/test.yml` | Reusable test workflow |
+| `.github/workflows/snapshot-members.yml` | 6h cron: snapshots `GET /members` → `data/members.json` |
+| `.github/workflows/snapshot-events.yml` | 6h cron: snapshots `GET /events` → `data/events.json` |
+| `.github/workflows/snapshot-attendance.yml` | 6h cron: snapshots `GET /events/attendance` → `data/attendance.json` |

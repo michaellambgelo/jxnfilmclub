@@ -100,6 +100,12 @@ async function route(request, env) {
 
     if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
 
+    // Public read endpoints — Worker is the live source of truth, SPA hits
+    // these directly so member/event mutations appear without a redeploy.
+    // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
+    if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
+    if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
+
     if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
 
     const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance)$/)
@@ -238,6 +244,7 @@ async function handleSignupVerify(request, env) {
     await env.MEMBERS_KV.put(`handle:${email}`, handle)
   }
   await env.MEMBERS_KV.delete(`pending:${email}`)
+  await patchMembersAll(env, publicMemberProjection(member))
   await writeSession(env, member)
   const addPayload = { id, name: member.name, joined: member.joined }
   if (handle) addPayload.handle = handle
@@ -323,6 +330,7 @@ async function handleLbUnlink(request, env) {
   await env.MEMBERS_KV.delete(`email:${handle}`)
   await env.MEMBERS_KV.delete(`handle:${claims.email}`)
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+  await patchMembersAll(env, publicMemberProjection(member))
   await writeSession(env, member)
 
   // `handle: null` tells update-member.yml to drop the field from the
@@ -397,6 +405,7 @@ async function handleMemberUpdate(request, env) {
 
   Object.assign(member, updates)
   await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
+  await patchMembersAll(env, publicMemberProjection(member))
   await writeSession(env, member)
   await dispatchGithub(env, 'update-member', { id: member.id, updates })
   return json(env, { ok: true, id: member.id })
@@ -430,6 +439,7 @@ async function handleMemberDelete(request, env) {
   // independent — but doing the canonical row first means a mid-flight
   // crash leaves nothing reachable rather than a dangling reverse index.
   await env.MEMBERS_KV.delete(`member:${claims.email}`)
+  await removeFromMembersAll(env, member.id)
   if (member.id) await env.MEMBERS_KV.delete(`session:${member.id}`)
   if (member.handle) {
     await env.MEMBERS_KV.delete(`email:${member.handle}`)
@@ -681,6 +691,177 @@ async function fetchAttendanceBaseline(env) {
     const data = await res.json()
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
   } catch { return {} }
+}
+
+// --- Members public read (live KV → cron-snapshotted JSON) ---
+//
+// Mirrors the attendance live-vs-snapshot architecture but member-shaped.
+// `members:all` is an array of public projections — explicit field-by-field
+// to prevent future private fields (like `email`) from leaking via the
+// public read. Per-member canonical state still lives at `member:{email}`.
+
+function publicMemberProjection(member) {
+  if (!member || !member.id) return null
+  const out = { id: member.id, name: member.name, joined: member.joined }
+  if (member.pronouns) out.pronouns = member.pronouns
+  if (member.handle)   out.handle   = member.handle
+  return out
+}
+
+async function handleMembersGet(env) {
+  const all = await readMembersAll(env)
+  return json(env, all)
+}
+
+async function readMembersAll(env) {
+  const raw = await env.MEMBERS_KV.get('members:all')
+  if (raw) {
+    const arr = safeParseArray(raw)
+    if (arr.length || await env.MEMBERS_KV.get('members:bootstrapped')) return arr
+  }
+  return await bootstrapMembers(env)
+}
+
+// Upsert by id, used by every member-mutating handler so the live read
+// reflects the change without waiting on a snapshot.
+async function patchMembersAll(env, projection) {
+  if (!projection || !projection.id) return
+  const allRaw = await env.MEMBERS_KV.get('members:all')
+  const all = allRaw ? safeParseArray(allRaw) : await bootstrapMembers(env)
+  const idx = all.findIndex(m => m.id === projection.id)
+  if (idx === -1) all.push(projection)
+  else all[idx] = projection
+  await env.MEMBERS_KV.put('members:all', JSON.stringify(all))
+}
+
+async function removeFromMembersAll(env, id) {
+  if (!id) return
+  const allRaw = await env.MEMBERS_KV.get('members:all')
+  if (!allRaw) return
+  const all = safeParseArray(allRaw)
+  const filtered = all.filter(m => m.id !== id)
+  if (filtered.length !== all.length) {
+    await env.MEMBERS_KV.put('members:all', JSON.stringify(filtered))
+  }
+}
+
+// One-shot per KV namespace: seed members:all from data/members.json baseline,
+// overlay any member:{email} keys that already exist (those win). Subsequent
+// calls return the cached aggregate without re-seeding.
+async function bootstrapMembers(env) {
+  if (await env.MEMBERS_KV.get('members:bootstrapped')) {
+    const raw = await env.MEMBERS_KV.get('members:all')
+    return raw ? safeParseArray(raw) : []
+  }
+  const baseline = await fetchMembersBaseline(env)
+  const list = await env.MEMBERS_KV.list({ prefix: 'member:' })
+  const kvProjections = []
+  for (const k of list.keys) {
+    const raw = await env.MEMBERS_KV.get(k.name)
+    if (!raw) continue
+    try {
+      const m = JSON.parse(raw)
+      const proj = publicMemberProjection(m)
+      if (proj) kvProjections.push(proj)
+    } catch { /* skip corrupt entry */ }
+  }
+  const merged = [...baseline]
+  for (const proj of kvProjections) {
+    const idx = merged.findIndex(m => m.id === proj.id)
+    if (idx === -1) merged.push(proj)
+    else merged[idx] = proj
+  }
+  await env.MEMBERS_KV.put('members:all', JSON.stringify(merged))
+  await env.MEMBERS_KV.put('members:bootstrapped', '1')
+  return merged
+}
+
+async function fetchMembersBaseline(env) {
+  if (env.E2E_MODE === 'true') return []
+  const owner = env.GITHUB_OWNER
+  const repo = env.GITHUB_REPO
+  const branch = env.GITHUB_BRANCH || 'main'
+  if (!owner || !repo) return []
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/data/members.json`,
+      { headers: { 'User-Agent': 'jxnfilmclub-join' }, cf: { cacheTtl: 60, cacheEverything: true } },
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+
+function safeParseArray(raw) {
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v : []
+  } catch { return [] }
+}
+
+// --- Events public read (live KV → cron-snapshotted JSON) ---
+//
+// Lives in ATTENDANCE_KV — events and attendance are semantically paired and
+// snapshotted by sibling cron workflows. Admin dashboard writes per-event:{id}
+// rows via the /api/kv shim and patches events:all in the same call.
+
+async function handleEventsGet(env) {
+  const all = await readEventsAll(env)
+  return json(env, all)
+}
+
+async function readEventsAll(env) {
+  const raw = await env.ATTENDANCE_KV.get('events:all')
+  if (raw) {
+    const arr = safeParseArray(raw)
+    if (arr.length || await env.ATTENDANCE_KV.get('events:bootstrapped')) return arr
+  }
+  return await bootstrapEvents(env)
+}
+
+async function bootstrapEvents(env) {
+  if (await env.ATTENDANCE_KV.get('events:bootstrapped')) {
+    const raw = await env.ATTENDANCE_KV.get('events:all')
+    return raw ? safeParseArray(raw) : []
+  }
+  const baseline = await fetchEventsBaseline(env)
+  const list = await env.ATTENDANCE_KV.list({ prefix: 'event:' })
+  const kvEvents = []
+  for (const k of list.keys) {
+    const raw = await env.ATTENDANCE_KV.get(k.name)
+    if (!raw) continue
+    try {
+      const e = JSON.parse(raw)
+      if (e && e.id) kvEvents.push(e)
+    } catch { /* skip */ }
+  }
+  const merged = [...baseline]
+  for (const ev of kvEvents) {
+    const idx = merged.findIndex(m => m.id === ev.id)
+    if (idx === -1) merged.push(ev)
+    else merged[idx] = ev
+  }
+  await env.ATTENDANCE_KV.put('events:all', JSON.stringify(merged))
+  await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
+  return merged
+}
+
+async function fetchEventsBaseline(env) {
+  if (env.E2E_MODE === 'true') return []
+  const owner = env.GITHUB_OWNER
+  const repo = env.GITHUB_REPO
+  const branch = env.GITHUB_BRANCH || 'main'
+  if (!owner || !repo) return []
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/data/events.json`,
+      { headers: { 'User-Agent': 'jxnfilmclub-join' }, cf: { cacheTtl: 60, cacheEverything: true } },
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
 }
 
 // --- E2E / dev helper ---

@@ -266,14 +266,30 @@ async function renderRate() {
   `
 }
 
-// --- Events tab (data/events.json + ATTENDANCE_KV) ---
+// --- Events tab (ATTENDANCE_KV: event:{id} canonical + events:all aggregate) ---
+//
+// Events are now KV-driven. The public site reads them via the Worker's
+// `GET /events` endpoint, so saves here appear immediately on `/events`.
+// snapshot-events.yml commits data/events.json from the Worker every 6h
+// as the archival / fallback source.
 
 let eventsCache = null
 let attendanceCache = null
 
 async function renderEvents() {
-  const content_ = await getFile('data/events.json')
-  eventsCache = JSON.parse(content_)
+  // Read per-event KV rows first; if the namespace is empty, bootstrap from
+  // the events:all aggregate (which the Worker seeded from data/events.json).
+  const perEvent = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'event:' })}`)
+  if (perEvent.keys.length) {
+    eventsCache = perEvent.keys.map(k => tryParse(perEvent.values[k.name])).filter(Boolean)
+  } else {
+    const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
+    const aggValue = aggRaw.values['events:all']
+    eventsCache = tryParse(aggValue) || []
+  }
+  // Sort by date for a stable, readable list.
+  eventsCache.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+
   const attendanceRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'attend:' })}`)
   attendanceCache = {}
   for (const k of attendanceRaw.keys) {
@@ -283,12 +299,32 @@ async function renderEvents() {
 
   content().innerHTML = `
     <h2>Events <span class="muted">(${eventsCache.length})</span></h2>
-    <p class="section-hint">Edits update <code>data/events.json</code> in this checkout. Commit + push to publish. Attendance lives in <code>ATTENDANCE_KV</code> and is fetched live.</p>
+    <p class="section-hint">Edits write directly to <code>ATTENDANCE_KV</code> and appear on <code>/events</code> immediately via the Worker. <code>data/events.json</code> is the cron-snapshotted archive (every 6h).</p>
     <div class="toolbar">
       <button class="primary" data-action="event-new">+ new event</button>
     </div>
     <div id="events-list">${renderEventCards()}</div>
   `
+}
+
+// Write per-event row + patch events:all aggregate in lockstep so the
+// Worker's GET /events reflects the change on the next read.
+async function writeEventKv(ev) {
+  await putKv(`event:${ev.id}`, JSON.stringify(ev), 'ATTENDANCE_KV')
+  const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
+  const agg = tryParse(aggRaw.values['events:all']) || []
+  const idx = agg.findIndex(e => e.id === ev.id)
+  if (idx === -1) agg.push(ev)
+  else agg[idx] = ev
+  await putKv('events:all', JSON.stringify(agg), 'ATTENDANCE_KV')
+}
+
+async function deleteEventKv(id) {
+  await delKv(`event:${id}`, 'ATTENDANCE_KV').catch(() => {})
+  const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
+  const agg = tryParse(aggRaw.values['events:all']) || []
+  const next = agg.filter(e => e.id !== id)
+  await putKv('events:all', JSON.stringify(next), 'ATTENDANCE_KV')
 }
 
 function renderEventCards() {
@@ -410,15 +446,15 @@ document.addEventListener('click', async (e) => {
         else delete updated[input.name]
       })
       eventsCache[idx] = updated
-      await putFile('data/events.json', JSON.stringify(eventsCache, null, 2) + '\n')
+      await writeEventKv(updated)
       toast(`Saved event "${updated.title || updated.id}"`)
     }
     else if (a === 'event-del') {
       const idx = Number(btn.dataset.idx)
       const ev = eventsCache[idx]
-      if (!confirm(`Delete event "${ev.title || ev.id}" from data/events.json?\n\nAttendance KV (attend:${ev.id}) is kept — clear it separately if desired.`)) return
+      if (!confirm(`Delete event "${ev.title || ev.id}"?\n\nClears event:${ev.id} from ATTENDANCE_KV and removes it from the events:all aggregate. Attendance (attend:${ev.id}) is kept — clear it separately if desired.`)) return
+      await deleteEventKv(ev.id)
       eventsCache.splice(idx, 1)
-      await putFile('data/events.json', JSON.stringify(eventsCache, null, 2) + '\n')
       toast(`Deleted event`)
       await switchTab(currentTab)
     }
@@ -429,8 +465,9 @@ document.addEventListener('click', async (e) => {
         toast(`Event id "${id}" already exists`, true)
         return
       }
-      eventsCache.push({ id, title: 'Untitled', date: new Date().toISOString().slice(0, 10) })
-      await putFile('data/events.json', JSON.stringify(eventsCache, null, 2) + '\n')
+      const fresh = { id, title: 'Untitled', date: new Date().toISOString().slice(0, 10) }
+      eventsCache.push(fresh)
+      await writeEventKv(fresh)
       toast(`Created event "${id}"`)
       await switchTab(currentTab)
     }

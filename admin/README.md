@@ -34,7 +34,7 @@ current tab so you don't accidentally act on the wrong namespace.
 | **Sessions** | `session:{id}` cached snapshots | evict (does NOT revoke the JWT — use the Worker's `/session/revoke` for that) |
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
 | **Rate limits** | All `rate:*` counters; lockouts (≥5) are highlighted | delete a counter to unblock a user |
-| **Events** | `data/events.json` rows + live attendance from `ATTENDANCE_KV` | add / edit / delete events, remove attendees |
+| **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}` | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
 
 ## What it does NOT do
 

@@ -61,15 +61,33 @@ base.beforeAll(async ({ request }) => {
 // instances don't leak pending/member/otp entries between runs.
 // In CI (fresh server), this is a no-op.
 test.beforeEach(async ({ request }) => {
-  for (const prefix of ['pending:', 'member:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', '__last_']) {
-    // lb_token: stays in the wipe list for one cycle so any leftover keys from
-    // pre-removal test runs get cleaned. Safe to drop in a follow-up commit.
+  for (const prefix of ['pending:', 'member:', 'members:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', '__last_']) {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
   }
-  // ATTENDANCE_KV (separate namespace) — wipe attend:* and the aggregate so
-  // anonymize / unattend tests don't see stale entries between runs.
-  for (const prefix of ['attend:', 'attendance:']) {
+  // ATTENDANCE_KV (separate namespace) — wipe attend:* + attendance:* +
+  // event:* + events:* so anonymize / unattend / events tests don't see
+  // stale entries between runs.
+  for (const prefix of ['attend:', 'attendance:', 'event:', 'events:']) {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent(prefix)}`)
+  }
+
+  // Seed the live read aggregates from the static JSON snapshots so SPA
+  // tests that expect the production directory contents work the same way
+  // they did when the SPA fetched /data/*.json directly. Tests that need a
+  // clean state can wipe `members:all` / `events:all` themselves after this.
+  const [membersRes, eventsRes] = await Promise.all([
+    request.get(`http://localhost:8083/data/members.json`),
+    request.get(`http://localhost:8083/data/events.json`),
+  ])
+  if (membersRes.ok()) {
+    await request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { key: 'members:all', value: await membersRes.text() },
+    })
+  }
+  if (eventsRes.ok()) {
+    await request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: 'events:all', value: await eventsRes.text() },
+    })
   }
 })
 

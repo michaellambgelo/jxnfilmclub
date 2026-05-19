@@ -1,0 +1,69 @@
+name: Snapshot members
+
+# KV is the live source of truth for membership. Every 6 hours we snapshot
+# the Worker's /members read and commit data/members.json if anything
+# changed. The committed file is the bootstrap seed for fresh KV namespaces
+# (see bootstrapMembers in worker/src/index.js), the SPA's fallback when
+# the Worker is unreachable, and a git audit trail.
+
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot-members
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch current members snapshot from Worker
+        env:
+          WORKER_ORIGIN: https://join.jxnfilm.club
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            "$WORKER_ORIGIN/members" \
+            -o /tmp/snapshot.json
+          # Sanity: must be a JSON array of {id, name, joined, ...} objects.
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('/tmp/snapshot.json'))
+          if not isinstance(data, list):
+              sys.exit('snapshot is not a JSON array')
+          if data and not all(isinstance(m, dict) and m.get('id') and m.get('name') for m in data):
+              sys.exit('snapshot rows missing required id/name fields')
+          PY
+
+      - name: Rewrite data/members.json
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          rows = json.load(open('/tmp/snapshot.json'))
+          # Deterministic ordering: by joined date ascending, then by id for
+          # tie-breaks. Matches the order historically committed by
+          # add-member.yml + update-member.yml.
+          rows.sort(key=lambda m: (m.get('joined', ''), m.get('id', '')))
+          pathlib.Path('data/members.json').write_text(
+              json.dumps(rows, indent=2) + '\n'
+          )
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet -- data/members.json; then
+            echo "No member changes to commit"
+          else
+            git add data/members.json
+            git commit -m "chore: snapshot members"
+            git push
+          fi

@@ -1,8 +1,35 @@
 
 const is_browser = typeof window == 'object'
 
-async function fetchJson(path: string) {
-  const url = is_browser ? `/${path}` : `file:${process.cwd()}/${path}`
+// Resolve the Worker origin the same way ui/views.html + ui/auth.html do — the
+// Worker is the live source for members + events. Node (SSG/CLI tests) skips
+// the Worker entirely and reads from data/*.json on disk.
+function resolveWorkerOrigin(): string | null {
+  if (!is_browser) return null
+  const g = globalThis as any
+  if (g.JXNFC_WORKER_ORIGIN) return g.JXNFC_WORKER_ORIGIN
+  const override = new URLSearchParams(location.search).get('api')
+  if (override === 'local') return 'http://localhost:8787'
+  if (override === 'prod')  return 'https://join.jxnfilm.club'
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+  return 'https://join.jxnfilm.club'
+}
+
+async function fetchList(type: string): Promise<any[]> {
+  // Try the live Worker first. The static JSON snapshot in data/{type}.json
+  // is the fallback — it's refreshed by snapshot-{members,events}.yml every
+  // 6h, so it's never more than ~6h stale when the Worker is unreachable.
+  const origin = resolveWorkerOrigin()
+  if (origin) {
+    try {
+      const res = await fetch(`${origin}/${type}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) return data
+      }
+    } catch { /* fall through to static */ }
+  }
+  const url = is_browser ? `/data/${type}.json` : `file:${process.cwd()}/data/${type}.json`
   const res = await fetch(url)
   return await res.json()
 }
@@ -18,7 +45,7 @@ export async function getEvents(opts = {}) {
 async function getList(type: string, opts: any) {
   const { start = 0, limit = 30, sort, search, venue } = opts || {}
 
-  let items = await fetchJson(`data/${type}.json`)
+  let items = await fetchList(type)
   const defaultSort = type === 'events' ? 'date' : 'joined'
   sortBy(sort || defaultSort, items)
 

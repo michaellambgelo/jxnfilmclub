@@ -1,0 +1,67 @@
+name: Snapshot events
+
+# KV (ATTENDANCE_KV) is the live source of truth for the events calendar
+# once an admin has edited via the local dashboard. Every 6 hours we
+# snapshot the Worker's /events read and commit data/events.json if
+# anything changed. The committed file is the bootstrap seed for fresh KV
+# namespaces (see bootstrapEvents in worker/src/index.js), the SPA's
+# fallback when the Worker is unreachable, and a git audit trail.
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot-events
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch current events snapshot from Worker
+        env:
+          WORKER_ORIGIN: https://join.jxnfilm.club
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            "$WORKER_ORIGIN/events" \
+            -o /tmp/snapshot.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('/tmp/snapshot.json'))
+          if not isinstance(data, list):
+              sys.exit('snapshot is not a JSON array')
+          if data and not all(isinstance(e, dict) and e.get('id') for e in data):
+              sys.exit('snapshot rows missing required id field')
+          PY
+
+      - name: Rewrite data/events.json
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          rows = json.load(open('/tmp/snapshot.json'))
+          # Deterministic: sort by date ascending, then id for tie-breaks.
+          rows.sort(key=lambda e: (e.get('date', ''), e.get('id', '')))
+          pathlib.Path('data/events.json').write_text(
+              json.dumps(rows, indent=2) + '\n'
+          )
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet -- data/events.json; then
+            echo "No event changes to commit"
+          else
+            git add data/events.json
+            git commit -m "chore: snapshot events"
+            git push
+          fi

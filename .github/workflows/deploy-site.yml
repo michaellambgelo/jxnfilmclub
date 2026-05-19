@@ -5,8 +5,12 @@ on:
     branches: [main]
   workflow_run:
     # Rebuild when bot workflows commit to main (GH's default token doesn't
-    # fire push events, so chain via workflow_run instead).
-    workflows: [Add member, Update member, Remove member, Refresh Letterboxd data, Refresh Spotify episodes]
+    # fire push events, so chain via workflow_run instead). Member + event
+    # changes drive the SPA via the Worker's live read endpoints, so the
+    # `Add/Update/Remove member` workflows are no longer in this list —
+    # they still update data/*.json but don't redeploy. The 6h cron
+    # snapshots are the deploy trigger for the static fallback JSON.
+    workflows: [Snapshot members, Snapshot events, Refresh Letterboxd data, Refresh Spotify episodes]
     types: [completed]
     branches: [main]
   workflow_dispatch: {}

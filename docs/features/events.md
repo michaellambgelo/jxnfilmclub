@@ -51,9 +51,9 @@ flowchart TD
 
 | Data | Source | Refresh |
 |------|--------|---------|
-| Events | `data/events.json` | Manual commits |
+| Events | Worker `GET /events` (KV `events:all` aggregate; admin dashboard writes per-event KV rows) | Live on admin edit; JSON snapshot committed every 6h by `snapshot-events.yml` |
 | Attendance | Worker `GET /events/attendance` (KV `attendance:all` overlay) | Live on click; JSON snapshot committed every 6h |
-| Members (for handle lookup) | `data/members.json` | On member changes |
+| Members (for handle lookup) | Worker `GET /members` | Live on signup/update; JSON snapshot every 6h |
 
 ## URL Parameters
 
@@ -69,9 +69,12 @@ flowchart TD
 |------|------|
 | `ui/views.html` | `events-view` (list + filters) + `event-card` (per-event subcomponent that owns attendees / busy state) |
 | `css/cards.css` | `.event-grid` + `.event-card` layout |
-| `model/index.ts` | `getEvents()` with search, sort, venue filter |
-| `data/events.json` | Event records |
-| `data/attendance.json` | Attendance lists by event ID |
+| `model/index.ts` | `getEvents()` fetches `GET /events` from the Worker; falls back to `/data/events.json` on error |
+| `worker/src/index.js` | `GET /events` reads `events:all`; `bootstrapEvents` seeds from `data/events.json` on cold KV |
+| `admin/admin.js` | Events tab writes `event:{id}` + patches `events:all` via the `/api/kv` shim (was: `PUT /api/file?path=data/events.json`) |
+| `data/events.json` | Archival snapshot, refreshed every 6h by `.github/workflows/snapshot-events.yml` |
+| `data/attendance.json` | Attendance archival snapshot (separate cron) |
+| `tests/worker/members-events.test.js` | Worker-side coverage of `GET /events` (bootstrap + per-event read paths) |
 | `tests/e2e/site.spec.ts` | 2 e2e tests |
 | `tests/model/model.test.ts` | 4 getEvents tests |
 

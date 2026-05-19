@@ -58,6 +58,20 @@ async function clearAttempts(env, key) {
 
 export default {
   async fetch(request, env) {
+    try {
+      return await route(request, env)
+    } catch (err) {
+      // Any uncaught throw from a handler would otherwise become a default
+      // 500 with no CORS headers, which browsers surface as a CORS violation
+      // instead of the real error. Funnel everything through json() so
+      // Access-Control-Allow-Origin is always set.
+      console.error('Worker uncaught:', err && err.stack || err)
+      return json(env, { error: 'internal server error' }, 500)
+    }
+  },
+}
+
+async function route(request, env) {
     const url = new URL(request.url)
     const { pathname } = url
 
@@ -105,7 +119,6 @@ export default {
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
 
     return new Response('Not Found', { status: 404 })
-  },
 }
 
 function html(body) {

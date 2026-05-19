@@ -242,9 +242,9 @@
     <section class="lb-panel">
       <h2>Letterboxd</h2>
 
-      <div :if="lb.verified">
-        <p class="ok">Verified as
-          <a href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">@{ lb.handle }</a>.
+      <div :if="member.handle">
+        <p class="ok">Linked as
+          <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>.
         </p>
         <button type="button" class="plain" :onclick="unlinkLb" :disabled="lbBusy">
           { lbBusy ? 'Removing…' : 'Remove Letterboxd link' }
@@ -252,45 +252,17 @@
         <p class="err" :if="lbError">{ lbError }</p>
       </div>
 
-      <div :if="lb.pending">
-        <p class="lede">Add this tag to a diary entry or a list on
-          <a :if="lb.handle" href="https://letterboxd.com/{ lb.handle }/" target="_blank" rel="noopener">letterboxd.com/{ lb.handle }</a><span :if="!lb.handle">your Letterboxd profile</span>,
-          then paste the URL of that page below. Once verified, you can
-          delete the tag if you like.</p>
-        <p><code class="lb-token">{ lb.token }</code></p>
-
-        <!-- Single form with :if-gated fields and a branching submit
-             handler. A :if directly on <form> unmounts it on toggle and
-             :onsubmit doesn't re-bind on remount (see docs/CLAUDE.md),
-             which bites when a user clicks "Use a different handle" and
-             later re-enters the URL step. -->
-        <form :onsubmit="onLbSubmit">
-          <label :if="!lb.handle">Letterboxd username
-            <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
-              placeholder="e.g. davidehrlich">
-          </label>
-          <label :if="lb.handle">Diary entry or list URL
-            <input type="url" name="url" required
-              placeholder="https://letterboxd.com/your-handle/film/...">
-          </label>
-          <div class="actions">
-            <button type="submit" :disabled="lbBusy">{ lbSubmitLabel() }</button>
-            <button :if="lb.handle" type="button" class="plain" :onclick="changeHandle">Use a different handle</button>
-          </div>
-        </form>
-        <p class="err" :if="lbError">{ lbError }</p>
-      </div>
-
-      <div :if="lb.none">
-        <p class="lede">Verify your Letterboxd profile to show a link to it
-          on your public entry. Enter your Letterboxd username and we'll
-          give you a verification tag to add to a diary entry or list.</p>
-        <form :onsubmit="submitHandle">
+      <div :if="!member.handle">
+        <p class="lede">Add your Letterboxd username to show a link from
+          your member entry to your profile. We trust you've typed your own;
+          a club organizer can unlink a disputed handle from the admin
+          dashboard.</p>
+        <form :onsubmit="saveHandle">
           <label>Letterboxd username
             <input type="text" name="handle" required pattern="[a-zA-Z0-9_-]+"
               placeholder="e.g. davidehrlich">
           </label>
-          <button type="submit" :disabled="lbBusy">{ lbBusy ? 'Saving…' : 'Get verification tag' }</button>
+          <button type="submit" :disabled="lbBusy">{ lbBusy ? 'Saving…' : 'Save handle' }</button>
           <p class="err" :if="lbError">{ lbError }</p>
         </form>
       </div>
@@ -347,7 +319,7 @@
       this.update({
         loading: true, member: {}, session: null,
         busy: false, saved: false, error: '',
-        lb: { loading: true }, lbBusy: false, lbError: '',
+        lbBusy: false, lbError: '',
         eventToEdit: null, attendBusy: false, attendRemoved: false, attendError: '',
         deleteBusy: false, deleteConfirmInput: '', deleteError: '',
       })
@@ -361,24 +333,16 @@
 
       // Pull the member from the Worker's authoritative KV copy. The public
       // JSON may lag the add-member Action by ~30s after a fresh signup, so
-      // we can't rely on it for prefill.
+      // we can't rely on it for prefill. member.handle drives the Letterboxd
+      // panel directly now — no separate /letterboxd/status fetch.
       let member = { id: s.id, name: '', pronouns: '', handle: null }
       try {
         member = await call('GET', '/member/me', undefined, s.token)
       } catch { /* fall through with empty defaults */ }
 
-      const lb = await this.loadLbStatus(s.token)
-      this.update({ loading: false, session: s, member, lb })
+      this.update({ loading: false, session: s, member })
 
       if (state.event) await this.loadEvent(state.event, s)
-    }
-
-    async loadLbStatus(token) {
-      try {
-        return await call('GET', '/letterboxd/status', undefined, token)
-      } catch {
-        return { none: true }
-      }
     }
 
     async save(e) {
@@ -399,51 +363,20 @@
       }
     }
 
-    async submitHandle(e) {
-      e.preventDefault()
-      this.update({ lbBusy: true, lbError: '' })
-      const handle = new FormData(e.target).get('handle')
-      try {
-        const res = await call('POST', '/letterboxd/request', { handle }, this.session.token)
-        this.update({
-          lbBusy: false,
-          lb: { pending: true, handle: res.handle, token: res.token, exp: res.exp },
-        })
-      } catch (err) {
-        this.update({ lbBusy: false, lbError: err.message })
-      }
-    }
-
-    onLbSubmit(e) {
-      if (this.lb?.handle) return this.verifyLb(e)
-      return this.submitHandle(e)
-    }
-
-    lbSubmitLabel() {
-      if (this.lbBusy) return this.lb?.handle ? 'Checking…' : 'Saving…'
-      return this.lb?.handle ? 'Verify Letterboxd' : 'Add handle'
-    }
-
-    async verifyLb(e) {
+    async saveHandle(e) {
       if (e && e.preventDefault) e.preventDefault()
+      const handle = (new FormData(e.target).get('handle') || '').toString().trim()
+      if (!handle) return
       this.update({ lbBusy: true, lbError: '' })
-      const fd = e && e.target ? new FormData(e.target) : null
-      const url = fd ? (fd.get('url') || '').toString().trim() : ''
       try {
-        const res = await call('POST', '/letterboxd/verify',
-          url ? { url } : {}, this.session.token)
+        await call('POST', '/member/update', { handle }, this.session.token)
         this.update({
           lbBusy: false,
-          lb: { verified: true, handle: res.handle },
-          member: { ...this.member, handle: res.handle },
+          member: { ...this.member, handle },
         })
       } catch (err) {
         this.update({ lbBusy: false, lbError: err.message })
       }
-    }
-
-    changeHandle() {
-      this.update({ lb: { pending: true, handle: null, token: this.lb.token, exp: this.lb.exp }, lbError: '' })
     }
 
     async unlinkLb() {
@@ -453,7 +386,6 @@
         await call('POST', '/letterboxd/unlink', {}, this.session.token)
         this.update({
           lbBusy: false,
-          lb: { none: true },
           member: { ...this.member, handle: null },
         })
       } catch (err) {

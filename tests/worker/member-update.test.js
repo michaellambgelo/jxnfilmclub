@@ -64,15 +64,64 @@ describe('POST /member/update', () => {
     expect(dispatch.client_payload.updates).toEqual({ name: 'New Name', pronouns: 'they/them' })
   })
 
-  it('ignores client-supplied handle — only name/pronouns are editable here', async () => {
-    const { token } = await getTokenFor('ignore@example.com')
+  it('accepts a fresh handle: writes reverse indices and dispatches update-member with the handle field', async () => {
+    const { token, member } = await getTokenFor('claim@example.com')
     const calls = []
     mockFetch(async (url, init) => { calls.push({ url: String(url), init }); return new Response('', { status: 204 }) })
 
-    await fetchWith('/member/update', 'POST',
-      { handle: 'someoneelse', pronouns: 'x' }, token)
+    const res = await fetchWith('/member/update', 'POST', { handle: 'claimuser' }, token)
+    expect(res.status).toBe(200)
+
+    expect(await env.MEMBERS_KV.get('email:claimuser')).toBe('claim@example.com')
+    expect(await env.MEMBERS_KV.get('handle:claim@example.com')).toBe('claimuser')
+
+    const saved = JSON.parse(await env.MEMBERS_KV.get('member:claim@example.com'))
+    expect(saved.handle).toBe('claimuser')
+
     const dispatch = JSON.parse(calls.find(c => c.url.includes('api.github.com')).init.body)
-    expect(dispatch.client_payload.updates.handle).toBeUndefined()
+    expect(dispatch.event_type).toBe('update-member')
+    expect(dispatch.client_payload.id).toBe(member.id)
+    expect(dispatch.client_payload.updates).toEqual({ handle: 'claimuser' })
+  })
+
+  it('changing handle swaps reverse indices in lockstep (old removed, new written)', async () => {
+    const { token } = await getTokenFor('swap@example.com', { handle: 'oldhandle' })
+    // Seed the existing reverse index since the helper doesn't (it just sets member.handle).
+    await env.MEMBERS_KV.put('email:oldhandle', 'swap@example.com')
+    await env.MEMBERS_KV.put('handle:swap@example.com', 'oldhandle')
+    mockFetch(async () => new Response('', { status: 204 }))
+
+    const res = await fetchWith('/member/update', 'POST', { handle: 'newhandle' }, token)
+    expect(res.status).toBe(200)
+    expect(await env.MEMBERS_KV.get('email:oldhandle')).toBeNull()
+    expect(await env.MEMBERS_KV.get('email:newhandle')).toBe('swap@example.com')
+    expect(await env.MEMBERS_KV.get('handle:swap@example.com')).toBe('newhandle')
+  })
+
+  it('rejects an invalid handle format with 400 and leaves member row untouched', async () => {
+    const { token } = await getTokenFor('badhandle@example.com')
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/member/update', 'POST', { handle: 'has spaces' }, token)
+    expect(res.status).toBe(400)
+    const saved = JSON.parse(await env.MEMBERS_KV.get('member:badhandle@example.com'))
+    expect(saved.handle).toBeNull()
+  })
+
+  it('rejects a handle already claimed by another member with 409', async () => {
+    const { token } = await getTokenFor('contender@example.com')
+    await env.MEMBERS_KV.put('email:claimed', 'other@example.com')
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/member/update', 'POST', { handle: 'claimed' }, token)
+    expect(res.status).toBe(409)
+    expect(await env.MEMBERS_KV.get('email:claimed')).toBe('other@example.com')
+  })
+
+  it('lets a member re-submit their existing handle without 409 (no-op uniqueness check)', async () => {
+    const { token } = await getTokenFor('keepsame@example.com', { handle: 'samehandle' })
+    await env.MEMBERS_KV.put('email:samehandle', 'keepsame@example.com')
+    mockFetch(async () => new Response('', { status: 204 }))
+    const res = await fetchWith('/member/update', 'POST', { handle: 'samehandle' }, token)
+    expect(res.status).toBe(200)
   })
 
   it('rejects tampered or expired tokens with 401', async () => {

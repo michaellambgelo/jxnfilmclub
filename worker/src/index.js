@@ -2,7 +2,6 @@ import privacyHtml from './privacy.html'
 import signupHtml from './signup.html'
 
 const OTP_TTL = 600          // 10 min
-const LB_TOKEN_TTL = 172800  // 48 hours
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
 // Cloudflare KV enforces a 60s minimum expirationTtl, so 60 is the floor for
 // both knobs. Throttle is permissive on the user side — a single stuck code
@@ -10,8 +9,6 @@ const SESSION_TTL = 3600     // 1 hour — matches JWT exp
 const SEND_THROTTLE = 60
 const SIGNUP_THROTTLE = 60
 const MAX_OTP_FAILURES = 5   // wrong-code lockout per email per OTP window
-const LB_VERIFY_WINDOW = 3600
-const MAX_LB_VERIFY = 10     // /letterboxd/verify attempts/hour — bounds scraping abuse
 
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
@@ -95,9 +92,6 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/otp/request')    return handleOtpRequest(request, env)
     if (request.method === 'POST' && pathname === '/otp/verify')     return handleOtpVerify(request, env)
 
-    if (request.method === 'GET'  && pathname === '/letterboxd/status')  return handleLbStatus(request, env)
-    if (request.method === 'POST' && pathname === '/letterboxd/request') return handleLbRequest(request, env)
-    if (request.method === 'POST' && pathname === '/letterboxd/verify')  return handleLbVerify(request, env)
     if (request.method === 'POST' && pathname === '/letterboxd/unlink')  return handleLbUnlink(request, env)
 
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
@@ -156,9 +150,8 @@ function isValidName(s) {
 // --- Signup ---
 
 // POST /signup — (email, name, handle?)
-// Creates pending:{email} with OTP code. Also mints an LB verification tag
-// (always, even when handle is omitted — user may add one later from /edit).
-// Sends a single email containing both the code and the tag instructions.
+// Creates pending:{email} with OTP code. The optional handle is held on the
+// pending row and promoted to the member row at /signup/verify time.
 async function handleSignup(request, env) {
   const { email, name, handle } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
@@ -185,28 +178,21 @@ async function handleSignup(request, env) {
   }
 
   const code = randomCode()
-  const lbToken = `jxnfc-verify-${randomToken(8)}`
-
   await env.MEMBERS_KV.put(
     `pending:${email}`,
     JSON.stringify({ name, handle: handle || null, code }),
     { expirationTtl: OTP_TTL },
   )
-  await env.MEMBERS_KV.put(
-    `lb_token:${email}`,
-    JSON.stringify({ token: lbToken, handle: handle || null, exp: Date.now() + LB_TOKEN_TTL * 1000 }),
-    { expirationTtl: LB_TOKEN_TTL },
-  )
 
-  await sendSignupEmail(env, email, code, lbToken, handle)
+  await sendSignupEmail(env, email, code)
   return json(env, { ok: true })
 }
 
 // POST /signup/verify — (email, code)
 // Promotes pending:{email} to member:{email}, dispatches add-member with a
-// new random member id, and returns a session token. The LB token (if any)
-// stays alive for 48h so the user can complete Letterboxd verification from
-// their account page.
+// new random member id, and returns a session token. If the pending row
+// carries a Letterboxd handle, it's promoted onto the member row and the
+// reverse index keys are written in the same pass — no separate verify step.
 async function handleSignupVerify(request, env) {
   const { email, code } = await request.json()
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
@@ -226,22 +212,39 @@ async function handleSignupVerify(request, env) {
   }
   await clearAttempts(env, attemptsKey)
 
+  // Re-check handle uniqueness right before commit. The 10-min OTP window
+  // is small but non-zero — narrow the race to the few KV propagation
+  // milliseconds (eventual consistency means we can't eliminate it).
+  let handle = pending.handle || null
+  if (handle) {
+    const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
+    if (claimedBy && claimedBy !== email) {
+      handle = null  // someone else won the race — strip rather than 409 mid-verify
+    }
+  }
+
   const id = randomToken(10)
   const member = {
     id,
     email,
     name: pending.name,
     pronouns: null,
-    handle: null,
+    handle,
     joined: new Date().toISOString().slice(0, 10),
   }
   await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
+  if (handle) {
+    await env.MEMBERS_KV.put(`email:${handle}`, email)
+    await env.MEMBERS_KV.put(`handle:${email}`, handle)
+  }
   await env.MEMBERS_KV.delete(`pending:${email}`)
   await writeSession(env, member)
-  await dispatchGithub(env, 'add-member', { id, name: member.name, joined: member.joined })
+  const addPayload = { id, name: member.name, joined: member.joined }
+  if (handle) addPayload.handle = handle
+  await dispatchGithub(env, 'add-member', addPayload)
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000, jti: randomToken(16) })
-  return json(env, { token, email, id, name: member.name, handle: null })
+  return json(env, { token, email, id, name: member.name, handle })
 }
 
 // --- Sign-in (returning members) ---
@@ -295,146 +298,12 @@ async function handleOtpVerify(request, env) {
   return json(env, { token, email, id: member.id, name: member.name, handle: member.handle })
 }
 
-// --- Letterboxd verification ---
-
-// GET /letterboxd/status — authenticated
-async function handleLbStatus(request, env) {
-  const claims = await authorize(request, env)
-  if (!claims) return json(env, { error: 'unauthorized' }, 401)
-
-  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
-  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
-  const member = JSON.parse(memberRaw)
-
-  if (member.handle) {
-    return json(env, { verified: true, handle: member.handle })
-  }
-  const lbRaw = await env.MEMBERS_KV.get(`lb_token:${claims.email}`)
-  if (lbRaw) {
-    const lb = JSON.parse(lbRaw)
-    return json(env, { pending: true, handle: lb.handle, token: lb.token, exp: lb.exp })
-  }
-  return json(env, { none: true })
-}
-
-// POST /letterboxd/request — authenticated, (handle)
-// Issues a fresh LB token with a 48h TTL, tied to the given handle.
-async function handleLbRequest(request, env) {
-  const claims = await authorize(request, env)
-  if (!claims) return json(env, { error: 'unauthorized' }, 401)
-
-  const { handle } = await request.json()
-  if (!handle || !HANDLE_RE.test(handle)) {
-    return json(env, { error: 'invalid handle format' }, 400)
-  }
-  const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
-  if (claimedBy && claimedBy !== claims.email) {
-    return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
-  }
-
-  const token = `jxnfc-verify-${randomToken(8)}`
-  const exp = Date.now() + LB_TOKEN_TTL * 1000
-  await env.MEMBERS_KV.put(
-    `lb_token:${claims.email}`,
-    JSON.stringify({ token, handle, exp }),
-    { expirationTtl: LB_TOKEN_TTL },
-  )
-  return json(env, { token, handle, exp })
-}
-
-// POST /letterboxd/verify — authenticated
-// Two modes:
-//   1. { url } — scrape the given Letterboxd page directly for the token.
-//      This is the UI default because RSS lags real-time edits and some
-//      list/diary shapes never surface there. The URL must be on the
-//      configured Letterboxd origin AND under /<handle>/ so a user can't
-//      claim someone else's profile by pointing at their page.
-//   2. {} — fall back to scraping /<handle>/rss/. Kept for backward
-//      compatibility and for clients that don't have a specific URL.
-async function handleLbVerify(request, env) {
-  const claims = await authorize(request, env)
-  if (!claims) return json(env, { error: 'unauthorized' }, 401)
-
-  // Each verify attempt fetches a Letterboxd URL; without a cap a hostile
-  // signed-in user could use us as a free proxy/scraper.
-  const attemptsKey = `rate:lb_verify:${claims.email}`
-  if (!(await checkAttempts(env, attemptsKey, MAX_LB_VERIFY))) {
-    return json(env, { error: 'too many verification attempts — try again later' }, 429)
-  }
-
-  const lbRaw = await env.MEMBERS_KV.get(`lb_token:${claims.email}`)
-  if (!lbRaw) return json(env, { error: 'no pending verification — request a new tag' }, 410)
-  const { token, handle } = JSON.parse(lbRaw)
-  if (!handle) return json(env, { error: 'add your Letterboxd handle first' }, 400)
-
-  const lbBase = env.LETTERBOXD_BASE || 'https://letterboxd.com'
-  const body = await request.json().catch(() => ({}))
-  const pastedUrl = typeof body?.url === 'string' ? body.url.trim() : ''
-
-  let fetchUrl
-  let notFoundMsg
-  if (pastedUrl) {
-    let parsed
-    try { parsed = new URL(pastedUrl) } catch {
-      return json(env, { error: "that doesn't look like a valid URL" }, 400)
-    }
-    const base = new URL(lbBase)
-    if (parsed.origin !== base.origin) {
-      return json(env, { error: 'the URL must be on letterboxd.com' }, 400)
-    }
-    // Case-insensitive handle match — Letterboxd normalizes handles to
-    // lowercase on profile URLs but the user's canonical handle on record
-    // may have preserved case from input.
-    const handlePrefix = `/${handle.toLowerCase()}/`
-    if (!parsed.pathname.toLowerCase().startsWith(handlePrefix)) {
-      return json(env, { error: `the URL must be under letterboxd.com/${handle}` }, 400)
-    }
-    fetchUrl = parsed.toString()
-    notFoundMsg = "couldn't find the tag on that page — make sure you saved the diary entry or list, then try again"
-  } else {
-    fetchUrl = `${lbBase}/${encodeURIComponent(handle)}/rss/`
-    notFoundMsg = 'token not found on your Letterboxd RSS feed yet — make sure the diary entry or list was saved, then try again'
-  }
-
-  // Case-insensitive: Letterboxd lowercases every tag it renders (both in
-  // the URL path and the visible text), so a historically mixed-case token
-  // would never match. New tokens are lowercase-only (see randomToken), but
-  // this keeps any still-pending 48h tokens from before the change working.
-  const pageText = await fetch(fetchUrl).then(r => r.text()).catch(() => '')
-  if (!pageText.toLowerCase().includes(token.toLowerCase())) {
-    await recordFailure(env, attemptsKey, LB_VERIFY_WINDOW)
-    return json(env, { error: notFoundMsg }, 422)
-  }
-
-  // Re-check the reverse index right before commit. /letterboxd/request only
-  // checks at issue time, leaving a 48h window in which two users could each
-  // hold a pending token for the same handle. Whoever scrapes successfully
-  // first wins; subsequent verifiers get a clean 409 instead of silently
-  // clobbering the first user's link. (KV is eventually consistent, so this
-  // narrows the race to milliseconds, not eliminates it — good enough.)
-  const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
-  if (claimedBy && claimedBy !== claims.email) {
-    return json(env, { error: 'this Letterboxd handle was just claimed by someone else' }, 409)
-  }
-
-  // Commit the link.
-  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
-  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
-  const member = JSON.parse(memberRaw)
-  member.handle = handle
-  await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
-  await env.MEMBERS_KV.put(`email:${handle}`, claims.email)
-  await env.MEMBERS_KV.put(`handle:${claims.email}`, handle)
-  await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
-  await clearAttempts(env, attemptsKey)
-  await writeSession(env, member)
-
-  await dispatchGithub(env, 'update-member', {
-    id: member.id,
-    updates: { handle },
-  })
-  return json(env, { ok: true, handle })
-}
+// --- Letterboxd link ---
+//
+// Handle setting now lives in /member/update (members self-assert; the local
+// admin dashboard handles disputes). Only unlinking has a dedicated endpoint
+// because the cascade is distinct (reverse-index cleanup + JSON projection
+// update with handle: null).
 
 // POST /letterboxd/unlink — authenticated
 // Drops the verified Letterboxd link from the member row and public JSON.
@@ -497,7 +366,34 @@ async function handleMemberUpdate(request, env) {
     if (body.pronouns.length > MAX_PRONOUNS) return json(env, { error: 'pronouns too long' }, 400)
     updates.pronouns = body.pronouns
   }
+  // Letterboxd handle. Self-asserted as of the tag-verification removal —
+  // admin moderation (via the local dashboard) is now the dispute path.
+  // Uniqueness is still enforced via the email:{handle} reverse index so two
+  // members can't claim the same handle.
+  if (typeof body.handle === 'string' && body.handle.length) {
+    if (!HANDLE_RE.test(body.handle)) {
+      return json(env, { error: 'invalid handle format' }, 400)
+    }
+    if (body.handle !== member.handle) {
+      const claimedBy = await env.MEMBERS_KV.get(`email:${body.handle}`)
+      if (claimedBy && claimedBy !== claims.email) {
+        return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
+      }
+    }
+    updates.handle = body.handle
+  }
   if (!Object.keys(updates).length) return json(env, { error: 'no updates' }, 400)
+
+  // If the handle is changing, swap the reverse indices in lockstep with the
+  // member row so a stale email:{old} or handle:{email} can't outlive the
+  // member's actual handle.
+  if (updates.handle && updates.handle !== member.handle) {
+    if (member.handle) {
+      await env.MEMBERS_KV.delete(`email:${member.handle}`)
+    }
+    await env.MEMBERS_KV.put(`email:${updates.handle}`, claims.email)
+    await env.MEMBERS_KV.put(`handle:${claims.email}`, updates.handle)
+  }
 
   Object.assign(member, updates)
   await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
@@ -845,30 +741,13 @@ class HttpErrorLite extends Error {
 
 // --- Email ---
 
-async function sendSignupEmail(env, to, code, lbToken, handle) {
+async function sendSignupEmail(env, to, code) {
   const subject = 'Your Jackson Film Club membership code'
-  const lbLine = handle
-    ? `letterboxd.com/${handle}`
-    : 'your Letterboxd profile'
   const text = [
     `Your membership code: ${code}`,
     '',
     `Enter this 6-digit code on ${env.SITE_ORIGIN || 'https://jxnfilm.club'}/verify`,
     'to confirm your Jackson Film Club membership. This code expires in 10 minutes.',
-    '',
-    '---',
-    '',
-    'Optional — verify your Letterboxd profile',
-    '',
-    `To add a verified link to ${lbLine} on your member entry, add this tag`,
-    'to a diary entry or a list on your Letterboxd profile:',
-    '',
-    `  ${lbToken}`,
-    '',
-    `(expires in 48 hours)`,
-    '',
-    'Then visit https://jxnfilm.club/edit, paste the URL of that entry or list,',
-    'and click "Verify Letterboxd". You can delete the tag once verified.',
   ].join('\n')
   await sendEmail(env, to, subject, text)
 }

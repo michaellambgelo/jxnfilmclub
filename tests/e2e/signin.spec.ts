@@ -45,7 +45,7 @@ test.describe('sign-in flow (returning members)', () => {
   test('save on /edit posts member update and shows success', async ({ page }) => {
     await signInAs(page, EMAIL, { name: 'Save Me' })
     await page.getByLabel('Pronouns').fill('they/them')
-    await page.getByRole('button', { name: 'Save' }).click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.locator('.ok')).toContainText('Saved')
   })
 
@@ -219,7 +219,7 @@ test.describe('sign-in flow (returning members)', () => {
 
     const NEW_NAME = 'After Save via Session KV'
     await page.getByLabel('Display name').fill(NEW_NAME)
-    await page.getByRole('button', { name: 'Save' }).click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.locator('.ok')).toContainText('Saved')
 
     // Full reload — clears any in-memory SPA state. The prefill must come

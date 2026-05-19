@@ -17,9 +17,8 @@ sequenceDiagram
     User->>Join: Clicks "Email me a code"
     Join->>Worker: POST /signup
     Worker->>Worker: Generate 6-digit OTP (10 min TTL)
-    Worker->>Worker: Generate jxnfc-verify-XXXXXXXX tag (48h TTL)
-    Worker->>Worker: Store pending:{email} in KV
-    Worker->>Email: Send signup email with code + LB tag
+    Worker->>Worker: Store pending:{email} in KV (includes optional handle)
+    Worker->>Email: Send signup email with OTP code only
     Worker-->>Join: 200 OK
     Join->>Site: Redirect to /verify?email={email}
 
@@ -27,7 +26,9 @@ sequenceDiagram
     User->>Site: Enters code, clicks "Confirm membership"
     Site->>Worker: POST /signup/verify
     Worker->>Worker: Validate code against pending:{email}
-    Worker->>Worker: Create member:{email} in KV
+    Worker->>Worker: Re-check email:{handle} uniqueness (strip handle if a winner claimed it during OTP window)
+    Worker->>Worker: Create member:{email} in KV (handle promoted from pending row)
+    Worker->>Worker: Write email:{handle} + handle:{email} reverse indices when handle is set
     Worker->>Worker: Seed session:{id} snapshot (1h TTL)
     Worker->>Worker: Generate session token (1h expiry)
     Worker->>GH: Dispatch add-member workflow
@@ -64,7 +65,6 @@ sequenceDiagram
 ## Timing
 
 - OTP code expires in **10 minutes**
-- Letterboxd verification tag persists for **48 hours** (so the user can verify later from /edit)
 - Session token expires in **1 hour**
 
 ## Key Files

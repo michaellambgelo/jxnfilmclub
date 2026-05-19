@@ -18,7 +18,7 @@ afterEach(() => {
 })
 
 describe('POST /signup', () => {
-  it('stores pending + lb_token, sends combined email, no GH dispatch', async () => {
+  it('stores pending row, sends OTP-only email, no GH dispatch, no LB token', async () => {
     const calls = []
     mockFetch(async (url, init) => {
       calls.push({ url: String(url), init })
@@ -36,38 +36,27 @@ describe('POST /signup', () => {
     expect(pending.handle).toBe('alice')
     expect(pending.code).toMatch(/^\d{6}$/)
 
-    const lb = JSON.parse(await env.MEMBERS_KV.get('lb_token:alice@example.com'))
-    expect(lb.token).toMatch(/^jxnfc-verify-[A-Za-z0-9]{8}$/)
-    expect(lb.handle).toBe('alice')
+    // Tag verification was removed — handle ownership is self-asserted now.
+    expect(await env.MEMBERS_KV.get('lb_token:alice@example.com')).toBeNull()
 
     const resend = calls.find(c => c.url === 'https://api.resend.com/emails')
     expect(resend).toBeTruthy()
     const body = JSON.parse(resend.init.body)
     expect(body.to).toEqual(['alice@example.com'])
     expect(body.text).toContain(pending.code)
-    expect(body.text).toContain(lb.token)
-    expect(body.text).toContain('letterboxd.com/alice')
-    expect(body.text).toContain('a diary entry or a list')
+    expect(body.text).not.toMatch(/jxnfc-verify-/)
+    expect(body.text).not.toMatch(/diary entry/)
 
     expect(calls.some(c => c.url.includes('api.github.com'))).toBe(false)
   })
 
-  it('still issues an lb_token when no handle is given (user may add one later)', async () => {
-    const calls = []
-    mockFetch(async (url, init) => {
-      calls.push({ url: String(url), init })
-      return new Response(JSON.stringify({ id: 'x' }), { status: 200 })
-    })
-
+  it('signup with no handle stores a pending row with handle:null and no LB token', async () => {
+    mockFetch(async () => new Response('', { status: 200 }))
     await post('/signup', { email: 'nolb@example.com', name: 'Charlie' })
 
-    const lb = JSON.parse(await env.MEMBERS_KV.get('lb_token:nolb@example.com'))
-    expect(lb.token).toMatch(/^jxnfc-verify-/)
-    expect(lb.handle).toBeNull()
-
-    const body = JSON.parse(calls.find(c => c.url === 'https://api.resend.com/emails').init.body)
-    expect(body.text).toContain(lb.token)
-    expect(body.text).toContain('your Letterboxd profile')
+    const pending = JSON.parse(await env.MEMBERS_KV.get('pending:nolb@example.com'))
+    expect(pending.handle).toBeNull()
+    expect(await env.MEMBERS_KV.get('lb_token:nolb@example.com')).toBeNull()
   })
 
   it('rejects when email is already a member', async () => {
@@ -159,8 +148,8 @@ describe('POST /signup/verify', () => {
     expect(session.email).toBe('bob@example.com')
     expect(session.name).toBe('Bob')
 
-    // lb_token persists for 48h so user can still verify Letterboxd later.
-    expect(await env.MEMBERS_KV.get('lb_token:bob@example.com')).toBeTruthy()
+    // Tag verification was removed — no lb_token row should exist.
+    expect(await env.MEMBERS_KV.get('lb_token:bob@example.com')).toBeNull()
 
     const gh = calls.find(c => c.url.includes('api.github.com'))
     expect(gh).toBeTruthy()
@@ -183,5 +172,48 @@ describe('POST /signup/verify', () => {
     mockFetch(async () => new Response('', { status: 200 }))
     const res = await post('/signup/verify', { email: 'nobody@example.com', code: '123456' })
     expect(res.status).toBe(404)
+  })
+
+  it('promotes the pending handle onto the member row and writes reverse indices', async () => {
+    const code = await startSignup('linked@example.com', 'Linda', 'lindahandle')
+
+    mockFetch(async (url) => {
+      if (String(url).includes('api.github.com')) return new Response('', { status: 204 })
+      return new Response('', { status: 200 })
+    })
+
+    const res = await post('/signup/verify', { email: 'linked@example.com', code })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.handle).toBe('lindahandle')
+
+    const member = JSON.parse(await env.MEMBERS_KV.get('member:linked@example.com'))
+    expect(member.handle).toBe('lindahandle')
+
+    // Reverse indices written in the same pass so the handle isn't claimable
+    // by anyone else immediately.
+    expect(await env.MEMBERS_KV.get('email:lindahandle')).toBe('linked@example.com')
+    expect(await env.MEMBERS_KV.get('handle:linked@example.com')).toBe('lindahandle')
+  })
+
+  it('strips the handle from the verified row if someone else claimed it during the OTP window', async () => {
+    const code = await startSignup('loser@example.com', 'Loser', 'racedhandle')
+    // Simulate a winner claiming the handle between /signup and /signup/verify.
+    await env.MEMBERS_KV.put('email:racedhandle', 'winner@example.com')
+
+    mockFetch(async (url) => {
+      if (String(url).includes('api.github.com')) return new Response('', { status: 204 })
+      return new Response('', { status: 200 })
+    })
+
+    const res = await post('/signup/verify', { email: 'loser@example.com', code })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // Membership still confirmed; just no handle attached.
+    expect(body.handle).toBeNull()
+    const member = JSON.parse(await env.MEMBERS_KV.get('member:loser@example.com'))
+    expect(member.handle).toBeNull()
+    // Loser did NOT overwrite the winner's reverse index.
+    expect(await env.MEMBERS_KV.get('email:racedhandle')).toBe('winner@example.com')
   })
 })

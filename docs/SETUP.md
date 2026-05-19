@@ -198,26 +198,23 @@ curl -X POST https://join.jxnfilm.club/otp/verify \
 
 ---
 
-## 10. Smoke test Letterboxd verification (optional)
+## 10. Smoke test Letterboxd handle set / unlink (optional)
 
-All four endpoints require the bearer token from step 9. Replace
-`$TOKEN` and `$HANDLE` below.
+Replace `$TOKEN` and `$HANDLE` below.
 
 ```bash
-# Current state (verified / pending / none)
-curl https://join.jxnfilm.club/letterboxd/status \
-  -H "Authorization: Bearer $TOKEN"
-
-# Mint a fresh 48h tag for a handle
-curl -X POST https://join.jxnfilm.club/letterboxd/request \
+# Save a handle on your account. The handle is self-asserted; a club
+# organizer can force-unlink a disputed handle via the local admin
+# dashboard (see admin/README.md).
+curl -X POST https://join.jxnfilm.club/member/update \
   -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d "{\"handle\":\"$HANDLE\"}"
-# → { "token": "jxnfc-verify-...", "handle": "...", "exp": ... }
+# → { "ok": true, "id": "..." } and dispatches update-member
 
-# Paste that tag into a diary entry or list on Letterboxd, then:
-curl -X POST https://join.jxnfilm.club/letterboxd/verify \
+# Remove the link later:
+curl -X POST https://join.jxnfilm.club/letterboxd/unlink \
   -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json'
-# → { "ok": true, "handle": "..." } and dispatches update-member
+# → { "ok": true } and dispatches update-member with handle: null
 ```
 
 If the email never arrives: check `npx wrangler tail` and confirm

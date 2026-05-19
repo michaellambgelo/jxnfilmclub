@@ -2,7 +2,6 @@ import { defineConfig, devices } from '@playwright/test'
 
 const SITE_PORT = 8083
 const WORKER_PORT = 8787
-const LB_STUB_PORT = 8788
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -29,18 +28,10 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      command: `node tests/e2e/letterboxd-stub.mjs ${LB_STUB_PORT}`,
-      port: LB_STUB_PORT,
-      reuseExistingServer: !process.env.CI,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-    {
       command: [
         'cd worker && npx wrangler dev --local',
         `--port ${WORKER_PORT}`,
         `--var SITE_ORIGIN:http://localhost:${SITE_PORT}`,
-        `--var LETTERBOXD_BASE:http://localhost:${LB_STUB_PORT}`,
         '--var E2E_MODE:true',
         '--var OTP_SIGNING_KEY:e2e-test-signing-key',
         '--var GITHUB_OWNER:test --var GITHUB_REPO:test',

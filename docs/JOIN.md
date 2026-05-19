@@ -40,23 +40,15 @@ page if you decide to make one.
 How to join Jackson Film Club + link your Letterboxd:
 
 1. Go to join.jxnfilm.club
-2. Enter your name, email, and your Letterboxd handle (just the
-   username, no @).
-3. Check your email. You'll get TWO things in one message:
-   - A 6-digit code to confirm your email.
-   - A short verification tag that looks like jxnfc-verify-XXXXXX.
-4. Enter the 6-digit code on the page that opens. You're now a member.
-5. To link your Letterboxd profile, paste the jxnfc-verify-... tag
-   into either:
-   - A diary entry's review/notes field, OR
-   - A new list on your profile.
-   Then go to jxnfilm.club/edit, paste the URL of that diary entry or
-   list into the form, and click "Verify Letterboxd". Once it matches,
-   your @handle shows up on the directory and you can delete the
-   verification tag from Letterboxd.
-
-The tag is good for 48 hours. If it expires, you can request a fresh
-one from the same Edit page.
+2. Enter your name, email, and (optionally) your Letterboxd handle
+   (just the username, no @).
+3. Check your email for a 6-digit code.
+4. Enter the 6-digit code on the page that opens. You're now a member —
+   and if you included a Letterboxd handle, it's already linked on your
+   public entry.
+5. To add or change a handle later, go to jxnfilm.club/edit, type the
+   username, and click "Save handle". A club organizer can unlink a
+   disputed handle from the admin tools.
 ```
 
 ---

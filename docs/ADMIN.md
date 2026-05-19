@@ -129,7 +129,6 @@ npx wrangler kv key delete --binding MEMBERS_KV "email:theirhandle"
 
 # 2. Drop any transient state
 npx wrangler kv key delete --binding MEMBERS_KV "otp:their@email"
-npx wrangler kv key delete --binding MEMBERS_KV "lb_token:their@email"
 npx wrangler kv key delete --binding MEMBERS_KV "pending:their@email"
 
 # 3. Remove from data/members.json (by id), commit, push.
@@ -137,9 +136,9 @@ npx wrangler kv key delete --binding MEMBERS_KV "pending:their@email"
 
 If this becomes routine, turn it into `scripts/admin/remove-member.mjs`.
 
-### Force-link a Letterboxd handle (skip RSS check)
+### Force-link a Letterboxd handle on someone's behalf
 
-Rare. Used only if a member can't complete the tag dance.
+Rare. Used only if a member can't reach the `/edit` form themselves.
 
 ```bash
 cd worker

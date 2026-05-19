@@ -78,29 +78,29 @@ Letterboxd simply don't show one.
 
 1. User visits `https://join.jxnfilm.club/` and submits a form with
    name + email + optional Letterboxd handle.
-2. Worker `POST /signup` writes `pending:{email}` (10min OTP code) and
-   `lb_token:{email}` (48h Letterboxd tag — issued even when no handle
-   is supplied, so the user can add one later).
-3. Worker sends a single email with both the 6-digit code and the
-   Letterboxd tag instructions.
+2. Worker `POST /signup` writes `pending:{email}` (10min OTP code,
+   carries the optional handle).
+3. Worker sends a 6-digit OTP email.
 4. User is redirected to `https://jxnfilm.club/verify?email=<email>`.
 5. User enters the code; the `verify-view` calls `POST /signup/verify`.
-   Worker promotes `pending:{email}` → `member:{email}`, dispatches
-   `add-member` to GH Actions, returns an HMAC-signed session token.
+   Worker promotes `pending:{email}` → `member:{email}` (promoting the
+   handle and writing the `email:{handle}` reverse index in the same
+   pass), dispatches `add-member` to GH Actions, returns an HMAC-signed
+   session token.
 6. Session is stored in `localStorage` on `jxnfilm.club` and the user
    is sent to `/edit`. `data/members.json` picks up the new row on the
    next site redeploy (~30s).
 
-### 3. Letterboxd verification (optional)
+### 3. Letterboxd handle (optional, self-asserted)
 
-From `/edit`, a signed-in member can add (or replace) a Letterboxd
-handle. Worker mints a fresh 48h `jxnfc-verify-<token>` tied to the
-member's email; the user pastes the tag into a diary entry or list on
-their Letterboxd profile, then clicks Verify. Worker scrapes
-`letterboxd.com/<handle>/rss/` — which picks up both tagged diary
-entries and new lists — and, on match, commits the link and dispatches
-`update-member` to add the handle to the public entry. A **Remove
-Letterboxd link** button on the verified panel clears the link via
+From `/edit`, a signed-in member can type a Letterboxd handle and click
+"Save handle". `POST /member/update { handle }` validates format and
+uniqueness, writes the `email:{handle}` reverse index, refreshes the
+session snapshot, and dispatches `update-member` so the public row
+picks up the handle on the next redeploy. There is no automated
+ownership check — disputes go through the local admin dashboard
+(`admin/`), which can force-unlink a handle. A **Remove Letterboxd
+link** button on the linked panel clears the link via
 `POST /letterboxd/unlink`; membership is kept, the `@handle` just
 disappears from the public row.
 

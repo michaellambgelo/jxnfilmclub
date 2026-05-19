@@ -1,17 +1,10 @@
 import { test as base, expect, type Page, type APIRequestContext } from '@playwright/test'
 
 export const WORKER_ORIGIN = 'http://localhost:8787'
-export const LB_STUB_ORIGIN = 'http://localhost:8788'
 
 export async function seedKv(page: Page | { request: APIRequestContext }, key: string, value: string, ttl?: number) {
   const req = 'request' in page ? page.request : (page as any).request
   const res = await req.post(`${WORKER_ORIGIN}/__test/kv`, { data: { key, value, ttl } })
-  expect(res.ok()).toBeTruthy()
-}
-
-export async function primeLbRss(page: Page | { request: APIRequestContext }, token: string | null) {
-  const req = 'request' in page ? page.request : (page as any).request
-  const res = await req.post(`${LB_STUB_ORIGIN}/__prime`, { data: { token } })
   expect(res.ok()).toBeTruthy()
 }
 
@@ -65,10 +58,12 @@ base.beforeAll(async ({ request }) => {
 })
 
 // Wipe all Worker KV state before every test so reused wrangler-dev
-// instances don't leak pending/member/otp/lb_token entries between runs.
+// instances don't leak pending/member/otp entries between runs.
 // In CI (fresh server), this is a no-op.
 test.beforeEach(async ({ request }) => {
   for (const prefix of ['pending:', 'member:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', '__last_']) {
+    // lb_token: stays in the wipe list for one cycle so any leftover keys from
+    // pre-removal test runs get cleaned. Safe to drop in a follow-up commit.
     await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
   }
   // ATTENDANCE_KV (separate namespace) — wipe attend:* and the aggregate so

@@ -55,7 +55,7 @@ DNS records are printed in the Resend dashboard.
 
 | Method | Path                | Purpose |
 |--------|---------------------|---------|
-| POST   | `/signup`           | `(email, name, handle?)` → writes `pending:{email}` + `lb_token:{email}`, sends combined code+LB-tag email. |
+| POST   | `/signup`           | `(email, name, handle?)` → writes `pending:{email}` (carries optional handle), sends OTP-only email. |
 | POST   | `/signup/verify`    | `(email, code)` → promotes pending → `member:{email}`, dispatches `add-member`, returns session token. |
 | POST   | `/otp/request`      | `(email)` — returning members only; silently 200s for unknown emails so the endpoint can't enumerate. |
 | POST   | `/otp/verify`       | `(email, code)` → returns session token + member `id`/`handle`. |
@@ -65,11 +65,8 @@ DNS records are printed in the Resend dashboard.
 | Method | Path                  | Purpose |
 |--------|-----------------------|---------|
 | GET    | `/member/me`          | Full `member:{email}` row (authoritative copy). |
-| POST   | `/member/update`      | `(name?, pronouns?)` → writes KV + dispatches `update-member`. Handle is ignored on this endpoint — it's set only via the Letterboxd flow. |
-| GET    | `/letterboxd/status`  | `{ verified, handle }` / `{ pending, handle, token, exp }` / `{ none: true }`. |
-| POST   | `/letterboxd/request` | `(handle)` → mints a fresh 48h `lb_token:{email}` for the given handle. |
-| POST   | `/letterboxd/verify`  | Scrapes `letterboxd.com/{handle}/rss/` for the pending token; on match commits the link + dispatches `update-member` with the handle. |
-| POST   | `/letterboxd/unlink`  | Remove the verified Letterboxd link. Clears `email:/handle:/lb_token:` rows, nulls `member.handle`, dispatches `update-member` with `{ handle: null }` so the public row drops the field. |
+| POST   | `/member/update`      | `(name?, pronouns?, handle?)` → writes KV + dispatches `update-member`. Handle is self-asserted: the Worker validates format + uniqueness via `email:{handle}` and swaps reverse indices in lockstep when it changes. |
+| POST   | `/letterboxd/unlink`  | Remove the Letterboxd link. Clears `email:/handle:` rows, nulls `member.handle`, dispatches `update-member` with `{ handle: null }` so the public row drops the field. |
 
 ### Dev-only (E2E)
 
@@ -86,15 +83,13 @@ Set in `wrangler.toml` per env:
 | `SITE_ORIGIN`     | CORS allow-origin + substituted into signup.html links (e.g. `https://jxnfilm.club`). |
 | `GITHUB_OWNER`    | Dispatch target repo owner. |
 | `GITHUB_REPO`     | Dispatch target repo name. |
-| `LETTERBOXD_BASE` | Optional override (defaults to `https://letterboxd.com`); E2E points at a local stub. |
 | `E2E_MODE`        | When `"true"`, enables `/__test/kv` and short-circuits Resend + GitHub dispatch (writes last-call details to KV sentinels `__last_email__` / `__last_dispatch__`). Never set in prod. |
 
 ## KV schema
 
 - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Consumed by `/signup/verify`.
 - `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Authoritative member row.
-- `lb_token:{email}` — `{ token, handle?, exp }`, 48h TTL. Issued on signup + `/letterboxd/request`.
-- `email:{handle}` / `handle:{email}` — bidirectional link, written on `/letterboxd/verify`.
+- `email:{handle}` / `handle:{email}` — bidirectional link, written on `/signup/verify` (when the signup carried a handle) and on `/member/update`.
 - `otp:{email}` — 6-digit login code, 10min TTL.
 
 ## Tests
@@ -102,9 +97,10 @@ Set in `wrangler.toml` per env:
 ```bash
 # From the repo root:
 npm test              # Vitest, incl. tests/worker/
-npm run test:e2e      # Playwright boots this Worker with E2E_MODE + LETTERBOXD_BASE
+npm run test:e2e      # Playwright boots this Worker with E2E_MODE
 ```
 
 `tests/worker/` uses `@cloudflare/vitest-pool-workers` with `SELF.fetch`,
-direct KV binding access, and mocked `fetch()` for Letterboxd / Resend /
-GitHub. Four suites: `signup`, `otp`, `member-update`, `letterboxd`.
+direct KV binding access, and mocked `fetch()` for Resend / GitHub.
+Suites: `signup`, `otp`, `member-update`, `member-delete`, `letterboxd`
+(unlink only), `attendance`, `security`.

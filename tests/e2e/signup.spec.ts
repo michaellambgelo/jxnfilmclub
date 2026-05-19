@@ -44,7 +44,7 @@ test.describe('signup (join.jxnfilm.club → jxnfilm.club/verify)', () => {
     expect(member.handle).toBeNull()
   })
 
-  test('with a handle: lb_token is minted so Letterboxd verification can follow', async ({ page }) => {
+  test('with a handle: pending row carries the handle, no lb_token is minted (tag verification removed)', async ({ page }) => {
     const email = 'with-handle@example.com'
     await page.goto(WORKER_ORIGIN + '/')
     await page.getByLabel('Display name').fill('Handle User')
@@ -54,10 +54,15 @@ test.describe('signup (join.jxnfilm.club → jxnfilm.club/verify)', () => {
 
     await page.waitForURL(/\/verify/)
 
+    // The handle rides on the pending row until /signup/verify promotes it
+    // onto the member row.
+    const pendingRes = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=pending:${encodeURIComponent(email)}`)
+    const pending = JSON.parse((await pendingRes.json()).value)
+    expect(pending.handle).toBe('handleuser')
+
+    // No lb_token row exists — tag verification has been removed.
     const lbRes = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=lb_token:${encodeURIComponent(email)}`)
-    const lb = JSON.parse((await lbRes.json()).value)
-    expect(lb.token).toMatch(/^jxnfc-verify-/)
-    expect(lb.handle).toBe('handleuser')
+    expect((await lbRes.json()).value).toBeNull()
   })
 
   test('duplicate email stays on signup form with an error', async ({ page }) => {

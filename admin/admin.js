@@ -104,7 +104,6 @@ const TABS = {
   sessions: renderSessions,
   revoked: renderRevoked,
   rate: renderRate,
-  letterboxd: renderLetterboxd,
   events: renderEvents,
 }
 
@@ -267,36 +266,6 @@ async function renderRate() {
   `
 }
 
-async function renderLetterboxd() {
-  const { keys, values } = await loadKv('lb_token:')
-  if (!keys.length) return content().innerHTML = '<p class="empty">No in-flight Letterboxd verifications.</p>'
-
-  const rows = keys.map(k => ({
-    keyName: k.name,
-    email: k.name.slice('lb_token:'.length),
-    expires: k.expiration,
-    lb: tryParse(values[k.name]),
-  }))
-
-  content().innerHTML = `
-    <h2>Pending Letterboxd verifications <span class="muted">(${rows.length})</span></h2>
-    <p class="section-hint">48-hour tokens issued at signup or via <code>/letterboxd/request</code>. Delete to cancel.</p>
-    <table><thead><tr><th>Email</th><th>Handle</th><th>Token</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
-      ${rows.map(({ keyName, email, expires, lb }) => `
-        <tr>
-          <td>${escapeHtml(email)}</td>
-          <td>${lb?.handle ? `<code>@${escapeHtml(lb.handle)}</code>` : '<span class="muted">unset</span>'}</td>
-          <td><code>${escapeHtml(lb?.token) || '—'}</code></td>
-          <td>${fmtExpiry(expires)}</td>
-          <td class="actions">
-            <button class="danger" data-action="del-key" data-key="${attr(keyName)}">delete</button>
-          </td>
-        </tr>
-      `).join('')}
-    </tbody></table>
-  `
-}
-
 // --- Events tab (data/events.json + ATTENDANCE_KV) ---
 
 let eventsCache = null
@@ -392,7 +361,6 @@ document.addEventListener('click', async (e) => {
       const prefixes = [
         'rate:otp_send:', 'rate:signup_send:',
         'rate:otp_verify_fail:', 'rate:signup_verify_fail:',
-        'rate:lb_verify:',
       ]
       let cleared = 0
       for (const p of prefixes) {
@@ -412,7 +380,6 @@ document.addEventListener('click', async (e) => {
       }
       await delKv(`email:${handle}`).catch(() => {})
       await delKv(`handle:${email}`).catch(() => {})
-      await delKv(`lb_token:${email}`).catch(() => {})
       if (id) await delKv(`session:${id}`).catch(() => {})
       // JSON projection
       const raw = await getFile('data/members.json')

@@ -13,4 +13,4 @@ include: [ ui/, css/ ]
 
 # Keep tests, node_modules, Worker source, and the local admin dashboard
 # out of the static build.
-exclude: [ admin, tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts, playwright.config.ts, playwright-report, test-results, '.md' ]
+exclude: [ admin/, tests, node_modules, worker, package-lock.json, vitest.config.ts, vitest.workspace.ts, playwright.config.ts, playwright-report, test-results, '.md' ]

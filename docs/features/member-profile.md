@@ -98,6 +98,32 @@ handle by pointing at someone else's page.
 When removing a Letterboxd link, the user sees:
 > "Remove your Letterboxd link? Your membership stays -- only the @handle disappears from the public directory."
 
+## Remove Membership
+
+Members can self-service delete their entire membership from the `/edit`
+"Remove membership" danger-zone section. The submit button stays disabled
+until the typed email exactly matches the signed-in email
+(type-to-confirm gate). On submit:
+
+1. **Worker** (`POST /member/delete`, authenticated) cascades all
+   `MEMBERS_KV` state for that member: `member:{email}`,
+   `session:{id}`, `email:{handle}` + `handle:{email}` (if Letterboxd
+   was linked — the handle becomes claimable again immediately),
+   `lb_token:{email}`.
+2. The current bearer token is recorded in `revoked:{jti}` so a copy
+   can't be replayed during the remaining JWT lifetime.
+3. `dispatchGithub('remove-member', { id })` triggers
+   `.github/workflows/remove-member.yml` which drops the row from
+   `data/members.json` (idempotent — replays are a no-op).
+4. **Client** clears `localStorage.jxnfc_session`, the OTP in-flight
+   marker, and redirects to `/`.
+
+**Past attendance is intentionally kept.** `attend:{eventId}` arrays in
+`ATTENDANCE_KV` are NOT touched — event-by-event attendance lists are
+part of the club archive. To remove the deleted member's name from a
+specific event, use the local admin dashboard's "remove attendee"
+action on that event.
+
 ## Error States
 
 | Condition | HTTP | User sees |
@@ -115,6 +141,7 @@ When removing a Letterboxd link, the user sees:
 | No Letterboxd to unlink | 400 | "no Letterboxd linked" |
 | `name` longer than 80 chars on `/member/update` | 400 | "name too long" |
 | `pronouns` longer than 32 chars on `/member/update` | 400 | "pronouns too long" |
+| `/member/delete` called but the row was already gone (stale tab) | 404 | "member not found" |
 
 ## Handle Uniqueness Race Window (S3)
 

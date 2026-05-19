@@ -1,0 +1,51 @@
+name: Remove member
+
+on:
+  repository_dispatch:
+    types: [remove-member]
+
+permissions:
+  contents: write
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Drop row from data/members.json
+        env:
+          ID: ${{ github.event.client_payload.id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          id_ = os.environ['ID']
+          if not id_:
+              raise SystemExit('client_payload.id is required')
+
+          path = pathlib.Path('data/members.json')
+          members = json.loads(path.read_text())
+
+          remaining = [m for m in members if m.get('id') != id_]
+          if len(remaining) == len(members):
+              # Idempotent: a replayed dispatch (or a member who was never in
+              # the JSON projection — e.g. removed before add-member ran) is a
+              # no-op, not an error.
+              print(f'no row with id={id_!r} — nothing to remove')
+          else:
+              path.write_text(json.dumps(remaining, indent=2) + '\n')
+              print(f'removed {len(members) - len(remaining)} row(s) with id={id_!r}')
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "jxnfilmclub-bot"
+          git config user.email "bot@jxnfilm.club"
+          if git diff --quiet; then
+            echo "No changes"
+          else
+            git add data/members.json
+            git commit -m "chore: remove member entry"
+            git push
+          fi

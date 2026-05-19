@@ -88,6 +88,7 @@ export default {
 
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
+    if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
 
@@ -490,6 +491,43 @@ async function handleMemberUpdate(request, env) {
   await writeSession(env, member)
   await dispatchGithub(env, 'update-member', { id: member.id, updates })
   return json(env, { ok: true, id: member.id })
+}
+
+// POST /member/delete — authenticated.
+// Self-service membership deletion. Removes the member row, all reverse
+// indices, any in-flight Letterboxd token, and the session snapshot.
+// Revokes the current bearer token so a copy can't be replayed. Dispatches
+// `remove-member` to drop the row from data/members.json. Past attendance
+// entries (attend:{eventId} in ATTENDANCE_KV) are intentionally kept as
+// historical record — only the member identity is removed.
+async function handleMemberDelete(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  // KV cascade. Order doesn't matter for correctness — each delete is
+  // independent — but doing the canonical row first means a mid-flight
+  // crash leaves nothing reachable rather than a dangling reverse index.
+  await env.MEMBERS_KV.delete(`member:${claims.email}`)
+  if (member.id) await env.MEMBERS_KV.delete(`session:${member.id}`)
+  if (member.handle) {
+    await env.MEMBERS_KV.delete(`email:${member.handle}`)
+    await env.MEMBERS_KV.delete(`handle:${claims.email}`)
+  }
+  await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+
+  // Revoke this token so a stolen copy can't be used to re-sign-in or hit
+  // any other authenticated endpoint during the JWT's remaining lifetime.
+  if (claims.jti) {
+    const remainingSec = Math.max(60, Math.ceil((claims.exp - Date.now()) / 1000))
+    await env.MEMBERS_KV.put(`revoked:${claims.jti}`, '1', { expirationTtl: remainingSec })
+  }
+
+  await dispatchGithub(env, 'remove-member', { id: member.id })
+  return json(env, { ok: true })
 }
 
 // POST /session/revoke — authenticated.

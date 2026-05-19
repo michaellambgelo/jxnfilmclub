@@ -308,6 +308,27 @@
       <p class="ok" :if="attendRemoved">Removed. Returning to events…</p>
       <p class="err" :if="attendError">{ attendError }</p>
     </section>
+
+    <section class="danger-zone">
+      <h2>Remove membership</h2>
+      <p class="lede">Permanently removes your member entry from the public
+        directory and clears any Letterboxd link. Past event attendance is
+        kept as part of the club archive.</p>
+      <p class="lede">Type <b>{ session.email }</b> to confirm.</p>
+      <form :onsubmit="deleteMembership">
+        <label>
+          <input type="text" name="confirm" autocomplete="off" spellcheck="false"
+            :oninput="onDeleteInput" placeholder="your-email@example.com">
+        </label>
+        <div class="actions">
+          <button type="submit"
+            :disabled="deleteBusy || deleteConfirmInput !== session.email">
+            { deleteBusy ? 'Removing…' : 'Remove my membership' }
+          </button>
+        </div>
+        <p class="err" :if="deleteError">{ deleteError }</p>
+      </form>
+    </section>
   </div>
 
   <script>
@@ -317,6 +338,7 @@
         busy: false, saved: false, error: '',
         lb: { loading: true }, lbBusy: false, lbError: '',
         eventToEdit: null, attendBusy: false, attendRemoved: false, attendError: '',
+        deleteBusy: false, deleteConfirmInput: '', deleteError: '',
       })
 
       const s = getSession()
@@ -479,6 +501,26 @@
       setSession(null)
       clearOtpInflight()
       location.href = '/'
+    }
+
+    onDeleteInput(e) {
+      this.update({ deleteConfirmInput: (e && e.target ? e.target.value : '') })
+    }
+
+    async deleteMembership(e) {
+      if (e && e.preventDefault) e.preventDefault()
+      // The submit button is :disabled when the typed value diverges, but a
+      // second check here guards against keyboard-submit edge cases.
+      if (this.deleteConfirmInput !== this.session.email) return
+      this.update({ deleteBusy: true, deleteError: '' })
+      try {
+        await call('POST', '/member/delete', {}, this.session.token)
+        setSession(null)
+        clearOtpInflight()
+        location.href = '/'
+      } catch (err) {
+        this.update({ deleteBusy: false, deleteError: err.message })
+      }
     }
   </script>
 </article>

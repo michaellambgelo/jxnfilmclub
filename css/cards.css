@@ -86,7 +86,7 @@
 }
 
 .event-poster-wrap {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 2 / 3;
   background: var(--surface-2);
   overflow: hidden;
 }

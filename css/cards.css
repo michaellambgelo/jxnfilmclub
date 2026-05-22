@@ -1,8 +1,10 @@
 /* Card grids for members-view and events-view.
  *
- * Uses CSS Grid `auto-fit` + `minmax()` so the column count responds to
+ * Uses CSS Grid `auto-fill` + `minmax()` so the column count responds to
  * viewport width without explicit breakpoints — one card on phones, a row
- * of three or four on wide screens.
+ * of three or four on wide screens. `auto-fill` (not `auto-fit`) keeps
+ * empty tracks at their min width so a single filtered result stays
+ * one-card-wide and left-aligned instead of stretching across the row.
  */
 
 .card-grid {
@@ -22,7 +24,7 @@
 /* ------- member cards ------- */
 
 .member-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
 .member-card {

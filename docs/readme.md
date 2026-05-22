@@ -16,6 +16,8 @@ for bug reports or feature requests, respectively.
 - TypeScript model layer (`model/`)
 - Vanilla CSS (`css/`)
 - Auth + signup backend: Cloudflare Worker (`worker/`), deploys to `join.jxnfilm.club`
+- Live data: the Worker's KV is the read source for members + events (`GET /members`, `GET /events`); `data/*.json` are 6-hourly snapshots that bootstrap fresh KV and act as the SPA's offline fallback
+- Podcast: `data/episodes.json` synced weekly from the club's Anchor/Spotify RSS feed
 - Email: [Resend](https://resend.com) (3k/mo free tier)
 - Tests: Vitest (unit + Workers) + Playwright (E2E)
 - Deploys: GitHub Pages (site) + Cloudflare (Worker), both via GitHub Actions, gated on tests
@@ -68,11 +70,14 @@ Two origins, one shared domain:
 
 ### 1. Members directory
 
-`data/members.json` is the source of truth, keyed by a stable random
-`id` on each row. Rendered by `ui/views.html` (`members-view`) with
-search + sort, URL-bound via Nue's `state` module. The `@handle`
-Letterboxd link is conditionally rendered — members without a verified
-Letterboxd simply don't show one.
+The Worker's KV is the live source of truth, served via `GET /members`;
+the SPA fetches it on every page load so new signups and admin edits
+appear immediately. `data/members.json` is a 6-hourly snapshot (keyed by
+a stable random `id` per row) that bootstraps a cold KV namespace and is
+the SPA's fallback when the Worker is unreachable. Rendered by
+`ui/views.html` (`members-view`) with search + sort, URL-bound via Nue's
+`state` module. The `@handle` Letterboxd link is conditionally rendered —
+members without a verified Letterboxd simply don't show one.
 
 ### 2. Signup flow (email-first)
 
@@ -123,6 +128,22 @@ entries per member) and `data/attendance.json` (events → member list,
 matched by the `jxnfilmclub` diary tag). *RSS field mapping needs
 verification against a real feed.*
 
+### 6. Events
+
+`GET /events` (KV-backed, snapshotted to `data/events.json`) drives the
+`events-view`. Each event row carries `{ id, title, film, year, date,
+venue, poster, letterboxd_uri }`. Poster wells render at a 2:3 aspect
+ratio (full movie-poster proportions). The directory supports a `venue`
+filter (in addition to search + sort), URL-bound via the `state` module.
+
+### 7. Podcast
+
+The home view (`ui/views.html` → `home-podcast` section) embeds the
+club's Spotify show and lists every episode from `data/episodes.json`
+(`{ featured_id, episodes: [{ title, date, url }] }`).
+`scripts/refresh_spotify.py` syncs it weekly (Mondays 12:00 UTC via
+`.github/workflows/refresh-spotify.yml`) from the Anchor RSS feed.
+
 ## Testing
 
 - **Unit + Workers** (`tests/model/`, `tests/worker/`): Vitest with
@@ -153,3 +174,14 @@ DNS) is in [SETUP.md](SETUP.md). After that, `git push origin main`
 triggers `deploy-site.yml` + `deploy-worker.yml`, both gated on
 `test.yml` passing. `staging` branch deploys a parallel Worker at
 `join-staging.jxnfilm.club`.
+
+Other GitHub Actions workflows:
+
+- **Member mutations** — `add-member.yml`, `update-member.yml`,
+  `remove-member.yml` (repo_dispatch from the Worker, id-keyed).
+- **Data refresh (cron)** — `refresh-letterboxd.yml` (6h, watched +
+  attendance) and `refresh-spotify.yml` (weekly, podcast episodes).
+- **Snapshots (cron)** — `snapshot-members.yml`, `snapshot-events.yml`,
+  `snapshot-attendance.yml` mirror live KV back into `data/*.json` every
+  6h so the static fallback stays current.
+- **CI** — `test.yml` (reusable suite) + `build-check.yml`.

@@ -25,11 +25,30 @@ The env toggle in the header picks between `production` (default — red
 topbar) and `staging` for the next KV call. The switch also re-loads the
 current tab so you don't accidentally act on the wrong namespace.
 
+### Sending newsletters
+
+Recipient toggles need only your `wrangler` login (they're plain KV writes).
+**Sending** goes through the Worker's `/admin/newsletter/send`, which requires
+the bearer `ADMIN_TOKEN`. The browser never holds it — the local server proxies
+the send and reads the token from its own environment. Export it before
+`npm run admin`, matching the Worker secret(s) you set with
+`wrangler secret put ADMIN_TOKEN`:
+
+```bash
+export ADMIN_TOKEN=<prod value>
+export ADMIN_TOKEN_STAGING=<staging value>   # only if you send from the staging env
+npm run admin
+```
+
+If the token for the selected env isn't set, the Send buttons return a clear
+error instead of failing silently. Always "Send test" to yourself first.
+
 ## Tabs
 
 | Tab | What it shows | Write ops |
 |-----|---------------|-----------|
 | **Members** | All `member:{email}` rows | clear rate limits, force-unlink Letterboxd (also patches `data/members.json`), evict session snapshot |
+| **Newsletter** | Compose/send a newsletter, opted-in recipients (with per-member opt-in/out toggles), and send history (`newsletter:sent:{ts}`) | toggle a member's `newsletter` flag (evicts their session), send a test to one address, send to all opted-in members |
 | **Pending** | `pending:{email}` signups with their OTP code | delete (use for stuck signups) |
 | **Sessions** | `session:{id}` cached snapshots | evict (does NOT revoke the JWT — use the Worker's `/session/revoke` for that) |
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
@@ -44,11 +63,15 @@ current tab so you don't accidentally act on the wrong namespace.
 - Doesn't write to `attendance:all` aggregate independently of `attend:{id}`;
   the "remove attendee" action does keep them consistent, but raw KV writes
   via wrangler don't.
-- Doesn't manage email (Resend) or revoke individual JWTs (no jti index).
+- Doesn't compose transactional/OTP email (Resend handles those) or revoke
+  individual JWTs (no jti index). The Newsletter tab is the one email surface
+  it does drive, and only via the token-guarded Worker endpoint.
 
 ## Why a local dashboard, not a hosted admin route?
 
 A hosted admin route would need its own auth, audit log, and CSRF. By keeping
 this local-only with wrangler as the gate, the surface stays tiny — no
-secrets in CI, no admin-token rotation, no extra cors origins to maintain.
-The tradeoff: it doesn't work from your phone.
+secrets in CI, no dashboard auth to rotate, no extra cors origins to maintain.
+(The one secret involved, `ADMIN_TOKEN` for the newsletter send, lives only in
+your local shell and the Worker — never in the browser or CI.) The tradeoff:
+it doesn't work from your phone.

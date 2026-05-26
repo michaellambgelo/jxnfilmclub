@@ -25,11 +25,16 @@ GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"
 SITE_ORIGIN = "https://jxnfilm.club"
+NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
+# REQUIRED before sending a newsletter (CAN-SPAM): the club's physical postal
+# address, printed in every announcement. Replace the placeholder below.
+NEWSLETTER_POSTAL_ADDRESS = "Jackson Film Club, 4420 Ridgewood Rd, Jackson, MS 39211"
 
 # Secrets (set via `wrangler secret put`):
 #   GITHUB_TOKEN      - fine-grained PAT, Contents: Write on jxnfilmclub
 #   RESEND_API_KEY    - Resend.com API key (free tier: 3k/mo)
 #   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
+#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send
 
 # --- Staging env (deploys from `staging` branch) ---
 
@@ -53,11 +58,14 @@ GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"                  # source branch for seeding KV from data/attendance.json
 SITE_ORIGIN = "https://jxnfilm.club"
+NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
+NEWSLETTER_POSTAL_ADDRESS = "Jackson Film Club, PO Box ___, Jackson, MS 392__"
 
 # Staging secrets are set separately:
 #   npx wrangler secret put GITHUB_TOKEN     --env staging
 #   npx wrangler secret put RESEND_API_KEY   --env staging
 #   npx wrangler secret put OTP_SIGNING_KEY  --env staging
+#   npx wrangler secret put ADMIN_TOKEN      --env staging
 
 [observability]
 [observability.logs]

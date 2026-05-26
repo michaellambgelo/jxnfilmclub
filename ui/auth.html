@@ -231,6 +231,11 @@
         <input type="text" name="pronouns" placeholder="e.g. they/them"
           value="{ member.pronouns || '' }">
       </label>
+      <label class="newsletter-row" style="display:flex;flex-direction:row;align-items:flex-start;gap:0.5rem">
+        <input type="checkbox" name="newsletter" :checked="member.newsletter">
+        <span>Email me occasional club announcements. You can opt out anytime,
+          and every announcement has a one-click unsubscribe.</span>
+      </label>
       <div class="actions">
         <button type="submit" :disabled="busy">{ busy ? 'Saving…' : 'Save' }</button>
         <button type="button" class="plain" :onclick="signOut">Sign out</button>
@@ -350,13 +355,15 @@
       this.update({ busy: true, error: '', saved: false })
       const fd = new FormData(e.target)
       try {
+        const newsletter = !!fd.get('newsletter')
         await call('POST', '/member/update', {
           name: fd.get('name'),
           pronouns: fd.get('pronouns'),
+          newsletter,
         }, this.session.token)
         this.update({
           busy: false, saved: true,
-          member: { ...this.member, name: fd.get('name'), pronouns: fd.get('pronouns') },
+          member: { ...this.member, name: fd.get('name'), pronouns: fd.get('pronouns'), newsletter },
         })
       } catch (err) {
         this.update({ busy: false, error: err.message })

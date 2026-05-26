@@ -74,6 +74,13 @@ async function route(request, env) {
 
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors(env) })
 
+    // Unsubscribe is authenticated by its own signed token, not by Origin/CORS.
+    // The RFC 8058 one-click POST is issued server-to-server by the recipient's
+    // mailbox provider, so it must bypass the Origin gate below.
+    if (pathname === '/unsubscribe' && (request.method === 'GET' || request.method === 'POST')) {
+      return handleUnsubscribe(request, env)
+    }
+
     // Defense-in-depth: if a browser sent an Origin header, it must match
     // SITE_ORIGIN. Bearer-token auth already blocks classic CSRF, but this
     // rejects cross-origin browser POSTs even if CORS is somehow misconfigured.
@@ -97,6 +104,8 @@ async function route(request, env) {
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
+
+    if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
 
@@ -159,7 +168,7 @@ function isValidName(s) {
 // Creates pending:{email} with OTP code. The optional handle is held on the
 // pending row and promoted to the member row at /signup/verify time.
 async function handleSignup(request, env) {
-  const { email, name, handle } = await request.json()
+  const { email, name, handle, newsletter } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
   if (!isValidName(name)) return json(env, { error: 'invalid name' }, 400)
@@ -186,7 +195,7 @@ async function handleSignup(request, env) {
   const code = randomCode()
   await env.MEMBERS_KV.put(
     `pending:${email}`,
-    JSON.stringify({ name, handle: handle || null, code }),
+    JSON.stringify({ name, handle: handle || null, newsletter: !!newsletter, code }),
     { expirationTtl: OTP_TTL },
   )
 
@@ -236,6 +245,7 @@ async function handleSignupVerify(request, env) {
     name: pending.name,
     pronouns: null,
     handle,
+    newsletter: !!pending.newsletter,
     joined: new Date().toISOString().slice(0, 10),
   }
   await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
@@ -389,6 +399,10 @@ async function handleMemberUpdate(request, env) {
       }
     }
     updates.handle = body.handle
+  }
+  // Newsletter consent toggle — the authenticated opt-out (and re-opt-in) path.
+  if (typeof body.newsletter === 'boolean') {
+    updates.newsletter = body.newsletter
   }
   if (!Object.keys(updates).length) return json(env, { error: 'no updates' }, 400)
 
@@ -962,6 +976,211 @@ async function sendEmail(env, to, subject, text) {
     }),
   })
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`)
+}
+
+// --- Newsletter (opt-in announcements) ---
+//
+// Separate from the transactional OTP path above. Consent is a private
+// `newsletter` boolean on each member:{email} row, never projected into the
+// public members list. Every send carries a one-click unsubscribe link +
+// List-Unsubscribe headers (Gmail/Yahoo bulk rules, RFC 8058) and the postal
+// address required by CAN-SPAM — opt-out is the federal + deliverability floor
+// regardless of how lax state law is.
+
+// Unsubscribe tokens never expire: a link must keep working long after any
+// login session. Distinct from signToken/verifyToken, which require an `exp`
+// claim. HMAC over the email so the link can't be forged. Reuses hmac()/b64u().
+async function signUnsubToken(env, email) {
+  const payload = b64u(JSON.stringify({ e: email, p: 'unsub' }))
+  const sig = await hmac(env.OTP_SIGNING_KEY, payload)
+  return `${payload}.${sig}`
+}
+
+async function verifyUnsubToken(env, token) {
+  if (!token) return null
+  const [payload, sig] = token.split('.')
+  if (!payload || !sig) return null
+  const expected = await hmac(env.OTP_SIGNING_KEY, payload)
+  if (sig !== expected) return null
+  try {
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    return claims.p === 'unsub' && claims.e ? claims.e : null
+  } catch {
+    return null
+  }
+}
+
+// GET /unsubscribe?token=...  — human-facing confirmation page.
+// POST /unsubscribe?token=... — RFC 8058 one-click, called server-to-server by
+// the mailbox provider. Both flip newsletter:false and are idempotent.
+async function handleUnsubscribe(request, env) {
+  const token = new URL(request.url).searchParams.get('token')
+  const email = await verifyUnsubToken(env, token)
+  if (!email) {
+    if (request.method === 'POST') return new Response('invalid token', { status: 400 })
+    return html(unsubPage('This unsubscribe link is invalid or has expired.'))
+  }
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${email}`)
+  if (memberRaw) {
+    const member = JSON.parse(memberRaw)
+    if (member.newsletter !== false) {
+      member.newsletter = false
+      await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
+      // Keep the session overlay (if the member happens to be logged in) in step
+      // so a subsequent /member/me reflects the unsubscribe immediately.
+      if (await env.MEMBERS_KV.get(`session:${member.id}`)) await writeSession(env, member)
+    }
+  }
+
+  if (request.method === 'POST') return new Response('ok', { status: 200 })
+  return html(unsubPage(
+    "You've been unsubscribed from Jackson Film Club announcements. " +
+    "You'll still receive one-time login codes when you sign in.",
+  ))
+}
+
+// POST /admin/newsletter/send — bearer-auth with ADMIN_TOKEN.
+// Body: { subject, html?, text? }. Sends to every member with newsletter===true.
+async function handleNewsletterSend(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+
+  const { subject, html: bodyHtml, text: bodyText, testTo } = await request.json().catch(() => ({}))
+  if (!subject || (!bodyHtml && !bodyText)) {
+    return json(env, { error: 'subject and html or text required' }, 400)
+  }
+
+  const postal = env.NEWSLETTER_POSTAL_ADDRESS || ''
+  if (!postal) {
+    return json(env, { error: 'NEWSLETTER_POSTAL_ADDRESS is not configured (required by CAN-SPAM)' }, 500)
+  }
+  const from = env.NEWSLETTER_FROM || 'Jackson Film Club <noreply@join.jxnfilm.club>'
+  const origin = new URL(request.url).origin
+  const opts = { from, subject, bodyHtml, bodyText, postal, origin }
+
+  // Test send: one faithful preview to a single address (full unsubscribe link,
+  // headers, and footer), bypassing the opt-in list. No audit row — a test
+  // isn't a real broadcast.
+  if (testTo) {
+    if (!isValidEmail(testTo)) return json(env, { error: 'invalid testTo' }, 400)
+    const sent = await sendBatch(env, [await buildNewsletterMessage(env, testTo, opts)])
+    return json(env, { ok: true, sent, test: true })
+  }
+
+  // Collect opted-in recipients from the canonical member rows. KV list pages
+  // at 1000 keys; loop the cursor so a growing club never silently truncates.
+  const recipients = []
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'member:', cursor })
+    for (const k of page.keys) {
+      const raw = await env.MEMBERS_KV.get(k.name)
+      if (!raw) continue
+      try {
+        const m = JSON.parse(raw)
+        if (m.newsletter === true && m.email) recipients.push(m.email)
+      } catch { /* skip corrupt row */ }
+    }
+    cursor = page.list_complete ? null : page.cursor
+  } while (cursor)
+
+  if (!recipients.length) return json(env, { ok: true, sent: 0 })
+
+  const messages = []
+  for (const email of recipients) {
+    messages.push(await buildNewsletterMessage(env, email, opts))
+  }
+
+  const sent = await sendBatch(env, messages)
+  // Audit trail: one row per real broadcast, surfaced in the admin dashboard's
+  // newsletter history. Tiny and kept indefinitely (no TTL).
+  if (sent > 0) {
+    await env.MEMBERS_KV.put(
+      `newsletter:sent:${new Date().toISOString()}`,
+      JSON.stringify({ subject, count: sent, at: Date.now() }),
+    )
+  }
+  return json(env, { ok: true, sent })
+}
+
+// One Resend message for a single recipient: personalized unsubscribe link +
+// List-Unsubscribe headers (RFC 8058) + CAN-SPAM footer. Shared by the real
+// broadcast loop and the test send so they can't drift.
+async function buildNewsletterMessage(env, email, { from, subject, bodyHtml, bodyText, postal, origin }) {
+  const token = await signUnsubToken(env, email)
+  const unsubUrl = `${origin}/unsubscribe?token=${encodeURIComponent(token)}`
+  const msg = {
+    from,
+    to: [email],
+    subject,
+    headers: {
+      'List-Unsubscribe': `<${unsubUrl}>, <mailto:unsubscribe@jxnfilm.club>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  }
+  if (bodyHtml) msg.html = appendFooterHtml(bodyHtml, unsubUrl, postal)
+  if (bodyText) msg.text = appendFooterText(bodyText, unsubUrl, postal)
+  return msg
+}
+
+// Resend batch endpoint: up to 100 messages per call. Honors E2E_MODE like
+// sendEmail() so Playwright e2e never sends real mail.
+async function sendBatch(env, messages) {
+  const CHUNK = 100
+  let sent = 0
+  for (let i = 0; i < messages.length; i += CHUNK) {
+    const chunk = messages.slice(i, i + CHUNK)
+    if (env.E2E_MODE === 'true') {
+      await env.MEMBERS_KV.put('__last_newsletter__', JSON.stringify(chunk))
+      sent += chunk.length
+      continue
+    }
+    const res = await fetch('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify(chunk),
+    })
+    if (!res.ok) throw new Error(`Resend batch ${res.status}: ${await res.text()}`)
+    sent += chunk.length
+  }
+  return sent
+}
+
+function appendFooterText(body, unsubUrl, postal) {
+  return [
+    body, '', '—',
+    'You received this because you opted in to Jackson Film Club announcements.',
+    `Unsubscribe: ${unsubUrl}`,
+    postal,
+  ].join('\n')
+}
+
+function appendFooterHtml(body, unsubUrl, postal) {
+  return `${body}<hr><p style="font-size:12px;color:#888">` +
+    'You received this because you opted in to Jackson Film Club announcements.<br>' +
+    `<a href="${unsubUrl}">Unsubscribe</a><br>${escapeHtml(postal)}</p>`
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function unsubPage(message) {
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Unsubscribe · Jackson Film Club</title>' +
+    '<style>body{max-width:32rem;margin:4rem auto;padding:0 1.25rem;' +
+    'font:16px/1.6 system-ui,sans-serif;color:#222}a{color:#0a58ca}</style></head>' +
+    `<body><h1>Jackson Film Club</h1><p>${escapeHtml(message)}</p>` +
+    '<p><a href="https://jxnfilm.club/">← Back to Jackson Film Club</a></p></body></html>'
 }
 
 // --- GitHub dispatch ---

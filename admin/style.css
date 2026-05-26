@@ -182,3 +182,35 @@ dialog menu { padding: 0; margin: 0.5rem 0 0 }
   padding: 2rem;
   color: var(--muted);
 }
+
+/* --- Newsletter tab --- */
+h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
+.nl-compose, .nl-recipients, .nl-history { margin-bottom: 1.5rem }
+.nl-compose {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 1rem;
+}
+.nl-compose > h3 { margin-top: 0 }
+.nl-compose > label,
+.nl-fields label,
+.nl-preview-wrap label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.nl-body { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.8rem }
+#nl-preview {
+  width: 100%;
+  height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+}
+.nl-compose .toolbar input[type="email"] { max-width: 260px }
+@media (max-width: 760px) { .nl-body { grid-template-columns: 1fr } }
+
+.pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem }
+.pill.on { background: #e6f4ea; color: #1a7f37 }
+.pill.off { background: #f0f0f0; color: var(--muted) }

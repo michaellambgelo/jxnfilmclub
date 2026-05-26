@@ -28,8 +28,15 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
+      // E2E binds the *staging* env (`--env staging`) with local simulated KV
+      // (`--local`), so it can never touch production data — and if `--local` is
+      // ever dropped, writes land in the staging namespace, not prod.
+      // reuseExistingServer is OFF: a stray `wrangler dev` left on this port
+      // (e.g. a remote/prod session) must never be silently adopted — a port
+      // clash should fail loudly instead of polluting another environment. This
+      // is what previously leaked e2e fixtures into production KV.
       command: [
-        'cd worker && npx wrangler dev --local',
+        'cd worker && npx wrangler dev --local --env staging',
         `--port ${WORKER_PORT}`,
         `--var SITE_ORIGIN:http://localhost:${SITE_PORT}`,
         '--var E2E_MODE:true',
@@ -37,7 +44,7 @@ export default defineConfig({
         '--var GITHUB_OWNER:test --var GITHUB_REPO:test',
       ].join(' '),
       port: WORKER_PORT,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000,
       stdout: 'pipe',
       stderr: 'pipe',

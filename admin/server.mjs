@@ -21,6 +21,12 @@ const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
 const VALID_FILES = new Set(['data/events.json', 'data/members.json'])
 const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json'])
 
+// Deployed Worker origins per env — target for the newsletter-send proxy.
+const WORKER_ORIGINS = {
+  production: 'https://join.jxnfilm.club',
+  staging: 'https://join-staging.jxnfilm.club',
+}
+
 class HttpError extends Error {
   constructor(status, msg) { super(msg); this.status = status }
 }
@@ -194,6 +200,30 @@ async function handle(req, res) {
     const body = await readBody(req)
     await filePut(q.path, body)
     return json(res, 200, { ok: true })
+  }
+  // POST /api/newsletter/send?env=  body = JSON { subject, html?, text?, testTo? }
+  // Proxies to the deployed Worker's /admin/newsletter/send with ADMIN_TOKEN
+  // held here (server-side) so the browser never sees the secret. Token per env:
+  // ADMIN_TOKEN (prod) / ADMIN_TOKEN_STAGING (staging, falls back to ADMIN_TOKEN).
+  if (method === 'POST' && url.pathname === '/api/newsletter/send') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before sending`)
+    }
+    const body = await readBody(req)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/newsletter/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body,
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
   }
   // Lightweight liveness probe.
   if (method === 'GET' && url.pathname === '/api/whoami') {

@@ -12,7 +12,7 @@ const MAX_OTP_FAILURES = 5   // wrong-code lockout per email per OTP window
 
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
-  'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 })
 
@@ -80,6 +80,11 @@ async function route(request, env) {
     if (pathname === '/unsubscribe' && (request.method === 'GET' || request.method === 'POST')) {
       return handleUnsubscribe(request, env)
     }
+    // RSVP cancel link in screening emails — same rationale: token-authenticated,
+    // GET shows a confirm page and POST performs the cancel from any origin.
+    if (pathname === '/rsvp/cancel' && (request.method === 'GET' || request.method === 'POST')) {
+      return handleRsvpCancel(request, env)
+    }
 
     // Defense-in-depth: if a browser sent an Origin header, it must match
     // SITE_ORIGIN. Bearer-token auth already blocks classic CSRF, but this
@@ -117,12 +122,24 @@ async function route(request, env) {
 
     if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
 
-    const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance)$/)
+    // Member-hosted screenings: create / edit / cancel.
+    if (request.method === 'POST' && pathname === '/events') return handleCreateEvent(request, env)
+    const eventIdMatch = pathname.match(/^\/events\/([^\/]+)$/)
+    if (eventIdMatch) {
+      if (request.method === 'PATCH')  return handleUpdateEvent(request, env, eventIdMatch[1])
+      if (request.method === 'DELETE') return handleDeleteEvent(request, env, eventIdMatch[1])
+    }
+
+    const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance|rsvp|rsvp\/me|host)$/)
     if (eventMatch) {
       const [, eventId, suffix] = eventMatch
       if (suffix === 'attendance' && request.method === 'GET')   return handleAttendanceGet(env, eventId)
       if (suffix === 'attend'     && request.method === 'POST')  return handleAttend(request, env, eventId)
       if (suffix === 'attend'     && request.method === 'DELETE') return handleUnattend(request, env, eventId)
+      if (suffix === 'rsvp'       && request.method === 'POST')   return handleRsvp(request, env, eventId)
+      if (suffix === 'rsvp'       && request.method === 'DELETE') return handleUnrsvp(request, env, eventId)
+      if (suffix === 'rsvp/me'    && request.method === 'GET')    return handleRsvpMe(request, env, eventId)
+      if (suffix === 'host'       && request.method === 'GET')    return handleEventHostView(request, env, eventId)
     }
 
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
@@ -586,6 +603,13 @@ async function handleAttend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
+  // For member-hosted screenings, attendance is the confirmed-RSVP list and is
+  // managed via /events/:id/rsvp. Reject the post-hoc toggle so the SPA can't
+  // accidentally double-write or skip the email/waitlist path.
+  if (await isHostedEvent(env, eventId)) {
+    return json(env, { error: 'this is a hosted screening — RSVP via /events/:id/rsvp' }, 409)
+  }
+
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
   if (!memberRaw) return json(env, { error: 'member not found' }, 404)
   const member = JSON.parse(memberRaw)
@@ -602,6 +626,10 @@ async function handleAttend(request, env, eventId) {
 async function handleUnattend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
+
+  if (await isHostedEvent(env, eventId)) {
+    return json(env, { error: 'this is a hosted screening — cancel via /events/:id/rsvp' }, 409)
+  }
 
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
   if (!memberRaw) return json(env, { error: 'member not found' }, 404)
@@ -722,6 +750,21 @@ function publicMemberProjection(member) {
   return out
 }
 
+// Public event projection — strips the host's private `address` so it never
+// leaves the Worker except inside a `sendEmail()` payload to a confirmed RSVP.
+// All public reads (`GET /events`, `events:all`, the cron snapshot to
+// data/events.json) flow through this. Canonical full row stays at `event:{id}`
+// for the host's own view and admin moderation.
+function publicEventProjection(event) {
+  if (!event || !event.id) return null
+  const out = { id: event.id }
+  for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
+                   'hostId', 'hostName', 'capacity', 'notes']) {
+    if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
+  }
+  return out
+}
+
 async function handleMembersGet(env) {
   const all = await readMembersAll(env)
   return json(env, all)
@@ -822,7 +865,9 @@ function safeParseArray(raw) {
 
 async function handleEventsGet(env) {
   const all = await readEventsAll(env)
-  return json(env, all)
+  // Belt-and-suspenders: even though writers should already project, re-project
+  // on the way out so a buggy writer can never leak `address` to a public read.
+  return json(env, all.map(publicEventProjection).filter(Boolean))
 }
 
 async function readEventsAll(env) {
@@ -856,9 +901,12 @@ async function bootstrapEvents(env) {
     if (idx === -1) merged.push(ev)
     else merged[idx] = ev
   }
-  await env.ATTENDANCE_KV.put('events:all', JSON.stringify(merged))
+  // events:all is the public aggregate — store projections, not canonical
+  // rows, so it can never carry a host's private `address`.
+  const projected = merged.map(publicEventProjection).filter(Boolean)
+  await env.ATTENDANCE_KV.put('events:all', JSON.stringify(projected))
   await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
-  return merged
+  return projected
 }
 
 async function fetchEventsBaseline(env) {
@@ -876,6 +924,502 @@ async function fetchEventsBaseline(env) {
     const data = await res.json()
     return Array.isArray(data) ? data : []
   } catch { return [] }
+}
+
+// --- Member-hosted screenings (RSVP + private address) ---
+//
+// Member-hosted screenings live in the same `event:{id}` rows as admin-curated
+// club events, distinguished by `hostId` (a member id). The host's `address`
+// is private — it only ever leaves the Worker inside a sendEmail() payload to
+// a confirmed RSVP. Public reads (GET /events, events:all, the data/events.json
+// snapshot) flow through publicEventProjection() and never include it.
+//
+// RSVP state lives at `rsvp:{eventId}` in ATTENDANCE_KV as
+//   { confirmed: [{ memberId, name, email, at }], waitlist: [{ ... }] }
+// The confirmed list is mirrored write-through into `attend:{eventId}` (names
+// only) so the existing public attendance read path keeps working unchanged.
+
+async function isHostedEvent(env, eventId) {
+  const raw = await env.ATTENDANCE_KV.get(`event:${eventId}`)
+  if (!raw) return false
+  try { return !!JSON.parse(raw).hostId } catch { return false }
+}
+
+async function readEvent(env, eventId) {
+  const raw = await env.ATTENDANCE_KV.get(`event:${eventId}`)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+// Canonical write: full row at event:{id} (may carry private `address`); the
+// public aggregate `events:all` gets the projection so it can never leak.
+async function writeEvent(env, event) {
+  await env.ATTENDANCE_KV.put(`event:${event.id}`, JSON.stringify(event))
+  const allRaw = await env.ATTENDANCE_KV.get('events:all')
+  const all = allRaw ? safeParseArray(allRaw) : await bootstrapEvents(env)
+  const proj = publicEventProjection(event)
+  const idx = all.findIndex(e => e.id === event.id)
+  if (idx === -1) all.push(proj)
+  else all[idx] = proj
+  await env.ATTENDANCE_KV.put('events:all', JSON.stringify(all))
+}
+
+async function deleteEvent(env, eventId) {
+  await env.ATTENDANCE_KV.delete(`event:${eventId}`)
+  const allRaw = await env.ATTENDANCE_KV.get('events:all')
+  if (allRaw) {
+    const all = safeParseArray(allRaw)
+    const next = all.filter(e => e.id !== eventId)
+    if (next.length !== all.length) {
+      await env.ATTENDANCE_KV.put('events:all', JSON.stringify(next))
+    }
+  }
+}
+
+async function readRsvp(env, eventId) {
+  const raw = await env.ATTENDANCE_KV.get(`rsvp:${eventId}`)
+  if (!raw) return { confirmed: [], waitlist: [] }
+  try {
+    const r = JSON.parse(raw)
+    return {
+      confirmed: Array.isArray(r.confirmed) ? r.confirmed : [],
+      waitlist:  Array.isArray(r.waitlist)  ? r.waitlist  : [],
+    }
+  } catch {
+    return { confirmed: [], waitlist: [] }
+  }
+}
+
+// Write the RSVP record AND mirror confirmed-names into attend:{id} so public
+// GET /events/:id/attendance keeps returning the same shape it always has.
+async function writeRsvp(env, eventId, rsvp) {
+  await env.ATTENDANCE_KV.put(`rsvp:${eventId}`, JSON.stringify(rsvp))
+  await writeAttendees(env, eventId, rsvp.confirmed.map(r => r.name))
+}
+
+async function removeRsvp(env, eventId) {
+  await env.ATTENDANCE_KV.delete(`rsvp:${eventId}`)
+  await env.ATTENDANCE_KV.delete(`attend:${eventId}`)
+  const allRaw = await env.ATTENDANCE_KV.get('attendance:all')
+  if (allRaw) {
+    const all = safeParseObject(allRaw)
+    if (all[eventId]) {
+      delete all[eventId]
+      await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(all))
+    }
+  }
+}
+
+// Cancel tokens — non-expiring, HMAC-signed. Same shape as signUnsubToken,
+// distinct purpose discriminator so a leaked unsub token can't cancel an RSVP.
+async function signRsvpCancelToken(env, eventId, memberId) {
+  const payload = b64u(JSON.stringify({ ev: eventId, m: memberId, p: 'rsvp-cancel' }))
+  const sig = await hmac(env.OTP_SIGNING_KEY, payload)
+  return `${payload}.${sig}`
+}
+
+async function verifyRsvpCancelToken(env, token) {
+  if (!token) return null
+  const [payload, sig] = token.split('.')
+  if (!payload || !sig) return null
+  const expected = await hmac(env.OTP_SIGNING_KEY, payload)
+  if (sig !== expected) return null
+  try {
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    return claims.p === 'rsvp-cancel' && claims.ev && claims.m ? claims : null
+  } catch {
+    return null
+  }
+}
+
+// --- Screening email templates ---
+//
+// Single-recipient transactional sends (mirrors the OTP path; no batch).
+// Reuses sendEmail()'s E2E_MODE mock — Playwright e2e never sends real mail.
+
+function fmtScreeningWhen(event) {
+  // Render date as-is (YYYY-MM-DD); time/timezone is left to the host's notes
+  // since the schema doesn't carry a time field yet.
+  return event.date || 'TBD'
+}
+
+function rsvpEmailBody(event, address, notes, cancelUrl) {
+  const lines = [
+    `You're confirmed for ${event.title} on ${fmtScreeningWhen(event)}.`,
+    `Film: ${event.film || '(see host)'}`,
+    `Hosted by: ${event.hostName || 'a member'}`,
+    '',
+    'Address:',
+    address,
+  ]
+  if (notes) {
+    lines.push('', 'Notes from the host:', notes)
+  }
+  lines.push(
+    '',
+    "Can't make it? Use the one-click link below to cancel — it opens a spot",
+    'for the next person on the waitlist:',
+    cancelUrl,
+  )
+  return lines.join('\n')
+}
+
+async function sendRsvpEmail(env, member, event, origin) {
+  const token = await signRsvpCancelToken(env, event.id, member.id)
+  const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
+  const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
+  await sendEmail(env, member.email, subject, rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl))
+}
+
+async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
+  const token = await signRsvpCancelToken(env, event.id, member.id)
+  const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
+  const lines = [
+    `Heads up — ${event.hostName || 'the host'} updated the screening "${event.title}".`,
+    '',
+    'What changed:',
+  ]
+  for (const c of changes) lines.push(`  • ${c.field}: ${c.from || '(blank)'} → ${c.to || '(blank)'}`)
+  lines.push(
+    '',
+    'Current details:',
+    `Date: ${fmtScreeningWhen(event)}`,
+    `Address: ${event.address || '(see host)'}`,
+  )
+  if (event.notes) lines.push('', 'Notes from the host:', event.notes)
+  lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
+  const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
+  await sendEmail(env, member.email, subject, lines.join('\n'))
+}
+
+async function sendScreeningCancelledEmail(env, member, event) {
+  const subject = `Cancelled: ${event.title} on ${fmtScreeningWhen(event)}`
+  const text = [
+    `Sorry — ${event.hostName || 'the host'} cancelled the screening "${event.title}"`,
+    `that was scheduled for ${fmtScreeningWhen(event)}.`,
+    '',
+    'No action needed on your end. Watch the events page for future screenings.',
+  ].join('\n')
+  await sendEmail(env, member.email, subject, text)
+}
+
+// --- Screening route handlers ---
+
+const MAX_EVENT_FIELD = 200
+const MAX_ADDRESS = 500
+const MAX_NOTES = 2000
+const MAX_CAPACITY = 1000
+
+function slugifyForId(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+}
+
+function validScreeningInput(body) {
+  const out = {}
+  if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > MAX_EVENT_FIELD) {
+    return { error: 'title is required (≤200 chars)' }
+  }
+  out.title = body.title.trim()
+  if (typeof body.film === 'string' && body.film.length <= MAX_EVENT_FIELD) out.film = body.film.trim()
+  if (body.year != null) {
+    const y = Number(body.year)
+    if (!Number.isInteger(y) || y < 1888 || y > 2100) return { error: 'invalid year' }
+    out.year = y
+  }
+  if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+    return { error: 'date is required (YYYY-MM-DD)' }
+  }
+  out.date = body.date
+  if (typeof body.address !== 'string' || !body.address.trim() || body.address.length > MAX_ADDRESS) {
+    return { error: 'address is required (≤500 chars)' }
+  }
+  out.address = body.address.trim()
+  const cap = Number(body.capacity)
+  if (!Number.isInteger(cap) || cap < 1 || cap > MAX_CAPACITY) {
+    return { error: 'capacity must be a positive integer (≤1000)' }
+  }
+  out.capacity = cap
+  if (typeof body.notes === 'string') {
+    if (body.notes.length > MAX_NOTES) return { error: 'notes too long (≤2000 chars)' }
+    if (body.notes.trim()) out.notes = body.notes
+  }
+  if (typeof body.venue === 'string' && body.venue.length <= MAX_EVENT_FIELD) out.venue = body.venue.trim()
+  if (typeof body.poster === 'string' && body.poster.length <= 500) out.poster = body.poster.trim()
+  if (typeof body.letterboxd_uri === 'string' && body.letterboxd_uri.length <= 500) out.letterboxd_uri = body.letterboxd_uri.trim()
+  return { value: out }
+}
+
+// POST /events — authenticated. Any member can host. Generates the event id
+// (date-prefixed readable slug + 4-char random suffix for uniqueness), stamps
+// hostId/hostName, seeds an empty rsvp:{id}.
+async function handleCreateEvent(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  const body = await request.json().catch(() => ({}))
+  const v = validScreeningInput(body)
+  if (v.error) return json(env, { error: v.error }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  if (v.value.date < today) return json(env, { error: 'date must be today or later' }, 400)
+
+  const slug = slugifyForId(v.value.title) || 'screening'
+  const event = {
+    id: `${v.value.date}-${slug}-${randomToken(4)}`,
+    ...v.value,
+    hostId: member.id,
+    hostName: member.name,
+  }
+  await writeEvent(env, event)
+  await writeRsvp(env, event.id, { confirmed: [], waitlist: [] })
+  return json(env, { ok: true, id: event.id, event: publicEventProjection(event) })
+}
+
+// PATCH /events/:id — host-only. address/date/(venue treated as "where")
+// changes auto-notify confirmed RSVPs. Increasing capacity auto-promotes
+// from the waitlist (each promoted member gets the same email a fresh RSVP
+// gets, with the address). Decreasing capacity below current confirmed → 400.
+async function handleUpdateEvent(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId || event.hostId !== claims.id) {
+    return json(env, { error: 'only the host can edit this screening' }, 403)
+  }
+
+  const body = await request.json().catch(() => ({}))
+  // Merge incoming + existing, validate against the same constraints. Address
+  // and capacity are required on a hosted event, so they must remain present.
+  const merged = { ...event, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) }
+  const v = validScreeningInput(merged)
+  if (v.error) return json(env, { error: v.error }, 400)
+
+  // Capacity-decrease guard.
+  const rsvp = await readRsvp(env, eventId)
+  if (v.value.capacity < rsvp.confirmed.length) {
+    return json(env, { error: `cannot reduce capacity below the ${rsvp.confirmed.length} already-confirmed RSVPs` }, 400)
+  }
+
+  const changes = []
+  for (const field of ['date', 'address', 'venue']) {
+    if ((event[field] || '') !== (v.value[field] || '')) {
+      changes.push({ field, from: event[field] || '', to: v.value[field] || '' })
+    }
+  }
+
+  const updated = { ...event, ...v.value, hostId: event.hostId, hostName: event.hostName }
+  await writeEvent(env, updated)
+
+  // Capacity increase → promote waitlist head-first until either full or empty.
+  const origin = new URL(request.url).origin
+  let rsvpAfter = rsvp
+  if (v.value.capacity > rsvp.confirmed.length && rsvp.waitlist.length) {
+    const slots = v.value.capacity - rsvp.confirmed.length
+    const promoted = rsvp.waitlist.slice(0, slots)
+    rsvpAfter = {
+      confirmed: [...rsvp.confirmed, ...promoted],
+      waitlist:  rsvp.waitlist.slice(slots),
+    }
+    await writeRsvp(env, eventId, rsvpAfter)
+    for (const p of promoted) {
+      try { await sendRsvpEmail(env, { id: p.memberId, email: p.email, name: p.name }, updated, origin) }
+      catch (e) { console.error('promotion email failed:', e?.message || e) }
+    }
+  }
+
+  // Notify confirmed RSVPs of address/date/venue changes.
+  if (changes.length) {
+    for (const c of rsvpAfter.confirmed) {
+      try { await sendScreeningUpdateEmail(env, { id: c.memberId, email: c.email, name: c.name }, updated, changes, origin) }
+      catch (e) { console.error('update email failed:', e?.message || e) }
+    }
+  }
+
+  return json(env, { ok: true, event: publicEventProjection(updated), notified: changes.length ? rsvpAfter.confirmed.length : 0 })
+}
+
+// DELETE /events/:id — host-only (or admin via the dashboard, which writes KV
+// directly). Sends a cancellation email to every confirmed RSVP, then tears
+// down event:{id}, rsvp:{id}, attend:{id}, and the aggregate entries.
+async function handleDeleteEvent(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId || event.hostId !== claims.id) {
+    return json(env, { error: 'only the host can cancel this screening' }, 403)
+  }
+
+  const rsvp = await readRsvp(env, eventId)
+  for (const c of rsvp.confirmed) {
+    try { await sendScreeningCancelledEmail(env, { id: c.memberId, email: c.email, name: c.name }, event) }
+    catch (e) { console.error('cancellation email failed:', e?.message || e) }
+  }
+
+  await removeRsvp(env, eventId)
+  await deleteEvent(env, eventId)
+  return json(env, { ok: true, notified: rsvp.confirmed.length })
+}
+
+// POST /events/:id/rsvp — authenticated, hosted events only. Confirms if
+// under cap, otherwise waitlists. Confirmation emails the address; waitlist
+// gets no email until promotion (then a confirmation email goes out).
+async function handleRsvp(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId) return json(env, { error: 'this event does not accept RSVPs (use /attend)' }, 409)
+
+  const rsvp = await readRsvp(env, eventId)
+  if (rsvp.confirmed.some(r => r.memberId === member.id)) {
+    return json(env, { ok: true, status: 'confirmed' })
+  }
+  if (rsvp.waitlist.some(r => r.memberId === member.id)) {
+    const position = rsvp.waitlist.findIndex(r => r.memberId === member.id) + 1
+    return json(env, { ok: true, status: 'waitlisted', position })
+  }
+
+  const entry = { memberId: member.id, name: member.name, email: member.email, at: Date.now() }
+  const capacity = Number(event.capacity) || 0
+  const origin = new URL(request.url).origin
+
+  if (rsvp.confirmed.length < capacity) {
+    rsvp.confirmed.push(entry)
+    await writeRsvp(env, eventId, rsvp)
+    try { await sendRsvpEmail(env, member, event, origin) }
+    catch (e) { console.error('rsvp email failed:', e?.message || e) }
+    return json(env, { ok: true, status: 'confirmed' })
+  }
+  rsvp.waitlist.push(entry)
+  await writeRsvp(env, eventId, rsvp)
+  return json(env, { ok: true, status: 'waitlisted', position: rsvp.waitlist.length })
+}
+
+// Shared cancel implementation used by DELETE /events/:id/rsvp (authenticated
+// by bearer) and POST /rsvp/cancel (authenticated by signed token).
+async function cancelRsvp(env, eventId, memberId, origin) {
+  const event = await readEvent(env, eventId)
+  if (!event) return { ok: false, code: 404, error: 'event not found' }
+  if (!event.hostId) return { ok: false, code: 409, error: 'not a hosted screening' }
+
+  const rsvp = await readRsvp(env, eventId)
+  const cIdx = rsvp.confirmed.findIndex(r => r.memberId === memberId)
+  if (cIdx !== -1) {
+    rsvp.confirmed.splice(cIdx, 1)
+    // Promote the head of waitlist (if any) into the freed slot.
+    let promoted = null
+    if (rsvp.waitlist.length) {
+      promoted = rsvp.waitlist.shift()
+      rsvp.confirmed.push(promoted)
+    }
+    await writeRsvp(env, eventId, rsvp)
+    if (promoted) {
+      try { await sendRsvpEmail(env, { id: promoted.memberId, email: promoted.email, name: promoted.name }, event, origin) }
+      catch (e) { console.error('promotion email failed:', e?.message || e) }
+    }
+    return { ok: true, status: 'cancelled', promoted: !!promoted }
+  }
+  const wIdx = rsvp.waitlist.findIndex(r => r.memberId === memberId)
+  if (wIdx !== -1) {
+    rsvp.waitlist.splice(wIdx, 1)
+    await writeRsvp(env, eventId, rsvp)
+    return { ok: true, status: 'cancelled', promoted: false }
+  }
+  return { ok: true, status: 'not-rsvped', promoted: false }
+}
+
+async function handleUnrsvp(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+  const origin = new URL(request.url).origin
+  const r = await cancelRsvp(env, eventId, member.id, origin)
+  if (!r.ok) return json(env, { error: r.error }, r.code)
+  return json(env, r)
+}
+
+// GET /events/:id/rsvp/me — authenticated. Lets the SPA render the right
+// affordance (RSVP / On waitlist / You're in) without exposing other members.
+async function handleRsvpMe(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const rsvp = await readRsvp(env, eventId)
+  const cIdx = rsvp.confirmed.findIndex(r => r.memberId === claims.id)
+  if (cIdx !== -1) return json(env, { status: 'confirmed' })
+  const wIdx = rsvp.waitlist.findIndex(r => r.memberId === claims.id)
+  if (wIdx !== -1) return json(env, { status: 'waitlisted', position: wIdx + 1 })
+  return json(env, { status: 'none' })
+}
+
+// GET /events/:id/host — host-only view of the attendee list. Names + waitlist
+// positions only; no attendee emails are exposed. Address is returned so the
+// host can double-check what's going out in the RSVP emails.
+async function handleEventHostView(request, env, eventId) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId || event.hostId !== claims.id) {
+    return json(env, { error: 'only the host can view this' }, 403)
+  }
+  const rsvp = await readRsvp(env, eventId)
+  return json(env, {
+    capacity: event.capacity || null,
+    address: event.address || null,
+    notes: event.notes || null,
+    confirmed: rsvp.confirmed.map(r => r.name),
+    waitlist:  rsvp.waitlist.map(r => r.name),
+  })
+}
+
+// GET /rsvp/cancel?token=…  →  human-facing confirm page (a GET that mutates
+// would get triggered by link prefetchers).
+// POST /rsvp/cancel?token=… →  performs the cancellation. Same token works
+// for both; idempotent.
+async function handleRsvpCancel(request, env) {
+  const token = new URL(request.url).searchParams.get('token')
+  const claims = await verifyRsvpCancelToken(env, token)
+  if (!claims) {
+    if (request.method === 'POST') return new Response('invalid token', { status: 400 })
+    return html(unsubPage('This cancel link is invalid or has expired.'))
+  }
+  if (request.method === 'GET') {
+    return html(rsvpCancelConfirmPage(token))
+  }
+  const origin = new URL(request.url).origin
+  const r = await cancelRsvp(env, claims.ev, claims.m, origin)
+  if (!r.ok) return new Response(r.error || 'error', { status: r.code || 500 })
+  return html(unsubPage(
+    r.status === 'cancelled'
+      ? "Your RSVP has been cancelled. If you were confirmed and there was a waitlist, the next person has been notified."
+      : "You weren't RSVPed for this screening (or already cancelled). Nothing to do.",
+  ))
+}
+
+function rsvpCancelConfirmPage(token) {
+  const escaped = escapeHtml(token)
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Cancel RSVP · Jackson Film Club</title>' +
+    '<style>body{max-width:32rem;margin:4rem auto;padding:0 1.25rem;' +
+    'font:16px/1.6 system-ui,sans-serif;color:#222}' +
+    'button{font:inherit;padding:0.6rem 1rem;background:#111;color:#fff;border:0;border-radius:4px;cursor:pointer}' +
+    'a{color:#0a58ca}</style></head>' +
+    '<body><h1>Cancel your RSVP?</h1>' +
+    '<p>Click the button to release your spot. If there’s a waitlist, the next person will be notified automatically.</p>' +
+    `<form method="POST" action="/rsvp/cancel?token=${escaped}"><button type="submit">Cancel my RSVP</button></form>` +
+    '<p><a href="https://jxnfilm.club/events">Never mind — back to events</a></p></body></html>'
 }
 
 // --- E2E / dev helper ---

@@ -1,0 +1,69 @@
+import { test, expect, WORKER_ORIGIN, signInAs } from './fixtures'
+
+// Member-hosted screenings: SPA wiring + privacy of the host's address.
+// The worker unit tests (tests/worker/screenings.test.js) cover the RSVP /
+// waitlist / promotion / email-template logic in detail; this e2e proves the
+// /host SPA form, the multi-segment route (/:type/:sub), and the
+// public-projection boundary (the address must never reach the rendered page
+// or the public worker response).
+
+test.describe('member-hosted screenings', () => {
+  test('host creates screening via /host; appears on /events; address never leaves the worker', async ({ page }) => {
+    const hostEmail = 'host-e2e@example.com'
+    await signInAs(page, hostEmail, { name: 'Host McHostface' })
+
+    // Navigate to /host via the SPA router (proves /:type/:sub works).
+    await page.goto('/host')
+    await expect(page.locator('article.auth h1')).toHaveText('Host a screening')
+
+    // Fill the create form.
+    const SCREENING_TITLE = 'E2E Test Screening'
+    const SECRET_ADDRESS = '742 Evergreen Terrace, Springfield, MS 39201'
+    await page.getByLabel('Title').fill(SCREENING_TITLE)
+    await page.getByLabel('Film').fill('Crash')
+    await page.getByLabel('Date').fill('2099-06-15')
+    await page.getByLabel('Address', { exact: false }).fill(SECRET_ADDRESS)
+    await page.getByLabel('Capacity').fill('4')
+    await page.getByRole('button', { name: /create screening/i }).click()
+
+    // Redirected to /events; the new screening renders with the "Hosted by"
+    // line and the public-facing meta — but never the address.
+    await page.waitForURL('**/events')
+    const card = page.locator('.event-card', { hasText: SCREENING_TITLE })
+    await expect(card).toBeVisible()
+    await expect(card).toContainText(/Hosted by Host McHostface/i)
+    await expect(card).toContainText(/0 \/ 4 RSVPed/)
+
+    // The full rendered events page must contain ZERO trace of the address.
+    const html = await page.content()
+    expect(html).not.toContain(SECRET_ADDRESS)
+    expect(html).not.toContain('Evergreen Terrace')
+
+    // The public worker response (what a signed-out scraper would see) also
+    // strips the address — defense in depth at the projection layer.
+    const listRes = await page.request.get(`${WORKER_ORIGIN}/events`)
+    const list = await listRes.json()
+    const ours = list.find((e: any) => e.title === SCREENING_TITLE)
+    expect(ours).toBeTruthy()
+    expect(ours.hostName).toBe('Host McHostface')
+    expect(ours.capacity).toBe(4)
+    expect(ours.address).toBeUndefined()
+    expect(JSON.stringify(list)).not.toContain('Evergreen Terrace')
+
+    // And the canonical KV row (admin-only path) DOES still carry it — the
+    // address has to live somewhere for the RSVP email to include it.
+    const kvRes = await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=event:${encodeURIComponent(ours.id)}`,
+    )
+    const raw = JSON.parse((await kvRes.json()).value)
+    expect(raw.address).toBe(SECRET_ADDRESS)
+  })
+
+  test('/host prompts non-members to log in instead of showing the form', async ({ page }) => {
+    // Fresh context (fixtures wipe KV before each test) so no session.
+    await page.goto('/host')
+    await expect(page.locator('article.auth h1')).toHaveText('Host a screening')
+    await expect(page.locator('p.lede')).toContainText('log in')
+    await expect(page.getByLabel('Title')).toHaveCount(0)
+  })
+})

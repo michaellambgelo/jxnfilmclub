@@ -65,9 +65,13 @@ function runWrangler(args, stdinBody) {
 
 // --- KV helpers ---
 
+// `--remote` is required since wrangler v4 flipped the default for KV ops
+// from remote to local; without it we'd be reading/writing the local
+// miniflare SQLite store (and racing whatever `wrangler dev` happens to
+// hold the same DB open — SQLITE_BUSY in the admin UI).
 async function kvList(env, binding, prefix) {
   checkBinding(binding)
-  const args = ['kv', 'key', 'list', '--binding', binding, ...envFlags(env)]
+  const args = ['kv', 'key', 'list', '--binding', binding, '--remote', ...envFlags(env)]
   if (prefix) args.push('--prefix', prefix)
   const out = await runWrangler(args)
   return JSON.parse(out)
@@ -77,7 +81,7 @@ async function kvGet(env, binding, key) {
   checkBinding(binding)
   // wrangler exits non-zero on "key not found", which we surface as null.
   try {
-    return await runWrangler(['kv', 'key', 'get', '--binding', binding, key, ...envFlags(env)])
+    return await runWrangler(['kv', 'key', 'get', '--binding', binding, '--remote', key, ...envFlags(env)])
   } catch (e) {
     if (e.status === 502 && /not found/i.test(e.message)) return null
     throw e
@@ -106,12 +110,12 @@ async function kvBulkGet(env, binding, keys) {
 
 async function kvPut(env, binding, key, value) {
   checkBinding(binding)
-  await runWrangler(['kv', 'key', 'put', '--binding', binding, key, value, ...envFlags(env)])
+  await runWrangler(['kv', 'key', 'put', '--binding', binding, '--remote', key, value, ...envFlags(env)])
 }
 
 async function kvDelete(env, binding, key) {
   checkBinding(binding)
-  await runWrangler(['kv', 'key', 'delete', '--binding', binding, key, ...envFlags(env)])
+  await runWrangler(['kv', 'key', 'delete', '--binding', binding, '--remote', key, ...envFlags(env)])
 }
 
 // --- File helpers ---

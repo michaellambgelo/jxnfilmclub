@@ -28,13 +28,14 @@ function wrangler(args) {
   return res.stdout
 }
 
+// --remote: wrangler v4 defaults KV ops to local; we want production.
 function kvList(prefix) {
-  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, '--prefix', prefix])
+  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, '--remote', '--prefix', prefix])
   return JSON.parse(out).map(k => k.name)
 }
 
 function kvGet(key) {
-  return wrangler(['kv', 'key', 'get', '--binding', BINDING, key]).trim()
+  return wrangler(['kv', 'key', 'get', '--binding', BINDING, '--remote', key]).trim()
 }
 
 const members = JSON.parse(await readFile(MEMBERS_JSON, 'utf8'))

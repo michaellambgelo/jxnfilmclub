@@ -282,7 +282,11 @@
 <!-- Single event card. Owns its own attendees + busy state so clicks only
      trigger a diff of this subtree — Nue's keyed child reconciliation
      detaches every sibling on the parent's update(), which on the full
-     events grid manifests as scroll-reset-to-top. -->
+     events grid manifests as scroll-reset-to-top.
+
+     For member-hosted screenings (event.hostId set), the card swaps the
+     post-hoc "I was there" toggle for an RSVP / waitlist affordance, and
+     when the viewer is the host renders a host-only sub-section. -->
 <article :is="event-card" class="event-card">
   <div class="event-poster-wrap">
     <img :if="event.poster" src="{ event.poster }" alt="{ event.film }" class="event-poster">
@@ -294,11 +298,32 @@
       <span :if="!event.letterboxd_uri">{ event.film }</span>
     </p>
     <p class="event-meta">
-      <span class="event-venue">{ event.venue }</span>
+      <span :if="event.venue" class="event-venue">{ event.venue }</span>
+      <span :if="event.hostId" class="event-host">Hosted by { event.hostName || 'a member' }</span>
       <span class="event-date">{ formatDate(event.date) }</span>
     </p>
+
+    <div :if="event.hostId" class="event-rsvp">
+      <div class="rsvp-meter">
+        { (attendees || []).length } / { event.capacity || '?' } RSVPed
+      </div>
+      <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
+      <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
+      <div :if="session && isFuture() && myRsvp">
+        <p :if="myRsvp.status === 'confirmed'" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
+        <p :if="myRsvp.status === 'waitlisted'" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
+        <button :if="myRsvp.status === 'none' && (attendees || []).length < (event.capacity || 0)"
+          type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
+        <button :if="myRsvp.status === 'none' && (attendees || []).length >= (event.capacity || 0)"
+          type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Join waitlist' }</button>
+        <button :if="myRsvp.status === 'confirmed' || myRsvp.status === 'waitlisted'"
+          type="button" class="attend-btn attend-btn-remove" :disabled="busy" :onclick="cancelRsvp">{ busy ? 'Cancelling' : 'Cancel RSVP' }</button>
+      </div>
+      <p :if="rsvpError" class="rsvp-err">{ rsvpError }</p>
+    </div>
+
     <div class="event-attendance">
-      <div class="attendance-count">{ (attendees || []).length } attended</div>
+      <div :if="!event.hostId" class="attendance-count">{ (attendees || []).length } attended</div>
       <div :if="(attendees || []).length" class="attendance-list">
         <span :each="n in attendees" key="{ n }" class="attendee">
           <a :if="handles[n]" href="https://letterboxd.com/{ handles[n] }/"
@@ -306,16 +331,22 @@
           <span :if="!handles[n]">{ n }</span>
         </span>
       </div>
-      <button :if="canToggle() && !attended()" type="button" class="attend-btn"
-        :disabled="busy"
-        :onclick="toggle('POST')">
-        { busy ? 'Saving…' : 'I was there' }
-      </button>
-      <button :if="canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
-        :disabled="busy"
-        :onclick="toggle('DELETE')">
-        { busy ? 'Removing…' : 'Remove me' }
-      </button>
+      <button :if="!event.hostId && canToggle() && !attended()" type="button" class="attend-btn"
+        :disabled="busy" :onclick="toggle('POST')">{ busy ? 'Saving' : 'I was there' }</button>
+      <button :if="!event.hostId && canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
+        :disabled="busy" :onclick="toggle('DELETE')">{ busy ? 'Removing' : 'Remove me' }</button>
+    </div>
+
+    <div :if="isHost && hostView" class="event-host-panel">
+      <p class="host-panel-title"><strong>You are hosting</strong></p>
+      <p :if="hostView.waitlist && hostView.waitlist.length" class="host-waitlist">
+        Waitlist:
+        <span :each="(n, i) in hostView.waitlist" key="{ n }">{ i + 1 }. { n }<span :if="i < hostView.waitlist.length - 1"> </span></span>
+      </p>
+      <div class="host-actions">
+        <button type="button" class="attend-btn attend-btn-remove" :onclick="cancelScreening">Cancel screening</button>
+      </div>
+      <p :if="hostError" class="rsvp-err">{ hostError }</p>
     </div>
   </div>
 
@@ -333,38 +364,202 @@
 
     this.busy = false
 
-    formatDate(ts) {
+    this.mounted = async function() {
+      if (!this.event.hostId) return
+      if (this.session) {
+        try {
+          const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp/me', {
+            headers: { Authorization: 'Bearer ' + this.session.token },
+          })
+          if (r.ok) this.update({ myRsvp: await r.json() })
+        } catch (e) {}
+      }
+      const isHost = this.session && this.session.id === this.event.hostId
+      this.update({ isHost: isHost })
+      if (isHost) {
+        try {
+          const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/host', {
+            headers: { Authorization: 'Bearer ' + this.session.token },
+          })
+          if (r.ok) this.update({ hostView: await r.json() })
+        } catch (e) {}
+      }
+    }
+
+    this.formatDate = function(ts) {
       if (!ts) return ''
       return new Date(ts).toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       })
     }
 
-    canToggle() {
-      return !!this.session
-    }
-
-    attended() {
+    this.canToggle = function() { return !!this.session }
+    this.attended = function() {
       return this.session && this.session.name && (this.attendees || []).includes(this.session.name)
     }
+    this.isFuture = function() {
+      const today = new Date().toISOString().slice(0, 10)
+      return (this.event.date || '') >= today
+    }
 
-    async toggle(method) {
+    this.toggle = async function(method) {
       if (!this.session) return
       this.update({ busy: true })
       try {
-        const res = await fetch(`${WORKER_ORIGIN}/events/${encodeURIComponent(this.event.id)}/attend`, {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.session.token}`,
-          },
+        const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/attend', {
+          method: method,
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
         })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`)
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
         this.update({ attendees: data.attendees || [], busy: false })
       } catch (err) {
-        console.error(`attendance ${method} failed:`, err)
+        console.error('attendance ' + method + ' failed:', err)
         this.update({ busy: false })
+      }
+    }
+
+    this.rsvp = async function() {
+      if (!this.session) return
+      this.update({ busy: true, rsvpError: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
+        })
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        this.update({ myRsvp: { status: data.status, position: data.position }, busy: false })
+        if (data.status === 'confirmed') {
+          const list = (this.attendees || []).concat([this.session.name])
+          this.update({ attendees: list })
+        }
+      } catch (err) {
+        this.update({ busy: false, rsvpError: err.message })
+      }
+    }
+
+    this.cancelRsvp = async function() {
+      if (!this.session) return
+      this.update({ busy: true, rsvpError: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
+        })
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        const me = this.session.name
+        const list = (this.attendees || []).filter(function (n) { return n !== me })
+        this.update({ myRsvp: { status: 'none' }, attendees: list, busy: false })
+      } catch (err) {
+        this.update({ busy: false, rsvpError: err.message })
+      }
+    }
+
+    this.cancelScreening = async function() {
+      if (!this.session) return
+      const title = this.event.title || 'screening'
+      const msg = 'Cancel "' + title + '"? Confirmed RSVPs will receive a cancellation email.'
+      if (!confirm(msg)) return
+      this.update({ busy: true, hostError: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id), {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + this.session.token },
+        })
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        location.reload()
+      } catch (err) {
+        this.update({ busy: false, hostError: err.message })
+      }
+    }
+  </script>
+</article>
+
+
+<!-- Host-a-screening form at /host. Members-only. -->
+<article :is="events-new-view" class="auth">
+  <h1>Host a screening</h1>
+
+  <p :if="!session" class="lede">
+    You need to <a href="/signin">log in</a> as a member to host a screening.
+  </p>
+
+  <form :if="session" :onsubmit="submit">
+    <p class="lede">Your address stays private. It's only emailed to members who RSVP,
+      and never appears on the public events listing.</p>
+
+    <label>Title<input type="text" name="title" required maxlength="200"
+      placeholder="e.g. May Screening — Cronenberg Night"></label>
+    <label>Film<input type="text" name="film" maxlength="200"
+      placeholder="e.g. Crash (1996)"></label>
+    <label>Year<input type="number" name="year" min="1888" max="2100" placeholder="1996"></label>
+    <label>Date<input type="date" name="date" required></label>
+    <label>Address <span class="hint">— private</span>
+      <input type="text" name="address" required maxlength="500"
+        placeholder="123 Main St, Apt 2B, Jackson, MS 39201"></label>
+    <label>Capacity<input type="number" name="capacity" required min="1" max="1000" placeholder="8"></label>
+    <label>Notes <span class="hint">— optional; included in every RSVP email</span>
+      <textarea name="notes" rows="4" maxlength="2000"
+        placeholder="Parking on the street is fine. BYOB. Dog is friendly but barks at the door."></textarea></label>
+
+    <div class="actions">
+      <button type="submit" :disabled="busy">{ busy ? 'Creating…' : 'Create screening' }</button>
+      <a href="/events" class="plain">Cancel</a>
+    </div>
+    <p class="err" :if="error">{ error }</p>
+  </form>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    function getSession() {
+      try {
+        const raw = localStorage.jxnfc_session
+        const s = raw ? JSON.parse(raw) : null
+        return s?.token && s.exp > Date.now() ? s : null
+      } catch { return null }
+    }
+
+    this.mounted = function() {
+      this.update({ session: getSession(), busy: false, error: '' })
+    }
+
+    this.submit = async function(e) {
+      e.preventDefault()
+      this.update({ busy: true, error: '' })
+      const fd = new FormData(e.target)
+      const body = {
+        title: fd.get('title'),
+        film: fd.get('film') || undefined,
+        year: fd.get('year') ? Number(fd.get('year')) : undefined,
+        date: fd.get('date'),
+        address: fd.get('address'),
+        capacity: Number(fd.get('capacity')),
+        notes: fd.get('notes') || undefined,
+      }
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
+          body: JSON.stringify(body),
+        })
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        location.href = '/events'
+      } catch (err) {
+        this.update({ busy: false, error: err.message })
       }
     }
   </script>

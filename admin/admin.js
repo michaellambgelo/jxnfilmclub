@@ -396,30 +396,59 @@ async function renderEvents() {
   `
 }
 
-// Write per-event row + patch events:all aggregate in lockstep so the
-// Worker's GET /events reflects the change on the next read.
+// Mirrors worker/src/index.js:publicEventProjection — strips the host's
+// private `address` so it never lands in the public events:all aggregate.
+function projectEvent(e) {
+  if (!e || !e.id) return null
+  const out = { id: e.id }
+  for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
+                   'hostId', 'hostName', 'capacity', 'notes']) {
+    if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
+  }
+  return out
+}
+
+// Write per-event row (full, with private address) + patch events:all with
+// the public projection so the Worker's GET /events reflects the change on
+// the next read AND can't leak the address.
 async function writeEventKv(ev) {
   await putKv(`event:${ev.id}`, JSON.stringify(ev), 'ATTENDANCE_KV')
   const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
   const agg = tryParse(aggRaw.values['events:all']) || []
+  const proj = projectEvent(ev)
   const idx = agg.findIndex(e => e.id === ev.id)
-  if (idx === -1) agg.push(ev)
-  else agg[idx] = ev
+  if (idx === -1) agg.push(proj)
+  else agg[idx] = proj
   await putKv('events:all', JSON.stringify(agg), 'ATTENDANCE_KV')
 }
 
 async function deleteEventKv(id) {
   await delKv(`event:${id}`, 'ATTENDANCE_KV').catch(() => {})
+  // Tear down RSVP state too — for hosted screenings these are the canonical
+  // attendee list. (.catch swallows "not found" so unhosted events still work.)
+  await delKv(`rsvp:${id}`, 'ATTENDANCE_KV').catch(() => {})
+  await delKv(`attend:${id}`, 'ATTENDANCE_KV').catch(() => {})
   const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
   const agg = tryParse(aggRaw.values['events:all']) || []
   const next = agg.filter(e => e.id !== id)
   await putKv('events:all', JSON.stringify(next), 'ATTENDANCE_KV')
+  // Also prune from the attendance:all aggregate so /events/attendance bulk
+  // read doesn't keep returning a phantom entry.
+  const attRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'attendance:all' })}`)
+  const att = tryParse(attRaw.values['attendance:all']) || {}
+  if (att[id] != null) {
+    delete att[id]
+    await putKv('attendance:all', JSON.stringify(att), 'ATTENDANCE_KV')
+  }
 }
 
 function renderEventCards() {
   if (!eventsCache.length) return '<p class="empty">No events yet.</p>'
-  return eventsCache.map((e, i) => `
+  return eventsCache.map((e, i) => {
+    const hosted = !!e.hostId
+    return `
     <div class="event-form" data-idx="${i}">
+      ${hosted ? `<p class="muted" style="margin:0 0 0.5rem">🏠 Member-hosted (host id <code>${attr(e.hostId)}</code>)</p>` : ''}
       <div class="grid">
         <div><label>ID</label><input type="text" name="id" value="${attr(e.id)}" readonly></div>
         <div><label>Title</label><input type="text" name="title" value="${attr(e.title || '')}"></div>
@@ -429,6 +458,14 @@ function renderEventCards() {
         <div><label>Venue</label><input type="text" name="venue" value="${attr(e.venue || '')}"></div>
         <div><label>Poster URL</label><input type="url" name="poster" value="${attr(e.poster || '')}"></div>
         <div><label>Letterboxd URI</label><input type="url" name="letterboxd_uri" value="${attr(e.letterboxd_uri || '')}"></div>
+        ${hosted ? `
+        <div><label>Host name</label><input type="text" name="hostName" value="${attr(e.hostName || '')}"></div>
+        <div><label>Capacity</label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
+        <div style="grid-column:1/-1"><label>Address <span class="muted">— private; only emailed to confirmed RSVPs</span></label>
+          <input type="text" name="address" value="${attr(e.address || '')}"></div>
+        <div style="grid-column:1/-1"><label>Notes <span class="muted">— included in every RSVP email</span></label>
+          <textarea name="notes" rows="3">${escapeHtml(e.notes || '')}</textarea></div>
+        ` : ''}
       </div>
       <div class="toolbar">
         <button class="primary" data-action="event-save" data-idx="${i}">save</button>
@@ -445,7 +482,8 @@ function renderEventCards() {
         </ul>
       </div>
     </div>
-  `).join('')
+  `
+  }).join('')
 }
 
 // --- Filter helper ---
@@ -564,9 +602,11 @@ document.addEventListener('click', async (e) => {
       const idx = Number(btn.dataset.idx)
       const form = btn.closest('.event-form')
       const updated = { ...eventsCache[idx] }
-      form.querySelectorAll('input').forEach(input => {
-        const v = input.value.trim()
-        if (input.name === 'year') updated.year = v ? Number(v) : undefined
+      form.querySelectorAll('input, textarea').forEach(input => {
+        const v = (input.value || '').trim()
+        if (input.name === 'year' || input.name === 'capacity') {
+          updated[input.name] = v ? Number(v) : undefined
+        }
         else if (v) updated[input.name] = v
         else delete updated[input.name]
       })

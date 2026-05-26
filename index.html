@@ -74,6 +74,7 @@
         type === 'signin'  ? 'sign-in-view' :
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :
+        type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
                              'home-view'
       this.mount(view, 'article')
     })

@@ -1,6 +1,13 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/fried-green-tomatoes/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/ga/rd/2u/p6/wbRihqz7vjlFCaYb0bPj3aZqQXD-0-600-0-900-crop.jpg?v=9a0514624a",
+      "title": "Fried Green Tomatoes",
+      "watched_date": "2026-05-24",
+      "year": "1991"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/ladies-first-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/6/1/1/5/1256115-ladies-first-2026-0-600-0-900-crop.jpg?v=81efe9e2c7",
       "title": "Ladies First",
@@ -20,13 +27,6 @@
       "title": "Star Wars: The Mandalorian and Grogu",
       "watched_date": "2026-05-22",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/spectral/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/yu/z9/fn/fz/oXV2ayQYUQfHwpuMdWnZF0Geng5-0-600-0-900-crop.jpg?v=c37519d1ea",
-      "title": "Spectral",
-      "watched_date": "2026-05-22",
-      "year": "2016"
     }
   ],
   "michaellamb": [

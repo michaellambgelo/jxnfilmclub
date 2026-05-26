@@ -32,13 +32,16 @@ function wrangler(args) {
   return res.stdout
 }
 
+// --remote on the reads: wrangler v4 defaults KV ops to local, but the
+// whole point here is to pull production into local. The write below uses
+// --local on purpose so the synced records land in miniflare's KV.
 function kvListProd(prefix) {
-  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, '--prefix', prefix])
+  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, '--remote', '--prefix', prefix])
   return JSON.parse(out).map(k => k.name)
 }
 
 function kvGetProd(key) {
-  return wrangler(['kv', 'key', 'get', '--binding', BINDING, key]).trim()
+  return wrangler(['kv', 'key', 'get', '--binding', BINDING, '--remote', key]).trim()
 }
 
 function kvPutLocal(key, value) {

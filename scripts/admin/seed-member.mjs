@@ -78,8 +78,8 @@ function wrangler(args, { input } = {}) {
 function kvPut(key, value) {
   // Value can be arbitrary; pass via stdin isn't supported, so use a positional.
   // Using double-quotes in the arg is safe because spawnSync doesn't shell-evaluate.
-  // No --remote flag: remote is wrangler's default; --local would override.
-  wrangler(['kv', 'key', 'put', '--binding', BINDING, key, value])
+  // --remote is required since wrangler v4 (default flipped from remote to local).
+  wrangler(['kv', 'key', 'put', '--binding', BINDING, '--remote', key, value])
 }
 
 async function loadInput(args) {

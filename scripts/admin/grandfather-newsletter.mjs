@@ -39,17 +39,19 @@ function wrangler(args) {
   return res.stdout
 }
 
+// --remote: wrangler v4 defaults KV ops to local; this migration targets
+// real (remote) KV — production by default, or --env staging when supplied.
 function kvList(prefix) {
-  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, ...ENV_ARGS, '--prefix', prefix])
+  const out = wrangler(['kv', 'key', 'list', '--binding', BINDING, '--remote', ...ENV_ARGS, '--prefix', prefix])
   return JSON.parse(out).map(k => k.name)
 }
 
 function kvGet(key) {
-  return wrangler(['kv', 'key', 'get', '--binding', BINDING, ...ENV_ARGS, key]).trim()
+  return wrangler(['kv', 'key', 'get', '--binding', BINDING, '--remote', ...ENV_ARGS, key]).trim()
 }
 
 function kvPut(key, value) {
-  wrangler(['kv', 'key', 'put', '--binding', BINDING, ...ENV_ARGS, key, value])
+  wrangler(['kv', 'key', 'put', '--binding', BINDING, '--remote', ...ENV_ARGS, key, value])
 }
 
 const target = flags.env ? `(${flags.env})` : '(production)'

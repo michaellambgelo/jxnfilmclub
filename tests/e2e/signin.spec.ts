@@ -10,9 +10,9 @@ test.describe('sign-in flow (returning members)', () => {
     }))
 
     await page.goto('/signin')
-    await expect(page.locator('h1')).toHaveText('Log in')
+    await expect(page.locator('article.auth h1')).toHaveText('Log in')
 
-    await page.getByLabel('Email').fill(EMAIL)
+    await page.getByLabel('Email', { exact: true }).fill(EMAIL)
     await page.getByRole('button', { name: /email me a code/i }).click()
 
     await expect(page.getByLabel('Code')).toBeVisible()
@@ -21,7 +21,7 @@ test.describe('sign-in flow (returning members)', () => {
 
   test('valid code redirects to /edit with prefilled name', async ({ page }) => {
     await signInAs(page, EMAIL, { name: 'Prefilled Name' })
-    await expect(page.locator('h1')).toHaveText('Your account')
+    await expect(page.locator('article.auth h1')).toHaveText('Your account')
     await expect(page.getByLabel('Display name')).toHaveValue('Prefilled Name')
     await expect(page.locator('p.lede').first()).toContainText(EMAIL)
   })
@@ -32,7 +32,7 @@ test.describe('sign-in flow (returning members)', () => {
     }))
 
     await page.goto('/signin')
-    await page.getByLabel('Email').fill(EMAIL)
+    await page.getByLabel('Email', { exact: true }).fill(EMAIL)
     await page.getByRole('button', { name: /email me a code/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
     await seedKv(page, `otp:${EMAIL}`, CODE, 600)
@@ -55,7 +55,7 @@ test.describe('sign-in flow (returning members)', () => {
     }))
 
     await page.goto('/signin')
-    await page.getByLabel('Email').fill(EMAIL)
+    await page.getByLabel('Email', { exact: true }).fill(EMAIL)
     await page.getByRole('button', { name: /email me a code/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 
@@ -66,7 +66,7 @@ test.describe('sign-in flow (returning members)', () => {
     // The code step should be primed without re-entering the email.
     await expect(page.getByLabel('Code')).toBeVisible()
     await expect(page.locator('p.lede')).toContainText(EMAIL)
-    await expect(page.getByLabel('Email')).toHaveCount(0)
+    await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0)
   })
 
   test('"Use a different email" clears the in-flight resume', async ({ page }) => {
@@ -75,16 +75,16 @@ test.describe('sign-in flow (returning members)', () => {
     }))
 
     await page.goto('/signin')
-    await page.getByLabel('Email').fill(EMAIL)
+    await page.getByLabel('Email', { exact: true }).fill(EMAIL)
     await page.getByRole('button', { name: /email me a code/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 
     await page.getByRole('button', { name: /use a different email/i }).click()
-    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByLabel('Email', { exact: true })).toBeVisible()
 
     await page.goto('/signin')
     // Back on email step — no stale resume.
-    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByLabel('Email', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Code')).toHaveCount(0)
   })
 
@@ -106,7 +106,7 @@ test.describe('sign-in flow (returning members)', () => {
     }, EMAIL)
 
     await page.goto('/signin')
-    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByLabel('Email', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Code')).toHaveCount(0)
 
     // The expired entry should also be cleared from localStorage on read
@@ -138,7 +138,7 @@ test.describe('sign-in flow (returning members)', () => {
     // Start a signup flow via the worker form so pending:/lb_token: get seeded.
     await page.goto('http://localhost:8787/')
     await page.getByLabel('Display name').fill('Pivot User')
-    await page.getByLabel('Email').fill(signupEmail)
+    await page.getByLabel('Email', { exact: true }).fill(signupEmail)
     await page.getByRole('button', { name: /email me a code/i }).click()
     await page.waitForURL(/\/verify/)
 
@@ -186,7 +186,7 @@ test.describe('sign-in flow (returning members)', () => {
 
       // Tab 1: arrive at code step (writes jxnfc_otp_inflight).
       await tab1.goto('/signin')
-      await tab1.getByLabel('Email').fill(EMAIL)
+      await tab1.getByLabel('Email', { exact: true }).fill(EMAIL)
       await tab1.getByRole('button', { name: /email me a code/i }).click()
       await expect(tab1.getByLabel('Code')).toBeVisible()
 
@@ -196,12 +196,12 @@ test.describe('sign-in flow (returning members)', () => {
 
       // Tab 1: "Use a different email" clears the in-flight key.
       await tab1.getByRole('button', { name: /use a different email/i }).click()
-      await expect(tab1.getByLabel('Email')).toBeVisible()
+      await expect(tab1.getByLabel('Email', { exact: true })).toBeVisible()
 
       // Tab 2: reload /signin — a fresh mount reads localStorage again and
       // should NOT resume into the code step, because tab 1 wiped the key.
       await tab2.goto('/signin')
-      await expect(tab2.getByLabel('Email')).toBeVisible()
+      await expect(tab2.getByLabel('Email', { exact: true })).toBeVisible()
       await expect(tab2.getByLabel('Code')).toHaveCount(0)
     } finally {
       await ctx.close()

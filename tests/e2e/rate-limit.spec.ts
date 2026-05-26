@@ -18,7 +18,7 @@ test.describe('OTP brute-force lockout (S1)', () => {
     }))
 
     await page.goto('/signin')
-    await page.getByLabel('Email').fill(EMAIL)
+    await page.getByLabel('Email', { exact: true }).fill(EMAIL)
     await page.getByRole('button', { name: /email me a code/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 

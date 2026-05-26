@@ -31,7 +31,7 @@ export async function signInAs(page: Page, email: string, memberOverrides: Recor
   }
   await seedKv(page, `member:${email}`, JSON.stringify(member))
   await page.goto('/signin')
-  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByRole('button', { name: /email me a code/i }).click()
   await expect(page.getByLabel('Code')).toBeVisible()
   await seedKv(page, `otp:${email}`, '424242', 600)

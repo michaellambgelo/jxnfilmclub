@@ -100,6 +100,7 @@ function fmtExpiry(unixSec) {
 
 const TABS = {
   members: renderMembers,
+  newsletter: renderNewsletter,
   pending: renderPending,
   sessions: renderSessions,
   revoked: renderRevoked,
@@ -158,6 +159,94 @@ async function renderMembers() {
     </table>
   `
   wireFilter($('#filter'), '#members-table tbody tr')
+}
+
+async function renderNewsletter() {
+  const [membersRes, historyRes] = await Promise.all([
+    loadKv('member:'),
+    loadKv('newsletter:sent:'),
+  ])
+
+  const members = membersRes.keys.map(k => tryParse(membersRes.values[k.name])).filter(Boolean)
+  const optedIn = members.filter(m => m.newsletter === true)
+
+  const history = historyRes.keys
+    .map(k => tryParse(historyRes.values[k.name]))
+    .filter(Boolean)
+    .sort((a, b) => (b.at || 0) - (a.at || 0))
+
+  content().innerHTML = `
+    <h2>Newsletter</h2>
+
+    <section class="nl-compose">
+      <h3>Compose</h3>
+      <p class="section-hint">Sends through the Worker (<code>/admin/newsletter/send</code>) for the
+        <strong>${escapeHtml(env())}</strong> env. Every email automatically gets a one-click unsubscribe
+        link, <code>List-Unsubscribe</code> headers, and the CAN-SPAM postal footer.</p>
+      <label>Subject<input id="nl-subject" type="text" placeholder="This month at Jackson Film Club"></label>
+      <div class="nl-body">
+        <div class="nl-fields">
+          <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>"></textarea></label>
+          <label>Plain-text body <span class="muted">— fallback</span><textarea id="nl-text" rows="6" placeholder="…"></textarea></label>
+        </div>
+        <div class="nl-preview-wrap">
+          <label>Preview</label>
+          <iframe id="nl-preview" sandbox="" title="HTML preview"></iframe>
+        </div>
+      </div>
+      <div class="toolbar">
+        <input id="nl-test-email" type="email" placeholder="you@example.com">
+        <button data-action="nl-test">Send test</button>
+        <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
+      </div>
+    </section>
+
+    <section class="nl-recipients">
+      <h3>Recipients <span class="muted">(${optedIn.length} opted in / ${members.length} members)</span></h3>
+      <div class="search"><input id="nl-filter" type="text" placeholder="filter by name / email / handle"></div>
+      <table id="nl-table"><thead><tr>
+        <th>Name</th><th>Email</th><th>Newsletter</th><th>Actions</th>
+      </tr></thead><tbody>
+        ${members.map(m => `
+          <tr data-search="${attr([m.name, m.email, m.handle].filter(Boolean).join(' ').toLowerCase())}">
+            <td>${escapeHtml(m.name)}</td>
+            <td>${escapeHtml(m.email)}</td>
+            <td>${m.newsletter === true
+              ? '<span class="pill on">✓ opted in</span>'
+              : '<span class="pill off">— opted out</span>'}</td>
+            <td class="actions">
+              <button data-action="nl-toggle" data-email="${attr(m.email)}" data-id="${attr(m.id)}" data-on="${m.newsletter === true ? '1' : ''}">
+                ${m.newsletter === true ? 'opt out' : 'opt in'}
+              </button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody></table>
+    </section>
+
+    <section class="nl-history">
+      <h3>Sent history <span class="muted">(${history.length})</span></h3>
+      ${history.length ? `
+      <table><thead><tr><th>When</th><th>Subject</th><th>Recipients</th></tr></thead><tbody>
+        ${history.map(h => `
+          <tr>
+            <td>${fmtAge(h.at)}</td>
+            <td>${escapeHtml(h.subject)}</td>
+            <td>${escapeHtml(String(h.count))}</td>
+          </tr>
+        `).join('')}
+      </tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}
+    </section>
+  `
+
+  // Live HTML preview — mirror the HTML body into the sandboxed iframe.
+  const htmlField = $('#nl-html')
+  const preview = $('#nl-preview')
+  const sync = () => { preview.srcdoc = htmlField.value }
+  htmlField.addEventListener('input', sync)
+  sync()
+
+  wireFilter($('#nl-filter'), '#nl-table tbody tr')
 }
 
 async function renderPending() {
@@ -433,6 +522,42 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Evict session:${id}?\n\nDeletes the cached snapshot only. Bearer token stays valid until exp (max 1h).`)) return
       try { await delKv(`session:${id}`) } catch { /* may not exist */ }
       toast(`Evicted session:${id}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'nl-toggle') {
+      const { email, id } = btn.dataset
+      const turningOn = btn.dataset.on !== '1'
+      const { values } = await loadKv(`member:${email}`)
+      const member = tryParse(values[`member:${email}`])
+      if (!member) { toast(`No member row for ${email}`, true); return }
+      member.newsletter = turningOn
+      await putKv(`member:${email}`, JSON.stringify(member))
+      // Evict the cached snapshot so the next /member/me re-reads the flag.
+      if (id) await delKv(`session:${id}`).catch(() => {})
+      toast(`${email} ${turningOn ? 'opted in' : 'opted out'}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'nl-test') {
+      const subject = $('#nl-subject').value.trim()
+      const html = $('#nl-html').value
+      const text = $('#nl-text').value
+      const testTo = $('#nl-test-email').value.trim()
+      if (!subject || (!html && !text)) { toast('Subject and a body are required', true); return }
+      if (!testTo) { toast('Enter a test email address', true); return }
+      const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined, testTo })
+      const r = await api('POST', `/api/newsletter/send?${qs({ env: env() })}`, body)
+      toast(`Test sent to ${testTo} (${r.sent})`)
+    }
+    else if (a === 'nl-send') {
+      const subject = $('#nl-subject').value.trim()
+      const html = $('#nl-html').value
+      const text = $('#nl-text').value
+      if (!subject || (!html && !text)) { toast('Subject and a body are required', true); return }
+      const count = document.querySelectorAll('#nl-table .pill.on').length
+      if (!confirm(`Send "${subject}" to ${count} opted-in member(s) on ${env()}?\n\nThis emails real people.`)) return
+      const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined })
+      const r = await api('POST', `/api/newsletter/send?${qs({ env: env() })}`, body)
+      toast(`Sent to ${r.sent} member(s)`)
       await switchTab(currentTab)
     }
     else if (a === 'event-save') {

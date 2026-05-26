@@ -46,6 +46,11 @@
       <input type="text" name="handle" pattern="[a-zA-Z0-9_-]+"
              placeholder="e.g. davidehrlich" autocomplete="off">
     </label>
+    <label style="display:flex;flex-direction:row;align-items:flex-start;gap:0.5rem;color:#555">
+      <input type="checkbox" name="newsletter" style="margin-top:0.25rem;width:auto">
+      <span>Email me occasional club announcements (screenings, picks). Optional —
+        every email has a one-click unsubscribe and you can opt out anytime.</span>
+    </label>
     <button type="submit">Email me a code</button>
     <p class="hint">Your email is used only for login codes and is never
       shown publicly. <a href="/privacy">Privacy policy</a>.</p>
@@ -65,6 +70,8 @@
       status.textContent = ''
 
       const data = Object.fromEntries(new FormData(form))
+      // Unchecked checkboxes are absent from FormData; send an explicit boolean.
+      data.newsletter = form.newsletter.checked
       if (!data.handle) delete data.handle
 
       try {

@@ -137,3 +137,40 @@
   font-size: 0.85em;
   margin-top: 0.1rem;
 }
+
+/* Preference row — a framed checkbox card that sits alongside the framed
+   Display name / Pronouns inputs in /edit. Overrides the default .auth
+   label grid-stack so the checkbox sits to the left of its title + hint. */
+.auth label.prefRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.75rem;
+  align-items: start;
+  padding: 0.85rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  cursor: pointer;
+}
+
+.auth label.prefRow input[type="checkbox"] {
+  margin-top: 0.2rem;
+  width: auto;
+  cursor: pointer;
+}
+
+.auth .prefRow-text {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.auth .prefRow-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.auth .prefRow-hint {
+  color: var(--ink-3);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}

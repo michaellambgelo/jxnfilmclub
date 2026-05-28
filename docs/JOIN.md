@@ -28,7 +28,7 @@ How to join Jackson Film Club:
    check spam if you don't see it).
 4. Enter the code on the page that opens. That's it — you're a member.
 
-You can always add a Letterboxd profile later from the "Edit account"
+You can always add a Letterboxd profile later from the "Account Actions"
 page if you decide to make one.
 ```
 

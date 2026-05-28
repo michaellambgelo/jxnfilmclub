@@ -17,12 +17,12 @@ stateDiagram-v2
 
     state SignedIn {
         [*] --> SignedInNav
-        SignedInNav: Members | Events | Watched | Edit account
+        SignedInNav: Members | Events | Watched | Account Actions
     }
 ```
 
 - **Anonymous**: "Join" links to `https://join.jxnfilm.club/` (external), "Log in" links to `/signin`
-- **Signed in**: "Edit account" links to `/edit` (on jxnfilm.club, not join.jxnfilm.club)
+- **Signed in**: "Account Actions" links to `/edit` (on jxnfilm.club, not join.jxnfilm.club). The page name reflects the breadth of actions there — profile edits, Letterboxd link, host-a-screening, membership deletion — beyond just "edit".
 
 ## Responsive Behavior
 

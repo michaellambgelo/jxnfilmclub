@@ -231,10 +231,13 @@
         <input type="text" name="pronouns" placeholder="e.g. they/them"
           value="{ member.pronouns || '' }">
       </label>
-      <label class="newsletter-row" style="display:flex;flex-direction:row;align-items:flex-start;gap:0.5rem">
+      <label class="prefRow">
         <input type="checkbox" name="newsletter" :checked="member.newsletter">
-        <span>Email me occasional club announcements. You can opt out anytime,
-          and every announcement has a one-click unsubscribe.</span>
+        <span class="prefRow-text">
+          <span class="prefRow-title">Email me occasional club announcements</span>
+          <span class="prefRow-hint">Screenings, picks, and the occasional update.
+            You can opt out anytime, and every announcement has a one-click unsubscribe.</span>
+        </span>
       </label>
       <div class="actions">
         <button type="submit" :disabled="busy">{ busy ? 'Saving…' : 'Save' }</button>

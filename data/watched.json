@@ -1,6 +1,13 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/masters-of-the-universe/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/1/0/4/45104-masters-of-the-universe-0-600-0-900-crop.jpg?v=e36bf3f17f",
+      "title": "Masters of the Universe",
+      "watched_date": "2026-05-29",
+      "year": "1987"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/dungeons-dragons-honor-among-thieves/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/2/4/0/0/3/424003-dungeons-dragons-honor-among-thieves-0-600-0-900-crop.jpg?v=7c3c4fddf9",
       "title": "Dungeons & Dragons: Honor Among Thieves",
@@ -19,13 +26,6 @@
       "poster": "https://a.ltrbxd.com/resized/sm/upload/dr/hr/pz/ez/ehLb2SQ3djlA1FrQKbP2WO3VH09-0-600-0-900-crop.jpg?v=6489920a92",
       "title": "No Country for Old Men",
       "watched_date": "2021-04-12",
-      "year": "2007"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/sunshine-2007/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/1/1/0/51110-sunshine-0-600-0-900-crop.jpg?v=c4ffc70fd4",
-      "title": "Sunshine",
-      "watched_date": "2024-05-13",
       "year": "2007"
     }
   ],

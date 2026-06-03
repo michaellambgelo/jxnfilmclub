@@ -31,6 +31,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/power-ballad/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/6/7/6/3/4/1167634-power-ballad-0-600-0-900-crop.jpg?v=31a4723ff8",
+      "title": "Power Ballad",
+      "watched_date": "2026-06-02",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-whale-2022/5/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/7/0/3/4/7/8/703478-the-whale-0-600-0-900-crop.jpg?v=84e98165fb",
       "title": "The Whale",
@@ -50,13 +57,6 @@
       "title": "The History of Sound",
       "watched_date": "2026-06-01",
       "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/is-god-is/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/6/2/1/6/1266216-is-god-is-0-600-0-900-crop.jpg?v=088dc7a2fc",
-      "title": "Is God Is",
-      "watched_date": "2026-05-31",
-      "year": "2026"
     }
   ]
 }

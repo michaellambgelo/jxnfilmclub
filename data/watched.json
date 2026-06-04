@@ -1,6 +1,20 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/the-crash-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/2/6/2/3/1/1526231-the-crash-2026-0-600-0-900-crop.jpg?v=332eaf7d2c",
+      "title": "The Crash",
+      "watched_date": "2026-06-01",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/jsyd/film/the-batman/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/4/8/9/1/4/348914-the-batman-0-600-0-900-crop.jpg?v=ec12a8b7ce",
+      "title": "The Batman",
+      "watched_date": "2026-06-03",
+      "year": "2022"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/the-last-rhinos-a-new-hope/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/0/3/0/1/0/1403010-the-last-rhinos-a-new-hope-0-600-0-900-crop.jpg?v=11f2b46d59",
       "title": "The Last Rhinos: A New Hope",
@@ -13,20 +27,6 @@
       "title": "Death on the Nile",
       "watched_date": "2026-06-01",
       "year": "2022"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/twilight-2008/23/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/4/6/9/47469-twilight-0-600-0-900-crop.jpg?v=f347bd6a28",
-      "title": "Twilight",
-      "watched_date": "2026-06-01",
-      "year": "2008"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/pamela-a-love-story/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/7/5/6/7/957567-pamela-a-love-story-0-600-0-900-crop.jpg?v=f2b22c53ac",
-      "title": "Pamela, A Love Story",
-      "watched_date": "2026-05-31",
-      "year": "2023"
     }
   ],
   "michaellamb": [

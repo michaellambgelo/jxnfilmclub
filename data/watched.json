@@ -1,6 +1,13 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/the-electric-state/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/6/9/6/7/2/5/696725-the-electric-state-0-600-0-900-crop.jpg?v=0d8eae00e9",
+      "title": "The Electric State",
+      "watched_date": "2026-06-06",
+      "year": "2025"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/batman-begins/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/8/4/51784-batman-begins-0-600-0-900-crop.jpg?v=f090edc352",
       "title": "Batman Begins",
@@ -20,13 +27,6 @@
       "title": "The Crash",
       "watched_date": "2026-06-01",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/the-batman/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/4/8/9/1/4/348914-the-batman-0-600-0-900-crop.jpg?v=ec12a8b7ce",
-      "title": "The Batman",
-      "watched_date": "2026-06-03",
-      "year": "2022"
     }
   ],
   "michaellamb": [

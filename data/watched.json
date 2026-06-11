@@ -31,6 +31,20 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/blade-runner-2049/7/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/5/4/3/9/265439-blade-runner-2049-0-600-0-900-crop.jpg?v=86735e0bb8",
+      "title": "Blade Runner 2049",
+      "watched_date": "2026-06-10",
+      "year": "2017"
+    },
+    {
+      "link": "https://letterboxd.com/michaellamb/film/master-of-the-universe-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/6/0/0/0/6/1560006-master-of-the-universe-2026-0-600-0-900-crop.jpg?v=b5d3c0a565",
+      "title": "Master of the Universe",
+      "watched_date": "2026-06-11",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-drama/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/5/4/9/4/1205494-the-drama-0-600-0-900-crop.jpg?v=2320acafd5",
       "title": "The Drama",
@@ -43,20 +57,6 @@
       "title": "Steel Magnolias",
       "watched_date": "2026-06-07",
       "year": "1989"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/obsession-2025-2/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/3/4/4/7/2/1234472-obsession-2025-2-0-600-0-900-crop.jpg?v=cff6fc00b6",
-      "title": "Obsession",
-      "watched_date": "2026-06-07",
-      "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/a-murder-at-the-end-of-the-world/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/5/2/7/1089527-a-murder-at-the-end-of-the-world-0-600-0-900-crop.jpg?v=d7b894a484",
-      "title": "A Murder at the End of the World",
-      "watched_date": "2026-06-05",
-      "year": "2023"
     }
   ]
 }

@@ -1,6 +1,13 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/the-silent-planet/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/3/3/5/0/7/1033507-the-silent-planet-0-600-0-900-crop.jpg?v=6cd7b35239",
+      "title": "The Silent Planet",
+      "watched_date": "2026-06-15",
+      "year": "2024"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/maternal-instinct-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/6/0/7/8/3/1560783-maternal-instinct-2026-0-600-0-900-crop.jpg?v=7978cfa68d",
       "title": "Maternal Instinct",
@@ -20,13 +27,6 @@
       "title": "Rebel Moon \u2013 Part Two: The Scargiver",
       "watched_date": "2026-06-10",
       "year": "2024"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/rebel-moon-part-one-a-child-of-fire/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/7/6/2/8/1/2/762812-rebel-moon-part-one-a-child-of-fire-0-600-0-900-crop.jpg?v=6a83b584be",
-      "title": "Rebel Moon \u2013 Part One: A Child of Fire",
-      "watched_date": "2026-06-09",
-      "year": "2023"
     }
   ],
   "michaellamb": [

@@ -31,6 +31,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/lee-cronins-the-mummy/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/8/6/3/1/8/1186318-lee-cronins-the-mummy-0-600-0-900-crop.jpg?v=75239f90de",
+      "title": "Lee Cronin's The Mummy",
+      "watched_date": "2026-06-16",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-naked-gun/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/3/3/8/1/933381-the-naked-gun-0-600-0-900-crop.jpg?v=6acd6cd210",
       "title": "The Naked Gun",
@@ -50,13 +57,6 @@
       "title": "Blade Runner 2049",
       "watched_date": "2026-06-10",
       "year": "2017"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/master-of-the-universe-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/6/0/0/0/6/1560006-master-of-the-universe-2026-0-600-0-900-crop.jpg?v=b5d3c0a565",
-      "title": "Master of the Universe",
-      "watched_date": "2026-06-10",
-      "year": "2026"
     }
   ]
 }

@@ -1,6 +1,13 @@
 {
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/the-super-mario-galaxy-movie/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/0/0/8/0/1110080-the-super-mario-galaxy-movie-0-600-0-900-crop.jpg?v=fefcfca134",
+      "title": "The Super Mario Galaxy Movie",
+      "watched_date": "2026-06-11",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/the-silent-planet/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/3/3/5/0/7/1033507-the-silent-planet-0-600-0-900-crop.jpg?v=6cd7b35239",
       "title": "The Silent Planet",
@@ -20,13 +27,6 @@
       "title": "Blade Runner",
       "watched_date": "2026-06-13",
       "year": "1982"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/rebel-moon-part-two-the-scargiver/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/3/9/3/2/6/839326-rebel-moon-part-two-the-scargiver-0-600-0-900-crop.jpg?v=5ddc42ba2c",
-      "title": "Rebel Moon \u2013 Part Two: The Scargiver",
-      "watched_date": "2026-06-10",
-      "year": "2024"
     }
   ],
   "michaellamb": [

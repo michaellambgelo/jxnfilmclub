@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/midsommar/51/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/9/5/6/4/459564-midsommar-0-600-0-900-crop.jpg?v=ed7b8ded1f",
+      "title": "Midsommar",
+      "watched_date": "2026-06-26",
+      "year": "2019"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/undefeated-2011/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/9/0/9/8/69098-undefeated-0-600-0-900-crop.jpg?v=a8c5bb2ea2",
       "title": "Undefeated",
@@ -50,13 +57,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/2/0/7/8/2/920782-andor-a-disney-day-special-look-0-600-0-900-crop.jpg?v=113b8951e9",
       "title": "Andor: A Disney+ Day Special Look",
       "watched_date": "2026-06-22",
-      "year": "2022"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/aftersun/16/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/6/8/5/5/8/868558-aftersun-0-600-0-900-crop.jpg?v=5ce2118fca",
-      "title": "Aftersun",
-      "watched_date": "2026-06-19",
       "year": "2022"
     }
   ]

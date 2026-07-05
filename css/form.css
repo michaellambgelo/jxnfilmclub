@@ -17,9 +17,11 @@ input, textarea, select {
 
 input, textarea {
   border: 1px solid var(--line-2);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: .7em 1em;
   width: 100%;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 textarea {
@@ -34,6 +36,12 @@ select {
   border: 0;
   padding-right: 1.5rem;
   height: 2em;
+  color: var(--ink);
+}
+
+/* Native dropdown lists render on the OS's light panel — keep options readable. */
+select option {
+  color: #222;
 }
 
 [type=search] {

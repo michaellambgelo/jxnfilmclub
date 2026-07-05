@@ -10,6 +10,8 @@ worker/.dev.vars
 bun.lock
 playwright-report/
 test-results/
+.playwright-report/
+.test-results/
 
 # Admin-local data (emails, notes, exports). README is tracked as the
 # documented convention.

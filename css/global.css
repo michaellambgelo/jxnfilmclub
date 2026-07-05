@@ -9,8 +9,32 @@ html {
 
 body {
   font-family: var(--font-body);
+  font-size: var(--fs-17);
   color: var(--ink);
   margin: 0;
+}
+
+::selection {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* Film-grain overlay — the whole site is shot on expired stock. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.045;
+  mix-blend-mode: screen;
+}
+
+/* Halftone dot texture — used by the host CTA and join footer. */
+.halftone {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.55) 1.2px, transparent 1.6px);
+  background-size: 5px 5px;
 }
 
 .wrap {
@@ -19,9 +43,12 @@ body {
   padding: 0 var(--wrap-padding);
 }
 
+/* ------- masthead ------- */
+
 body > header {
-  background-color: var(--surface);
-  border-bottom: 1px solid var(--line);
+  background-color: var(--bg);
+  border-top: 5px solid var(--brand);
+  border-bottom: 1px solid var(--line-2);
   margin-bottom: var(--space-12);
 }
 
@@ -37,22 +64,44 @@ body > header {
 }
 
 .mastnav a {
-  color: var(--ink-3);
-  font-size: 95%;
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  opacity: .8;
   text-decoration: none;
   padding: 1.7rem .5rem 1.5rem;
   border-bottom: 2px solid transparent;
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 
 .mastnav a:not(.selected):hover {
-  color: #333;
+  opacity: 1;
+  color: var(--brand);
   border-color: var(--line-2);
 }
 
 /* Right-align the auth group (Join + Edit my entry). */
 .mastnav .auth-link {
   margin-left: auto;
+}
+
+/* The Join link is the one solid-red action in the masthead. */
+.mastnav a.auth-link {
+  background: var(--brand);
+  color: #fff;
+  opacity: 1;
+  padding: .55rem 1.4rem;
+  border: none;
+  font-weight: 500;
+}
+
+.mastnav a.auth-link:hover {
+  background: var(--ink-strong);
+  color: var(--bg);
+  border-color: transparent;
 }
 
 .mastnav-links > a:last-child {
@@ -126,6 +175,12 @@ body > header {
   .mastnav .auth-link {
     margin-left: 0;
   }
+
+  .mastnav a.auth-link {
+    background: transparent;
+    color: var(--brand);
+    padding: .9rem .25rem;
+  }
 }
 
 
@@ -135,24 +190,49 @@ a.selected {
   cursor: default;
 }
 
+/* ------- wordmark + rubber stamp ------- */
+
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   white-space: nowrap;
   color: var(--ink-strong) !important;
-  font-weight: 600 !important;
+  opacity: 1 !important;
 }
 
-.logo img {
-  width: 2rem;
-  height: auto;
+.logo .logo-word {
+  font-family: var(--font-label);
+  font-size: var(--fs-18);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
+
+.logo .logo-stamp {
+  font-family: var(--font-label);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand);
+  border: 2px solid var(--brand);
+  box-shadow: inset 0 0 0 1px rgba(215, 50, 31, 0.35);
+  padding: 2px 7px;
+  transform: rotate(-4deg);
+}
+
+/* ------- page typography ------- */
 
 h1 {
   margin: 0 0 .7em;
-  font-size: var(--fs-18);
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: var(--fs-37);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--lh-tight);
+  color: var(--ink-strong);
 }
 
 article > header {
@@ -176,5 +256,5 @@ img {
 }
 
 main > nav {
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--line-2);
 }

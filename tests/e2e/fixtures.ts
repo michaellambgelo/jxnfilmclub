@@ -41,13 +41,27 @@ export async function signInAs(page: Page, email: string, memberOverrides: Recor
   return member
 }
 
-// Point auth.html's WORKER_ORIGIN at local wrangler for every page.
+// Point auth.html's WORKER_ORIGIN at local wrangler for every page, and
+// block requests to the outside world. The Night Shift home page pulls
+// Google Fonts, TMDB/Letterboxd posters, and a Spotify embed — dozens of
+// external fetches per page load that starve parallel workers and turn
+// into 30s action timeouts. Localhost (site + wrangler + LB stub) stays
+// reachable; everything else aborts instantly and the UI falls back the
+// same way it does offline.
 export const test = base.extend({
   page: async ({ page }, use) => {
     await page.addInitScript((origin) => {
       // @ts-expect-error - injected into page context
       window.JXNFC_WORKER_ORIGIN = origin
     }, WORKER_ORIGIN)
+    await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, route => {
+      // site.spec asserts the nav Join link really lands on join.jxnfilm.club;
+      // fulfill it with a stub so the navigation commits without the network.
+      if (new URL(route.request().url()).hostname === 'join.jxnfilm.club') {
+        return route.fulfill({ status: 200, contentType: 'text/html', body: '<title>join stub</title>' })
+      }
+      return route.abort()
+    })
     await use(page)
   },
 })

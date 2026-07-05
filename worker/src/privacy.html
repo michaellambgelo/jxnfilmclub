@@ -4,21 +4,66 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy · Jackson Film Club</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Oswald:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
   <style>
-    body { max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.6 system-ui, sans-serif; color: #222; }
-    .topnav { margin-bottom: 1.25rem; font-size: 0.9rem; }
-    .topnav a { color: #0a58ca; text-decoration: none; }
-    .topnav a:hover { text-decoration: underline; }
-    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
-    .updated { color: #777; font-size: 0.9rem; margin-bottom: 2rem; }
-    h2 { font-size: 1.15rem; margin-top: 2rem; }
-    a { color: #0a58ca; }
-    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
+    /* "Night Shift" — noir zine tokens, mirrored from the main site's
+       css/tokens.css (Claude Design project "jxnfilm.club", direction B). */
+    :root {
+      --brand: #d7321f;
+      --bg: #100f0e;
+      --surface-2: #1d1a15;
+      --ink: #e8e3d8;
+      --ink-strong: #f0ebe0;
+      --ink-4: #8f897d;
+      --label: 'Oswald', 'Helvetica Neue', Arial, sans-serif;
+      --display: 'Playfair Display', Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); border-top: 5px solid var(--brand); }
+    body {
+      max-width: 42rem; margin: 0 auto; padding: 0 1.25rem 3rem;
+      font: 17px/1.6 'Newsreader', Georgia, serif; color: var(--ink);
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.045; mix-blend-mode: screen;
+    }
+    ::selection { background: var(--brand); color: #fff; }
+    .topnav { margin: 1.5rem 0 2.5rem; display: flex; align-items: center; gap: .75rem; }
+    .topnav a {
+      font-family: var(--label); font-size: .75rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: .12em;
+      color: var(--ink); opacity: .8; text-decoration: none;
+    }
+    .topnav a:hover { opacity: 1; color: var(--brand); }
+    h1 {
+      font-family: var(--display); font-style: italic; font-weight: 900;
+      font-size: 2.4rem; line-height: 1.05; color: var(--ink-strong);
+      margin: 0 0 .35rem;
+    }
+    .updated {
+      font-family: var(--label); font-size: .75rem; text-transform: uppercase;
+      letter-spacing: .12em; color: var(--ink-4); margin-bottom: 2rem;
+    }
+    h2 {
+      font-family: var(--display); font-style: italic; font-weight: 700;
+      font-size: 1.35rem; color: var(--ink-strong); margin-top: 2rem;
+    }
+    a { color: var(--brand); }
+    a:hover { color: var(--ink-strong); }
+    b { color: var(--ink-strong); }
+    code {
+      background: var(--surface-2); padding: 0.1em 0.35em;
+      font-size: 0.9em; color: var(--ink-strong);
+    }
   </style>
 </head>
 <body>
   <nav class="topnav">
-    <a href="https://jxnfilm.club/">← Back to Jackson Film Club</a> ·
+    <a href="https://jxnfilm.club/">← Jackson Film Club</a> ·
     <a href="/">Signup</a>
   </nav>
 

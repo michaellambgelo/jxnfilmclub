@@ -9,7 +9,7 @@
 }
 
 .auth .lede {
-  color: #666;
+  color: var(--ink-3);
   margin-top: 0;
 }
 
@@ -23,7 +23,7 @@
   display: grid;
   gap: 0.35rem;
   font-size: 0.9rem;
-  color: #555;
+  color: var(--ink-3);
 }
 
 .auth input[type="email"],
@@ -31,28 +31,48 @@
 .auth input[type="url"] {
   padding: 0.6rem 0.75rem;
   font: inherit;
-  border: 1px solid #ccc;
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .auth button {
   padding: 0.7rem;
-  font: inherit;
-  font-weight: 600;
-  background: var(--ink-strong);
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  background: var(--brand);
   color: white;
   border: 0;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.auth button:hover:not(:disabled) {
+  background: var(--ink-strong);
+  color: var(--bg);
 }
 
 .auth button.plain {
   background: transparent;
-  color: #0a58ca;
+  color: var(--brand);
+  font-family: var(--font-body);
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
   padding: 0.35rem 0;
   text-align: left;
   justify-self: start;
+}
+
+.auth button.plain:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ink-strong);
 }
 
 .auth button:disabled {
@@ -147,9 +167,9 @@
   column-gap: 0.75rem;
   align-items: start;
   padding: 0.85rem 1rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 

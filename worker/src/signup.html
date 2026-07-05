@@ -4,31 +4,82 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join · Jackson Film Club</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Oswald:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
   <style>
-    body { max-width: 32rem; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.5 system-ui, sans-serif; color: #222; }
-    .topnav { margin-bottom: 1.25rem; font-size: 0.9rem; }
-    .topnav a { color: #0a58ca; text-decoration: none; }
-    .topnav a:hover { text-decoration: underline; }
-    h1 { margin-bottom: 0.25rem; }
-    p.lede { color: #666; margin-top: 0; }
+    /* "Night Shift" — noir zine tokens, mirrored from the main site's
+       css/tokens.css (Claude Design project "jxnfilm.club", direction B). */
+    :root {
+      --brand: #d7321f;
+      --bg: #100f0e;
+      --surface: #16140f;
+      --ink: #e8e3d8;
+      --ink-strong: #f0ebe0;
+      --ink-3: #a89f8f;
+      --ink-4: #8f897d;
+      --line-2: #3a352d;
+      --err-bg: #2d1210;
+      --err-fg: #f08373;
+      --label: 'Oswald', 'Helvetica Neue', Arial, sans-serif;
+      --display: 'Playfair Display', Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); border-top: 5px solid var(--brand); }
+    body {
+      max-width: 32rem; margin: 0 auto; padding: 0 1.25rem 3rem;
+      font: 17px/1.5 'Newsreader', Georgia, serif; color: var(--ink);
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.045; mix-blend-mode: screen;
+    }
+    ::selection { background: var(--brand); color: #fff; }
+    .topnav { margin: 1.5rem 0 2.5rem; display: flex; align-items: center; gap: .75rem; }
+    .topnav a {
+      font-family: var(--label); font-size: .75rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: .12em;
+      color: var(--ink); opacity: .8; text-decoration: none;
+    }
+    .topnav a:hover { opacity: 1; color: var(--brand); }
+    .stamp {
+      font-family: var(--label); font-size: .65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em; color: var(--brand);
+      border: 2px solid var(--brand); box-shadow: inset 0 0 0 1px rgba(215,50,31,.35);
+      padding: 2px 7px; transform: rotate(-4deg); display: inline-block;
+    }
+    h1 {
+      font-family: var(--display); font-style: italic; font-weight: 900;
+      font-size: 2.6rem; line-height: 1.05; color: var(--ink-strong);
+      margin: 0 0 .35rem;
+    }
+    p.lede { color: var(--ink-3); margin-top: 0; }
     form { display: grid; gap: 1rem; margin-top: 2rem; }
-    label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: #555; }
+    label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--ink-3); }
     input[type="text"], input[type="email"] {
-      padding: 0.6rem 0.75rem; font: inherit; border: 1px solid #ccc; border-radius: 4px;
+      padding: 0.6rem 0.75rem; font: inherit;
+      border: 1px solid var(--line-2); border-radius: 0;
+      background: var(--surface); color: var(--ink);
     }
+    input:focus-visible { outline: 2px solid #4a1c14; border-color: var(--brand); outline-offset: 2px; }
     button {
-      padding: 0.7rem; font: inherit; font-weight: 600;
-      background: #111; color: white; border: 0; border-radius: 4px; cursor: pointer;
+      padding: 0.8rem; font-family: var(--label); font-size: .85rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: .12em;
+      background: var(--brand); color: #fff; border: 0; border-radius: 0; cursor: pointer;
+      transition: background .15s ease, color .15s ease;
     }
+    button:hover:not(:disabled) { background: var(--ink-strong); color: var(--bg); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .hint { color: #888; font-size: 0.85rem; }
-    .hint a { color: #0a58ca; }
-    .err { background: #fdecec; color: #8a1f1f; padding: 0.75rem; border-radius: 4px; }
+    .hint { color: var(--ink-4); font-size: 0.85rem; }
+    .hint a { color: var(--brand); }
+    .err { background: var(--err-bg); color: var(--err-fg); padding: 0.75rem; margin-top: 1rem; }
   </style>
 </head>
 <body>
   <nav class="topnav">
-    <a href="%SITE_ORIGIN%/">← Back to Jackson Film Club</a>
+    <a href="%SITE_ORIGIN%/">← Jackson Film Club</a>
+    <span class="stamp">Est. JXN MS</span>
   </nav>
 
   <h1>Join Jackson Film Club</h1>
@@ -46,8 +97,8 @@
       <input type="text" name="handle" pattern="[a-zA-Z0-9_-]+"
              placeholder="e.g. davidehrlich" autocomplete="off">
     </label>
-    <label style="display:flex;flex-direction:row;align-items:flex-start;gap:0.5rem;color:#555">
-      <input type="checkbox" name="newsletter" style="margin-top:0.25rem;width:auto">
+    <label style="display:flex;flex-direction:row;align-items:flex-start;gap:0.5rem">
+      <input type="checkbox" name="newsletter" style="margin-top:0.25rem;width:auto;accent-color:#d7321f">
       <span>Email me occasional club announcements (screenings, picks). Optional —
         every email has a one-click unsubscribe and you can opt out anytime.</span>
     </label>

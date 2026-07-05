@@ -14,6 +14,7 @@
 }
 
 .result-count {
+  font-family: var(--font-label);
   color: var(--ink-4);
   font-size: 88%;
   text-transform: uppercase;
@@ -110,7 +111,9 @@
 
 .event-body h3 {
   margin: 0;
-  font-size: var(--fs-17);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--fs-18);
   line-height: var(--lh-snug);
   color: var(--ink);
 }
@@ -118,7 +121,7 @@
 .event-film {
   margin: 0;
   font-size: 95%;
-  color: #555;
+  color: var(--ink-3);
 }
 
 .event-film a {
@@ -146,7 +149,7 @@
 }
 
 .attendance-count {
-  color: #666;
+  color: var(--ink-4);
   font-size: 88%;
   margin-bottom: .5em;
 }
@@ -175,16 +178,20 @@
 
 .attend-btn {
   width: 100%;
-  font-size: 90%;
+  font-family: var(--font-label);
+  font-size: 85%;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
   padding: .55em 1em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  color: var(--ink);
   cursor: pointer;
 }
 
 .attend-btn:hover:not(:disabled) {
-  border-color: #888;
+  border-color: var(--ink-4);
 }
 
 .attend-btn:disabled {

@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/the-imaginarium-of-doctor-parnassus/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/9/1/1/47911-the-imaginarium-of-doctor-parnassus-0-600-0-900-crop.jpg?v=733647ac0d",
+      "title": "The Imaginarium of Doctor Parnassus",
+      "watched_date": "2026-07-09",
+      "year": "2009"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-great-muppet-caper/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/2/7/2/6/42726-the-great-muppet-caper-0-600-0-900-crop.jpg?v=fb1d4c7fa9",
       "title": "The Great Muppet Caper",
@@ -51,13 +58,6 @@
       "title": "The Cube",
       "watched_date": "2026-07-04",
       "year": "1969"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/jaws/3/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/5/4/2/51542-jaws-0-600-0-900-crop.jpg?v=03299455f6",
-      "title": "Jaws",
-      "watched_date": "2026-07-04",
-      "year": "1975"
     }
   ]
 }

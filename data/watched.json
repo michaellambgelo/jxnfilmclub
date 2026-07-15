@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/shelby-oaks/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/4/2/9/0/7/842907-shelby-oaks-0-600-0-900-crop.jpg?v=daa8dbaa9a",
+      "title": "Shelby Oaks",
+      "watched_date": "2026-07-15",
+      "year": "2024"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/jurassic-park/4/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/1g/zz/ez/d8/yyCKYaW908ZbpexpnBJ3p8o87HA-0-600-0-900-crop.jpg?v=19a50874d0",
       "title": "Jurassic Park",
@@ -51,13 +58,6 @@
       "title": "The Great Muppet Caper",
       "watched_date": "2026-07-08",
       "year": "1981"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/give-2023/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/7/3/3/9/8/7/733987-give-2023-0-600-0-900-crop.jpg?v=edb7ac44a5",
-      "title": "Give",
-      "watched_date": "2026-07-08",
-      "year": "2023"
     }
   ]
 }

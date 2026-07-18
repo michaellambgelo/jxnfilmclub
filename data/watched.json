@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
+      "title": "The Odyssey",
+      "watched_date": "2026-07-17",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/coffee-shop-names/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/6/9/1/8/626918-coffee-shop-names-0-600-0-900-crop.jpg?v=728fd33e6d",
       "title": "Coffee Shop Names",
@@ -51,13 +58,6 @@
       "title": "Insomnia",
       "watched_date": "2026-07-16",
       "year": "2002"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/shelby-oaks/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/4/2/9/0/7/842907-shelby-oaks-0-600-0-900-crop.jpg?v=daa8dbaa9a",
-      "title": "Shelby Oaks",
-      "watched_date": "2026-07-15",
-      "year": "2024"
     }
   ]
 }

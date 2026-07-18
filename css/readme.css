@@ -2,24 +2,24 @@
 /* readme page (markdown) */
 
 .readme {
-  background-color: white;
+  background-color: var(--surface);
+  border: 1px solid var(--line-2);
   max-width: 600px;
   margin: 4em auto;
   padding: 1.5em 3em;
   line-height: 1.5;
-  box-shadow: 0 2px 1em #0002;
-  color: #333;
-  border-radius: 1em;
-  color: #555;
+  box-shadow: var(--shadow-sheet);
+  color: var(--ink-2);
 }
 
 .readme h1 {
   font-size: 2.3em;
   line-height: 1;
-  font-weight: 800;
+  font-weight: 900;
+  font-style: italic;
   letter-spacing: -1px;
   margin: 0 0 .2em;
-  color: black;
+  color: var(--ink-strong);
 }
 
 .readme h1 + p {
@@ -36,7 +36,7 @@
 .readme h3 {
   font-size: 1.1em;
   margin: 0 0 .2em;
-  color: black
+  color: var(--ink-strong);
 }
 
 
@@ -51,12 +51,12 @@
   line-height: 1;
   margin-top: -.8em;
   margin-right: -.8em;
-  color: #999;
+  color: var(--ink-4);
   cursor: pointer;
 }
 
 .readme a:hover {
-  color: black;
+  color: var(--ink-strong);
 }
 
 @media (max-width: 480px) {

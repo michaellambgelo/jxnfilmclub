@@ -9,7 +9,14 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // Dot-prefixed artifact dirs: `nue serve` watches the whole project tree
+  // and only ignores `.*` / `_*` / node_modules. Playwright streams trace
+  // chunks + screenshots into its output dir DURING tests, and every write
+  // used to trigger an HMR broadcast into the page under test — reload
+  // churn, cascading failures, and ever-growing traces until Node's string
+  // limit blew up. Keep every test artifact behind a dot.
+  outputDir: '.test-results',
+  reporter: [['list'], ['html', { open: 'never', outputFolder: '.playwright-report' }]],
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${SITE_PORT}`,

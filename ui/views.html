@@ -7,57 +7,294 @@
 </script>
 
 
-<!-- Home / landing page -->
+<!-- Home / landing page — "Night Shift" (Claude Design: jxnfilm.club, direction B).
+     Hero, The Program, and The Last Four are wired to live data.
+     Hot Takes, Now Showing, and the poll are design mocks awaiting backends. -->
 <article :is="home-view" class="home">
 
-  <section class="home-hero">
-    <h1>Jackson Film Club</h1>
-    <p>
-      A community space for analytical conversations about cinema, founded in Jackson, Mississippi in 2018.
-      Sign up for email alerts to participate in screenings, discussions, and events.
-    </p>
-    <p>
-      Membership is public — pick a display name that represents you however you like.
-      Your email address is always private. Link a Letterboxd account if you want, or don't.
-      Anyone who wants a purely anonymous experience can choose a creative display name
-      with no connection to their real-life persona.
-    </p>
-    <a href="https://join.jxnfilm.club/" class="join-btn">Join Jackson Film Club</a>
+  <!-- HERO -->
+  <section class="nshero">
+    <div class="nshero-copy">
+      <p class="ns-label">{ heroLabel }</p>
+      <h1 class="nshero-title">We watch the <em>difficult</em> ones, together.</h1>
+      <p class="nshero-lede">
+        A community space for analytical conversations about cinema,
+        founded in Jackson, Mississippi in 2018. Bring a chair. Stay for the argument.
+      </p>
+      <p :if="hero" class="nshero-meta">
+        <span class="-red">{ hero.dateLabel }</span>
+        <span :if="hero.venue">· { hero.venue }</span>
+      </p>
+      <div class="nshero-actions">
+        <a href="/events" class="ns-btn">{ hero && hero.upcoming ? 'RSVP' : 'See screenings' }</a>
+        <a href="/host" class="ns-btn -ghost">Host your own →</a>
+      </div>
+    </div>
+    <div :if="hero" class="nshero-poster">
+      <figure class="ns-poster">
+        <img :if="hero.poster" src="{ hero.poster }" alt="{ hero.film }">
+        <figcaption>
+          <b>{ hero.film }</b>
+          <span :if="hero.year">{ hero.year }</span>
+        </figcaption>
+      </figure>
+      <span class="ns-stamp nshero-stamp">{ hero.upcoming ? 'Now screening' : 'Last screening' }</span>
+      <span class="ns-tape nshero-tape">Film of the month</span>
+    </div>
   </section>
 
-  <section class="home-podcast">
-    <h2>Podcast</h2>
-    <p>
+  <div class="ns-halftone-strip halftone"></div>
+
+  <!-- THE PROGRAM — recent & upcoming screenings -->
+  <section class="program">
+    <header class="ns-sechead">
+      <h2>The Program</h2>
+      <span class="ns-label">Clip &amp; save · recent &amp; upcoming</span>
+    </header>
+    <div :each="e in program" key="{ e.id }" class="program-row">
+      <div class="program-date">
+        <b>{ e.dn }</b>
+        <span>{ e.mo } { e.yr }</span>
+      </div>
+      <div class="program-film">
+        <h3>{ e.film }</h3>
+        <p>{ e.title }</p>
+      </div>
+      <div class="program-venue">
+        <span class="program-tag { e.house ? '-house' : '' }">{ e.house ? 'House' : 'Venue' }</span>
+        <p>{ e.venue }</p>
+      </div>
+      <div class="program-action">
+        <a href="/events" class="ns-btn { e.upcoming ? '' : '-ghost' }">{ e.upcoming ? 'RSVP' : 'Details' }</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOST CTA banner -->
+  <section class="host-banner halftone">
+    <div>
+      <p class="host-banner-kicker">Your living room is a cinema</p>
+      <p class="host-banner-title">Host a screening.</p>
+    </div>
+    <a href="/host" class="ns-btn -ink">Pitch a film →</a>
+  </section>
+
+  <!-- THE LAST FOUR — latest Letterboxd diary entries -->
+  <section class="lastfour">
+    <div class="lastfour-films">
+      <p class="ns-label">Straight off Letterboxd</p>
+      <h2>The Last Four</h2>
+      <div class="lastfour-grid">
+        <a :each="f in lastFour" key="{ f.link }" class="lf-card" href="{ f.link }" target="_blank" rel="noopener">
+          <figure class="ns-poster">
+            <img :if="f.poster" src="{ f.poster }" alt="{ f.title }">
+            <figcaption>
+              <b>{ f.title }</b>
+              <span :if="f.year">{ f.year }</span>
+            </figcaption>
+          </figure>
+          <span class="lf-who">{ f.who }</span>
+        </a>
+      </div>
+      <p :if="lastFour && !lastFour.length" class="empty-state">No diary entries yet — link a Letterboxd account.</p>
+      <p class="lastfour-more"><a href="/watched">Full diaries →</a></p>
+    </div>
+    <aside class="leaders">
+      <p class="ns-label">Most screenings attended</p>
+      <div :each="(p, i) in leaders" key="{ p.n }" class="leader-row">
+        <b class="leader-rank { i === 0 ? '-first' : '' }">{ i + 1 }</b>
+        <span class="leader-name">{ p.n }</span>
+        <span class="leader-count">{ p.c }</span>
+      </div>
+      <a href="/edit" class="ns-btn -ghost leaders-link">Link Letterboxd</a>
+    </aside>
+  </section>
+
+  <hr class="ns-rule">
+
+  <!-- HOT TAKES — design mock; no takes backend yet -->
+  <section class="takes">
+    <h2>Hot Takes</h2>
+    <div class="takes-grid">
+      <div class="take-card">
+        <span class="ns-tape">Down by Law</span>
+        <p>“Jarmusch makes a Louisiana jail cell feel like the loneliest jazz club on earth. We argued about the ending for an hour.”</p>
+        <footer>Dré M.</footer>
+      </div>
+      <div class="take-card">
+        <span class="ns-tape">La Ciénaga</span>
+        <p>“Sweaty, woozy, dread-soaked. Nobody could stop talking about that pool. Very us.”</p>
+        <footer>Sofia R.</footer>
+      </div>
+      <div class="take-card">
+        <span class="ns-tape">Paris, Texas</span>
+        <p>“Watched it twice this week. Ry Cooder’s guitar has not left my head. Whoever picked this — thank you.”</p>
+        <footer>James W.</footer>
+      </div>
+    </div>
+  </section>
+
+  <!-- NOW SHOWING + POLL — design mock; no listings/poll backend yet -->
+  <section class="around">
+    <div class="around-town">
+      <p class="ns-label">Around town</p>
+      <h2>Now Showing in Jackson</h2>
+      <div class="venue-row">
+        <div><h3>Capri Theatre</h3><p>Fondren · 35mm rep</p></div>
+        <span class="venue-film">In the Mood for Love</span>
+      </div>
+      <div class="venue-row">
+        <div><h3>Malco Grandview</h3><p>Madison · first-run</p></div>
+        <span class="venue-film">The Brutalist</span>
+      </div>
+      <div class="venue-row">
+        <div><h3>Davis Planetarium</h3><p>Downtown · 70mm dome</p></div>
+        <span class="venue-film">Koyaanisqatsi</span>
+      </div>
+    </div>
+    <div class="poll">
+      <p class="ns-label">Vote · closes Sunday</p>
+      <h3>Pick next month's film</h3>
+      <div class="poll-opt">
+        <div class="poll-opt-head"><span>Daughters of the Dust</span><b>46%</b></div>
+        <div class="poll-bar"><i style="width: 46%"></i></div>
+      </div>
+      <div class="poll-opt">
+        <div class="poll-opt-head"><span>Eve's Bayou</span><b>34%</b></div>
+        <div class="poll-bar"><i style="width: 34%"></i></div>
+      </div>
+      <div class="poll-opt">
+        <div class="poll-opt-head"><span>George Washington</span><b>20%</b></div>
+        <div class="poll-bar"><i style="width: 20%"></i></div>
+      </div>
+      <p class="poll-count">128 votes in</p>
+    </div>
+  </section>
+
+  <div class="ns-halftone-strip halftone"></div>
+
+  <!-- PODCAST -->
+  <section class="podcast">
+    <header class="ns-sechead">
+      <h2>The Podcast</h2>
+      <a href="https://open.spotify.com/show/6iL1D2abg8G8JQqvJa3XBp" target="_blank" rel="noopener" class="podcast-follow">Follow on Spotify →</a>
+    </header>
+    <p class="podcast-lede">
       The audio series launched in 2021 to extend JXN Film Club discussions to a broader audience.
     </p>
 
     <div class="podcast-embed" id="spotify-embed"></div>
 
-    <h3>All Episodes</h3>
-    <ul class="episode-list">
-      <li :each="ep in episodes" key="{ ep.url }">
-        <a href="{ ep.url }" target="_blank" rel="noopener">{ ep.title }</a>
-        <span>{ formatDate(ep.date) }</span>
-      </li>
-    </ul>
-    <p class="podcast-cta">
-      <a href="https://open.spotify.com/show/6iL1D2abg8G8JQqvJa3XBp" target="_blank" rel="noopener">Follow on Spotify</a>
+    <div :each="ep in episodes" key="{ ep.url }" class="episode-row">
+      <a href="{ ep.url }" target="_blank" rel="noopener" class="episode-play">▶</a>
+      <b class="episode-num">{ ep.num }</b>
+      <a href="{ ep.url }" target="_blank" rel="noopener" class="episode-title">{ ep.title }</a>
+      <span class="episode-date">{ ep.when }</span>
+    </div>
+  </section>
+
+  <!-- JOIN -->
+  <section class="join-cta halftone">
+    <p class="join-kicker">Free · just your email · Jackson MS</p>
+    <h2>Get in the room.</h2>
+    <p class="join-lede">
+      One dispatch a week — screenings, hosts, and what the club is watching.
+      Membership is public, but pick any display name you like; your email address
+      is always private, and Letterboxd is optional.
     </p>
+    <a href="https://join.jxnfilm.club/" class="ns-btn -ink join-btn">Join Jackson Film Club</a>
   </section>
 
   <script>
-    async mounted() {
-      const data = await fetch('/data/episodes.json')
-        .then(r => r.ok ? r.json() : {}).catch(() => ({}))
-      const episodes = data.episodes || []
-      const featuredId = data.featured_id
-      this.update({ episodes })
+    this.mounted = async function() {
+      this.update({ episodes: [], program: [], lastFour: [], leaders: [], hero: null, heroLabel: 'A community cinema · Jackson MS' })
 
+      const results = await Promise.all([
+        getEvents({ limit: 1000, sort: 'date-desc' }).catch(function() { return { items: [] } }),
+        getMembers({ limit: 1000 }).catch(function() { return { items: [] } }),
+        fetch('/data/watched.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
+        fetch('/data/attendance.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
+        fetch('/data/episodes.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
+      ])
+      const events = results[0].items || []
+      const members = results[1].items || []
+      const watched = results[2] || {}
+      const attendance = results[3] || {}
+      const pod = results[4] || {}
+
+      // ----- hero + program: upcoming first, then most recent past -----
+      const today = new Date().toISOString().slice(0, 10)
+      const upcoming = events.filter(function(e) { return (e.date || '') >= today }).reverse()
+      const past = events.filter(function(e) { return (e.date || '') < today })
+      const rows = upcoming.concat(past).slice(0, 4).map(function(e) {
+        const d = new Date(e.date + 'T00:00:00')
+        return {
+          id: e.id,
+          dn: String(d.getDate()).padStart(2, '0'),
+          mo: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+          yr: d.getFullYear(),
+          film: e.film || e.title,
+          title: e.title,
+          venue: e.venue || (e.hostName ? 'Hosted by ' + e.hostName : 'TBA'),
+          house: /house|porch|backyard|home/i.test(e.venue || '') || !!e.hostId,
+          upcoming: (e.date || '') >= today,
+        }
+      })
+
+      const h = upcoming[0] || past[0]
+      const hero = h ? {
+        film: h.film || h.title,
+        year: h.year,
+        poster: h.poster,
+        venue: h.venue || h.hostName,
+        upcoming: (h.date || '') >= today,
+        dateLabel: new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+        }).toUpperCase(),
+      } : null
+      const heroLabel = hero && hero.upcoming
+        ? 'Next screening' : 'A community cinema · Jackson MS'
+
+      // ----- the last four: each linked member's most recent diary entry -----
+      const lastFour = members
+        .filter(function(m) { return m.handle && watched[m.handle] && watched[m.handle].length })
+        .map(function(m) {
+          const f = watched[m.handle][0]
+          return { title: f.title, year: f.year, poster: f.poster, link: f.link, who: m.name, when: f.watched_date }
+        })
+        .sort(function(a, b) { return (b.when || '').localeCompare(a.when || '') })
+        .slice(0, 4)
+
+      // ----- leaders: attendance counts across all events -----
+      const counts = {}
+      Object.keys(attendance).forEach(function(id) {
+        (attendance[id] || []).forEach(function(n) { counts[n] = (counts[n] || 0) + 1 })
+      })
+      const leaders = Object.keys(counts)
+        .map(function(n) { return { n: n, c: counts[n] } })
+        .sort(function(a, b) { return b.c - a.c })
+        .slice(0, 5)
+
+      // ----- podcast -----
+      const eps = pod.episodes || []
+      const episodes = eps.map(function(ep, i) {
+        return {
+          url: ep.url,
+          title: ep.title,
+          num: String(eps.length - i).padStart(2, '0'),
+          when: ep.date ? new Date(ep.date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : '',
+        }
+      })
+
+      this.update({ hero: hero, heroLabel: heroLabel, program: rows, lastFour: lastFour, leaders: leaders, episodes: episodes })
+
+      // Spotify embed is injected here because Nue's DHTML renderer strips
+      // static <iframe> tags.
       const el = this.root.querySelector('#spotify-embed')
       if (el) {
         const iframe = document.createElement('iframe')
-        iframe.src = featuredId
-          ? `https://open.spotify.com/embed/episode/${featuredId}/video?utm_source=generator`
+        iframe.src = pod.featured_id
+          ? 'https://open.spotify.com/embed/episode/' + pod.featured_id + '/video?utm_source=generator'
           : 'https://open.spotify.com/embed/show/6iL1D2abg8G8JQqvJa3XBp?utm_source=generator'
         iframe.width = '100%'
         iframe.height = '351'
@@ -65,16 +302,8 @@
         iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture'
         iframe.allowFullscreen = true
         iframe.loading = 'lazy'
-        iframe.style.borderRadius = '12px'
         el.appendChild(iframe)
       }
-    }
-
-    formatDate(ts) {
-      if (!ts) return ''
-      return new Date(ts + 'T00:00:00').toLocaleDateString('en-US', {
-        year: 'numeric', month: 'short',
-      })
     }
   </script>
 
@@ -388,7 +617,10 @@
 
     this.formatDate = function(ts) {
       if (!ts) return ''
-      return new Date(ts).toLocaleDateString('en-US', {
+      // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC, so it doesn't
+      // roll back a day west of UTC (matches the pattern used above).
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
+      return d.toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       })
     }

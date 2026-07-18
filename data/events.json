@@ -375,5 +375,15 @@
     "venue": "Legacy Theaters Parkway",
     "poster": "https://image.tmdb.org/t/p/original/i2e7TDg5gc1JDDScKCjtEgAOwC0.jpg",
     "letterboxd_uri": "https://boxd.it/cZLYxN"
+  },
+  {
+    "id": "2026-07-16-the-odyssey-imax",
+    "title": "The Odyssey IMAX Release",
+    "film": "The Odyssey",
+    "year": 2026,
+    "date": "2026-07-16",
+    "venue": "Malco Grandview & IMAX",
+    "poster": "https://image.tmdb.org/t/p/original/gg2ShRA7YaXV8O7xErXvMARoX0T.jpg",
+    "letterboxd_uri": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/"
   }
 ]

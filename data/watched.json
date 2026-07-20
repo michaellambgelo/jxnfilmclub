@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/strange-days/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/1y/4q/va/98/sd-poster-0-600-0-900-crop.jpg?v=f28460c82d",
+      "title": "Strange Days",
+      "watched_date": "2026-07-20",
+      "year": "1995"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/2/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
       "title": "The Odyssey",
@@ -51,13 +58,6 @@
       "title": "Coffee Shop Names",
       "watched_date": "2026-07-16",
       "year": "2020"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
-      "title": "The Odyssey",
-      "watched_date": "2026-07-16",
-      "year": "2026"
     }
   ]
 }

@@ -2,6 +2,13 @@
   "ElijahKarriem": [],
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/captain-america-the-first-avenger/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/8/0/9/50809-captain-america-the-first-avenger-0-600-0-900-crop.jpg?v=5a0d520040",
+      "title": "Captain America: The First Avenger",
+      "watched_date": "2026-07-21",
+      "year": "2011"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/the-neverending-story/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/9/0/7/8/29078-the-neverending-story-0-600-0-900-crop.jpg?v=d6c13b7351",
       "title": "The NeverEnding Story",
@@ -21,16 +28,16 @@
       "title": "The Sheep Detectives",
       "watched_date": "2026-07-12",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/the-devil-wears-prada-2/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/5/5/8/6/1195586-the-devil-wears-prada-2-0-600-0-900-crop.jpg?v=0d955add69",
-      "title": "The Devil Wears Prada 2",
-      "watched_date": "2026-07-10",
-      "year": "2026"
     }
   ],
   "michaellamb": [
+    {
+      "link": "https://letterboxd.com/michaellamb/film/tony-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/9/0/0/1/1209001-tony-6-0-600-0-900-crop.jpg?v=c340a381cc",
+      "title": "Tony",
+      "watched_date": "2026-07-21",
+      "year": "2026"
+    },
     {
       "link": "https://letterboxd.com/michaellamb/film/bugonia/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/5/4/0/0/625400-bugonia-0-600-0-900-crop.jpg?v=4c6649150e",
@@ -50,13 +57,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
       "title": "The Odyssey",
       "watched_date": "2026-07-18",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
-      "title": "The Odyssey",
-      "watched_date": "2026-07-17",
       "year": "2026"
     }
   ]

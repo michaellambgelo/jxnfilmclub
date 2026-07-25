@@ -19,10 +19,13 @@ test.describe('member-hosted screenings', () => {
     // Fill the create form.
     const SCREENING_TITLE = 'E2E Test Screening'
     const SECRET_ADDRESS = '742 Evergreen Terrace, Springfield, MS 39201'
+    // exact/name-attr locators: substring getByLabel is ambiguous here — the
+    // theater select's hint contains "jxnfilm" (matches 'Film') and the house
+    // radio's label contains "address".
     await page.getByLabel('Title').fill(SCREENING_TITLE)
-    await page.getByLabel('Film').fill('Crash')
+    await page.getByLabel('Film', { exact: true }).fill('Crash')
     await page.getByLabel('Date').fill('2099-06-15')
-    await page.getByLabel('Address', { exact: false }).fill(SECRET_ADDRESS)
+    await page.locator('input[name="address"]').fill(SECRET_ADDRESS)
     await page.getByLabel('Capacity').fill('4')
     await page.getByRole('button', { name: /create screening/i }).click()
 
@@ -73,7 +76,7 @@ test.describe('member-hosted screenings', () => {
 
     const MEETUP_TITLE = 'E2E Capri Meetup'
     await page.getByLabel('Title').fill(MEETUP_TITLE)
-    await page.getByLabel('Film').fill('In the Mood for Love')
+    await page.getByLabel('Film', { exact: true }).fill('In the Mood for Love')
     await page.getByLabel('Date').fill('2099-07-20')
     await page.locator('select[name="venue"]').selectOption('The Capri Theater')
     await page.locator('input[name="time"]').fill('19:30')

@@ -18,6 +18,6 @@
     "@playwright/test": "^1.59.1",
     "nuekit": "2.0.0-beta.2",
     "vitest": "^2.1.0",
-    "wrangler": "^3.80.0"
+    "wrangler": "^4.114.0"
   }
 }

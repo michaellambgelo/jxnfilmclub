@@ -8,8 +8,7 @@
 
 
 <!-- Home / landing page — "Night Shift" (Claude Design: jxnfilm.club, direction B).
-     Hero, The Program, The Last Four, and Hot Takes are wired to live data.
-     Now Showing and the poll are design mocks awaiting backends. -->
+     Hero, The Program, The Last Four, and Hot Takes are wired to live data. -->
 <article :is="home-view" class="home">
 
   <!-- HERO -->
@@ -513,7 +512,7 @@
 
     <div :if="event.hostId" class="event-rsvp">
       <div class="rsvp-meter">
-        { (attendees || []).length }{ event.capacity ? ' / ' + event.capacity : '' } RSVPed
+        { (attendees || []).length + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
       <p :if="isMeetup()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>

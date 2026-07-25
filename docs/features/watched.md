@@ -27,6 +27,9 @@ flowchart LR
     I --> K[Triggers deploy-site]
 ```
 
+The same script/workflow also writes `data/takes.json` (recent member reviews) for the
+home page's Hot Takes section — see [home.md](home.md).
+
 ## Poster Image Extraction
 
 Poster URLs are extracted from the RSS entry's `<description>` HTML via regex:

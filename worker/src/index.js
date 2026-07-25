@@ -758,8 +758,11 @@ function publicMemberProjection(member) {
 function publicEventProjection(event) {
   if (!event || !event.id) return null
   const out = { id: event.id }
+  // `notes` is deliberately excluded too: the host form promises notes are
+  // "included in every RSVP email", and hosts put parking/entry details there.
+  // They stay on the canonical row (emails, host view, admin) only.
   for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
-                   'hostId', 'hostName', 'capacity', 'notes']) {
+                   'hostId', 'hostName', 'capacity', 'kind', 'time']) {
     if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
   }
   return out
@@ -929,10 +932,14 @@ async function fetchEventsBaseline(env) {
 // --- Member-hosted screenings (RSVP + private address) ---
 //
 // Member-hosted screenings live in the same `event:{id}` rows as admin-curated
-// club events, distinguished by `hostId` (a member id). The host's `address`
-// is private — it only ever leaves the Worker inside a sendEmail() payload to
-// a confirmed RSVP. Public reads (GET /events, events:all, the data/events.json
-// snapshot) flow through publicEventProjection() and never include it.
+// club events, distinguished by `hostId` (a member id). Hosted events come in
+// two kinds (see validScreeningInput): `house` — the host's `address` is
+// private, only ever leaving the Worker inside a sendEmail() payload to a
+// confirmed RSVP; and `meetup` — a public theater from the THEATERS allowlist,
+// optional capacity/showtime, no address stored at all. Rows without `kind`
+// predate meetups and are treated as 'house'. Public reads (GET /events,
+// events:all, the data/events.json snapshot) flow through
+// publicEventProjection() and never include `address`.
 //
 // RSVP state lives at `rsvp:{eventId}` in ATTENDANCE_KV as
 //   { confirmed: [{ memberId, name, email, at }], waitlist: [{ ... }] }
@@ -1037,10 +1044,19 @@ async function verifyRsvpCancelToken(env, token) {
 // Single-recipient transactional sends (mirrors the OTP path; no batch).
 // Reuses sendEmail()'s E2E_MODE mock — Playwright e2e never sends real mail.
 
+function fmtTime(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number)
+  const ampm = h >= 12 ? 'pm' : 'am'
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+const MEETUP_SELF_ORGANIZED =
+  'This meetup is self-organized — buy your own ticket and get yourself there; the club just shows up together.'
+
 function fmtScreeningWhen(event) {
-  // Render date as-is (YYYY-MM-DD); time/timezone is left to the host's notes
-  // since the schema doesn't carry a time field yet.
-  return event.date || 'TBD'
+  // Date as-is (YYYY-MM-DD); meetups may carry an optional showtime.
+  if (!event.date) return 'TBD'
+  return event.time ? `${event.date} at ${fmtTime(event.time)}` : event.date
 }
 
 function rsvpEmailBody(event, address, notes, cancelUrl) {
@@ -1049,9 +1065,14 @@ function rsvpEmailBody(event, address, notes, cancelUrl) {
     `Film: ${event.film || '(see host)'}`,
     `Hosted by: ${event.hostName || 'a member'}`,
     '',
-    'Address:',
-    address,
   ]
+  if (event.kind === 'meetup') {
+    lines.push(`Venue: ${event.venue}`)
+    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+    lines.push('', MEETUP_SELF_ORGANIZED)
+  } else {
+    lines.push('Address:', address)
+  }
   if (notes) {
     lines.push('', 'Notes from the host:', notes)
   }
@@ -1084,8 +1105,14 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
     '',
     'Current details:',
     `Date: ${fmtScreeningWhen(event)}`,
-    `Address: ${event.address || '(see host)'}`,
   )
+  if (event.kind === 'meetup') {
+    lines.push(`Venue: ${event.venue}`)
+    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+    lines.push('', MEETUP_SELF_ORGANIZED)
+  } else {
+    lines.push(`Address: ${event.address || '(see host)'}`)
+  }
   if (event.notes) lines.push('', 'Notes from the host:', event.notes)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
@@ -1110,12 +1137,31 @@ const MAX_ADDRESS = 500
 const MAX_NOTES = 2000
 const MAX_CAPACITY = 1000
 
+// Strict venue allowlist for theater meetups (kind: 'meetup'). Mirrored in
+// ui/views.html (events-new-view THEATERS) — keep both in lockstep. Venue
+// additions go through venues@jxnfilm.club review.
+const THEATERS = [
+  'Patton House & Gallery',
+  'The Capri Theater',
+  'Legacy Parkway Theaters',
+  'Cinemark XD in Pearl',
+  'Malco Renaissance in Ridgeland',
+  'Malco Grandview & IMAX in Madison',
+  'B&B Theaters at Northpark in Ridgeland',
+]
+
 function slugifyForId(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 }
 
+// Two hosted-event kinds:
+//   'house'  — private address (required), required capacity + waitlist.
+//   'meetup' — public theater from the THEATERS allowlist, optional capacity
+//              (no cap → RSVPs always confirm), optional showtime; any
+//              submitted address is ignored, never stored.
 function validScreeningInput(body) {
   const out = {}
+  out.kind = body.kind === 'meetup' ? 'meetup' : 'house'
   if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > MAX_EVENT_FIELD) {
     return { error: 'title is required (≤200 chars)' }
   }
@@ -1130,20 +1176,40 @@ function validScreeningInput(body) {
     return { error: 'date is required (YYYY-MM-DD)' }
   }
   out.date = body.date
-  if (typeof body.address !== 'string' || !body.address.trim() || body.address.length > MAX_ADDRESS) {
-    return { error: 'address is required (≤500 chars)' }
+  if (out.kind === 'meetup') {
+    if (typeof body.venue !== 'string' || !THEATERS.includes(body.venue.trim())) {
+      return { error: 'venue must be one of the listed theaters' }
+    }
+    out.venue = body.venue.trim()
+    if (body.capacity != null && body.capacity !== '') {
+      const cap = Number(body.capacity)
+      if (!Number.isInteger(cap) || cap < 1 || cap > MAX_CAPACITY) {
+        return { error: 'capacity must be a positive integer (≤1000)' }
+      }
+      out.capacity = cap
+    }
+    if (body.time != null && body.time !== '') {
+      if (typeof body.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
+        return { error: 'time must be HH:MM (24-hour)' }
+      }
+      out.time = body.time
+    }
+  } else {
+    if (typeof body.address !== 'string' || !body.address.trim() || body.address.length > MAX_ADDRESS) {
+      return { error: 'address is required (≤500 chars)' }
+    }
+    out.address = body.address.trim()
+    const cap = Number(body.capacity)
+    if (!Number.isInteger(cap) || cap < 1 || cap > MAX_CAPACITY) {
+      return { error: 'capacity must be a positive integer (≤1000)' }
+    }
+    out.capacity = cap
+    if (typeof body.venue === 'string' && body.venue.length <= MAX_EVENT_FIELD) out.venue = body.venue.trim()
   }
-  out.address = body.address.trim()
-  const cap = Number(body.capacity)
-  if (!Number.isInteger(cap) || cap < 1 || cap > MAX_CAPACITY) {
-    return { error: 'capacity must be a positive integer (≤1000)' }
-  }
-  out.capacity = cap
   if (typeof body.notes === 'string') {
     if (body.notes.length > MAX_NOTES) return { error: 'notes too long (≤2000 chars)' }
     if (body.notes.trim()) out.notes = body.notes
   }
-  if (typeof body.venue === 'string' && body.venue.length <= MAX_EVENT_FIELD) out.venue = body.venue.trim()
   if (typeof body.poster === 'string' && body.poster.length <= 500) out.poster = body.poster.trim()
   if (typeof body.letterboxd_uri === 'string' && body.letterboxd_uri.length <= 500) out.letterboxd_uri = body.letterboxd_uri.trim()
   return { value: out }
@@ -1173,6 +1239,12 @@ async function handleCreateEvent(request, env) {
     hostId: member.id,
     hostName: member.name,
   }
+  // House screenings join a listing where personal homes carry a
+  // public-friendly venue name ("Michael Lamb's house") — never the address.
+  // Default the label from the host's display name when none was given.
+  if (event.kind === 'house' && !event.venue) {
+    event.venue = `${member.name}'s house`
+  }
   await writeEvent(env, event)
   await writeRsvp(env, event.id, { confirmed: [], waitlist: [] })
   return json(env, { ok: true, id: event.id, event: publicEventProjection(event) })
@@ -1192,33 +1264,51 @@ async function handleUpdateEvent(request, env, eventId) {
   }
 
   const body = await request.json().catch(() => ({}))
-  // Merge incoming + existing, validate against the same constraints. Address
-  // and capacity are required on a hosted event, so they must remain present.
-  const merged = { ...event, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) }
+  // Kind is immutable: converting a house screening (private address already
+  // emailed to RSVPs) into a public meetup mid-flight, or vice versa, is a
+  // semantic mess. Legacy hosted rows without `kind` get stamped 'house' here.
+  const existingKind = event.kind || 'house'
+  if (body.kind !== undefined && body.kind !== existingKind) {
+    return json(env, { error: 'kind cannot be changed' }, 400)
+  }
+  // Merge incoming + existing, validate against the same constraints. On a
+  // house screening, address and capacity must remain present.
+  const merged = { ...event, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)), kind: existingKind }
   const v = validScreeningInput(merged)
   if (v.error) return json(env, { error: v.error }, 400)
 
-  // Capacity-decrease guard.
+  // Capacity-decrease guard (capacity is optional on meetups).
   const rsvp = await readRsvp(env, eventId)
-  if (v.value.capacity < rsvp.confirmed.length) {
+  if (v.value.capacity != null && v.value.capacity < rsvp.confirmed.length) {
     return json(env, { error: `cannot reduce capacity below the ${rsvp.confirmed.length} already-confirmed RSVPs` }, 400)
   }
 
   const changes = []
-  for (const field of ['date', 'address', 'venue']) {
+  for (const field of ['date', 'time', 'address', 'venue']) {
     if ((event[field] || '') !== (v.value[field] || '')) {
       changes.push({ field, from: event[field] || '', to: v.value[field] || '' })
     }
   }
 
   const updated = { ...event, ...v.value, hostId: event.hostId, hostName: event.hostName }
+  if (updated.kind === 'meetup') {
+    // A meetup must never store an address, even one left over on the stale
+    // row. Capacity and time are optional here, so an explicit ''/null in the
+    // body clears them (the validator only omits empties; the spread would
+    // otherwise resurrect the old value).
+    delete updated.address
+    if (body.capacity === '' || body.capacity === null) delete updated.capacity
+    if (body.time === '' || body.time === null) delete updated.time
+  }
   await writeEvent(env, updated)
 
-  // Capacity increase → promote waitlist head-first until either full or empty.
+  // Capacity increase (or un-capping a meetup) → promote waitlist head-first
+  // until either full or empty.
   const origin = new URL(request.url).origin
   let rsvpAfter = rsvp
-  if (v.value.capacity > rsvp.confirmed.length && rsvp.waitlist.length) {
-    const slots = v.value.capacity - rsvp.confirmed.length
+  const effCap = v.value.capacity == null ? Infinity : v.value.capacity
+  if (effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
+    const slots = effCap - rsvp.confirmed.length
     const promoted = rsvp.waitlist.slice(0, slots)
     rsvpAfter = {
       confirmed: [...rsvp.confirmed, ...promoted],
@@ -1289,7 +1379,8 @@ async function handleRsvp(request, env, eventId) {
   }
 
   const entry = { memberId: member.id, name: member.name, email: member.email, at: Date.now() }
-  const capacity = Number(event.capacity) || 0
+  // No capacity (uncapped meetup) → everyone confirms, nobody waitlists.
+  const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
   const origin = new URL(request.url).origin
 
   if (rsvp.confirmed.length < capacity) {
@@ -1375,8 +1466,11 @@ async function handleEventHostView(request, env, eventId) {
   }
   const rsvp = await readRsvp(env, eventId)
   return json(env, {
+    kind: event.kind || 'house',
     capacity: event.capacity || null,
     address: event.address || null,
+    venue: event.venue || null,
+    time: event.time || null,
     notes: event.notes || null,
     confirmed: rsvp.confirmed.map(r => r.name),
     waitlist:  rsvp.waitlist.map(r => r.name),

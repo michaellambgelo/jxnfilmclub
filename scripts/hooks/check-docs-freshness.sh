@@ -12,12 +12,12 @@ REL="${FILE#*/jxnfilmclub/}"
 # Map source file patterns to feature doc names
 docs_for_file() {
   case "$1" in
-    worker/src/index.js)           echo "signup signin member-profile attendance" ;;
-    ui/views.html)                 echo "events members-directory watched home attendance" ;;
+    worker/src/index.js)           echo "signup signin member-profile attendance hosting" ;;
+    ui/views.html)                 echo "events members-directory watched home attendance hosting" ;;
     ui/auth.html)                  echo "signup signin member-profile attendance" ;;
     ui/widgets.html)               echo "members-directory" ;;
     model/index.ts)                echo "events members-directory" ;;
-    scripts/refresh_letterboxd.py) echo "watched" ;;
+    scripts/refresh_letterboxd.py) echo "watched home" ;;
     scripts/refresh_spotify.py)    echo "home" ;;
     .github/workflows/deploy-*)    echo "deployment" ;;
     .github/workflows/build-*)     echo "deployment" ;;
@@ -25,7 +25,7 @@ docs_for_file() {
     .github/workflows/add-member*) echo "signup" ;;
     .github/workflows/update-member*) echo "member-profile" ;;
     .github/workflows/snapshot-attendance*) echo "attendance" ;;
-    .github/workflows/refresh-letterboxd*) echo "watched" ;;
+    .github/workflows/refresh-letterboxd*) echo "watched home" ;;
     .github/workflows/refresh-spotify*) echo "home" ;;
     index.html)                    echo "navigation" ;;
     *)                             echo "" ;;

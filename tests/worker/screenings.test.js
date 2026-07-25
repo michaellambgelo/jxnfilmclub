@@ -67,6 +67,24 @@ async function createScreening(token, overrides = {}) {
   })
 }
 
+// Theater meetup: public venue from the THEATERS allowlist, no address, no
+// capacity by default (uncapped), optional showtime.
+async function createMeetup(token, overrides = {}) {
+  return req('/events', {
+    method: 'POST', token,
+    body: {
+      kind: 'meetup',
+      title: 'Capri Meetup',
+      film: 'In the Mood for Love',
+      year: 2000,
+      date: '2099-02-20',
+      venue: 'The Capri Theater',
+      time: '19:30',
+      ...overrides,
+    },
+  })
+}
+
 afterEach(() => { vi.restoreAllMocks() })
 
 // --- Tests ---
@@ -101,6 +119,36 @@ describe('POST /events — create hosted screening', () => {
     // GET /events likewise has no address.
     const list = await (await req('/events')).json()
     expect(JSON.stringify(list)).not.toContain('123 Main St')
+  })
+
+  it('stamps a public-friendly default venue ("{name}\'s house") when none given; keeps a custom label', async () => {
+    const { token, member } = await getTokenFor('host@example.com')
+    captureEmails()
+    const d1 = await (await createScreening(token)).json()
+    expect(d1.event.venue).toBe(`${member.name}'s house`)
+
+    const d2 = await (await createScreening(token, { venue: 'The Red Door house' })).json()
+    expect(d2.event.venue).toBe('The Red Door house')
+  })
+
+  it('host notes are private: in the RSVP email and canonical row, never in public reads', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: rTok } = await getTokenFor('rsvper@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { notes: 'Gate code 4321' })).json()
+    expect(JSON.stringify(created)).not.toContain('Gate code')
+
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.notes).toBe('Gate code 4321')
+
+    const agg = await env.ATTENDANCE_KV.get('events:all')
+    expect(agg).not.toContain('Gate code')
+    const list = await (await req('/events')).json()
+    expect(JSON.stringify(list)).not.toContain('Gate code')
+
+    const sent = captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: rTok })
+    expect(sent[0].text).toContain('Gate code 4321')
   })
 
   it('rejects past dates', async () => {
@@ -336,6 +384,165 @@ describe('GET /events/:id/host — host-only view', () => {
     expect(data.address).toBe('123 Main St, Jackson, MS 39201')
     // Emails are NEVER surfaced to the host per the chosen design.
     expect(JSON.stringify(data)).not.toContain('@example.com')
+  })
+})
+
+describe('theater meetups (kind: meetup)', () => {
+  it('creates a meetup; projection carries kind/venue/time; no address anywhere', async () => {
+    const { token, member } = await getTokenFor('host@example.com')
+    captureEmails()
+    const res = await createMeetup(token)
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.event.kind).toBe('meetup')
+    expect(data.event.venue).toBe('The Capri Theater')
+    expect(data.event.time).toBe('19:30')
+    expect(data.event.hostId).toBe(member.id)
+    expect(data.event.capacity).toBeUndefined()
+    expect(data.event.address).toBeUndefined()
+
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${data.id}`))
+    expect(raw.kind).toBe('meetup')
+    expect(raw.address).toBeUndefined()
+
+    const agg = JSON.parse(await env.ATTENDANCE_KV.get('events:all'))
+    const mine = agg.find(e => e.id === data.id)
+    expect(mine.kind).toBe('meetup')
+    expect(mine.venue).toBe('The Capri Theater')
+    expect(mine.time).toBe('19:30')
+
+    const list = await (await req('/events')).json()
+    const pub = list.find(e => e.id === data.id)
+    expect(pub.kind).toBe('meetup')
+    expect(pub.address).toBeUndefined()
+  })
+
+  it('rejects a venue not on the allowlist, and a missing venue', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    const r1 = await createMeetup(token, { venue: 'Duling Hall' })
+    expect(r1.status).toBe(400)
+    expect((await r1.json()).error).toMatch(/listed theaters/)
+    const r2 = await createMeetup(token, { venue: undefined })
+    expect(r2.status).toBe(400)
+  })
+
+  it('ignores a submitted address on a meetup — never stored', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    captureEmails()
+    const res = await createMeetup(token, { address: '123 Secret St' })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${data.id}`))
+    expect(raw.address).toBeUndefined()
+    expect(JSON.stringify(data)).not.toContain('123 Secret St')
+  })
+
+  it('rejects malformed times, accepts HH:MM', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    expect((await createMeetup(token, { time: '7pm' })).status).toBe(400)
+    expect((await createMeetup(token, { time: '25:00' })).status).toBe(400)
+    captureEmails()
+    expect((await createMeetup(token, { time: '19:30' })).status).toBe(200)
+    expect((await createMeetup(token, { time: undefined })).status).toBe(200)  // optional
+  })
+
+  it('no capacity → every RSVP confirms, nobody waitlists', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    const { token: t2 } = await getTokenFor('m2@example.com')
+    const { token: t3 } = await getTokenFor('m3@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+    for (const t of [t1, t2, t3]) {
+      const r = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t })
+      expect((await r.json()).status).toBe('confirmed')
+    }
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toHaveLength(3)
+  })
+
+  it('with capacity set → waitlists past the cap like house screenings', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    const { token: t2 } = await getTokenFor('m2@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok, { capacity: 1 })).json()
+    expect(created.event.capacity).toBe(1)
+    const r1 = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    expect((await r1.json()).status).toBe('confirmed')
+    const r2 = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t2 })
+    expect((await r2.json()).status).toBe('waitlisted')
+  })
+
+  it('confirmation email has venue + showtime + self-organized line, and NO address', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+    const sent = captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].text).toContain('Venue: The Capri Theater')
+    expect(sent[0].text).toContain('Showtime: 7:30 pm')
+    expect(sent[0].text).toContain('self-organized')
+    expect(sent[0].text).not.toContain('Address:')
+    expect(sent[0].subject).toContain('2099-02-20 at 7:30 pm')
+  })
+
+  it('PATCH time change notifies confirmed RSVPs; kind change → 400', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+    captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+
+    let sent = captureEmails()
+    const res = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { time: '21:00' } })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].text).toContain('time: 19:30 → 21:00')
+    expect(sent[0].text).toContain('Venue: The Capri Theater')
+    expect(sent[0].text).not.toContain('Address:')
+
+    const kindRes = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { kind: 'house' } })
+    expect(kindRes.status).toBe(400)
+    expect((await kindRes.json()).error).toMatch(/kind cannot be changed/)
+  })
+
+  it('PATCH clearing capacity promotes the whole waitlist', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    const { token: t2 } = await getTokenFor('m2@example.com')
+    const { token: t3 } = await getTokenFor('m3@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })  // confirmed
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t2 })  // waitlisted
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t3 })  // waitlisted
+
+    const sent = captureEmails()
+    const res = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { capacity: '' } })
+    expect(res.status).toBe(200)
+    // Both waitlisted members promoted + emailed; capacity gone from the row.
+    expect(sent.map(e => e.to[0]).sort()).toEqual(['m2@example.com', 'm3@example.com'])
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.capacity).toBeUndefined()
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toHaveLength(3)
+  })
+
+  it('host view returns kind/venue/time, null address', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+    const res = await req(`/events/${created.id}/host`, { token: hostTok })
+    const data = await res.json()
+    expect(data.kind).toBe('meetup')
+    expect(data.venue).toBe('The Capri Theater')
+    expect(data.time).toBe('19:30')
+    expect(data.address).toBeNull()
+    expect(data.capacity).toBeNull()
   })
 })
 

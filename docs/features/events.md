@@ -2,6 +2,12 @@
 
 A public listing of all club screenings and events with search, venue filtering, date sorting, and attendance tracking.
 
+This doc covers the curated listing + post-hoc attendance ("I was there").
+Member-hosted events (house screenings and theater meetups, `hostId` set) swap
+the attendance toggle for an RSVP/waitlist affordance and are documented in
+[hosting.md](hosting.md); their cards additionally show "Hosted by", the RSVP
+meter, a showtime for meetups, and meetup self-organized copy.
+
 ## Page Layout
 
 Events render as a responsive card grid (`.card-grid.event-grid` in

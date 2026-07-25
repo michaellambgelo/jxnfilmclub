@@ -11,6 +11,7 @@ Detailed documentation of every user-facing feature in jxnfilm.club, including M
 | [Member Profile](member-profile.md) | Display name, pronouns, and Letterboxd verification |
 | [Attendance](attendance.md) | Self-report event attendance (mark + remove) |
 | [Events Directory](events.md) | Public event listing with search, filters, and attendance |
+| [Hosting](hosting.md) | Member-hosted house screenings + theater meetups with RSVP/waitlist |
 | [Members Directory](members-directory.md) | Public member listing with search and sort |
 | [Last Four Watched](watched.md) | Per-member film poster gallery from Letterboxd RSS |
 | [Home Page](home.md) | Landing page with podcast embed and episode list |

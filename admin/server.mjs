@@ -19,7 +19,7 @@ const PORT = Number(process.env.ADMIN_PORT || 5174)
 const VALID_ENVS = new Set(['production', 'staging'])
 const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
 const VALID_FILES = new Set(['data/events.json', 'data/members.json'])
-const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json'])
+const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json', 'data/takes.json'])
 
 // Deployed Worker origins per env — target for the newsletter-send proxy.
 const WORKER_ORIGINS = {

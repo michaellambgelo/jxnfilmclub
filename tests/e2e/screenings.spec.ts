@@ -14,7 +14,7 @@ test.describe('member-hosted screenings', () => {
 
     // Navigate to /host via the SPA router (proves /:type/:sub works).
     await page.goto('/host')
-    await expect(page.locator('article.auth h1')).toHaveText('Host a screening')
+    await expect(page.locator('article.auth h1')).toHaveText('Host a screening or meetup')
 
     // Fill the create form.
     const SCREENING_TITLE = 'E2E Test Screening'
@@ -47,6 +47,7 @@ test.describe('member-hosted screenings', () => {
     expect(ours).toBeTruthy()
     expect(ours.hostName).toBe('Host McHostface')
     expect(ours.capacity).toBe(4)
+    expect(ours.venue).toBe("Host McHostface's house")  // public-friendly label, auto-stamped
     expect(ours.address).toBeUndefined()
     expect(JSON.stringify(list)).not.toContain('Evergreen Terrace')
 
@@ -59,10 +60,52 @@ test.describe('member-hosted screenings', () => {
     expect(raw.address).toBe(SECRET_ADDRESS)
   })
 
+  test('member creates a theater meetup via the toggle; venue listed publicly', async ({ page }) => {
+    await signInAs(page, 'meetup-e2e@example.com', { name: 'Meetup Maker' })
+
+    await page.goto('/host')
+    await expect(page.locator('article.auth h1')).toHaveText('Host a screening or meetup')
+
+    // Flip to the meetup variant — the address input hides, theater select shows.
+    await page.getByRole('radio', { name: /public theater/i }).check()
+    await expect(page.locator('input[name="address"]')).toBeHidden()
+    await expect(page.locator('select[name="venue"]')).toBeVisible()
+
+    const MEETUP_TITLE = 'E2E Capri Meetup'
+    await page.getByLabel('Title').fill(MEETUP_TITLE)
+    await page.getByLabel('Film').fill('In the Mood for Love')
+    await page.getByLabel('Date').fill('2099-07-20')
+    await page.locator('select[name="venue"]').selectOption('The Capri Theater')
+    await page.locator('input[name="time"]').fill('19:30')
+    // Capacity deliberately left blank — uncapped meetup.
+    await page.getByRole('button', { name: /create meetup/i }).click()
+
+    // The card renders the public venue, the self-organized hint, and an
+    // uncapped meter (no "/ N" denominator).
+    await page.waitForURL('**/events')
+    const card = page.locator('.event-card', { hasText: MEETUP_TITLE })
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('The Capri Theater')
+    await expect(card).toContainText(/Hosted by Meetup Maker/i)
+    await expect(card).toContainText(/Self-organized/i)
+    await expect(card.locator('.rsvp-meter')).toHaveText(/^\s*0 RSVPed\s*$/)
+
+    // Public worker response carries kind/venue/time, never an address.
+    const listRes = await page.request.get(`${WORKER_ORIGIN}/events`)
+    const list = await listRes.json()
+    const ours = list.find((e: any) => e.title === MEETUP_TITLE)
+    expect(ours).toBeTruthy()
+    expect(ours.kind).toBe('meetup')
+    expect(ours.venue).toBe('The Capri Theater')
+    expect(ours.time).toBe('19:30')
+    expect(ours.capacity).toBeUndefined()
+    expect(ours.address).toBeUndefined()
+  })
+
   test('/host prompts non-members to log in instead of showing the form', async ({ page }) => {
     // Fresh context (fixtures wipe KV before each test) so no session.
     await page.goto('/host')
-    await expect(page.locator('article.auth h1')).toHaveText('Host a screening')
+    await expect(page.locator('article.auth h1')).toHaveText('Host a screening or meetup')
     await expect(page.locator('p.lede')).toContainText('log in')
     await expect(page.getByLabel('Title')).toHaveCount(0)
   })

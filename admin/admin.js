@@ -402,7 +402,7 @@ function projectEvent(e) {
   if (!e || !e.id) return null
   const out = { id: e.id }
   for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
-                   'hostId', 'hostName', 'capacity', 'notes']) {
+                   'hostId', 'hostName', 'capacity', 'kind', 'time']) {
     if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
   }
   return out
@@ -460,6 +460,8 @@ function renderEventCards() {
         <div><label>Letterboxd URI</label><input type="url" name="letterboxd_uri" value="${attr(e.letterboxd_uri || '')}"></div>
         ${hosted ? `
         <div><label>Host name</label><input type="text" name="hostName" value="${attr(e.hostName || '')}"></div>
+        <div><label>Kind <span class="muted">— house | meetup</span></label><input type="text" name="kind" value="${attr(e.kind || '')}" placeholder="house | meetup"></div>
+        <div><label>Time <span class="muted">— meetup showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
         <div><label>Capacity</label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
         <div style="grid-column:1/-1"><label>Address <span class="muted">— private; only emailed to confirmed RSVPs</span></label>
           <input type="text" name="address" value="${attr(e.address || '')}"></div>

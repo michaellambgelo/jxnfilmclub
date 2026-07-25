@@ -8,15 +8,15 @@
 
 
 <!-- Home / landing page — "Night Shift" (Claude Design: jxnfilm.club, direction B).
-     Hero, The Program, and The Last Four are wired to live data.
-     Hot Takes, Now Showing, and the poll are design mocks awaiting backends. -->
+     Hero, The Program, The Last Four, and Hot Takes are wired to live data.
+     Now Showing and the poll are design mocks awaiting backends. -->
 <article :is="home-view" class="home">
 
   <!-- HERO -->
   <section class="nshero">
     <div class="nshero-copy">
       <p class="ns-label">{ heroLabel }</p>
-      <h1 class="nshero-title">We watch the <em>difficult</em> ones, together.</h1>
+      <h1 class="nshero-title">We watch <em>discussion-worthy</em> films, together.</h1>
       <p class="nshero-lede">
         A community space for analytical conversations about cinema,
         founded in Jackson, Mississippi in 2018. Bring a chair. Stay for the argument.
@@ -49,7 +49,7 @@
   <section class="program">
     <header class="ns-sechead">
       <h2>The Program</h2>
-      <span class="ns-label">Clip &amp; save · recent &amp; upcoming</span>
+      <span class="ns-label">recent & upcoming</span>
     </header>
     <div :each="e in program" key="{ e.id }" class="program-row">
       <div class="program-date">
@@ -82,8 +82,8 @@
   <!-- THE LAST FOUR — latest Letterboxd diary entries -->
   <section class="lastfour">
     <div class="lastfour-films">
-      <p class="ns-label">Straight off Letterboxd</p>
-      <h2>The Last Four</h2>
+      <p class="ns-label">Letterboxd</p>
+      <h2>Recent Watches from Members</h2>
       <div class="lastfour-grid">
         <a :each="f in lastFour" key="{ f.link }" class="lf-card" href="{ f.link }" target="_blank" rel="noopener">
           <figure class="ns-poster">
@@ -97,7 +97,7 @@
         </a>
       </div>
       <p :if="lastFour && !lastFour.length" class="empty-state">No diary entries yet — link a Letterboxd account.</p>
-      <p class="lastfour-more"><a href="/watched">Full diaries →</a></p>
+      <p class="lastfour-more"><a href="/watched">See Last Four Watched →</a></p>
     </div>
     <aside class="leaders">
       <p class="ns-label">Most screenings attended</p>
@@ -112,25 +112,19 @@
 
   <hr class="ns-rule">
 
-  <!-- HOT TAKES — design mock; no takes backend yet -->
+  <!-- HOT TAKES — random recent member reviews from Letterboxd (data/takes.json).
+       No :if on the section: toggling its presence after mount shifts sibling
+       indexes and crashes nuedom's diff. Structure stays constant; the empty
+       section is hidden via CSS (.takes:not(:has(.take-card))). -->
   <section class="takes">
     <h2>Hot Takes</h2>
     <div class="takes-grid">
-      <div class="take-card">
-        <span class="ns-tape">Down by Law</span>
-        <p>“Jarmusch makes a Louisiana jail cell feel like the loneliest jazz club on earth. We argued about the ending for an hour.”</p>
-        <footer>Dré M.</footer>
-      </div>
-      <div class="take-card">
-        <span class="ns-tape">La Ciénaga</span>
-        <p>“Sweaty, woozy, dread-soaked. Nobody could stop talking about that pool. Very us.”</p>
-        <footer>Sofia R.</footer>
-      </div>
-      <div class="take-card">
-        <span class="ns-tape">Paris, Texas</span>
-        <p>“Watched it twice this week. Ry Cooder’s guitar has not left my head. Whoever picked this — thank you.”</p>
-        <footer>James W.</footer>
-      </div>
+      <a :each="t in takes" key="{ t.link }" class="take-card" href="{ t.link }" target="_blank" rel="noopener">
+        <span class="ns-tape">{ t.title }</span>
+        <img :if="t.poster" class="take-poster" src="{ t.poster }" alt="{ t.title }">
+        <p>“{ t.review }”</p>
+        <footer>{ t.who }</footer>
+      </a>
     </div>
   </section>
 
@@ -207,7 +201,7 @@
 
   <script>
     this.mounted = async function() {
-      this.update({ episodes: [], program: [], lastFour: [], leaders: [], hero: null, heroLabel: 'A community cinema · Jackson MS' })
+      this.update({ episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null, heroLabel: 'A community cinema · Jackson MS' })
 
       const results = await Promise.all([
         getEvents({ limit: 1000, sort: 'date-desc' }).catch(function() { return { items: [] } }),
@@ -215,6 +209,7 @@
         fetch('/data/watched.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/attendance.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/episodes.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
+        fetch('/data/takes.json').then(function(r) { return r.ok ? r.json() : [] }).catch(function() { return [] }),
       ])
       const events = results[0].items || []
       const members = results[1].items || []
@@ -236,7 +231,10 @@
           film: e.film || e.title,
           title: e.title,
           venue: e.venue || (e.hostName ? 'Hosted by ' + e.hostName : 'TBA'),
-          house: /house|porch|backyard|home/i.test(e.venue || '') || !!e.hostId,
+          // kind is authoritative when present ("Patton House & Gallery" would
+          // trip the regex); the heuristics only cover legacy rows without it.
+          house: e.kind ? e.kind === 'house'
+               : (/house|porch|backyard|home/i.test(e.venue || '') || !!e.hostId),
           upcoming: (e.date || '') >= today,
         }
       })
@@ -275,6 +273,23 @@
         .sort(function(a, b) { return b.c - a.c })
         .slice(0, 5)
 
+      // ----- hot takes: up to 3 random recent reviews, one per member -----
+      const byHandle = {}
+      members.forEach(function(m) { if (m.handle) byHandle[m.handle] = m.name })
+      const grouped = {}
+      ;(results[5] || []).forEach(function(t) {
+        if (t.review && byHandle[t.handle]) (grouped[t.handle] = grouped[t.handle] || []).push(t)
+      })
+      const handles = Object.keys(grouped)
+      for (let i = handles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        const tmp = handles[i]; handles[i] = handles[j]; handles[j] = tmp
+      }
+      const takes = handles.slice(0, 3).map(function(h) {
+        const t = grouped[h][Math.floor(Math.random() * grouped[h].length)]
+        return { title: t.title, review: t.review, link: t.link, poster: t.poster, who: byHandle[h] }
+      })
+
       // ----- podcast -----
       const eps = pod.episodes || []
       const episodes = eps.map(function(ep, i) {
@@ -286,7 +301,7 @@
         }
       })
 
-      this.update({ hero: hero, heroLabel: heroLabel, program: rows, lastFour: lastFour, leaders: leaders, episodes: episodes })
+      this.update({ hero: hero, heroLabel: heroLabel, program: rows, lastFour: lastFour, leaders: leaders, takes: takes, episodes: episodes })
 
       // Spotify embed is injected here because Nue's DHTML renderer strips
       // static <iframe> tags.
@@ -530,20 +545,24 @@
       <span :if="event.venue" class="event-venue">{ event.venue }</span>
       <span :if="event.hostId" class="event-host">Hosted by { event.hostName || 'a member' }</span>
       <span class="event-date">{ formatDate(event.date) }</span>
+      <span :if="event.time" class="event-time">{ formatTime(event.time) }</span>
     </p>
 
     <div :if="event.hostId" class="event-rsvp">
       <div class="rsvp-meter">
-        { (attendees || []).length } / { event.capacity || '?' } RSVPed
+        { (attendees || []).length }{ event.capacity ? ' / ' + event.capacity : '' } RSVPed
       </div>
+      <p :if="isMeetup()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
       <div :if="session && isFuture() && myRsvp">
-        <p :if="myRsvp.status === 'confirmed'" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
-        <p :if="myRsvp.status === 'waitlisted'" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
-        <button :if="myRsvp.status === 'none' && (attendees || []).length < (event.capacity || 0)"
+        <p :if="myRsvp.status === 'confirmed' && !isMeetup()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
+        <p :if="myRsvp.status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
+        <p :if="myRsvp.status === 'waitlisted' && !isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
+        <p :if="myRsvp.status === 'waitlisted' && isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. You'll get an email if a spot opens.</p>
+        <button :if="myRsvp.status === 'none' && (!event.capacity || (attendees || []).length < event.capacity)"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
-        <button :if="myRsvp.status === 'none' && (attendees || []).length >= (event.capacity || 0)"
+        <button :if="myRsvp.status === 'none' && event.capacity && (attendees || []).length >= event.capacity"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Join waitlist' }</button>
         <button :if="myRsvp.status === 'confirmed' || myRsvp.status === 'waitlisted'"
           type="button" class="attend-btn attend-btn-remove" :disabled="busy" :onclick="cancelRsvp">{ busy ? 'Cancelling' : 'Cancel RSVP' }</button>
@@ -623,6 +642,21 @@
       return d.toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       })
+    }
+
+    this.formatTime = function(hhmm) {
+      const parts = hhmm.split(':')
+      const h = Number(parts[0]), m = Number(parts[1])
+      const ampm = h >= 12 ? 'pm' : 'am'
+      return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + ampm
+    }
+
+    // Hosted events without a kind field predate meetups → house.
+    // NOTE: no backticks in view <script> comments — nuedom's RE_FN mis-parses
+    // the compiled bundle when util.inspect falls back to single-quote escaping.
+    this.isMeetup = function() {
+      const kind = this.event.kind || (this.event.hostId ? 'house' : '')
+      return kind === 'meetup'
     }
 
     this.canToggle = function() { return !!this.session }
@@ -711,17 +745,30 @@
 </article>
 
 
-<!-- Host-a-screening form at /host. Members-only. -->
+<!-- Host-a-screening-or-meetup form at /host. Members-only.
+     The house/meetup field groups are BOTH always mounted and swapped via
+     :hidden/:required attribute bindings — do not convert them to :if blocks:
+     toggling nodes that shift later siblings crashes nuedom's diff (see
+     docs/features/home.md, Hot Takes). -->
 <article :is="events-new-view" class="auth">
-  <h1>Host a screening</h1>
+  <h1>Host a screening or meetup</h1>
 
   <p :if="!session" class="lede">
     You need to <a href="/signin">log in</a> as a member to host a screening.
   </p>
 
   <form :if="session" :onsubmit="submit">
-    <p class="lede">Your address stays private. It's only emailed to members who RSVP,
-      and never appears on the public events listing.</p>
+    <fieldset class="loc-type">
+      <legend>Location</legend>
+      <label><input type="radio" name="kind" value="house" :checked="kind === 'house'" :onchange="setKind">
+        My place — address stays private</label>
+      <label><input type="radio" name="kind" value="meetup" :checked="kind === 'meetup'" :onchange="setKind">
+        Public theater — venue listed publicly</label>
+    </fieldset>
+
+    <!-- NOTE: interpolation expressions must stay on ONE line — nuedom emits a
+         literal \n into the compiled arrow fn for multi-line { ... } bodies. -->
+    <p class="lede">{ kind === 'meetup' ? 'The theater is listed publicly. Meetups are self-organized — everyone buys their own ticket and gets themselves there.' : "Your address stays private. It's only emailed to members who RSVP, and never appears on the public events listing." }</p>
 
     <label>Title<input type="text" name="title" required maxlength="200"
       placeholder="e.g. May Screening — Cronenberg Night"></label>
@@ -729,16 +776,28 @@
       placeholder="e.g. Crash (1996)"></label>
     <label>Year<input type="number" name="year" min="1888" max="2100" placeholder="1996"></label>
     <label>Date<input type="date" name="date" required></label>
-    <label>Address <span class="hint">— private</span>
-      <input type="text" name="address" required maxlength="500"
+    <label :hidden="kind !== 'house'">Address <span class="hint">— private</span>
+      <input type="text" name="address" :required="kind === 'house'" maxlength="500"
         placeholder="123 Main St, Apt 2B, Jackson, MS 39201"></label>
-    <label>Capacity<input type="number" name="capacity" required min="1" max="1000" placeholder="8"></label>
+    <label :hidden="kind !== 'house'">Public label <span class="hint">— how it appears on the listing; never your address</span>
+      <input type="text" name="houseVenue" maxlength="200"
+        placeholder="e.g. Red Fox house — defaults to your name"></label>
+    <label :hidden="kind !== 'meetup'">Theater
+      <select name="venue" :required="kind === 'meetup'">
+        <option value="">Choose a theater…</option>
+        <option :each="v in THEATERS" key="{ v }" value="{ v }">{ v }</option>
+      </select>
+      <span class="hint">Want a venue added? Email venues@jxnfilm.club</span></label>
+    <label :hidden="kind !== 'meetup'">Showtime <span class="hint">— optional</span>
+      <input type="time" name="time"></label>
+    <label>Capacity <span class="hint">{ kind === 'meetup' ? '— optional; leave blank for no cap' : '' }</span>
+      <input type="number" name="capacity" :required="kind === 'house'" min="1" max="1000" placeholder="8"></label>
     <label>Notes <span class="hint">— optional; included in every RSVP email</span>
       <textarea name="notes" rows="4" maxlength="2000"
         placeholder="Parking on the street is fine. BYOB. Dog is friendly but barks at the door."></textarea></label>
 
     <div class="actions">
-      <button type="submit" :disabled="busy">{ busy ? 'Creating…' : 'Create screening' }</button>
+      <button type="submit" :disabled="busy">{ busy ? 'Creating…' : (kind === 'meetup' ? 'Create meetup' : 'Create screening') }</button>
       <a href="/events" class="plain">Cancel</a>
     </div>
     <p class="err" :if="error">{ error }</p>
@@ -764,22 +823,47 @@
       } catch { return null }
     }
 
+    // Strict venue allowlist for theater meetups. Mirrored in
+    // worker/src/index.js (THEATERS) — keep both in lockstep. Venue additions
+    // go through venues@jxnfilm.club review.
+    const THEATERS = [
+      'Patton House & Gallery',
+      'The Capri Theater',
+      'Legacy Parkway Theaters',
+      'Cinemark XD in Pearl',
+      'Malco Renaissance in Ridgeland',
+      'Malco Grandview & IMAX in Madison',
+      'B&B Theaters at Northpark in Ridgeland',
+    ]
+
     this.mounted = function() {
-      this.update({ session: getSession(), busy: false, error: '' })
+      this.update({ session: getSession(), busy: false, error: '', kind: 'house', THEATERS: THEATERS })
+    }
+
+    this.setKind = function(e) {
+      this.update({ kind: e.target.value })
     }
 
     this.submit = async function(e) {
       e.preventDefault()
       this.update({ busy: true, error: '' })
       const fd = new FormData(e.target)
+      const kind = fd.get('kind') || 'house'
       const body = {
+        kind: kind,
         title: fd.get('title'),
         film: fd.get('film') || undefined,
         year: fd.get('year') ? Number(fd.get('year')) : undefined,
         date: fd.get('date'),
-        address: fd.get('address'),
-        capacity: Number(fd.get('capacity')),
+        capacity: fd.get('capacity') ? Number(fd.get('capacity')) : undefined,
         notes: fd.get('notes') || undefined,
+      }
+      if (kind === 'house') {
+        body.address = fd.get('address')
+        body.venue = fd.get('houseVenue') || undefined
+      } else {
+        body.venue = fd.get('venue')
+        body.time = fd.get('time') || undefined
       }
       try {
         const res = await fetch(WORKER_ORIGIN + '/events', {

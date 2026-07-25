@@ -79,9 +79,9 @@ test.beforeEach(async ({ request }) => {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
   }
   // ATTENDANCE_KV (separate namespace) — wipe attend:* + attendance:* +
-  // event:* + events:* so anonymize / unattend / events tests don't see
-  // stale entries between runs.
-  for (const prefix of ['attend:', 'attendance:', 'event:', 'events:']) {
+  // event:* + events:* + rsvp:* so anonymize / unattend / events / hosted
+  // screening tests don't see stale entries between runs.
+  for (const prefix of ['attend:', 'attendance:', 'event:', 'events:', 'rsvp:']) {
     await request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent(prefix)}`)
   }
 

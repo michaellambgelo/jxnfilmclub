@@ -32,6 +32,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/the-muppets-take-manhattan/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/9/0/7/44907-the-muppets-take-manhattan-0-600-0-900-crop.jpg?v=6ff4b57ada",
+      "title": "The Muppets Take Manhattan",
+      "watched_date": "2026-07-24",
+      "year": "1984"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-invite-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/8/5/4/8/3/1/854831-the-invite-2026-0-600-0-900-crop.jpg?v=ee72905e48",
       "title": "The Invite",
@@ -51,13 +58,6 @@
       "title": "Tuner",
       "watched_date": "2026-07-22",
       "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/tony-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/9/0/0/1/1209001-tony-2026-0-600-0-900-crop.jpg?v=63ce7b9234",
-      "title": "Tony",
-      "watched_date": "2026-07-21",
-      "year": "2026"
     }
   ]
 }

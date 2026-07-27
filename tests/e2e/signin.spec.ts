@@ -139,7 +139,8 @@ test.describe('sign-in flow (returning members)', () => {
     await page.goto('http://localhost:8787/')
     await page.getByLabel('Display name').fill('Pivot User')
     await page.getByLabel('Email', { exact: true }).fill(signupEmail)
-    await page.getByRole('button', { name: /log in/i }).click()
+    // Worker signup page — its button is still "Email me a code".
+    await page.getByRole('button', { name: /email me a code/i }).click()
     await page.waitForURL(/\/verify/)
 
     // Pull the pending code out of the Worker KV and complete verification.

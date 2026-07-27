@@ -18,7 +18,7 @@ test.describe('member-hosted screenings', () => {
 
     // The form is hidden until a venue-type card is picked.
     await expect(page.locator('article.auth form')).toBeHidden()
-    await page.getByRole('button', { name: /house screening/i }).click()
+    await page.getByRole('button', { name: /my house/i }).click()
     await expect(page.locator('article.auth form')).toBeVisible()
 
     // Fill the create form.
@@ -77,7 +77,7 @@ test.describe('member-hosted screenings', () => {
     // Form hidden until a card is picked; the meetup card reveals the meetup
     // variant — the address input stays hidden, theater select shows.
     await expect(page.locator('article.auth form')).toBeHidden()
-    await page.getByRole('button', { name: /theater meetup/i }).click()
+    await page.getByRole('button', { name: /a theater/i }).click()
     await expect(page.locator('article.auth form')).toBeVisible()
     await expect(page.locator('input[name="address"]')).toBeHidden()
     await expect(page.locator('select[name="venue"]')).toBeVisible()

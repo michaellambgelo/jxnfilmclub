@@ -724,16 +724,14 @@
 
   <div :if="session" class="host-choice">
     <p class="ns-label">Where will you host?</p>
-    <button type="button" class="host-option { kind === 'house' ? '-selected' : '' }" :onclick="pickHouse">
-      <span class="ns-tape">My place</span>
-      <strong>House screening</strong>
-      <p>Your address stays private. It is only emailed to members who RSVP, and never appears on the public listing.</p>
-    </button>
-    <button type="button" class="host-option { kind === 'meetup' ? '-selected' : '' }" :onclick="pickMeetup">
-      <span class="ns-tape">Out in Jackson</span>
-      <strong>Theater meetup</strong>
-      <p>The theater is listed publicly. Self-organized — everyone buys their own ticket and gets themselves there.</p>
-    </button>
+    <div class="host-pick">
+      <button type="button" class="host-option { kind === 'house' ? '-selected' : '' }" :onclick="pickHouse">My house</button>
+      <p class="host-note">Your address stays private. It is only emailed to members who RSVP, and never appears on the public listing.</p>
+    </div>
+    <div class="host-pick">
+      <button type="button" class="host-option { kind === 'meetup' ? '-selected' : '' }" :onclick="pickMeetup">A theater</button>
+      <p class="host-note">The theater is listed publicly. Self-organized — everyone buys their own ticket and gets themselves there.</p>
+    </div>
   </div>
 
   <form :if="session" :hidden="!kind" :onsubmit="submit">

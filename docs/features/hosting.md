@@ -61,10 +61,11 @@ an admin bulk-rename is an optional future cleanup.
 
 ## Form UX constraint (nuedom)
 
-`/host` opens on a venue-type chooser — two Night Shift card buttons
-(`.host-option`, styled in `css/auth.css`) for "House screening" and "Theater
-meetup". The form is fully hidden (`:hidden="!kind"`) until a card is picked;
-picking sets `kind` and reveals the matching field group.
+`/host` opens on a venue-type chooser — two plain buttons, "My house" and
+"A theater" (`.host-option` in `css/auth.css`: ghost until selected, standard
+brand fill when selected), each with its explanatory copy in a paragraph
+beneath the button. The form is fully hidden (`:hidden="!kind"`) until a
+button is picked; picking sets `kind` and reveals the matching field group.
 
 Everything stays **always mounted** and swaps via `:hidden`/`:required`
 attribute bindings. Do not convert the form or the field groups to `:if`

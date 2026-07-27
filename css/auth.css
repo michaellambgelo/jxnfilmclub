@@ -73,42 +73,34 @@
   margin: 0;
 }
 
-.auth button.host-option {
+.auth .host-pick {
   display: grid;
   gap: 0.6rem;
-  justify-items: start;
-  text-align: left;
-  padding: 1.1rem 1.2rem 1.25rem;
-  font: inherit;
-  text-transform: none;
-  letter-spacing: normal;
-  background: var(--surface);
+  align-content: start;
+}
+
+/* Ghost until selected; selected takes the standard filled-button look. */
+.auth button.host-option {
+  background: none;
   color: var(--ink);
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+  padding: 0.85rem 0.7rem;
 }
 
 .auth button.host-option:hover:not(:disabled) {
-  background: var(--surface);
+  background: none;
   color: var(--ink);
   border-color: var(--ink-3);
 }
 
 .auth button.host-option.-selected,
 .auth button.host-option.-selected:hover:not(:disabled) {
+  background: var(--brand);
+  color: white;
   border-color: var(--brand);
-  box-shadow: var(--shadow-lift);
 }
 
-.auth .host-option strong {
-  font-family: var(--font-display);
-  font-size: var(--fs-22);
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.auth .host-option p {
+.auth .host-note {
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.45;

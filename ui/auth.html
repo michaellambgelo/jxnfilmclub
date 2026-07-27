@@ -241,20 +241,20 @@
       </label>
       <div class="actions">
         <button type="submit" :disabled="busy">{ busy ? 'Saving…' : 'Save' }</button>
-        <button type="button" class="plain" :onclick="signOut">Sign out</button>
+        <button type="button" class="-ghost" :onclick="signOut">Sign out</button>
       </div>
       <p class="ok" :if="saved">Saved. The public site rebuilds in ~30 seconds.</p>
       <p class="err" :if="error">{ error }</p>
     </form>
 
     <section class="lb-panel">
-      <h2>Letterboxd</h2>
+      <h2 class="lb-head"><img class="lb-mark" src="/img/letterboxd-decal-dots.svg" alt="" width="28" height="28"> Letterboxd</h2>
 
       <div :if="member.handle">
         <p class="ok">Linked as
           <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>.
         </p>
-        <button type="button" class="plain" :onclick="unlinkLb" :disabled="lbBusy">
+        <button type="button" class="-ghost -danger" :onclick="unlinkLb" :disabled="lbBusy">
           { lbBusy ? 'Removing…' : 'Remove Letterboxd link' }
         </button>
         <p class="err" :if="lbError">{ lbError }</p>

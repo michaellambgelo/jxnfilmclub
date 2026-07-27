@@ -60,6 +60,42 @@
   margin-top: 1.5rem;
 }
 
+/* Secondary/destructive actions as ghost buttons (Sign out, Remove
+   Letterboxd link) — same treatment as the /host chooser buttons. */
+.auth button.-ghost {
+  background: none;
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+}
+
+.auth button.-ghost:hover:not(:disabled) {
+  background: none;
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.auth button.-ghost.-danger {
+  color: var(--brand);
+}
+
+.auth button.-ghost.-danger:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+/* Letterboxd panel heading with the three-dot decal */
+.auth .lb-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.auth .lb-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
 /* Host-form venue-type chooser: two Night Shift card buttons. The form
    itself stays [hidden] until one is picked. */
 .auth form[hidden] {

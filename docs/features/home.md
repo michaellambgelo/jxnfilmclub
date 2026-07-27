@@ -45,7 +45,7 @@ multiple cards. The pick re-randomizes on every page load.
 
 ## Podcast Embed
 
-The Spotify embed is injected via JavaScript in `mounted()` because Nue's DHTML renderer strips static `<iframe>` tags.
+The Spotify embed is injected via JavaScript in `mounted()` because Nue's DHTML renderer strips static `<iframe>` tags. (Static `<img>` tags are safe — verified via the Letterboxd decal in `edit-view`.)
 
 ```mermaid
 flowchart TD

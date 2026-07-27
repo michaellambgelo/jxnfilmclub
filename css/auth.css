@@ -55,6 +55,18 @@
   height: 2.25rem;
 }
 
+/* Themed inline links in form actions (the /host Cancel link rendered in
+   UA default blue/visited-purple otherwise) */
+.auth .actions a.plain {
+  color: var(--ink-3);
+  text-decoration: none;
+}
+
+.auth .actions a.plain:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 /* Sign-in: secondary join button under the log-in form */
 .auth .signin-join {
   margin-top: 1.5rem;

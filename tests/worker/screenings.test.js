@@ -532,6 +532,29 @@ describe('theater meetups (kind: meetup)', () => {
     expect(att.attendees).toHaveLength(3)
   })
 
+  it('host can PATCH a Letterboxd diary link; non-Letterboxd URLs rejected', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+
+    const bad = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok,
+      body: { letterboxd_uri: 'https://evil.example.com/phish' } })
+    expect(bad.status).toBe(400)
+    expect((await bad.json()).error).toMatch(/letterboxd/)
+
+    const sent = captureEmails()
+    const ok = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok,
+      body: { letterboxd_uri: 'https://letterboxd.com/qa/film/the-matrix/' } })
+    expect(ok.status).toBe(200)
+    expect((await ok.json()).event.letterboxd_uri).toBe('https://letterboxd.com/qa/film/the-matrix/')
+    // Not a where/when change — nobody gets emailed.
+    expect(sent).toHaveLength(0)
+
+    const list = await (await req('/events')).json()
+    const pub = list.find(e => e.id === created.id)
+    expect(pub.letterboxd_uri).toBe('https://letterboxd.com/qa/film/the-matrix/')
+  })
+
   it('host view returns kind/venue/time, null address', async () => {
     const { token: hostTok } = await getTokenFor('host@example.com')
     captureEmails()

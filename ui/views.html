@@ -553,6 +553,24 @@
         Waitlist:
         <span :each="(n, i) in hostView.waitlist" key="{ n }">{ i + 1 }. { n }<span :if="i < hostView.waitlist.length - 1"> </span></span>
       </p>
+
+      <!-- Link a Letterboxd diary entry: sets event.letterboxd_uri via PATCH.
+           Quick-picks come from /data/watched.json for the host's handle. -->
+      <div class="host-lb">
+        <p :if="event.letterboxd_uri" class="host-lb-current">The film title links to
+          <a href="{ event.letterboxd_uri }" target="_blank" rel="noopener">your Letterboxd entry</a>.</p>
+        <p :if="!event.letterboxd_uri" class="host-lb-current">Link your Letterboxd diary entry so the film title points to it.</p>
+        <div class="host-lb-picks">
+          <button :each="(d, i) in diary" key="{ d.link }" type="button" class="lb-pick"
+            data-idx="{ i }" :disabled="lbBusy" :onclick="linkDiary">{ d.title }{ d.watched_date ? ' · ' + d.watched_date : '' }</button>
+        </div>
+        <div class="host-lb-manual">
+          <input type="url" name="lbUri" placeholder="https://letterboxd.com/you/film/..." :disabled="lbBusy">
+          <button type="button" class="attend-btn" :disabled="lbBusy" :onclick="saveLbUri">{ lbBusy ? 'Saving' : 'Save link' }</button>
+        </div>
+        <p :if="lbLinkError" class="rsvp-err">{ lbLinkError }</p>
+      </div>
+
       <div class="host-actions">
         <button type="button" class="attend-btn attend-btn-remove" :onclick="cancelScreening">Cancel screening</button>
       </div>
@@ -585,7 +603,7 @@
         } catch (e) {}
       }
       const isHost = this.session && this.session.id === this.event.hostId
-      this.update({ isHost: isHost })
+      this.update({ isHost: isHost, diary: [], lbBusy: false, lbLinkError: '' })
       if (isHost) {
         try {
           const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/host', {
@@ -593,7 +611,54 @@
           })
           if (r.ok) this.update({ hostView: await r.json() })
         } catch (e) {}
+        // Recent diary entries for the quick-pick buttons (browser caches the
+        // fetch across cards; only the host's own cards request it).
+        if (this.session.handle) {
+          try {
+            const w = await fetch('/data/watched.json')
+            if (w.ok) {
+              const watched = await w.json()
+              this.update({ diary: (watched && watched[this.session.handle]) || [] })
+            }
+          } catch (e) {}
+        }
       }
+    }
+
+    this.patchLbUri = async function(uri) {
+      this.update({ lbBusy: true, lbLinkError: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
+          body: JSON.stringify({ letterboxd_uri: uri }),
+        })
+        const data = await res.json().catch(function () { return {} })
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        location.reload()
+      } catch (err) {
+        this.update({ lbBusy: false, lbLinkError: err.message })
+      }
+    }
+
+    this.linkDiary = function(e) {
+      const idx = Number(e.currentTarget.dataset.idx)
+      const d = (this.diary || [])[idx]
+      if (d && d.link) this.patchLbUri(d.link)
+    }
+
+    this.saveLbUri = function() {
+      const input = this.root.querySelector('input[name="lbUri"]')
+      const uri = input ? input.value.trim() : ''
+      // Prefix list mirrors the worker regex (incl. www.); no regex here —
+      // backslash escapes get doubled by the dhtml compiler.
+      const okPrefixes = ['https://letterboxd.com/', 'https://www.letterboxd.com/', 'https://boxd.it/', 'https://www.boxd.it/']
+      const ok = uri && okPrefixes.some(function(p) { return uri.indexOf(p) === 0 })
+      if (!ok) {
+        this.update({ lbLinkError: 'Paste a letterboxd.com or boxd.it link.' })
+        return
+      }
+      this.patchLbUri(uri)
     }
 
     this.formatDate = function(ts) {

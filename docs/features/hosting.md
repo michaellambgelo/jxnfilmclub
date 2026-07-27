@@ -76,6 +76,17 @@ fixture so Playwright and local UI work never hit TMDB.
 Setup per environment: `cd worker && npx wrangler secret put TMDB_API_KEY`
 (repeat with `--env staging`); locally add it to `worker/.dev.vars`.
 
+## Linking a Letterboxd diary entry
+
+On the Events tab, the host-only panel on their own event card has a
+"Letterboxd" block: quick-pick buttons for the host's recent diary entries
+(from `/data/watched.json`, keyed by their linked handle — empty when no
+handle is linked) plus a manual URL field. Picking or saving PATCHes
+`letterboxd_uri` (host-auth; validated server-side to `letterboxd.com` /
+`boxd.it` URLs; not a where/when change, so no RSVP notification emails),
+and the card's film title then links to the entry. Uses the same
+`publicEventProjection` field curated events already use.
+
 ## Form UX constraint (nuedom)
 
 `/host` opens on a venue-type chooser — two plain buttons, "My house" and

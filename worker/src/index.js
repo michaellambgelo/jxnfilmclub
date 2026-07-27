@@ -1214,7 +1214,15 @@ function validScreeningInput(body) {
     if (body.notes.trim()) out.notes = body.notes
   }
   if (typeof body.poster === 'string' && body.poster.length <= 500) out.poster = body.poster.trim()
-  if (typeof body.letterboxd_uri === 'string' && body.letterboxd_uri.length <= 500) out.letterboxd_uri = body.letterboxd_uri.trim()
+  if (typeof body.letterboxd_uri === 'string' && body.letterboxd_uri.trim()) {
+    const uri = body.letterboxd_uri.trim()
+    // Hosts link their diary entry (or the film page) — public field, so only
+    // accept real Letterboxd URLs.
+    if (uri.length > 500 || !/^https:\/\/(www\.)?(letterboxd\.com|boxd\.it)\//.test(uri)) {
+      return { error: 'letterboxd_uri must be a letterboxd.com or boxd.it link' }
+    }
+    out.letterboxd_uri = uri
+  }
   return { value: out }
 }
 

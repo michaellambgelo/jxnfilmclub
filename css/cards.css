@@ -210,6 +210,75 @@
   margin: 0 0 1em;
 }
 
+/* Host panel: link-your-Letterboxd-diary-entry block */
+.host-lb {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75em 0;
+}
+
+.host-lb-current {
+  margin: 0;
+  font-size: 88%;
+  color: var(--ink-3);
+}
+
+.host-lb-current a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.host-lb-current a:hover {
+  text-decoration: underline;
+}
+
+.host-lb-picks {
+  display: grid;
+  gap: 4px;
+}
+
+.host-lb-picks:empty {
+  display: none;
+}
+
+button.lb-pick {
+  font: inherit;
+  font-size: 88%;
+  text-align: left;
+  padding: 0.35em 0.6em;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+button.lb-pick:hover:not(:disabled) {
+  border-color: var(--ink-4);
+}
+
+.host-lb-manual {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.host-lb-manual input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 88%;
+  padding: 0.35em 0.6em;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+}
+
+.host-lb-manual .attend-btn {
+  width: auto;
+  flex: none;
+}
+
 /* Filter header shared by members + events views: allow controls to wrap
  * onto multiple rows on narrow screens rather than overflowing. */
 

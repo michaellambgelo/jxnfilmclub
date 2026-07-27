@@ -55,6 +55,11 @@
   height: 2.25rem;
 }
 
+/* Sign-in: secondary join button under the log-in form */
+.auth .signin-join {
+  margin-top: 1.5rem;
+}
+
 /* Host-form venue-type chooser: two Night Shift card buttons. The form
    itself stays [hidden] until one is picked. */
 .auth form[hidden] {

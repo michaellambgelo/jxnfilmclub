@@ -116,7 +116,7 @@ Nue's dhtml compiler has sharp edges worth remembering:
 
 **State isolation**: reused wrangler-dev instances would otherwise carry KV state between test runs, so `fixtures.ts` has a `beforeEach` that wipes all `pending:/member:/members:/otp:/email:/handle:/session:/rate:/revoked:/__last_*` prefixes in MEMBERS_KV and `attend:/attendance:/event:/events:/rsvp:` in ATTENDANCE_KV. After the wipe it re-seeds `members:all` and `events:all` from `data/{members,events}.json` so SPA tests that expect the production directory contents work the same way they did when the SPA read those files directly.
 
-**OTP sequencing**: `POST /otp/request` overwrites whatever's at `otp:{email}`, so the helper pattern in `signInAs()` is: click "Email me a code" → immediately re-seed `otp:{email}` with a known value → then submit. `POST /signup` behaves similarly with `pending:{email}`.
+**OTP sequencing**: `POST /otp/request` overwrites whatever's at `otp:{email}`, so the helper pattern in `signInAs()` is: click "Log in" → immediately re-seed `otp:{email}` with a known value → then submit. `POST /signup` behaves similarly with `pending:{email}`.
 
 ### CI gate
 `.github/workflows/test.yml` exposes `workflow_call` with `unit` + `e2e` jobs. `deploy-site.yml` and `deploy-worker.yml` declare `test: uses: ./.github/workflows/test.yml` + `deploy: needs: [test]`, so failing tests block deploys. Bot-driven site redeploys (via `workflow_run`) skip the test job — no code change to validate.

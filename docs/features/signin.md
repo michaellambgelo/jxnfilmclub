@@ -17,7 +17,7 @@ sequenceDiagram
     end
 
     Site->>User: "Enter the email you signed up with."
-    User->>Site: Enters email, clicks "Email me a code"
+    User->>Site: Enters email, clicks "Log in"
     Site->>Worker: POST /otp/request
 
     alt Email is a member

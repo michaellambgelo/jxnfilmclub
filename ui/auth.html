@@ -148,7 +148,7 @@
     </label>
 
     <button :if="step === 'email'" type="submit" :disabled="busy">
-      { busy ? 'Sending…' : 'Email me a code' }
+      { busy ? 'Sending…' : 'Log in' }
     </button>
     <button :if="step === 'code'" type="submit" :disabled="busy">
       { busy ? 'Verifying…' : 'Verify' }
@@ -157,7 +157,7 @@
     <p class="err" :if="error">{ error }</p>
   </form>
 
-  <p class="hint">New here? <a href="https://join.jxnfilm.club/">Join the film club</a>.</p>
+  <a href="https://join.jxnfilm.club/" class="ns-btn -ghost signin-join">Join the Club</a>
 
   <script>
     async mounted() {

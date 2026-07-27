@@ -13,7 +13,7 @@ test.describe('sign-in flow (returning members)', () => {
     await expect(page.locator('article.auth h1')).toHaveText('Log in')
 
     await page.getByLabel('Email', { exact: true }).fill(EMAIL)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
 
     await expect(page.getByLabel('Code')).toBeVisible()
     await expect(page.locator('p.lede')).toContainText(EMAIL)
@@ -33,7 +33,7 @@ test.describe('sign-in flow (returning members)', () => {
 
     await page.goto('/signin')
     await page.getByLabel('Email', { exact: true }).fill(EMAIL)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
     await seedKv(page, `otp:${EMAIL}`, CODE, 600)
 
@@ -56,7 +56,7 @@ test.describe('sign-in flow (returning members)', () => {
 
     await page.goto('/signin')
     await page.getByLabel('Email', { exact: true }).fill(EMAIL)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 
     // User navigates away, then returns to /signin.
@@ -76,7 +76,7 @@ test.describe('sign-in flow (returning members)', () => {
 
     await page.goto('/signin')
     await page.getByLabel('Email', { exact: true }).fill(EMAIL)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 
     await page.getByRole('button', { name: /use a different email/i }).click()
@@ -139,7 +139,7 @@ test.describe('sign-in flow (returning members)', () => {
     await page.goto('http://localhost:8787/')
     await page.getByLabel('Display name').fill('Pivot User')
     await page.getByLabel('Email', { exact: true }).fill(signupEmail)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
     await page.waitForURL(/\/verify/)
 
     // Pull the pending code out of the Worker KV and complete verification.
@@ -187,7 +187,7 @@ test.describe('sign-in flow (returning members)', () => {
       // Tab 1: arrive at code step (writes jxnfc_otp_inflight).
       await tab1.goto('/signin')
       await tab1.getByLabel('Email', { exact: true }).fill(EMAIL)
-      await tab1.getByRole('button', { name: /email me a code/i }).click()
+      await tab1.getByRole('button', { name: /log in/i }).click()
       await expect(tab1.getByLabel('Code')).toBeVisible()
 
       // Tab 2: loads /signin fresh and sees the resume.

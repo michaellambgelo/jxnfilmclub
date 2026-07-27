@@ -19,7 +19,7 @@ test.describe('OTP brute-force lockout (S1)', () => {
 
     await page.goto('/signin')
     await page.getByLabel('Email', { exact: true }).fill(EMAIL)
-    await page.getByRole('button', { name: /email me a code/i }).click()
+    await page.getByRole('button', { name: /log in/i }).click()
     await expect(page.getByLabel('Code')).toBeVisible()
 
     // Seed the real OTP AFTER the UI requested one — the test shim overwrites

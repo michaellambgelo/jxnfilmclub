@@ -28,7 +28,7 @@ test.describe('member-hosted screenings', () => {
     // theater select's hint contains "jxnfilm" (matches 'Film') and the house
     // option card's copy contains "address".
     await page.getByLabel('Title').fill(SCREENING_TITLE)
-    await page.getByLabel('Film', { exact: true }).fill('Crash')
+    await page.locator('input[name="film"]').fill('Crash')
     await page.getByLabel('Date').fill('2099-06-15')
     await page.locator('input[name="address"]').fill(SECRET_ADDRESS)
     await page.getByLabel('Capacity').fill('4')

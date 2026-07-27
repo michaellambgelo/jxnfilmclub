@@ -16,12 +16,17 @@ test.describe('member-hosted screenings', () => {
     await page.goto('/host')
     await expect(page.locator('article.auth h1')).toHaveText('Host a screening or meetup')
 
+    // The form is hidden until a venue-type card is picked.
+    await expect(page.locator('article.auth form')).toBeHidden()
+    await page.getByRole('button', { name: /house screening/i }).click()
+    await expect(page.locator('article.auth form')).toBeVisible()
+
     // Fill the create form.
     const SCREENING_TITLE = 'E2E Test Screening'
     const SECRET_ADDRESS = '742 Evergreen Terrace, Springfield, MS 39201'
     // exact/name-attr locators: substring getByLabel is ambiguous here — the
     // theater select's hint contains "jxnfilm" (matches 'Film') and the house
-    // radio's label contains "address".
+    // option card's copy contains "address".
     await page.getByLabel('Title').fill(SCREENING_TITLE)
     await page.getByLabel('Film', { exact: true }).fill('Crash')
     await page.getByLabel('Date').fill('2099-06-15')
@@ -69,8 +74,11 @@ test.describe('member-hosted screenings', () => {
     await page.goto('/host')
     await expect(page.locator('article.auth h1')).toHaveText('Host a screening or meetup')
 
-    // Flip to the meetup variant — the address input hides, theater select shows.
-    await page.getByRole('radio', { name: /public theater/i }).check()
+    // Form hidden until a card is picked; the meetup card reveals the meetup
+    // variant — the address input stays hidden, theater select shows.
+    await expect(page.locator('article.auth form')).toBeHidden()
+    await page.getByRole('button', { name: /theater meetup/i }).click()
+    await expect(page.locator('article.auth form')).toBeVisible()
     await expect(page.locator('input[name="address"]')).toBeHidden()
     await expect(page.locator('select[name="venue"]')).toBeVisible()
 

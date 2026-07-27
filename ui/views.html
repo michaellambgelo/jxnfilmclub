@@ -708,10 +708,13 @@
 
 
 <!-- Host-a-screening-or-meetup form at /host. Members-only.
-     The house/meetup field groups are BOTH always mounted and swapped via
-     :hidden/:required attribute bindings — do not convert them to :if blocks:
-     toggling nodes that shift later siblings crashes nuedom's diff (see
-     docs/features/home.md, Hot Takes). -->
+     The venue-type chooser sets `kind`; the form stays mounted but [hidden]
+     until a card is picked, and the house/meetup field groups swap via
+     :hidden/:required attribute bindings — do not convert any of this to :if
+     blocks: toggling nodes that shift later siblings crashes nuedom's diff
+     (see docs/features/home.md, Hot Takes). Interpolation expressions must
+     stay on ONE line, and attribute values must not contain apostrophes
+     (docs/CLAUDE.md, dhtml gotchas). -->
 <article :is="events-new-view" class="auth">
   <h1>Host a screening or meetup</h1>
 
@@ -719,19 +722,21 @@
     You need to <a href="/signin">log in</a> as a member to host a screening.
   </p>
 
-  <form :if="session" :onsubmit="submit">
-    <fieldset class="loc-type">
-      <legend>Location</legend>
-      <label><input type="radio" name="kind" value="house" :checked="kind === 'house'" :onchange="setKind">
-        My place — address stays private</label>
-      <label><input type="radio" name="kind" value="meetup" :checked="kind === 'meetup'" :onchange="setKind">
-        Public theater — venue listed publicly</label>
-    </fieldset>
+  <div :if="session" class="host-choice">
+    <p class="ns-label">Where will you host?</p>
+    <button type="button" class="host-option { kind === 'house' ? '-selected' : '' }" :onclick="pickHouse">
+      <span class="ns-tape">My place</span>
+      <strong>House screening</strong>
+      <p>Your address stays private. It is only emailed to members who RSVP, and never appears on the public listing.</p>
+    </button>
+    <button type="button" class="host-option { kind === 'meetup' ? '-selected' : '' }" :onclick="pickMeetup">
+      <span class="ns-tape">Out in Jackson</span>
+      <strong>Theater meetup</strong>
+      <p>The theater is listed publicly. Self-organized — everyone buys their own ticket and gets themselves there.</p>
+    </button>
+  </div>
 
-    <!-- NOTE: interpolation expressions must stay on ONE line — nuedom emits a
-         literal \n into the compiled arrow fn for multi-line { ... } bodies. -->
-    <p class="lede">{ kind === 'meetup' ? 'The theater is listed publicly. Meetups are self-organized — everyone buys their own ticket and gets themselves there.' : "Your address stays private. It's only emailed to members who RSVP, and never appears on the public events listing." }</p>
-
+  <form :if="session" :hidden="!kind" :onsubmit="submit">
     <label>Title<input type="text" name="title" required maxlength="200"
       placeholder="e.g. May Screening — Cronenberg Night"></label>
     <label>Film<input type="text" name="film" maxlength="200"
@@ -799,18 +804,23 @@
     ]
 
     this.mounted = function() {
-      this.update({ session: getSession(), busy: false, error: '', kind: 'house', THEATERS: THEATERS })
+      // kind starts empty: the form stays [hidden] until a card is picked.
+      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS })
     }
 
-    this.setKind = function(e) {
-      this.update({ kind: e.target.value })
+    this.pickHouse = function() {
+      this.update({ kind: 'house' })
+    }
+
+    this.pickMeetup = function() {
+      this.update({ kind: 'meetup' })
     }
 
     this.submit = async function(e) {
       e.preventDefault()
       this.update({ busy: true, error: '' })
       const fd = new FormData(e.target)
-      const kind = fd.get('kind') || 'house'
+      const kind = this.kind || 'house'
       const body = {
         kind: kind,
         title: fd.get('title'),

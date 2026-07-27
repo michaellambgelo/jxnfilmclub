@@ -61,12 +61,19 @@ an admin bulk-rename is an optional future cleanup.
 
 ## Form UX constraint (nuedom)
 
-The house/meetup field groups in `events-new-view` are **both always mounted**
-and swapped via `:hidden`/`:required` attribute bindings. Do not convert them
-to `:if` blocks: toggling nodes that shift later siblings crashes nuedom's
+`/host` opens on a venue-type chooser — two Night Shift card buttons
+(`.host-option`, styled in `css/auth.css`) for "House screening" and "Theater
+meetup". The form is fully hidden (`:hidden="!kind"`) until a card is picked;
+picking sets `kind` and reveals the matching field group.
+
+Everything stays **always mounted** and swaps via `:hidden`/`:required`
+attribute bindings. Do not convert the form or the field groups to `:if`
+blocks: toggling nodes that shift later siblings crashes nuedom's
 `diffChildrenByKey` (see [home.md](home.md), Hot Takes). Static `required`
 attributes were removed from address/capacity because a required hidden input
-blocks native form submission.
+blocks native form submission, and `.auth form[hidden]` / `.auth label[hidden]`
+CSS exists because the author-level `display: grid` rules outrank the UA's
+`[hidden]` default.
 
 ## Key Files
 

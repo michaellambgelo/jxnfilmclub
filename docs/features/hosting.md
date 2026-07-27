@@ -61,17 +61,21 @@ an admin bulk-rename is an optional future cleanup.
 
 ## Poster search (TMDB)
 
-Typing in the Film field (≥2 chars, debounced 300ms) queries
-`GET /tmdb/search?q=…` — an authenticated Worker proxy over TMDB movie search
-(`worker/src/index.js` `handleTmdbSearch`). The proxy keeps the API key
-server-side (`TMDB_API_KEY` secret; accepts a v3 key or a v4 read token),
-returns the top 8 results that have posters (`{ id, title, year, poster,
-thumb }` with `w500`/`w92` image URLs), and caches TMDB responses at the edge
-for a day. Picking a suggestion fills the film + year inputs, attaches the
-`poster` URL to the submission, and shows a preview with a Remove button. If
-the secret is unset the endpoint returns 503 and the form quietly degrades
-(no suggestions). Under `E2E_MODE` the endpoint returns a canned Matrix
-fixture so Playwright and local UI work never hit TMDB.
+A two-step picker. Step 1: typing in the Film field (≥2 chars, debounced
+300ms) queries `GET /tmdb/search?q=…` — an authenticated Worker proxy over
+TMDB movie search (`worker/src/index.js` `handleTmdbSearch`) returning the
+top 8 results that have posters (`{ id, title, year, poster, thumb }`).
+Picking a suggestion confirms the film: it fills the film + year inputs and
+preselects the film's primary poster. Step 2: the form then queries
+`GET /tmdb/posters?id=…` (`handleTmdbPosters`) for up to 12 alternate posters
+(English/textless, TMDB vote-ranked) rendered as a thumbnail grid — clicking
+one swaps the selection, shown in the preview with a Remove button. The
+chosen `w500` URL rides the submission as `poster`.
+
+Both endpoints keep the API key server-side (`TMDB_API_KEY` secret; v3 key or
+v4 read token), edge-cache TMDB responses for a day, return 503 when the
+secret is unset (the form quietly degrades), and serve canned Matrix fixtures
+under `E2E_MODE` so Playwright and local UI work never hit TMDB.
 
 Setup per environment: `cd worker && npx wrangler secret put TMDB_API_KEY`
 (repeat with `--env staging`); locally add it to `worker/.dev.vars`.

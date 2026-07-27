@@ -122,6 +122,7 @@ async function route(request, env) {
     // Poster search for the /host form — members only (keeps the TMDB key
     // server-side and the endpoint un-scrapeable).
     if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
+    if (request.method === 'GET' && pathname === '/tmdb/posters') return handleTmdbPosters(request, env)
 
     if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
 
@@ -1245,14 +1246,7 @@ async function handleTmdbSearch(request, env) {
   }
   if (!env.TMDB_API_KEY) return json(env, { error: 'poster search is not configured' }, 503)
 
-  const url = new URL('https://api.themoviedb.org/3/search/movie')
-  url.searchParams.set('query', q)
-  url.searchParams.set('include_adult', 'false')
-  const headers = { 'User-Agent': 'jxnfilmclub-join' }
-  if (env.TMDB_API_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${env.TMDB_API_KEY}`
-  else url.searchParams.set('api_key', env.TMDB_API_KEY)
-
-  const res = await fetch(url.toString(), { headers, cf: { cacheTtl: 86400, cacheEverything: true } })
+  const res = await tmdbFetch(env, '/search/movie', { query: q, include_adult: 'false' })
   if (!res.ok) return json(env, { error: 'poster search failed' }, 502)
   const data = await res.json().catch(() => ({}))
   const results = (data.results || [])
@@ -1266,6 +1260,46 @@ async function handleTmdbSearch(request, env) {
       thumb: `https://image.tmdb.org/t/p/w92${m.poster_path}`,
     }))
   return json(env, { results })
+}
+
+// GET /tmdb/posters?id=… — authenticated step 2 of the poster picker: all
+// alternate posters TMDB lists for a confirmed film (capped at 12, TMDB's
+// vote-ranked order preserved).
+async function handleTmdbPosters(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const id = new URL(request.url).searchParams.get('id')
+  if (!id || !/^\d+$/.test(id)) return json(env, { error: 'a numeric TMDB movie id is required' }, 400)
+  if (env.E2E_MODE === 'true') {
+    return json(env, { posters: [
+      { full: 'https://image.tmdb.org/t/p/w500/e2e-matrix.jpg',     thumb: 'https://image.tmdb.org/t/p/w185/e2e-matrix.jpg' },
+      { full: 'https://image.tmdb.org/t/p/w500/e2e-matrix-alt.jpg', thumb: 'https://image.tmdb.org/t/p/w185/e2e-matrix-alt.jpg' },
+    ] })
+  }
+  if (!env.TMDB_API_KEY) return json(env, { error: 'poster search is not configured' }, 503)
+
+  const res = await tmdbFetch(env, `/movie/${id}/images`, { include_image_language: 'en,null' })
+  if (!res.ok) return json(env, { error: 'poster search failed' }, 502)
+  const data = await res.json().catch(() => ({}))
+  const posters = (data.posters || [])
+    .filter(p => p.file_path)
+    .slice(0, 12)
+    .map(p => ({
+      full: `https://image.tmdb.org/t/p/w500${p.file_path}`,
+      thumb: `https://image.tmdb.org/t/p/w185${p.file_path}`,
+    }))
+  return json(env, { posters })
+}
+
+// Shared TMDB fetch: v3 api key rides as a query param, v4 read tokens
+// (JWTs start with "eyJ") as a bearer header; responses edge-cached a day.
+async function tmdbFetch(env, path, params) {
+  const url = new URL(`https://api.themoviedb.org/3${path}`)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  const headers = { 'User-Agent': 'jxnfilmclub-join' }
+  if (env.TMDB_API_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${env.TMDB_API_KEY}`
+  else url.searchParams.set('api_key', env.TMDB_API_KEY)
+  return fetch(url.toString(), { headers, cf: { cacheTtl: 86400, cacheEverything: true } })
 }
 
 // POST /events — authenticated. Any member can host. Generates the event id

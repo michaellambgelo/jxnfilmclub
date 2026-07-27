@@ -95,6 +95,14 @@ test.describe('member-hosted screenings', () => {
     await expect(page.locator('input[name="year"]')).toHaveValue('1999')
     await expect(page.locator('.poster-picked')).toBeVisible()
 
+    // Step 2: alternate posters load (canned fixture has 2); the primary is
+    // preselected, picking the alternate swaps the selection.
+    await expect(page.locator('.poster-choice')).toHaveCount(2)
+    await expect(page.locator('.poster-choice.-selected img')).toHaveAttribute('src', /e2e-matrix\.jpg/)
+    await page.locator('.poster-choice').nth(1).click()
+    await expect(page.locator('.poster-choice.-selected img')).toHaveAttribute('src', /e2e-matrix-alt\.jpg/)
+    await expect(page.locator('.poster-picked img')).toHaveAttribute('src', /e2e-matrix-alt\.jpg/)
+
     await page.getByLabel('Date').fill('2099-07-20')
     await page.locator('select[name="venue"]').selectOption('The Capri Theater')
     await page.locator('input[name="time"]').fill('19:30')
@@ -119,7 +127,7 @@ test.describe('member-hosted screenings', () => {
     expect(ours.kind).toBe('meetup')
     expect(ours.venue).toBe('The Capri Theater')
     expect(ours.time).toBe('19:30')
-    expect(ours.poster).toBe('https://image.tmdb.org/t/p/w500/e2e-matrix.jpg')
+    expect(ours.poster).toBe('https://image.tmdb.org/t/p/w500/e2e-matrix-alt.jpg')
     expect(ours.capacity).toBeUndefined()
     expect(ours.address).toBeUndefined()
   })

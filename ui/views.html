@@ -811,6 +811,12 @@
         <span>{ s.title }{ s.year ? ' (' + s.year + ')' : '' }</span>
       </button>
     </div>
+    <div class="poster-choices">
+      <button :each="(p, i) in posterOptions" key="{ p.full }" type="button"
+        class="poster-choice { p.full === posterUrl ? '-selected' : '' }" data-idx="{ i }" :onclick="pickChoice">
+        <img src="{ p.thumb }" alt="">
+      </button>
+    </div>
     <div class="poster-picked" :hidden="!posterUrl">
       <img src="{ posterUrl || '' }" alt="Selected poster">
       <button type="button" class="-ghost" :onclick="clearPoster">Remove poster</button>
@@ -879,33 +885,41 @@
 
     this.mounted = function() {
       // kind starts empty: the form stays [hidden] until a card is picked.
-      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '' })
+      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '', posterOptions: [] })
     }
+
+    // Debounce timer + race-guard counters live at MODULE scope, not on
+    // this-dot fields: nuedom hands handlers a fresh context object after
+    // update(), so instance fields written in one handler are invisible to
+    // the async closure created in another (QA proved this-dot seq guards
+    // are no-ops). Safe here — the view is single-instance per page.
+    let searchTimer = null
+    let searchSeq = 0
+    let postersSeq = 0
 
     this.filmInput = function(e) {
       const q = e.target.value.trim()
       const self = this
-      if (this._searchTimer) clearTimeout(this._searchTimer)
+      if (searchTimer) clearTimeout(searchTimer)
       if (q.length < 2) {
-        this._searchSeq = (this._searchSeq || 0) + 1  // invalidate in-flight search
+        searchSeq++  // invalidate in-flight search
         this.update({ suggestions: [] })
         return
       }
-      this._searchTimer = setTimeout(function() { self.searchPosters(q) }, 300)
+      searchTimer = setTimeout(function() { self.searchPosters(q) }, 300)
     }
 
     this.searchPosters = async function(q) {
       if (!this.session) return
       // sequence guard: a slow earlier response must not overwrite a later one
-      this._searchSeq = (this._searchSeq || 0) + 1
-      const seq = this._searchSeq
+      const seq = ++searchSeq
       try {
         const res = await fetch(WORKER_ORIGIN + '/tmdb/search?q=' + encodeURIComponent(q), {
           headers: { Authorization: 'Bearer ' + this.session.token },
         })
-        if (!res.ok || seq !== this._searchSeq) return
+        if (!res.ok || seq !== searchSeq) return
         const data = await res.json()
-        if (seq !== this._searchSeq) return
+        if (seq !== searchSeq) return
         this.update({ suggestions: (data && data.results) || [] })
       } catch (err) {}
     }
@@ -918,12 +932,36 @@
       if (filmInput) filmInput.value = s.title
       const yearInput = this.root.querySelector('input[name="year"]')
       if (yearInput && s.year) yearInput.value = s.year
-      this._searchSeq = (this._searchSeq || 0) + 1  // invalidate in-flight search
-      this.update({ posterUrl: s.poster, suggestions: [] })
+      searchSeq++  // invalidate in-flight search
+      // Step 1 done: commit the film with its primary poster preselected, then
+      // load the alternate posters for step 2.
+      this.update({ posterUrl: s.poster, suggestions: [], posterOptions: [] })
+      this.loadPosterOptions(s.id)
+    }
+
+    this.loadPosterOptions = async function(movieId) {
+      if (!this.session || !movieId) return
+      const seq = ++postersSeq
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/tmdb/posters?id=' + encodeURIComponent(movieId), {
+          headers: { Authorization: 'Bearer ' + this.session.token },
+        })
+        if (!res.ok || seq !== postersSeq) return
+        const data = await res.json()
+        if (seq !== postersSeq) return
+        this.update({ posterOptions: (data && data.posters) || [] })
+      } catch (err) {}
+    }
+
+    this.pickChoice = function(e) {
+      const idx = Number(e.currentTarget.dataset.idx)
+      const p = (this.posterOptions || [])[idx]
+      if (p && p.full) this.update({ posterUrl: p.full })
     }
 
     this.clearPoster = function() {
-      this.update({ posterUrl: '' })
+      postersSeq++  // invalidate in-flight posters
+      this.update({ posterUrl: '', posterOptions: [] })
     }
 
     this.pickHouse = function() {

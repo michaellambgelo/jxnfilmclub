@@ -89,7 +89,8 @@ DNS records are printed in the Resend dashboard.
 | DELETE | `/events/:id/rsvp`      | Cancel own RSVP; promotes the waitlist head. |
 | GET    | `/events/:id/rsvp/me`   | `{ status: 'confirmed' \| 'waitlisted' \| 'none', position? }`. |
 | GET    | `/events/:id/host`      | Host-only: `{ kind, capacity, address, venue, time, notes, confirmed: [names], waitlist: [names] }` — never attendee emails. |
-| GET    | `/tmdb/search?q=`       | Poster search proxy for the /host form. Top 8 TMDB movie matches with posters: `{ results: [{ id, title, year, poster, thumb }] }`. 503 when `TMDB_API_KEY` is unset; canned fixture under `E2E_MODE`. |
+| GET    | `/tmdb/search?q=`       | Poster search proxy for the /host form (step 1). Top 8 TMDB movie matches with posters: `{ results: [{ id, title, year, poster, thumb }] }`. 503 when `TMDB_API_KEY` is unset; canned fixture under `E2E_MODE`. |
+| GET    | `/tmdb/posters?id=`     | Step 2: up to 12 alternate posters for a TMDB movie id: `{ posters: [{ full, thumb }] }`. Same key/503/E2E semantics as `/tmdb/search`. |
 | GET/POST | `/rsvp/cancel?token=` | One-click cancel from email (HMAC token, purpose-tagged; GET renders a confirm page). |
 
 ### Dev-only (E2E)

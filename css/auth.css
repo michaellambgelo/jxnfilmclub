@@ -142,6 +142,45 @@
   flex: none;
 }
 
+/* Step 2: alternate-poster grid; the selected one gets the brand border */
+.auth .poster-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.auth .poster-choices:empty {
+  display: none;
+}
+
+.auth button.poster-choice {
+  padding: 0;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 2px;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.auth button.poster-choice:hover:not(:disabled) {
+  background: none;
+  border-color: var(--ink-3);
+}
+
+.auth button.poster-choice.-selected,
+.auth button.poster-choice.-selected:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.auth .poster-choice img {
+  width: 72px;
+  aspect-ratio: 2 / 3; /* keeps the button clickable while/if the thumb fails to load */
+  object-fit: cover;
+  background: var(--surface);
+  display: block;
+  border-radius: 1px;
+}
+
 .auth .poster-picked {
   display: flex;
   align-items: center;

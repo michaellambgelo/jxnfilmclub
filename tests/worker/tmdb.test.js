@@ -89,3 +89,52 @@ describe('GET /tmdb/search — poster search proxy', () => {
     expect(await res.text()).not.toContain('test-tmdb-key')
   })
 })
+
+const POSTERS_FIXTURE = {
+  posters: [
+    { file_path: '/main.jpg', iso_639_1: 'en' },
+    { file_path: '/textless.jpg', iso_639_1: null },
+    { file_path: null },
+    ...Array.from({ length: 15 }, (_, i) => ({ file_path: `/alt${i}.jpg`, iso_639_1: 'en' })),
+  ],
+}
+
+describe('GET /tmdb/posters — alternate posters for a confirmed film', () => {
+  it('requires auth', async () => {
+    const res = await req('/tmdb/posters?id=603')
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a missing or non-numeric id', async () => {
+    const token = await getTokenFor('poster@example.com')
+    expect((await req('/tmdb/posters', { token })).status).toBe(400)
+    expect((await req('/tmdb/posters?id=matrix', { token })).status).toBe(400)
+    expect((await req('/tmdb/posters?id=../evil', { token })).status).toBe(400)
+  })
+
+  it('returns capped, mapped posters from the images endpoint', async () => {
+    const token = await getTokenFor('poster@example.com')
+    let calledUrl = null
+    mockFetch(async (url) => {
+      calledUrl = String(url)
+      return new Response(JSON.stringify(POSTERS_FIXTURE), { status: 200 })
+    })
+    const res = await req('/tmdb/posters?id=603', { token })
+    expect(res.status).toBe(200)
+    const { posters } = await res.json()
+    expect(posters).toHaveLength(12) // capped; null file_path dropped
+    expect(posters[0]).toEqual({
+      full: 'https://image.tmdb.org/t/p/w500/main.jpg',
+      thumb: 'https://image.tmdb.org/t/p/w185/main.jpg',
+    })
+    expect(calledUrl).toContain('/movie/603/images')
+    expect(calledUrl).toContain('api_key=test-tmdb-key')
+  })
+
+  it('TMDB failure → 502', async () => {
+    const token = await getTokenFor('poster@example.com')
+    mockFetch(async () => new Response('nope', { status: 500 }))
+    const res = await req('/tmdb/posters?id=603', { token })
+    expect(res.status).toBe(502)
+  })
+})

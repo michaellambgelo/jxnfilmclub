@@ -47,8 +47,9 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `css/` | Vanilla CSS — `global`, `form`, `auth`, `widgets`, `table`, `readme` |
 | `model/index.ts` | `getMembers` / `getEvents` — read `data/*.json`, paginate, sort, search |
 | `data/` | Source-of-truth JSON: `members.json` (id-keyed), `events.json`, and (cron-generated) `watched.json`, `attendance.json` |
-| `worker/` | Cloudflare Worker at `join.jxnfilm.club` — all auth + signup + LB + member endpoints, plus `GET /` signup form |
-| `worker/src/` | `index.js`, `signup.html`, `privacy.html`. `%SITE_ORIGIN%` in signup.html is replaced at response time. |
+| `worker/` | Cloudflare Worker at `join.jxnfilm.club` — all auth + signup + LB + member endpoints, plus `GET /` signup form. Daily cron (`17 8 * * *`, both envs) runs `scrubPastEvents()` — the privacy policy's 30-day retention promise (strips address/notes off past hosted events, deletes their `rsvp:*` records; manual trigger `POST /admin/scrub` behind `ADMIN_TOKEN`). Account deletion purges the member from all `rsvp:*` records (`purgeRsvps`). |
+| `worker/src/` | `index.js`, `signup.html`, `privacy.html` (the canonical privacy policy, served at `/privacy`; keep it in sync with actual data practices). `%SITE_ORIGIN%` in signup.html is replaced at response time. |
+| `fonts/` | Self-hosted variable woff2 fonts (Playfair/Oswald/Newsreader + Fira Code) — `@font-face` in `css/tokens.css`; worker pages load them cross-origin from `jxnfilm.club/fonts/`. **No Google Fonts anywhere** — the privacy policy promises no third-party font requests. |
 | `scripts/refresh_letterboxd.py` | 6-hour cron RSS scraper (feeds `watched.json` + `attendance.json`) |
 | `.github/workflows/` | `add-member` + `update-member` (repo_dispatch, id-keyed); `refresh-letterboxd` (cron); `test` (reusable) + `deploy-site` + `deploy-worker` (gated on test) |
 | `tests/model/` | Vitest model tests |
@@ -77,7 +78,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 - **Session**: `localStorage.jxnfc_session = { token, email, id, handle?, exp }`. The `token` is `base64url(JSON(claims)).HMAC-SHA256`, signed with `OTP_SIGNING_KEY`. Claims include `email`, `id`, `exp`, and a random `jti` (S2 — addressable for server-side revocation). The Worker mirrors an authoritative snapshot at `session:{id}` (see KV schema) so `/member/me` reads are fast and reflect the latest mutation immediately. `POST /session/revoke` writes `revoked:{jti}` so the bearer token (and its session snapshot) can't be replayed for the remaining lifetime; the edit-view "Sign out" button calls this before clearing `localStorage`.
 - **OTP in-flight**: `localStorage.jxnfc_otp_inflight = { email, sentAt }` — written by `sign-in-view` after `/otp/request`, expires client-side after 10 minutes, lets returning users resume the code-entry step without re-typing their email.
 - **Server-resolved identity**: `/member/update` and `/letterboxd/unlink` look up the member from the bearer token's email, not from request body fields. Clients can't edit anyone else's entry.
-- **Email templates**: two — `sendSignupEmail` (OTP only) and `sendLoginEmail` (OTP only). Different Resend subjects.
+- **Email templates**: OTP (`sendSignupEmail` / `sendLoginEmail`), screening transactional (`sendRsvpEmail` — carries the host address — plus update/cancellation variants, all with one-click cancel tokens), and the opt-in newsletter broadcast (`buildNewsletterMessage`, List-Unsubscribe + CAN-SPAM footer). All via Resend; `E2E_MODE` short-circuits to KV sentinels.
 
 ## dhtml Component Gotchas
 

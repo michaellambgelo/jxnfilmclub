@@ -84,7 +84,17 @@ test.describe('member-hosted screenings', () => {
 
     const MEETUP_TITLE = 'E2E Capri Meetup'
     await page.getByLabel('Title').fill(MEETUP_TITLE)
-    await page.getByLabel('Film', { exact: true }).fill('In the Mood for Love')
+
+    // Poster search: typing in Film surfaces TMDB suggestions (canned fixture
+    // under E2E_MODE); picking one fills film + year and attaches the poster.
+    await page.locator('input[name="film"]').pressSequentially('matrix')
+    const suggestion = page.locator('.poster-opt', { hasText: 'The Matrix (1999)' })
+    await expect(suggestion).toBeVisible()
+    await suggestion.click()
+    await expect(page.locator('input[name="film"]')).toHaveValue('The Matrix')
+    await expect(page.locator('input[name="year"]')).toHaveValue('1999')
+    await expect(page.locator('.poster-picked')).toBeVisible()
+
     await page.getByLabel('Date').fill('2099-07-20')
     await page.locator('select[name="venue"]').selectOption('The Capri Theater')
     await page.locator('input[name="time"]').fill('19:30')
@@ -109,6 +119,7 @@ test.describe('member-hosted screenings', () => {
     expect(ours.kind).toBe('meetup')
     expect(ours.venue).toBe('The Capri Theater')
     expect(ours.time).toBe('19:30')
+    expect(ours.poster).toBe('https://image.tmdb.org/t/p/w500/e2e-matrix.jpg')
     expect(ours.capacity).toBeUndefined()
     expect(ours.address).toBeUndefined()
   })

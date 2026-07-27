@@ -119,6 +119,9 @@ async function route(request, env) {
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
+    // Poster search for the /host form — members only (keeps the TMDB key
+    // server-side and the endpoint un-scrapeable).
+    if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
 
     if (request.method === 'GET' && pathname === '/events/attendance') return handleAttendanceMap(env)
 
@@ -1213,6 +1216,48 @@ function validScreeningInput(body) {
   if (typeof body.poster === 'string' && body.poster.length <= 500) out.poster = body.poster.trim()
   if (typeof body.letterboxd_uri === 'string' && body.letterboxd_uri.length <= 500) out.letterboxd_uri = body.letterboxd_uri.trim()
   return { value: out }
+}
+
+// GET /tmdb/search?q=… — authenticated poster search for the /host form.
+// Proxies TMDB movie search so the API key stays a Worker secret; returns a
+// trimmed list (top 8 with posters). Accepts either a TMDB v3 api key or a
+// v4 read token (JWTs start with "eyJ") in TMDB_API_KEY.
+async function handleTmdbSearch(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const q = (new URL(request.url).searchParams.get('q') || '').trim()
+  if (!q) return json(env, { results: [] })
+  if (env.E2E_MODE === 'true') {
+    // Canned fixture so Playwright (and local UI work) never hits TMDB.
+    return json(env, { results: [
+      { id: 603, title: 'The Matrix', year: '1999',
+        poster: 'https://image.tmdb.org/t/p/w500/e2e-matrix.jpg',
+        thumb:  'https://image.tmdb.org/t/p/w92/e2e-matrix.jpg' },
+    ] })
+  }
+  if (!env.TMDB_API_KEY) return json(env, { error: 'poster search is not configured' }, 503)
+
+  const url = new URL('https://api.themoviedb.org/3/search/movie')
+  url.searchParams.set('query', q)
+  url.searchParams.set('include_adult', 'false')
+  const headers = { 'User-Agent': 'jxnfilmclub-join' }
+  if (env.TMDB_API_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${env.TMDB_API_KEY}`
+  else url.searchParams.set('api_key', env.TMDB_API_KEY)
+
+  const res = await fetch(url.toString(), { headers, cf: { cacheTtl: 86400, cacheEverything: true } })
+  if (!res.ok) return json(env, { error: 'poster search failed' }, 502)
+  const data = await res.json().catch(() => ({}))
+  const results = (data.results || [])
+    .filter(m => m.poster_path)
+    .slice(0, 8)
+    .map(m => ({
+      id: m.id,
+      title: m.title,
+      year: (m.release_date || '').slice(0, 4),
+      poster: `https://image.tmdb.org/t/p/w500${m.poster_path}`,
+      thumb: `https://image.tmdb.org/t/p/w92${m.poster_path}`,
+    }))
+  return json(env, { results })
 }
 
 // POST /events — authenticated. Any member can host. Generates the event id

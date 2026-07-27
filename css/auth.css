@@ -96,6 +96,57 @@
   flex: none;
 }
 
+/* Host-form poster search: TMDB suggestions under the Film field, and the
+   picked-poster preview. Both containers are always mounted (nuedom). */
+.auth .poster-suggest {
+  display: grid;
+  gap: 2px;
+}
+
+.auth button.poster-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+}
+
+.auth button.poster-opt:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.auth .poster-opt img {
+  width: 32px;
+  height: 48px;
+  object-fit: cover;
+  flex: none;
+}
+
+.auth .poster-picked {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* author display outranks the UA [hidden] rule — same trap as form/label */
+.auth .poster-picked[hidden] {
+  display: none;
+}
+
+.auth .poster-picked img {
+  width: 72px;
+  border-radius: 2px;
+  box-shadow: var(--shadow-lift);
+}
+
 /* Host-form venue-type chooser: two Night Shift card buttons. The form
    itself stays [hidden] until one is picked. */
 .auth form[hidden] {

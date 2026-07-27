@@ -43,6 +43,7 @@ export default defineWorkersProject({
             RESEND_API_KEY: 'test-resend-key',
             OTP_SIGNING_KEY: 'test-key',
             ADMIN_TOKEN: 'test-admin-token',
+            TMDB_API_KEY: 'test-tmdb-key',
             NEWSLETTER_FROM: 'Jackson Film Club <noreply@join.jxnfilm.club>',
             NEWSLETTER_POSTAL_ADDRESS: 'Jackson Film Club, PO Box 1, Jackson, MS 39201',
           },

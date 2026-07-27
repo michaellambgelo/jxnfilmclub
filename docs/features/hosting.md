@@ -59,6 +59,23 @@ an admin bulk-rename is an optional future cleanup.
 - On meetups, PATCH treats an explicit `''`/`null` for `capacity` or `time` as
   a clear; un-capping promotes the entire waitlist.
 
+## Poster search (TMDB)
+
+Typing in the Film field (≥2 chars, debounced 300ms) queries
+`GET /tmdb/search?q=…` — an authenticated Worker proxy over TMDB movie search
+(`worker/src/index.js` `handleTmdbSearch`). The proxy keeps the API key
+server-side (`TMDB_API_KEY` secret; accepts a v3 key or a v4 read token),
+returns the top 8 results that have posters (`{ id, title, year, poster,
+thumb }` with `w500`/`w92` image URLs), and caches TMDB responses at the edge
+for a day. Picking a suggestion fills the film + year inputs, attaches the
+`poster` URL to the submission, and shows a preview with a Remove button. If
+the secret is unset the endpoint returns 503 and the form quietly degrades
+(no suggestions). Under `E2E_MODE` the endpoint returns a canned Matrix
+fixture so Playwright and local UI work never hit TMDB.
+
+Setup per environment: `cd worker && npx wrangler secret put TMDB_API_KEY`
+(repeat with `--env staging`); locally add it to `worker/.dev.vars`.
+
 ## Form UX constraint (nuedom)
 
 `/host` opens on a venue-type chooser — two plain buttons, "My house" and

@@ -37,6 +37,7 @@ npx wrangler kv:namespace create MEMBERS_KV --env staging
 npx wrangler secret put GITHUB_TOKEN     # fine-grained PAT, Contents: Write
 npx wrangler secret put RESEND_API_KEY   # re_... from resend.com
 npx wrangler secret put OTP_SIGNING_KEY  # openssl rand -hex 32
+npx wrangler secret put TMDB_API_KEY     # themoviedb.org v3 key or v4 read token (poster search)
 ```
 
 Email domain (`jxnfilm.club`) must be verified in Resend — SPF + DKIM
@@ -88,6 +89,7 @@ DNS records are printed in the Resend dashboard.
 | DELETE | `/events/:id/rsvp`      | Cancel own RSVP; promotes the waitlist head. |
 | GET    | `/events/:id/rsvp/me`   | `{ status: 'confirmed' \| 'waitlisted' \| 'none', position? }`. |
 | GET    | `/events/:id/host`      | Host-only: `{ kind, capacity, address, venue, time, notes, confirmed: [names], waitlist: [names] }` — never attendee emails. |
+| GET    | `/tmdb/search?q=`       | Poster search proxy for the /host form. Top 8 TMDB movie matches with posters: `{ results: [{ id, title, year, poster, thumb }] }`. 503 when `TMDB_API_KEY` is unset; canned fixture under `E2E_MODE`. |
 | GET/POST | `/rsvp/cancel?token=` | One-click cancel from email (HMAC token, purpose-tagged; GET renders a confirm page). |
 
 ### Dev-only (E2E)

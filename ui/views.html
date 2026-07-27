@@ -600,7 +600,7 @@
       if (!ts) return ''
       // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC, so it doesn't
       // roll back a day west of UTC (matches the pattern used above).
-      const d = /^\d{4}-\d{2}-\d{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
+      const d = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
       return d.toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       })
@@ -737,8 +737,19 @@
   <form :if="session" :hidden="!kind" :onsubmit="submit">
     <label>Title<input type="text" name="title" required maxlength="200"
       placeholder="e.g. May Screening — Cronenberg Night"></label>
-    <label>Film<input type="text" name="film" maxlength="200"
-      placeholder="e.g. Crash (1996)"></label>
+    <label>Film <span class="hint">— type to search posters via TMDB</span>
+      <input type="text" name="film" maxlength="200" autocomplete="off"
+        placeholder="e.g. Crash (1996)" :oninput="filmInput"></label>
+    <div class="poster-suggest">
+      <button :each="(s, i) in suggestions" key="{ s.id }" type="button" class="poster-opt" data-idx="{ i }" :onclick="pickPoster">
+        <img src="{ s.thumb }" alt="">
+        <span>{ s.title }{ s.year ? ' (' + s.year + ')' : '' }</span>
+      </button>
+    </div>
+    <div class="poster-picked" :hidden="!posterUrl">
+      <img src="{ posterUrl || '' }" alt="Selected poster">
+      <button type="button" class="-ghost" :onclick="clearPoster">Remove poster</button>
+    </div>
     <label>Year<input type="number" name="year" min="1888" max="2100" placeholder="1996"></label>
     <label>Date<input type="date" name="date" required></label>
     <label :hidden="kind !== 'house'">Address <span class="hint">— private</span>
@@ -803,7 +814,51 @@
 
     this.mounted = function() {
       // kind starts empty: the form stays [hidden] until a card is picked.
-      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS })
+      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '' })
+    }
+
+    this.filmInput = function(e) {
+      const q = e.target.value.trim()
+      const self = this
+      if (this._searchTimer) clearTimeout(this._searchTimer)
+      if (q.length < 2) {
+        this._searchSeq = (this._searchSeq || 0) + 1  // invalidate in-flight search
+        this.update({ suggestions: [] })
+        return
+      }
+      this._searchTimer = setTimeout(function() { self.searchPosters(q) }, 300)
+    }
+
+    this.searchPosters = async function(q) {
+      if (!this.session) return
+      // sequence guard: a slow earlier response must not overwrite a later one
+      this._searchSeq = (this._searchSeq || 0) + 1
+      const seq = this._searchSeq
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/tmdb/search?q=' + encodeURIComponent(q), {
+          headers: { Authorization: 'Bearer ' + this.session.token },
+        })
+        if (!res.ok || seq !== this._searchSeq) return
+        const data = await res.json()
+        if (seq !== this._searchSeq) return
+        this.update({ suggestions: (data && data.results) || [] })
+      } catch (err) {}
+    }
+
+    this.pickPoster = function(e) {
+      const idx = Number(e.currentTarget.dataset.idx)
+      const s = (this.suggestions || [])[idx]
+      if (!s) return
+      const filmInput = this.root.querySelector('input[name="film"]')
+      if (filmInput) filmInput.value = s.title
+      const yearInput = this.root.querySelector('input[name="year"]')
+      if (yearInput && s.year) yearInput.value = s.year
+      this._searchSeq = (this._searchSeq || 0) + 1  // invalidate in-flight search
+      this.update({ posterUrl: s.poster, suggestions: [] })
+    }
+
+    this.clearPoster = function() {
+      this.update({ posterUrl: '' })
     }
 
     this.pickHouse = function() {
@@ -827,6 +882,7 @@
         date: fd.get('date'),
         capacity: fd.get('capacity') ? Number(fd.get('capacity')) : undefined,
         notes: fd.get('notes') || undefined,
+        poster: this.posterUrl || undefined,
       }
       if (kind === 'house') {
         body.address = fd.get('address')

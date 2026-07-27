@@ -66,6 +66,13 @@ export default {
       return json(env, { error: 'internal server error' }, 500)
     }
   },
+
+  // Daily cron (see [triggers] in wrangler.toml): privacy retention promise
+  // from /privacy — 30 days after a screening, attendee emails and the host's
+  // address/notes are deleted.
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(scrubPastEvents(env))
+  },
 }
 
 async function route(request, env) {
@@ -111,6 +118,7 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
+    if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
 
@@ -453,7 +461,8 @@ async function handleMemberUpdate(request, env) {
 // Revokes the current bearer token so a copy can't be replayed. Dispatches
 // `remove-member` to drop the row from data/members.json. Past attendance
 // entries (attend:{eventId} in ATTENDANCE_KV) are intentionally kept as
-// historical record — only the member identity is removed.
+// historical record — only the member identity is removed. RSVP records
+// (which carry the member's email) are purged everywhere via purgeRsvps().
 async function handleMemberDelete(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -470,6 +479,12 @@ async function handleMemberDelete(request, env) {
   if (body && body.anonymize === true && member.name) {
     await anonymizeAttendance(env, member.name)
   }
+
+  // Purge the member's RSVP entries before the KV cascade. Deliberately not
+  // wrapped in try/catch: if the purge fails, the 500 lets the user retry —
+  // swallowing the error would delete the account while leaving their email
+  // behind in rsvp:* records, and claim success.
+  await purgeRsvps(env, member, new URL(request.url).origin)
 
   // KV cascade. Order doesn't matter for correctness — each delete is
   // independent — but doing the canonical row first means a mid-flight
@@ -1549,6 +1564,12 @@ async function handleRsvp(request, env, eventId) {
   const event = await readEvent(env, eventId)
   if (!event) return json(env, { error: 'event not found' }, 404)
   if (!event.hostId) return json(env, { error: 'this event does not accept RSVPs (use /attend)' }, 409)
+  // A screening that already happened takes no RSVPs — also keeps a late
+  // request from recreating a record the post-event scrub already deleted.
+  const today = new Date().toISOString().slice(0, 10)
+  if (event.date && event.date < today) {
+    return json(env, { error: 'this screening has already happened' }, 409)
+  }
 
   const rsvp = await readRsvp(env, eventId)
   if (rsvp.confirmed.some(r => r.memberId === member.id)) {
@@ -1607,6 +1628,102 @@ async function cancelRsvp(env, eventId, memberId, origin) {
     return { ok: true, status: 'cancelled', promoted: false }
   }
   return { ok: true, status: 'not-rsvped', promoted: false }
+}
+
+// --- Post-event privacy scrub ---
+//
+// The privacy policy promises: 30 days after a screening, its RSVP list
+// (attendee emails) and the host's private address/notes are deleted. The
+// names-only attend:{eventId} history and the public event listing stay —
+// they never contained either. Runs daily via the cron trigger; also
+// triggerable as POST /admin/scrub for ops/staging verification.
+
+const SCRUB_AFTER_DAYS = 30
+
+async function scrubPastEvents(env) {
+  const cutoff = new Date(Date.now() - SCRUB_AFTER_DAYS * 86400_000).toISOString().slice(0, 10)
+  let scrubbedEvents = 0
+  let deletedRsvps = 0
+
+  // Hosted events past the cutoff: strip private fields off the canonical row.
+  // events:all projections carry `date` + `hostId`, so no event:* prefix scan.
+  // writeEvent re-projects into events:all, which never held address/notes.
+  const all = await readEventsAll(env)
+  for (const proj of all) {
+    if (!proj || !proj.hostId || !proj.date || proj.date >= cutoff) continue
+    const event = await readEvent(env, proj.id)
+    if (!event || event.scrubbedAt) continue
+    delete event.address
+    delete event.notes
+    event.scrubbedAt = new Date().toISOString()
+    await writeEvent(env, event)
+    scrubbedEvents++
+  }
+
+  // RSVP sweep: delete every rsvp:{id} whose event is past the cutoff — or
+  // gone entirely (the admin dashboard writes KV directly and can orphan a
+  // record; handleDeleteEvent cleans up after itself).
+  let cursor
+  do {
+    const page = await env.ATTENDANCE_KV.list({ prefix: 'rsvp:', cursor })
+    for (const k of page.keys) {
+      const event = await readEvent(env, k.name.slice('rsvp:'.length))
+      if (!event || (event.date && event.date < cutoff)) {
+        await env.ATTENDANCE_KV.delete(k.name)
+        deletedRsvps++
+      }
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+
+  console.log(`scrubPastEvents: cutoff=${cutoff} scrubbedEvents=${scrubbedEvents} deletedRsvps=${deletedRsvps}`)
+  return { cutoff, scrubbedEvents, deletedRsvps }
+}
+
+// POST /admin/scrub — bearer-auth with ADMIN_TOKEN (same gate as the
+// newsletter send). Manual trigger for the daily scheduled scrub.
+async function handleAdminScrub(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  return json(env, { ok: true, ...await scrubPastEvents(env) })
+}
+
+// Account-deletion sweep: remove the member's {memberId, name, email, at}
+// entries from every rsvp:{eventId} record. Like anonymizeAttendance there's
+// no per-member index, so this walks the whole prefix — cheap at club scale,
+// but paginate anyway (list() pages at 1000 keys).
+//
+// Upcoming hosted events go through cancelRsvp() so the freed slot promotes
+// the waitlist head (with the usual confirmation email). Past or orphaned
+// records get a direct filtered write instead: no promotion emails for an
+// event that already happened, and no writeRsvp() so the names-only
+// attend:{eventId} history stays intact (name removal remains the separate
+// `anonymize` opt-in).
+async function purgeRsvps(env, member, origin) {
+  const today = new Date().toISOString().slice(0, 10)
+  let cursor
+  do {
+    const page = await env.ATTENDANCE_KV.list({ prefix: 'rsvp:', cursor })
+    for (const k of page.keys) {
+      const eventId = k.name.slice('rsvp:'.length)
+      const rsvp = await readRsvp(env, eventId)
+      const mine = r => r.memberId === member.id
+      if (!rsvp.confirmed.some(mine) && !rsvp.waitlist.some(mine)) continue
+
+      const event = await readEvent(env, eventId)
+      if (event && event.hostId && event.date >= today) {
+        await cancelRsvp(env, eventId, member.id, origin)
+      } else {
+        await env.ATTENDANCE_KV.put(`rsvp:${eventId}`, JSON.stringify({
+          confirmed: rsvp.confirmed.filter(r => !mine(r)),
+          waitlist:  rsvp.waitlist.filter(r => !mine(r)),
+        }))
+      }
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
 }
 
 async function handleUnrsvp(request, env, eventId) {

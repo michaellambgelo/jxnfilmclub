@@ -4,12 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join · Jackson Film Club</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Oswald:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
   <style>
     /* "Night Shift" — noir zine tokens, mirrored from the main site's
-       css/tokens.css (Claude Design project "jxnfilm.club", direction B). */
+       css/tokens.css (Claude Design project "jxnfilm.club", direction B).
+       Fonts are self-hosted on the main site (GitHub Pages sends
+       Access-Control-Allow-Origin: *) — no Google Fonts request. */
+    @font-face {
+      font-family: "Playfair Display";
+      font-weight: 400 900;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Playfair Display";
+      font-weight: 400 900;
+      font-style: italic;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-Italic-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Oswald";
+      font-weight: 200 700;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Oswald-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Newsreader";
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Newsreader-VariableFont_opsz-wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Newsreader";
+      font-weight: 200 800;
+      font-style: italic;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Newsreader-Italic-VariableFont_opsz-wght.woff2") format("woff2-variations");
+    }
     :root {
       --brand: #d7321f;
       --bg: #100f0e;

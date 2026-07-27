@@ -4,12 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy · Jackson Film Club</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Oswald:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
   <style>
     /* "Night Shift" — noir zine tokens, mirrored from the main site's
-       css/tokens.css (Claude Design project "jxnfilm.club", direction B). */
+       css/tokens.css (Claude Design project "jxnfilm.club", direction B).
+       Fonts are self-hosted on the main site (GitHub Pages sends
+       Access-Control-Allow-Origin: *) — no Google Fonts request. */
+    @font-face {
+      font-family: "Playfair Display";
+      font-weight: 400 900;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Playfair Display";
+      font-weight: 400 900;
+      font-style: italic;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-Italic-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Oswald";
+      font-weight: 200 700;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Oswald-VariableFont_wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Newsreader";
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Newsreader-VariableFont_opsz-wght.woff2") format("woff2-variations");
+    }
+    @font-face {
+      font-family: "Newsreader";
+      font-weight: 200 800;
+      font-style: italic;
+      font-display: swap;
+      src: url("https://jxnfilm.club/fonts/Newsreader-Italic-VariableFont_opsz-wght.woff2") format("woff2-variations");
+    }
     :root {
       --brand: #d7321f;
       --bg: #100f0e;
@@ -68,64 +102,109 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 2026-05-25</p>
+  <p class="updated">Last updated: 2026-07-27</p>
 
   <p>
     Jackson Film Club ("we") operates
-    <a href="https://jxnfilm.club">jxnfilm.club</a> and the signup form at
-    <a href="https://join.jxnfilm.club">join.jxnfilm.club</a>. This policy
-    explains what personal data we collect and how we use it.
+    <a href="https://jxnfilm.club">jxnfilm.club</a> and the membership service
+    at <a href="https://join.jxnfilm.club">join.jxnfilm.club</a>. We're a
+    small film club in Jackson, Mississippi — not a data company. This page
+    explains, in plain language, exactly what we collect and what happens
+    to it.
   </p>
 
   <h2>What we collect</h2>
   <ul>
-    <li><b>Email address</b> — used only to send one-time login codes so you can edit your member entry.</li>
-    <li><b>Letterboxd username</b> — displayed publicly on the members directory and used to fetch your public Letterboxd data (last-four-watched, diary entries tagged <code>jxnfilmclub</code>).</li>
-    <li><b>Display name and optional profile fields</b> — whatever you choose to put on your member card.</li>
+    <li><b>Email address</b> — for one-time login codes, and (only if you opt
+      in) club announcements.</li>
+    <li><b>Display name</b>, plus optional <b>pronouns</b> and a
+      <b>Letterboxd username</b> — whatever you choose to show on your member
+      card. The Letterboxd handle is also used to fetch your public Letterboxd
+      activity for the Watched page.</li>
+    <li><b>RSVP records</b> — when you RSVP to a member-hosted screening, we
+      record your name, email, and the time you RSVP'd, so the host knows
+      who's coming and we can email you the details.</li>
+    <li><b>Host addresses</b> — if you host a house screening, you give us the
+      street address and any notes (parking, entry). The address is private:
+      it appears only in confirmation emails to confirmed RSVPs and in your
+      own host view — never on the public site or in any public data.</li>
   </ul>
 
-  <h2>Where it's stored</h2>
+  <h2>Where it lives</h2>
   <p>
-    Your email address is stored privately in Cloudflare Workers KV and is
-    <b>never published in the public members list</b> or committed to the
-    public GitHub repository. Your Letterboxd username and anything you put
-    on your member card is stored in the repository's public
-    <code>data/members.json</code> and visible to anyone.
+    Your email, RSVP records, and host addresses are stored privately in
+    Cloudflare Workers KV. Your email is <b>never published in the public
+    members list</b> or committed to the public GitHub repository. What
+    <i>is</i> public: your display name, pronouns, Letterboxd handle, and
+    which screenings you attended (names only) — on the site and in the
+    repository's public <code>data/*.json</code> files.
   </p>
 
   <h2>How we use your email</h2>
-  <p>Your email is used for exactly two things:</p>
   <ul>
-    <li>Sending one-time login codes (OTP) when you request to edit your entry.</li>
-    <li>Occasional club announcements, only if you opt in — via the checkbox at
-      signup or the toggle on your account page. Every announcement includes a
-      one-click unsubscribe link and the club's postal address, and you can turn
-      announcements off anytime from your account page. Opting out of
-      announcements never affects your login codes.</li>
+    <li>One-time login codes when you sign in.</li>
+    <li>Screening emails you asked for: RSVP confirmations (these include the
+      host's address), and updates or cancellations for screenings you've
+      RSVP'd to.</li>
+    <li>Club announcements — <b>only if you opt in</b>, via the checkbox at
+      signup or the toggle on your account page. Every announcement includes
+      a one-click unsubscribe link and the club's postal address (as CAN-SPAM
+      requires). Opting out never affects login codes or RSVP emails.</li>
   </ul>
-  <p>We never sell, rent, or share your email with advertisers.</p>
+  <p>We never sell, rent, or share your email with anyone.</p>
+
+  <h2>Cookies and tracking</h2>
+  <p>
+    We set <b>no cookies</b> and run <b>no analytics or trackers</b>. Two
+    small entries in your browser's localStorage
+    (<code>jxnfc_session</code>, <code>jxnfc_otp_inflight</code>) keep you
+    signed in; they stay on your device and are cleared when you sign out.
+    One exception worth naming: the homepage embeds our podcast via a Spotify
+    player, and Spotify sets its own cookies inside that frame — see
+    <a href="https://www.spotify.com/legal/privacy-policy/">Spotify's privacy
+    policy</a>.
+  </p>
 
   <h2>Third parties</h2>
   <ul>
-    <li><b>Cloudflare</b> hosts the Worker and KV storage.</li>
-    <li><b>Resend</b> delivers OTP emails on our behalf (required to actually send the email to you).</li>
-    <li><b>GitHub</b> hosts the public site and member data.</li>
-    <li><b>Letterboxd</b> is the source of your public film data; we only read data you've already made public there.</li>
+    <li><b>Cloudflare</b> hosts the membership service and its storage. Its
+      standard infrastructure logs record request metadata (like IP
+      addresses) under Cloudflare's own retention.</li>
+    <li><b>Resend</b> delivers our email. We don't keep contact lists
+      there — it only sees each message as it's sent.</li>
+    <li><b>GitHub</b> hosts the public site and the public data files.</li>
+    <li><b>TMDB</b> serves the film poster images your browser loads.</li>
+    <li><b>Letterboxd</b> is the source of the public film activity we show;
+      we only read what you've already made public there.</li>
+    <li><b>Spotify</b> powers the podcast player on the homepage (see
+      above).</li>
   </ul>
 
-  <h2>Retention</h2>
-  <p>
-    We keep your email as long as your membership is active. One-time codes
-    expire after 10 minutes and are discarded after use.
-  </p>
+  <h2>How long we keep things</h2>
+  <ul>
+    <li>Login codes expire after 10 minutes; sign-in sessions after 1 hour.</li>
+    <li><b>30 days after a screening</b>, we automatically delete its RSVP
+      list (the emails) and the host's address and notes. What stays is the
+      names-only attendance history — the club's record of who came.</li>
+    <li>Your email stays as long as your membership does, and goes when you
+      delete it (below).</li>
+    <li>Our newsletter log keeps only the subject line and recipient count —
+      never addresses.</li>
+  </ul>
 
-  <h2>Your rights</h2>
-  <p>
-    You can request deletion of your membership and email at any time by
-    emailing <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a>.
-    We'll remove your entry from the public members list and delete your
-    email from KV storage within 7 days.
-  </p>
+  <h2>Your choices</h2>
+  <ul>
+    <li><b>Delete your membership yourself, instantly</b> — the danger zone on
+      your <a href="https://jxnfilm.club/edit">account page</a> removes your
+      email, profile, and upcoming RSVPs on the spot. Optionally, you can also
+      anonymize your name in past attendance lists.</li>
+    <li><b>Unsubscribe from announcements</b> — one click from any
+      announcement email, or the toggle on your account page.</li>
+    <li><b>Cancel an RSVP</b> — one click from the confirmation email, or from
+      the event page.</li>
+    <li>Questions, or want us to do any of this for you? Email
+      <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a>.</li>
+  </ul>
 
   <h2>Changes</h2>
   <p>

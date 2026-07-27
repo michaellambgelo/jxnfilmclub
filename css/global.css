@@ -258,3 +258,51 @@ img {
 main > nav {
   border-bottom: 1px solid var(--line-2);
 }
+
+/* ------- site footer ------- */
+
+.site-footer {
+  margin-top: var(--space-12);
+  border-top: 1px solid var(--line-2);
+}
+
+.site-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 1.3em;
+  flex-wrap: wrap;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+.site-footer-mark {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink-4);
+}
+
+.site-footer-links {
+  margin-left: auto;
+  display: flex;
+  gap: 1.3em;
+}
+
+.site-footer-links a {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  opacity: .8;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.site-footer-links a:hover {
+  opacity: 1;
+  color: var(--brand);
+}

@@ -34,7 +34,13 @@ NEWSLETTER_POSTAL_ADDRESS = "Jackson Film Club, 4420 Ridgewood Rd, Jackson, MS 3
 #   GITHUB_TOKEN      - fine-grained PAT, Contents: Write on jxnfilmclub
 #   RESEND_API_KEY    - Resend.com API key (free tier: 3k/mo)
 #   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
-#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send
+#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send + /admin/scrub
+
+# Daily privacy scrub (scrubPastEvents): 30 days after a screening, delete its
+# rsvp:{id} record (attendee emails) and strip address/notes off event:{id}.
+# 08:17 UTC = 02:17/03:17 Central, off-peak.
+[triggers]
+crons = ["17 8 * * *"]
 
 # --- Staging env (deploys from `staging` branch) ---
 
@@ -60,6 +66,10 @@ GITHUB_BRANCH = "main"                  # source branch for seeding KV from data
 SITE_ORIGIN = "https://jxnfilm.club"
 NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
 NEWSLETTER_POSTAL_ADDRESS = "Jackson Film Club, PO Box ___, Jackson, MS 392__"
+
+# Envs don't inherit [triggers] — staging declares its own cron.
+[env.staging.triggers]
+crons = ["17 8 * * *"]
 
 # Staging secrets are set separately:
 #   npx wrangler secret put GITHUB_TOKEN     --env staging

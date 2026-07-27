@@ -7,11 +7,50 @@
    ============================================================ */
 
 /* ---------- Fonts ----------
-   Playfair Display / Oswald / Newsreader come from Google Fonts,
-   injected at runtime by index.html — Nue strips custom <link>
-   tags from the dhtml head, and its bundler hangs on remote CSS
-   @imports, so runtime injection is the only route that builds.
-   Fira Code stays local for mono chips/tokens. */
+   All families are self-hosted variable fonts in /fonts — no
+   Google Fonts request, so page loads leak nothing to Google
+   (a promise the privacy policy relies on). Latin subsets;
+   the stacks below fall back for anything outside it. */
+
+@font-face {
+  font-family: "Playfair Display";
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/PlayfairDisplay-VariableFont_wght.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  font-weight: 400 900;
+  font-style: italic;
+  font-display: swap;
+  src: url("/fonts/PlayfairDisplay-Italic-VariableFont_wght.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Oswald";
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/Oswald-VariableFont_wght.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Newsreader";
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/Newsreader-VariableFont_opsz-wght.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Newsreader";
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+  src: url("/fonts/Newsreader-Italic-VariableFont_opsz-wght.woff2") format("woff2-variations");
+}
 
 @font-face {
   font-family: "Fira Code";

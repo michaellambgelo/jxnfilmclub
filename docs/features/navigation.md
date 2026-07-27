@@ -73,6 +73,14 @@ Nue's `autolink` intercepts all anchor clicks for SPA routing. A capture-phase c
 - Cross-origin links (e.g., `join.jxnfilm.club`, `letterboxd.com`)
 - Links with `target="_blank"`
 
+## Site Footer
+
+`index.html` renders a quiet `footer.site-footer` after `<main>` (styles in
+`css/global.css`): the club wordmark line plus Privacy
+(`https://join.jxnfilm.club/privacy` — cross-origin, so autolink is bypassed)
+and Contact (`mailto:privacy@jxnfilm.club`) links. It's the main site's only
+link to the privacy policy — keep it if the footer is redesigned.
+
 ## Key Files
 
 | File | Role |

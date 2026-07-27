@@ -239,4 +239,126 @@ describe('POST /member/delete', () => {
         .toEqual(['Quiet Member'])
     })
   })
+
+  describe('RSVP purge', () => {
+    const future = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10)
+    const past = new Date(Date.now() - 40 * 86400_000).toISOString().slice(0, 10)
+
+    function entry(member) {
+      return { memberId: member.id, name: member.name, email: member.email, at: 1 }
+    }
+
+    async function seedHostedEvent(id, date, extra = {}) {
+      const event = {
+        id, title: 'Purge Test', film: 'F', date, kind: 'house',
+        address: '1 Secret St', capacity: 2, hostId: 'host-1', hostName: 'Host', ...extra,
+      }
+      await env.ATTENDANCE_KV.put(`event:${id}`, JSON.stringify(event))
+      return event
+    }
+
+    it('cancels upcoming-event RSVPs and promotes the waitlist head with an email', async () => {
+      const { token, member } = await getTokenFor('purge-future@example.com', { name: 'Purge Future' })
+      const waitlisted = { memberId: 'w-1', name: 'Waiting', email: 'waiting@example.com', at: 2 }
+      await seedHostedEvent('evt-up', future)
+      await env.ATTENDANCE_KV.put('rsvp:evt-up', JSON.stringify({
+        confirmed: [entry(member)], waitlist: [waitlisted],
+      }))
+
+      const calls = []
+      mockFetch(async (url, init) => {
+        calls.push({ url: String(url), init })
+        return new Response('', { status: 200 })
+      })
+
+      const res = await fetchWith('/member/delete', 'POST', {}, token)
+      expect(res.status).toBe(200)
+
+      const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-up'))
+      expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['w-1'])
+      expect(rsvp.waitlist).toEqual([])
+
+      // Promotion email went out through the normal cancel path.
+      const resend = calls.filter(c => c.url.includes('api.resend.com'))
+      expect(resend).toHaveLength(1)
+      const sent = JSON.parse(resend[0].init.body)
+      expect(sent.to).toEqual(['waiting@example.com'])
+      expect(sent.subject).toMatch(/You're in for/)
+
+      // attend mirror reflects the new confirmed list.
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-up'))).toEqual(['Waiting'])
+    })
+
+    it('scrubs past-event records directly: no emails, attend history untouched', async () => {
+      const { token, member } = await getTokenFor('purge-past@example.com', { name: 'Purge Past' })
+      const other = { memberId: 'o-1', name: 'Other', email: 'other@example.com', at: 2 }
+      await seedHostedEvent('evt-past', past)
+      await env.ATTENDANCE_KV.put('rsvp:evt-past', JSON.stringify({
+        confirmed: [entry(member), other], waitlist: [],
+      }))
+      await env.ATTENDANCE_KV.put('attend:evt-past', JSON.stringify(['Purge Past', 'Other']))
+
+      const calls = []
+      mockFetch(async (url, init) => {
+        calls.push(String(url))
+        return new Response('', { status: 204 })
+      })
+
+      const res = await fetchWith('/member/delete', 'POST', {}, token)
+      expect(res.status).toBe(200)
+
+      const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-past'))
+      expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['o-1'])
+      expect(calls.some(u => u.includes('api.resend.com'))).toBe(false)
+      // Names-only history is a separate concern (the anonymize opt-in).
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-past')))
+        .toEqual(['Purge Past', 'Other'])
+    })
+
+    it('removes waitlist-only entries without promoting anyone', async () => {
+      const { token, member } = await getTokenFor('purge-wait@example.com', { name: 'Purge Wait' })
+      const confirmed = { memberId: 'c-1', name: 'Solid', email: 'solid@example.com', at: 1 }
+      await seedHostedEvent('evt-wl', future, { capacity: 1 })
+      await env.ATTENDANCE_KV.put('rsvp:evt-wl', JSON.stringify({
+        confirmed: [confirmed], waitlist: [entry(member)],
+      }))
+
+      const calls = []
+      mockFetch(async (url) => { calls.push(String(url)); return new Response('', { status: 204 }) })
+
+      const res = await fetchWith('/member/delete', 'POST', {}, token)
+      expect(res.status).toBe(200)
+
+      const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-wl'))
+      expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['c-1'])
+      expect(rsvp.waitlist).toEqual([])
+      expect(calls.some(u => u.includes('api.resend.com'))).toBe(false)
+    })
+
+    it('scrubs orphaned rsvp records whose event row is gone', async () => {
+      const { token, member } = await getTokenFor('purge-orphan@example.com', { name: 'Purge Orphan' })
+      await env.ATTENDANCE_KV.put('rsvp:evt-ghost', JSON.stringify({
+        confirmed: [entry(member)], waitlist: [],
+      }))
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      const res = await fetchWith('/member/delete', 'POST', {}, token)
+      expect(res.status).toBe(200)
+      const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-ghost'))
+      expect(rsvp.confirmed).toEqual([])
+    })
+
+    it('leaves other members’ rsvp records alone', async () => {
+      const { token } = await getTokenFor('purge-noop@example.com', { name: 'Purge Noop' })
+      const record = { confirmed: [{ memberId: 'x-1', name: 'X', email: 'x@example.com', at: 1 }], waitlist: [] }
+      await seedHostedEvent('evt-other', future)
+      await env.ATTENDANCE_KV.put('rsvp:evt-other', JSON.stringify(record))
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      const res = await fetchWith('/member/delete', 'POST', {}, token)
+      expect(res.status).toBe(200)
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-other'))).toEqual(record)
+    })
+  })
+
 })

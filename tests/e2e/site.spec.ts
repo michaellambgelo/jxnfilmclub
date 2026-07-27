@@ -36,6 +36,20 @@ test.describe('members view', () => {
   })
 })
 
+test.describe('site footer', () => {
+  test('footer is visible on the homepage and links to the privacy policy', async ({ page }) => {
+    await page.goto('/')
+    const footer = page.locator('footer.site-footer')
+    await expect(footer).toBeVisible()
+    await expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute(
+      'href', 'https://join.jxnfilm.club/privacy',
+    )
+    await expect(footer.getByRole('link', { name: 'Contact' })).toHaveAttribute(
+      'href', 'mailto:privacy@jxnfilm.club',
+    )
+  })
+})
+
 test.describe('signed-in nav', () => {
   test('Account Actions click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
     // Seed a session so the nav shows Account Actions instead of Join/Log in.

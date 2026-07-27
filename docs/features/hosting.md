@@ -29,6 +29,31 @@ RSVPs (plus the host-only `GET /events/:id/host` view and the local admin
 dashboard, which read the canonical row). Meetups store no address at all: the
 validator ignores one on create, and PATCH deletes any stale one.
 
+## Retention: the 30-day post-event scrub
+
+The privacy policy (`worker/src/privacy.html`) promises that 30 days after a
+screening, its RSVP list (attendee emails) and the host's address/notes are
+deleted. `scrubPastEvents()` in `worker/src/index.js` delivers on that:
+
+- Runs daily via the cron trigger (`[triggers]` in `wrangler.toml`, 08:17 UTC,
+  declared separately for `[env.staging.triggers]` — envs don't inherit
+  triggers). Also triggerable manually as `POST /admin/scrub` (same
+  `ADMIN_TOKEN` bearer gate as the newsletter send) for ops/staging checks.
+- For hosted events with `date` >30 days past: strips `address`/`notes` off
+  the canonical `event:{id}` row, stamps `scrubbedAt`, re-projects into
+  `events:all` via `writeEvent`, and deletes `rsvp:{id}`.
+- Sweeps orphaned `rsvp:{id}` records whose event row is gone (the admin
+  dashboard writes KV directly and can orphan one; `handleDeleteEvent` cleans
+  up after itself).
+- The names-only `attend:{eventId}` history and the public event listing are
+  untouched — they never contained emails or addresses.
+- `POST /events/:id/rsvp` rejects screenings whose `date` is past (409), so a
+  late RSVP can't recreate a scrubbed record.
+- Account deletion also purges the member's entries from every `rsvp:*` record
+  immediately (see [member-profile.md](member-profile.md)).
+
+Tests: `tests/worker/scrub.test.js`.
+
 ## Theater allowlist
 
 Meetup venues are validated server-side against `THEATERS` in

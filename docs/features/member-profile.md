@@ -76,16 +76,26 @@ Members can self-service delete their entire membership from the `/edit`
 until the typed email exactly matches the signed-in email
 (type-to-confirm gate). On submit:
 
-1. **Worker** (`POST /member/delete`, authenticated) cascades all
-   `MEMBERS_KV` state for that member: `member:{email}`,
-   `session:{id}`, `email:{handle}` + `handle:{email}` (if Letterboxd
-   was linked — the handle becomes claimable again immediately).
-2. The current bearer token is recorded in `revoked:{jti}` so a copy
+1. **Worker** (`POST /member/delete`, authenticated) first purges the
+   member's entries from every `rsvp:{eventId}` record in
+   `ATTENDANCE_KV` (`purgeRsvps` — those records carry the email).
+   Upcoming-event cancellations go through `cancelRsvp`, so a freed
+   slot promotes the waitlist head with the usual confirmation email;
+   past/orphaned records get a direct filtered write that leaves the
+   names-only `attend:{eventId}` history alone. The purge runs before
+   the cascade and is deliberately not error-swallowed: a failure 500s
+   so the user can retry, rather than deleting the account while
+   leaving their email behind.
+2. It then cascades all `MEMBERS_KV` state for that member:
+   `member:{email}`, `session:{id}`, `email:{handle}` +
+   `handle:{email}` (if Letterboxd was linked — the handle becomes
+   claimable again immediately).
+3. The current bearer token is recorded in `revoked:{jti}` so a copy
    can't be replayed during the remaining JWT lifetime.
-3. `dispatchGithub('remove-member', { id })` triggers
+4. `dispatchGithub('remove-member', { id })` triggers
    `.github/workflows/remove-member.yml` which drops the row from
    `data/members.json` (idempotent — replays are a no-op).
-4. **Client** clears `localStorage.jxnfc_session`, the OTP in-flight
+5. **Client** clears `localStorage.jxnfc_session`, the OTP in-flight
    marker, and redirects to `/`.
 
 **Past attendance defaults to kept.** `attend:{eventId}` arrays in

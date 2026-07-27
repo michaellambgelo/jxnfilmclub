@@ -22,21 +22,6 @@
     } catch { return false }
   }
 
-  // Load the theme's Google Fonts at runtime. Nue strips custom <link> tags
-  // from the dhtml head, and its CSS bundler hangs on remote @imports, so
-  // injecting the stylesheet here is the only route that survives the build.
-  for (const href of ['https://fonts.googleapis.com', 'https://fonts.gstatic.com']) {
-    const pre = document.createElement('link')
-    pre.rel = 'preconnect'
-    pre.href = href
-    if (href.includes('gstatic')) pre.crossOrigin = 'anonymous'
-    document.head.appendChild(pre)
-  }
-  const fontCss = document.createElement('link')
-  fontCss.rel = 'stylesheet'
-  fontCss.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,900;1,500;1,700;1,900&family=Oswald:wght@300;400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap'
-  document.head.appendChild(fontCss)
-
   // Work around Nue's autolink intercepting every anchor click. Autolink's
   // listener runs on the bubble phase at document level; a capture-phase
   // stopImmediatePropagation before it fires lets the browser handle
@@ -81,6 +66,16 @@
   <main class="wrap">
     <article/>
   </main>
+
+  <footer class="site-footer">
+    <div class="wrap site-footer-row">
+      <span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>
+      <nav class="site-footer-links">
+        <a href="https://join.jxnfilm.club/privacy">Privacy</a>
+        <a href="mailto:privacy@jxnfilm.club">Contact</a>
+      </nav>
+    </div>
+  </footer>
 
   <script>
     state.on('type', ({ type }) => {

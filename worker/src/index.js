@@ -119,6 +119,7 @@ async function route(request, env) {
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
+    if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(env)
     // Poster search for the /host form — members only (keeps the TMDB key
     // server-side and the endpoint un-scrapeable).
     if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
@@ -931,6 +932,99 @@ async function fetchEventsBaseline(env) {
     const data = await res.json()
     return Array.isArray(data) ? data : []
   } catch { return [] }
+}
+
+// --- Live Last Four Watched (Letterboxd RSS via the Worker) ---
+//
+// GET /watched — public. Handle-keyed map of each linked member's last four
+// diary entries, fetched live from Letterboxd RSS and cached in KV for
+// WATCHED_CACHE_TTL so the site stays minutes-fresh without hammering
+// Letterboxd (per-feed fetches are also edge-cached). data/watched.json
+// (6h cron) remains the SPA's offline fallback and the Hot Takes source.
+
+const WATCHED_CACHE_TTL = 900 // seconds; KV minimum expirationTtl is 60
+
+// Browser-cacheable response: the SPA calls /watched once per event card, so
+// a short max-age lets the browser dedupe across cards and navigations.
+function watchedResponse(env, data) {
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...cors(env) },
+  })
+}
+
+// Per-isolate in-flight coalescing: N concurrent cold-cache requests share
+// one upstream fan-out instead of each hitting every member's RSS feed.
+let watchedInflight = null
+
+async function handleWatchedGet(env) {
+  if (env.E2E_MODE === 'true') return watchedResponse(env, {})
+  const cached = await env.MEMBERS_KV.get('watched:cache')
+  if (cached) {
+    try { return watchedResponse(env, JSON.parse(cached)) } catch { /* refetch below */ }
+  }
+  if (!watchedInflight) {
+    watchedInflight = buildWatched(env).finally(() => { watchedInflight = null })
+  }
+  return watchedResponse(env, await watchedInflight)
+}
+
+async function buildWatched(env) {
+  const members = await readMembersAll(env)
+  const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
+  const out = {}
+  await Promise.all(handles.map(async handle => {
+    try {
+      const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`, {
+        headers: { 'User-Agent': 'jxnfilmclub-join' },
+        cf: { cacheTtl: WATCHED_CACHE_TTL, cacheEverything: true },
+      })
+      if (!res.ok) return
+      const films = parseLetterboxdRss(await res.text())
+      if (films.length) out[handle] = films
+    } catch { /* feed down: leave the handle absent, others still serve */ }
+  }))
+
+  // Don't cache a total miss (e.g. Letterboxd outage) — that would pin the
+  // outage for a full TTL. Partial results are cached as best-effort.
+  if (!handles.length || Object.keys(out).length) {
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify(out), { expirationTtl: WATCHED_CACHE_TTL })
+  }
+  return out
+}
+
+// Minimal RSS extraction matching scripts/refresh_letterboxd.py: last four
+// non-list items -> { title, year?, link, watched_date?, poster? }.
+function parseLetterboxdRss(xml) {
+  const films = []
+  for (const item of String(xml).split('<item>').slice(1)) {
+    if (rssTag(item, 'guid').includes('letterboxd-list')) continue
+    const film = {
+      title: unescapeXml(rssTag(item, 'letterboxd:filmTitle') || rssTag(item, 'title')),
+      link: rssTag(item, 'link'),
+    }
+    if (!film.title || !film.link) continue
+    const year = rssTag(item, 'letterboxd:filmYear')
+    if (year) film.year = year
+    const watched = rssTag(item, 'letterboxd:watchedDate')
+    if (watched) film.watched_date = watched
+    const poster = /<img\s[^>]*src="([^"]+)"/.exec(item)
+    if (poster) film.poster = poster[1]
+    films.push(film)
+    if (films.length >= 4) break
+  }
+  return films
+}
+
+function rssTag(xml, name) {
+  const m = new RegExp(`<${name}(?:\\s[^>]*)?>([^<]*)</${name}>`).exec(xml)
+  return m ? m[1].trim() : ''
+}
+
+function unescapeXml(s) {
+  return s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
 // --- Member-hosted screenings (RSVP + private address) ---

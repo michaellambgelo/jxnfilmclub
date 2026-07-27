@@ -68,6 +68,7 @@ DNS records are printed in the Resend dashboard.
 | GET    | `/members`                 | Array of public member projections `[{ id, name, joined, pronouns?, handle? }]`. Emails are never on the wire. Reads from `members:all` aggregate; bootstraps from `data/members.json` on cold KV. |
 | GET    | `/events`                  | Array of public event projections `[{ id, title, film, year, date, venue, poster, letterboxd_uri, hostId?, hostName?, capacity?, kind?, time? }]` — never `address` or `notes` (both are RSVP-email/host-only). Reads from `events:all` aggregate (in `ATTENDANCE_KV`); bootstraps from `data/events.json` on cold KV. |
 | GET    | `/events/attendance`       | Bulk attendance map (existing). |
+| GET    | `/watched`                 | Live Last Four: handle-keyed map of linked members' recent Letterboxd diary entries, fetched from RSS on demand and KV-cached 15 min (`watched:cache`). Empty map under `E2E_MODE`. |
 | GET    | `/events/:id/attendance`   | Per-event attendees (existing). |
 
 ### Authenticated (bearer token from `/signup/verify` or `/otp/verify`)
@@ -119,6 +120,7 @@ Set in `wrangler.toml` per env:
 - `members:bootstrapped` — `'1'` marker; presence means JSON→KV seed has run.
 - `email:{handle}` / `handle:{email}` — bidirectional link, written on `/signup/verify` (when the signup carried a handle) and on `/member/update`.
 - `otp:{email}` — 6-digit login code, 10min TTL.
+- `watched:cache` — aggregated Last Four RSS results, 15min `expirationTtl`.
 
 **ATTENDANCE_KV:**
 - `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot (unchanged). For hosted events, `attend:{id}` is a names-only write-through mirror of `rsvp:{id}.confirmed`.

@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents } from 'app'
+  import { getMembers, getEvents, getWatched } from 'app'
 </script>
 
 
@@ -167,7 +167,7 @@
       const results = await Promise.all([
         getEvents({ limit: 1000, sort: 'date-desc' }).catch(function() { return { items: [] } }),
         getMembers({ limit: 1000 }).catch(function() { return { items: [] } }),
-        fetch('/data/watched.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
+        getWatched().catch(function() { return {} }),
         fetch('/data/attendance.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/episodes.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/takes.json').then(function(r) { return r.ok ? r.json() : [] }).catch(function() { return [] }),
@@ -371,7 +371,7 @@
     async mounted() {
       const [{ items }, watched] = await Promise.all([
         getMembers({ limit: 1000 }),
-        fetch('/data/watched.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        getWatched().catch(() => ({})),
       ])
       const members = items
         .filter(m => m.handle && watched[m.handle]?.length)
@@ -554,7 +554,7 @@
       </p>
 
       <!-- Link a Letterboxd diary entry: sets event.letterboxd_uri via PATCH.
-           Quick-picks come from /data/watched.json for the host's handle. -->
+           Quick-picks come from the live GET /watched for the host's handle. -->
       <div class="host-lb">
         <p :if="event.letterboxd_uri" class="host-lb-current">The film title links to
           <a href="{ event.letterboxd_uri }" target="_blank" rel="noopener">your Letterboxd entry</a>.</p>
@@ -610,15 +610,12 @@
           })
           if (r.ok) this.update({ hostView: await r.json() })
         } catch (e) {}
-        // Recent diary entries for the quick-pick buttons (browser caches the
-        // fetch across cards; only the host's own cards request it).
+        // Recent diary entries for the quick-pick buttons — live from the
+        // Worker (KV-cached ~15 min) so a just-logged watch is linkable.
         if (this.session.handle) {
           try {
-            const w = await fetch('/data/watched.json')
-            if (w.ok) {
-              const watched = await w.json()
-              this.update({ diary: (watched && watched[this.session.handle]) || [] })
-            }
+            const watched = await getWatched()
+            this.update({ diary: (watched && watched[this.session.handle]) || [] })
           } catch (e) {}
         }
       }

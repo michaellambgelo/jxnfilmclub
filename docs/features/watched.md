@@ -30,6 +30,19 @@ flowchart LR
 The same script/workflow also writes `data/takes.json` (recent member reviews) for the
 home page's Hot Takes section — see [home.md](home.md).
 
+## Live endpoint (primary source)
+
+The SPA no longer reads `data/watched.json` first: `getWatched()` in
+`model/index.ts` calls the Worker's public `GET /watched`, which fetches each
+linked member's RSS on demand and caches the aggregate at `watched:cache` in
+`MEMBERS_KV` for 15 minutes (per-feed fetches are additionally edge-cached).
+That keeps diaries minutes-fresh instead of up to 6 hours stale, while
+Letterboxd sees at most one fetch per feed per window. A total upstream miss
+is deliberately not cached so an outage never gets pinned for a full TTL.
+`data/watched.json` (this cron) remains the offline fallback and the Hot
+Takes source. Consumers: home "The Last Four", the `/watched` view, and the
+host panel's diary quick-picks.
+
 ## Poster Image Extraction
 
 Poster URLs are extracted from the RSS entry's `<description>` HTML via regex:

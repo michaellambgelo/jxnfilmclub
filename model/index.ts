@@ -34,6 +34,27 @@ async function fetchList(type: string): Promise<any[]> {
   return await res.json()
 }
 
+// Live Last Four Watched: the Worker fetches + KV-caches Letterboxd RSS
+// (~15 min) so diaries stay fresh; data/watched.json (6h cron) is the
+// offline fallback. Returns a handle-keyed map of diary entries.
+export async function getWatched(): Promise<Record<string, any[]>> {
+  const origin = resolveWorkerOrigin()
+  if (origin) {
+    try {
+      const res = await fetch(`${origin}/watched`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data && typeof data === 'object' && !Array.isArray(data)) return data
+      }
+    } catch { /* fall through to static */ }
+  }
+  try {
+    const url = is_browser ? '/data/watched.json' : `file:${process.cwd()}/data/watched.json`
+    const res = await fetch(url)
+    return await res.json()
+  } catch { return {} }
+}
+
 export async function getMembers(opts = {}) {
   return getList('members', opts)
 }

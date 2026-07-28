@@ -30,6 +30,20 @@ sequenceDiagram
     Note over GH: Triggers deploy-site workflow
 ```
 
+### Race with `add-member` for brand-new members
+
+A member who edits their profile within moments of verifying signup (e.g.
+landing straight on `/edit` and hitting Save) fires `update-member` almost
+back-to-back with the `add-member` dispatch from `/signup/verify`. Both
+workflows independently checkout, edit, commit, and push `data/members.json`
+— if `update-member`'s checkout lands before `add-member`'s commit is pushed,
+the row doesn't exist yet. `update-member.yml`'s edit step detects this (the
+python script exits `42` when the id isn't found) and retries up to 6 times,
+re-fetching + hard-resetting to `origin/main` with a 5s pause between
+attempts, before failing for real. `remove-member.yml` has the analogous race
+but treats a missing row as an idempotent no-op instead, since "member not in
+the projection" is already the desired end state for a removal.
+
 ## Letterboxd Handle
 
 Members link a Letterboxd profile by typing their username on `/edit` and
@@ -143,7 +157,7 @@ Implementation notes:
 |------|------|
 | `worker/src/index.js` | `handleMemberMe()`, `handleMemberUpdate()` (now owns handle setting), `handleLbUnlink()` |
 | `ui/auth.html` | `edit-view` component (profile form + `.lb-panel`) |
-| `.github/workflows/update-member.yml` | Commits profile changes |
+| `.github/workflows/update-member.yml` | Commits profile changes; retries if the row isn't in `data/members.json` yet (race with `add-member`) |
 | `tests/worker/member-update.test.js` | unit tests covering name/pronouns/handle paths |
 | `tests/worker/letterboxd.test.js` | unlink unit tests |
 | `tests/e2e/letterboxd.spec.ts` | handle add / claim / unlink e2e |

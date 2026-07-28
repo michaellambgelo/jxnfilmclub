@@ -18,8 +18,15 @@ jobs:
           ID:      ${{ github.event.client_payload.id }}
           UPDATES: ${{ toJSON(github.event.client_payload.updates) }}
         run: |
-          python3 - <<'PY'
-          import json, os, pathlib
+          # add-member and update-member can be dispatched moments apart (e.g.
+          # a new member opens /profile and saves right after verifying) —
+          # if this job's checkout lands before add-member's commit is
+          # pushed, the row won't exist yet. Retry against a fresh pull a
+          # few times before treating it as a real error (exit 42 is the
+          # "not found (yet)" signal from the python script below).
+          apply() {
+            python3 - <<'PY'
+          import json, os, pathlib, sys
           # Worker is the source of truth for authorization; this workflow just
           # applies an allow-listed set of fields to the matching member row.
           ALLOWED = {'name', 'pronouns', 'handle'}
@@ -45,10 +52,32 @@ jobs:
                           m[k] = v
                   break
           else:
-              raise SystemExit(f'member not found: {id_}')
+              sys.exit(42)
 
           path.write_text(json.dumps(members, indent=2) + '\n')
           PY
+          }
+
+          attempt=1
+          max_attempts=6
+          while true; do
+            if apply; then
+              break
+            fi
+            status=$?
+            if [ "$status" -ne 42 ]; then
+              exit "$status"
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::member not found after $max_attempts attempts: $ID"
+              exit 1
+            fi
+            echo "member $ID not found yet (attempt $attempt/$max_attempts) — add-member's commit may still be in flight; retrying after pull"
+            sleep 5
+            git fetch origin main
+            git reset --hard origin/main
+            attempt=$((attempt + 1))
+          done
 
       - name: Commit
         run: |

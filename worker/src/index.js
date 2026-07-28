@@ -10,6 +10,14 @@ const SEND_THROTTLE = 60
 const SIGNUP_THROTTLE = 60
 const MAX_OTP_FAILURES = 5   // wrong-code lockout per email per OTP window
 
+// Screening dates are calendar days in the club's home timezone (Jackson, MS).
+// Gating "today" off UTC instead would roll over 5-6 hours early each evening
+// Central time, blocking same-day event creation and cancelling/scrubbing
+// screenings hours before they've actually happened locally.
+function centralToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+}
+
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
   'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
@@ -276,7 +284,7 @@ async function handleSignupVerify(request, env) {
     pronouns: null,
     handle,
     newsletter: !!pending.newsletter,
-    joined: new Date().toISOString().slice(0, 10),
+    joined: new Date().toISOString(),
   }
   await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify(member))
   if (handle) {
@@ -1425,7 +1433,7 @@ async function handleCreateEvent(request, env) {
   const v = validScreeningInput(body)
   if (v.error) return json(env, { error: v.error }, 400)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = centralToday()
   if (v.value.date < today) return json(env, { error: 'date must be today or later' }, 400)
 
   const slug = slugifyForId(v.value.title) || 'screening'
@@ -1566,7 +1574,7 @@ async function handleRsvp(request, env, eventId) {
   if (!event.hostId) return json(env, { error: 'this event does not accept RSVPs (use /attend)' }, 409)
   // A screening that already happened takes no RSVPs — also keeps a late
   // request from recreating a record the post-event scrub already deleted.
-  const today = new Date().toISOString().slice(0, 10)
+  const today = centralToday()
   if (event.date && event.date < today) {
     return json(env, { error: 'this screening has already happened' }, 409)
   }
@@ -1641,7 +1649,8 @@ async function cancelRsvp(env, eventId, memberId, origin) {
 const SCRUB_AFTER_DAYS = 30
 
 async function scrubPastEvents(env) {
-  const cutoff = new Date(Date.now() - SCRUB_AFTER_DAYS * 86400_000).toISOString().slice(0, 10)
+  const cutoffDate = new Date(Date.now() - SCRUB_AFTER_DAYS * 86400_000)
+  const cutoff = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(cutoffDate)
   let scrubbedEvents = 0
   let deletedRsvps = 0
 
@@ -1702,7 +1711,7 @@ async function handleAdminScrub(request, env) {
 // attend:{eventId} history stays intact (name removal remains the separate
 // `anonymize` opt-in).
 async function purgeRsvps(env, member, origin) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = centralToday()
   let cursor
   do {
     const page = await env.ATTENDANCE_KV.list({ prefix: 'rsvp:', cursor })

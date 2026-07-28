@@ -56,6 +56,10 @@ sequenceDiagram
 | 5+ wrong codes for same email | 429 | "too many attempts — request a new code" |
 | Expired or missing pending signup | 404 | "no pending signup -- start over" |
 
+`member.joined` (KV) is stamped as a full ISO instant (`new Date().toISOString()`),
+not a bare date — the members directory's `<timeago>` widget needs the actual
+signup moment, not just the calendar day, to show an accurate "joined X ago".
+
 ## Input Limits (S4 hardening)
 
 - `name`: 1–80 chars

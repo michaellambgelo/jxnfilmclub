@@ -39,6 +39,12 @@ deleted. `scrubPastEvents()` in `worker/src/index.js` delivers on that:
   declared separately for `[env.staging.triggers]` — envs don't inherit
   triggers). Also triggerable manually as `POST /admin/scrub` (same
   `ADMIN_TOKEN` bearer gate as the newsletter send) for ops/staging checks.
+- The 30-day cutoff itself is computed in **America/Chicago** (`centralToday()`
+  in `worker/src/index.js`), not UTC — screening `date` values are Central-time
+  calendar days (the club meets in Jackson, MS), so comparing against a UTC
+  "today" would flip the boundary up to 6 hours early each evening. The same
+  helper backs the "date must be today or later" check on event creation and
+  the "this screening has already happened" RSVP-gating check below.
 - For hosted events with `date` >30 days past: strips `address`/`notes` off
   the canonical `event:{id}` row, stamps `scrubbedAt`, re-projects into
   `events:all` via `writeEvent`, and deletes `rsvp:{id}`.

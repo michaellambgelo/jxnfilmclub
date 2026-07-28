@@ -170,7 +170,9 @@
       const pod = results[4] || {}
 
       // ----- hero + program: upcoming first, then most recent past -----
-      const today = new Date().toISOString().slice(0, 10)
+      // Screening dates are Central-time calendar days; bucketing off UTC
+      // "today" would flip upcoming->past up to 6 hours early each evening.
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
       const upcoming = events.filter(function(e) { return (e.date || '') >= today }).reverse()
       const past = events.filter(function(e) { return (e.date || '') < today })
       const rows = upcoming.concat(past).slice(0, 4).map(function(e) {
@@ -678,7 +680,7 @@
       return this.session && this.session.name && (this.attendees || []).includes(this.session.name)
     }
     this.isFuture = function() {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
       return (this.event.date || '') >= today
     }
 

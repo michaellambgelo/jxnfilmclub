@@ -122,14 +122,16 @@ async function upsertJson(member) {
 
 async function seedOne(input) {
   validate(input)
-  const today = new Date().toISOString().slice(0, 10)
+  // Matches handleSignupVerify's schema: a full ISO instant, not a bare date,
+  // so the member card's relative "joined X ago" label is accurate.
+  const now = new Date().toISOString()
   const member = {
     id: input.id || randomId(),
     email: input.email,
     name: input.name,
     handle: input.handle || null,
     pronouns: input.pronouns || null,
-    joined: input.joined || today,
+    joined: input.joined || now,
   }
 
   const jsonResult = await upsertJson(member)

@@ -86,6 +86,19 @@ function fmtAge(ms) {
   return `${Math.floor(sec / 86400)}d ago`
 }
 
+function fmtJoined(iso) {
+  if (!iso) return '—'
+  // Legacy rows stored a bare YYYY-MM-DD (no time-of-day) — parsing that as
+  // a UTC instant and reformatting in America/Chicago would roll it back a
+  // day, so only run real timestamps through the timezone conversion.
+  const bareDate = /^\d{4}-\d{2}-\d{2}$/.test(iso)
+  const d = new Date(bareDate ? iso + 'T00:00:00' : iso)
+  if (isNaN(d)) return escapeHtml(iso)
+  const opts = { year: 'numeric', month: 'short', day: 'numeric' }
+  if (!bareDate) opts.timeZone = 'America/Chicago'
+  return d.toLocaleDateString('en-US', opts)
+}
+
 function fmtExpiry(unixSec) {
   if (!unixSec) return '—'
   const ms = unixSec * 1000
@@ -145,7 +158,7 @@ async function renderMembers() {
             <td>${escapeHtml(m.email)}</td>
             <td>${m.handle ? `<code>@${escapeHtml(m.handle)}</code>` : '<span class="muted">—</span>'}</td>
             <td>${escapeHtml(m.pronouns) || '<span class="muted">—</span>'}</td>
-            <td>${escapeHtml(m.joined) || '—'}</td>
+            <td>${fmtJoined(m.joined)}</td>
             <td><code class="id">${escapeHtml(m.id)}</code></td>
             <td class="actions">
               <button data-action="member-view" data-key="${attr(keyName)}">view</button>
@@ -632,7 +645,7 @@ document.addEventListener('click', async (e) => {
         toast(`Event id "${id}" already exists`, true)
         return
       }
-      const fresh = { id, title: 'Untitled', date: new Date().toISOString().slice(0, 10) }
+      const fresh = { id, title: 'Untitled', date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()) }
       eventsCache.push(fresh)
       await writeEventKv(fresh)
       toast(`Created event "${id}"`)

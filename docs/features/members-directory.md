@@ -14,7 +14,12 @@ Each card shows:
 - Display name
 - Letterboxd handle (linked to profile, if verified; or muted
   "no Letterboxd" label otherwise)
-- `Joined <relative time>` via the `<timeago>` widget
+- `Joined <relative time>` via the `<timeago>` widget. `member.joined` is a
+  full ISO instant (not a bare date) so the relative label is accurate to the
+  minute; once a card falls back to an absolute date (10+ days old) it renders
+  in **America/Chicago**, not the visitor's browser timezone. Legacy rows
+  written before this used a bare `YYYY-MM-DD` — `<timeago>` and `admin.js`'s
+  member table both detect and handle that format without shifting the date.
 
 Above the grid: a result-count line (`N members`) plus the search +
 sort header.

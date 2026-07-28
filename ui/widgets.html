@@ -38,7 +38,7 @@
         hours < 24 ? `${ Math.round(hours) } hours ago` :
         days < 1.5 ? 'Yesterday' :
         days < 10 ? `${ Math.round(days) } days ago` :
-        new Date(when).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        new Date(when).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })
     }
   </script>
 </time>

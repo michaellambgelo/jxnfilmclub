@@ -24,21 +24,39 @@
   { text }
 
   <script>
-    const when = typeof this.ts === 'string' ? Date.parse(this.ts) : this.ts
-    if (!when || isNaN(when)) {
-      this.text = ''
+    const raw = this.ts
+    const bareDate = typeof raw === 'string' && /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/.test(raw)
+    if (bareDate) {
+      // Legacy rows carry only a calendar day, no time-of-day. Comparing
+      // real elapsed hours against a UTC-midnight parse rolls the day over
+      // up to 6 hours early each evening Central time, so a same-Central-day
+      // join can render as Yesterday instead of Today. Compare Central
+      // calendar dates directly instead.
+      const centralToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+      const daysAgo = Math.round((Date.parse(centralToday) - Date.parse(raw)) / 86400000)
+      const parts = raw.split('-')
+      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      this.text = daysAgo <= 0 ? 'Today' :
+        daysAgo === 1 ? 'Yesterday' :
+        daysAgo < 10 ? `${ daysAgo } days ago` :
+        `${ MONTHS[Number(parts[1]) - 1] } ${ Number(parts[2]) }, ${ parts[0] }`
     } else {
-      const hours = (Date.now() - when) / 3600 / 1000
-      const days = hours / 24
-      const mins = hours * 60
-      this.text = mins < 1 ? 'Just now' :
-        mins < 1.5 ? 'A minute ago' :
-        mins < 60 ? `${ Math.round(mins) } minutes ago` :
-        hours < 1.5 ? 'An hour ago' :
-        hours < 24 ? `${ Math.round(hours) } hours ago` :
-        days < 1.5 ? 'Yesterday' :
-        days < 10 ? `${ Math.round(days) } days ago` :
-        new Date(when).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })
+      const when = typeof raw === 'string' ? Date.parse(raw) : raw
+      if (!when || isNaN(when)) {
+        this.text = ''
+      } else {
+        const hours = (Date.now() - when) / 3600 / 1000
+        const days = hours / 24
+        const mins = hours * 60
+        this.text = mins < 1 ? 'Just now' :
+          mins < 1.5 ? 'A minute ago' :
+          mins < 60 ? `${ Math.round(mins) } minutes ago` :
+          hours < 1.5 ? 'An hour ago' :
+          hours < 24 ? `${ Math.round(hours) } hours ago` :
+          days < 1.5 ? 'Yesterday' :
+          days < 10 ? `${ Math.round(days) } days ago` :
+          new Date(when).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })
+      }
     }
   </script>
 </time>

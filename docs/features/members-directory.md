@@ -18,8 +18,12 @@ Each card shows:
   full ISO instant (not a bare date) so the relative label is accurate to the
   minute; once a card falls back to an absolute date (10+ days old) it renders
   in **America/Chicago**, not the visitor's browser timezone. Legacy rows
-  written before this used a bare `YYYY-MM-DD` — `<timeago>` and `admin.js`'s
-  member table both detect and handle that format without shifting the date.
+  written before this used a bare `YYYY-MM-DD` — `<timeago>` detects that
+  format and compares Central *calendar dates* directly (Today / Yesterday /
+  N days ago / an absolute date) rather than computing real elapsed hours
+  from a UTC-midnight parse, which used to misreport a same-Central-day join
+  as "Yesterday" once UTC had already rolled to the next date. `admin.js`'s
+  member table handles the same legacy format without shifting the date.
 
 Above the grid: a result-count line (`N members`) plus the search +
 sort header.

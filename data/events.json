@@ -220,6 +220,15 @@
     "letterboxd_uri": "https://boxd.it/2GBpR3"
   },
   {
+    "id": "2022-05-19-prom",
+    "title": "Capital City Pride presents a Jackson Film Club partnered event",
+    "film": "The Prom",
+    "year": 2020,
+    "date": "2022-05-19",
+    "venue": "Mississippi Museum of Art",
+    "poster": "https://image.tmdb.org/t/p/original/u25HIN2yLI5ZLvtHj5IyAxKF746.jpg"
+  },
+  {
     "id": "2022-06-03-the-sandlot",
     "title": "Summer Movie Night Series by Disco Dog",
     "film": "The Sandlot",

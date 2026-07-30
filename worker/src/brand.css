@@ -1,0 +1,244 @@
+/* ============================================================
+   Jackson Film Club — Worker brand layer
+   "Night Shift" — noir zine / photocopy collage.
+
+   Injected into every Worker-served page by render() and page()
+   in index.js. Token names and values in the custom-property
+   block are mirrored VERBATIM from the main site's css/tokens.css
+   — keep them in sync; tests/model/brand-sync.test.ts fails on
+   any drift. Fonts are self-hosted on the main site (GitHub
+   Pages sends Access-Control-Allow-Origin: *) — no Google Fonts
+   request, a promise the privacy policy relies on.
+   ============================================================ */
+
+@font-face {
+  font-family: "Playfair Display";
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://jxnfilm.club/fonts/PlayfairDisplay-VariableFont_wght.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-weight: 400 900;
+  font-style: italic;
+  font-display: swap;
+  src: url("https://jxnfilm.club/fonts/PlayfairDisplay-Italic-VariableFont_wght.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Oswald";
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://jxnfilm.club/fonts/Oswald-VariableFont_wght.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Newsreader";
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://jxnfilm.club/fonts/Newsreader-VariableFont_opsz-wght.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Newsreader";
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+  src: url("https://jxnfilm.club/fonts/Newsreader-Italic-VariableFont_opsz-wght.woff2") format("woff2-variations");
+}
+
+:root {
+  --brand: #d7321f;
+  --brand-dark: #b52a19;
+  --bg: #100f0e;
+  --surface: #16140f;
+  --surface-2: #1d1a15;
+  --ink: #e8e3d8;
+  --ink-strong: #f0ebe0;
+  --ink-3: #a89f8f;
+  --ink-4: #8f897d;
+  --line-2: #3a352d;
+  --ok-bg: #132a1a;
+  --ok-fg: #86d99b;
+  --err-bg: #2d1210;
+  --err-fg: #f08373;
+  --err-border: #6e2b22;
+  --focus-ring: #4a1c14;
+  --focus-border: #d7321f;
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-body: "Newsreader", Georgia, "Iowan Old Style", serif;
+  --font-label: "Oswald", "Helvetica Neue", Arial, sans-serif;
+  --fs-12: 0.75rem;
+  --fs-18: 1.15rem;
+  --tracking-wider: 0.12em;
+  --dur-fast: 0.15s;
+  --ease: ease;
+}
+
+/* ------- base ------- */
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); border-top: 5px solid var(--brand); }
+
+body {
+  max-width: var(--page-width, 32rem);
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
+  font: 17px/1.5 var(--font-body);
+  color: var(--ink);
+}
+
+/* film grain — same photocopy noise as the main site's global.css */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.045; mix-blend-mode: screen;
+}
+
+::selection { background: var(--brand); color: #fff; }
+
+a { color: var(--brand); }
+a:hover { color: var(--ink-strong); }
+
+/* ------- wordmark header (mirrors .logo in css/global.css) ------- */
+
+.topnav {
+  margin: 1.5rem 0 2.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+  color: var(--ink-strong);
+  text-decoration: none;
+}
+
+.logo:hover { color: var(--ink-strong); }
+
+.logo .logo-word {
+  font-family: var(--font-label);
+  font-size: var(--fs-18);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.logo .logo-stamp {
+  font-family: var(--font-label);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand);
+  border: 2px solid var(--brand);
+  box-shadow: inset 0 0 0 1px rgba(215, 50, 31, 0.35);
+  padding: 2px 7px;
+  transform: rotate(-4deg);
+}
+
+.topnav-link {
+  margin-left: auto;
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  opacity: 0.8;
+  text-decoration: none;
+}
+
+.topnav-link:hover { opacity: 1; color: var(--brand); }
+
+/* ------- typography ------- */
+
+h1 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 2.4rem;
+  line-height: 1.05;
+  color: var(--ink-strong);
+  margin: 0 0 .35rem;
+}
+
+p.lede { color: var(--ink-3); margin-top: 0; }
+
+/* ------- form controls ------- */
+
+form { display: grid; gap: 1rem; margin-top: 2rem; }
+
+label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--ink-3); }
+
+input[type="text"], input[type="email"] {
+  padding: 0.6rem 0.75rem; font: inherit;
+  border: 1px solid var(--line-2); border-radius: 0;
+  background: var(--surface); color: var(--ink);
+}
+
+input:focus-visible, button:focus-visible {
+  outline: 2px solid var(--focus-ring); border-color: var(--focus-border); outline-offset: 2px;
+}
+
+button {
+  padding: 0.8rem 1rem; font-family: var(--font-label); font-size: .85rem; font-weight: 500;
+  text-transform: uppercase; letter-spacing: var(--tracking-wider);
+  background: var(--brand); color: #fff; border: 0; border-radius: 0; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+button:hover:not(:disabled) { background: var(--ink-strong); color: var(--bg); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.hint { color: var(--ink-4); font-size: 0.85rem; }
+.hint a { color: var(--brand); }
+.err { background: var(--err-bg); color: var(--err-fg); padding: 0.75rem; margin-top: 1rem; }
+
+/* ------- site footer (mirrors .site-footer in css/global.css) ------- */
+
+.site-footer {
+  margin-top: 3rem;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  align-items: center;
+  gap: 1.3em;
+  flex-wrap: wrap;
+  padding-top: 1.5rem;
+}
+
+.site-footer-mark {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink-4);
+}
+
+.site-footer-links {
+  margin-left: auto;
+  display: flex;
+  gap: 1.3em;
+}
+
+.site-footer-links a {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  opacity: .8;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.site-footer-links a:hover {
+  opacity: 1;
+  color: var(--brand);
+}

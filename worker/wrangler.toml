@@ -7,8 +7,11 @@ routes = [
   { pattern = "join.jxnfilm.club/*", zone_name = "jxnfilm.club" }
 ]
 
+# Mirrored by the module-rules plugin in tests/worker/vitest.config.ts —
+# keep the two in sync.
 rules = [
-  { type = "Text", globs = ["**/*.html"], fallthrough = true }
+  { type = "Text", globs = ["**/*.html", "**/*.css"], fallthrough = true },
+  { type = "Data", globs = ["**/*.ico"], fallthrough = true }
 ]
 
 [[kv_namespaces]]

@@ -1,5 +1,7 @@
 import privacyHtml from './privacy.html'
 import signupHtml from './signup.html'
+import brandCss from './brand.css'
+import faviconIco from './favicon.ico'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -111,7 +113,15 @@ async function route(request, env) {
     }
 
     if (request.method === 'GET' && pathname === '/')        return html(render(signupHtml, env))
-    if (request.method === 'GET' && pathname === '/privacy') return html(privacyHtml)
+    if (request.method === 'GET' && pathname === '/privacy') return html(render(privacyHtml, env))
+    // Same icon as the main site (img/favicon.ico); the copy in worker/src is
+    // byte-parity-tested. Served first-party so the browser's automatic
+    // /favicon.ico request doesn't 404.
+    if (request.method === 'GET' && pathname === '/favicon.ico') {
+      return new Response(faviconIco, {
+        headers: { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' },
+      })
+    }
 
     if (request.method === 'POST' && pathname === '/signup')         return handleSignup(request, env)
     if (request.method === 'POST' && pathname === '/signup/verify')  return handleSignupVerify(request, env)
@@ -165,15 +175,50 @@ async function route(request, env) {
 
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
 
+    // Browsers get a branded 404; API callers (no text/html Accept) keep the
+    // plain-text response.
+    if (request.method === 'GET' && (request.headers.get('Accept') || '').includes('text/html')) {
+      return html(page(env, {
+        title: 'Not Found',
+        body: '<h1>Not found</h1>' +
+          '<p>That page doesn&#39;t exist.</p>' +
+          `<p><a href="${siteOrigin(env)}/">&larr; Back to Jackson Film Club</a></p>`,
+      }), 404)
+    }
     return new Response('Not Found', { status: 404 })
 }
 
-function html(body) {
-  return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+function html(body, status = 200) {
+  return new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
 
 function render(template, env) {
-  return template.replaceAll('%SITE_ORIGIN%', env.SITE_ORIGIN || 'https://jxnfilm.club')
+  return template
+    .replaceAll('%BRAND_CSS%', brandCss)
+    .replaceAll('%SITE_ORIGIN%', siteOrigin(env))
+}
+
+function siteOrigin(env) {
+  return env.SITE_ORIGIN || 'https://jxnfilm.club'
+}
+
+// Shared shell for pages built in JS (unsubscribe, RSVP cancel, 404) — same
+// head, wordmark header, and footer as signup.html / privacy.html.
+function page(env, { title, body }) {
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    `<title>${escapeHtml(title)} · Jackson Film Club</title>` +
+    '<link rel="icon" href="/favicon.ico">' +
+    `<style>${brandCss}</style></head><body>` +
+    `<nav class="topnav"><a class="logo" href="${siteOrigin(env)}/">` +
+    '<span class="logo-word">JXN Film Club</span>' +
+    '<span class="logo-stamp">Est. JXN MS</span></a></nav>' +
+    body +
+    '<footer class="site-footer">' +
+    '<span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>' +
+    '<nav class="site-footer-links"><a href="/privacy">Privacy</a>' +
+    '<a href="mailto:privacy@jxnfilm.club">Contact</a></nav>' +
+    '</footer></body></html>'
 }
 
 function json(env, data, status = 200) {
@@ -1793,34 +1838,32 @@ async function handleRsvpCancel(request, env) {
   const claims = await verifyRsvpCancelToken(env, token)
   if (!claims) {
     if (request.method === 'POST') return new Response('invalid token', { status: 400 })
-    return html(unsubPage('This cancel link is invalid or has expired.'))
+    return html(unsubPage(env, 'This cancel link is invalid or has expired.', 'Cancel RSVP'))
   }
   if (request.method === 'GET') {
-    return html(rsvpCancelConfirmPage(token))
+    return html(rsvpCancelConfirmPage(env, token))
   }
   const origin = new URL(request.url).origin
   const r = await cancelRsvp(env, claims.ev, claims.m, origin)
   if (!r.ok) return new Response(r.error || 'error', { status: r.code || 500 })
   return html(unsubPage(
+    env,
     r.status === 'cancelled'
       ? "Your RSVP has been cancelled. If you were confirmed and there was a waitlist, the next person has been notified."
       : "You weren't RSVPed for this screening (or already cancelled). Nothing to do.",
+    'Cancel RSVP',
   ))
 }
 
-function rsvpCancelConfirmPage(token) {
+function rsvpCancelConfirmPage(env, token) {
   const escaped = escapeHtml(token)
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Cancel RSVP · Jackson Film Club</title>' +
-    '<style>body{max-width:32rem;margin:4rem auto;padding:0 1.25rem;' +
-    'font:16px/1.6 system-ui,sans-serif;color:#222}' +
-    'button{font:inherit;padding:0.6rem 1rem;background:#111;color:#fff;border:0;border-radius:4px;cursor:pointer}' +
-    'a{color:#0a58ca}</style></head>' +
-    '<body><h1>Cancel your RSVP?</h1>' +
-    '<p>Click the button to release your spot. If there’s a waitlist, the next person will be notified automatically.</p>' +
-    `<form method="POST" action="/rsvp/cancel?token=${escaped}"><button type="submit">Cancel my RSVP</button></form>` +
-    '<p><a href="https://jxnfilm.club/events">Never mind — back to events</a></p></body></html>'
+  return page(env, {
+    title: 'Cancel RSVP',
+    body: '<h1>Cancel your RSVP?</h1>' +
+      '<p>Click the button to release your spot. If there’s a waitlist, the next person will be notified automatically.</p>' +
+      `<form method="POST" action="/rsvp/cancel?token=${escaped}"><button type="submit">Cancel my RSVP</button></form>` +
+      `<p class="hint"><a href="${siteOrigin(env)}/events">Never mind — back to events</a></p>`,
+  })
 }
 
 // --- E2E / dev helper ---
@@ -1963,7 +2006,7 @@ async function handleUnsubscribe(request, env) {
   const email = await verifyUnsubToken(env, token)
   if (!email) {
     if (request.method === 'POST') return new Response('invalid token', { status: 400 })
-    return html(unsubPage('This unsubscribe link is invalid or has expired.'))
+    return html(unsubPage(env, 'This unsubscribe link is invalid or has expired.'))
   }
 
   const memberRaw = await env.MEMBERS_KV.get(`member:${email}`)
@@ -1980,6 +2023,7 @@ async function handleUnsubscribe(request, env) {
 
   if (request.method === 'POST') return new Response('ok', { status: 200 })
   return html(unsubPage(
+    env,
     "You've been unsubscribed from Jackson Film Club announcements. " +
     "You'll still receive one-time login codes when you sign in.",
   ))
@@ -2118,14 +2162,12 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-function unsubPage(message) {
-  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Unsubscribe · Jackson Film Club</title>' +
-    '<style>body{max-width:32rem;margin:4rem auto;padding:0 1.25rem;' +
-    'font:16px/1.6 system-ui,sans-serif;color:#222}a{color:#0a58ca}</style></head>' +
-    `<body><h1>Jackson Film Club</h1><p>${escapeHtml(message)}</p>` +
-    '<p><a href="https://jxnfilm.club/">← Back to Jackson Film Club</a></p></body></html>'
+function unsubPage(env, message, title = 'Unsubscribe') {
+  return page(env, {
+    title,
+    body: `<h1>Jackson Film Club</h1><p>${escapeHtml(message)}</p>` +
+      `<p class="hint"><a href="${siteOrigin(env)}/">← Back to Jackson Film Club</a></p>`,
+  })
 }
 
 // --- GitHub dispatch ---

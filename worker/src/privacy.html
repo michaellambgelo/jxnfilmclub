@@ -4,90 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy · Jackson Film Club</title>
+  <link rel="icon" href="/favicon.ico">
+  <!-- Shared "Night Shift" brand layer, injected by render() in index.js -->
+  <style>%BRAND_CSS%</style>
   <style>
-    /* "Night Shift" — noir zine tokens, mirrored from the main site's
-       css/tokens.css (Claude Design project "jxnfilm.club", direction B).
-       Fonts are self-hosted on the main site (GitHub Pages sends
-       Access-Control-Allow-Origin: *) — no Google Fonts request. */
-    @font-face {
-      font-family: "Playfair Display";
-      font-weight: 400 900;
-      font-style: normal;
-      font-display: swap;
-      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-VariableFont_wght.woff2") format("woff2-variations");
-    }
-    @font-face {
-      font-family: "Playfair Display";
-      font-weight: 400 900;
-      font-style: italic;
-      font-display: swap;
-      src: url("https://jxnfilm.club/fonts/PlayfairDisplay-Italic-VariableFont_wght.woff2") format("woff2-variations");
-    }
-    @font-face {
-      font-family: "Oswald";
-      font-weight: 200 700;
-      font-style: normal;
-      font-display: swap;
-      src: url("https://jxnfilm.club/fonts/Oswald-VariableFont_wght.woff2") format("woff2-variations");
-    }
-    @font-face {
-      font-family: "Newsreader";
-      font-weight: 200 800;
-      font-style: normal;
-      font-display: swap;
-      src: url("https://jxnfilm.club/fonts/Newsreader-VariableFont_opsz-wght.woff2") format("woff2-variations");
-    }
-    @font-face {
-      font-family: "Newsreader";
-      font-weight: 200 800;
-      font-style: italic;
-      font-display: swap;
-      src: url("https://jxnfilm.club/fonts/Newsreader-Italic-VariableFont_opsz-wght.woff2") format("woff2-variations");
-    }
-    :root {
-      --brand: #d7321f;
-      --bg: #100f0e;
-      --surface-2: #1d1a15;
-      --ink: #e8e3d8;
-      --ink-strong: #f0ebe0;
-      --ink-4: #8f897d;
-      --label: 'Oswald', 'Helvetica Neue', Arial, sans-serif;
-      --display: 'Playfair Display', Georgia, serif;
-    }
-    * { box-sizing: border-box; }
-    html { background: var(--bg); border-top: 5px solid var(--brand); }
-    body {
-      max-width: 42rem; margin: 0 auto; padding: 0 1.25rem 3rem;
-      font: 17px/1.6 'Newsreader', Georgia, serif; color: var(--ink);
-    }
-    body::after {
-      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      opacity: 0.045; mix-blend-mode: screen;
-    }
-    ::selection { background: var(--brand); color: #fff; }
-    .topnav { margin: 1.5rem 0 2.5rem; display: flex; align-items: center; gap: .75rem; }
-    .topnav a {
-      font-family: var(--label); font-size: .75rem; font-weight: 500;
-      text-transform: uppercase; letter-spacing: .12em;
-      color: var(--ink); opacity: .8; text-decoration: none;
-    }
-    .topnav a:hover { opacity: 1; color: var(--brand); }
-    h1 {
-      font-family: var(--display); font-style: italic; font-weight: 900;
-      font-size: 2.4rem; line-height: 1.05; color: var(--ink-strong);
-      margin: 0 0 .35rem;
-    }
+    :root { --page-width: 42rem; }
+    body { line-height: 1.6; }
     .updated {
-      font-family: var(--label); font-size: .75rem; text-transform: uppercase;
-      letter-spacing: .12em; color: var(--ink-4); margin-bottom: 2rem;
+      font-family: var(--font-label); font-size: .75rem; text-transform: uppercase;
+      letter-spacing: var(--tracking-wider); color: var(--ink-4); margin-bottom: 2rem;
     }
     h2 {
-      font-family: var(--display); font-style: italic; font-weight: 700;
+      font-family: var(--font-display); font-style: italic; font-weight: 700;
       font-size: 1.35rem; color: var(--ink-strong); margin-top: 2rem;
     }
-    a { color: var(--brand); }
-    a:hover { color: var(--ink-strong); }
     b { color: var(--ink-strong); }
     code {
       background: var(--surface-2); padding: 0.1em 0.35em;
@@ -97,8 +27,11 @@
 </head>
 <body>
   <nav class="topnav">
-    <a href="https://jxnfilm.club/">← Jackson Film Club</a> ·
-    <a href="/">Signup</a>
+    <a class="logo" href="%SITE_ORIGIN%/">
+      <span class="logo-word">JXN Film Club</span>
+      <span class="logo-stamp">Est. JXN MS</span>
+    </a>
+    <a class="topnav-link" href="/">Signup</a>
   </nav>
 
   <h1>Privacy Policy</h1>
@@ -106,7 +39,7 @@
 
   <p>
     Jackson Film Club ("we") operates
-    <a href="https://jxnfilm.club">jxnfilm.club</a> and the membership service
+    <a href="%SITE_ORIGIN%">jxnfilm.club</a> and the membership service
     at <a href="https://join.jxnfilm.club">join.jxnfilm.club</a>. We're a
     small film club in Jackson, Mississippi — not a data company. This page
     explains, in plain language, exactly what we collect and what happens
@@ -195,7 +128,7 @@
   <h2>Your choices</h2>
   <ul>
     <li><b>Delete your membership yourself, instantly</b> — the danger zone on
-      your <a href="https://jxnfilm.club/edit">account page</a> removes your
+      your <a href="%SITE_ORIGIN%/edit">account page</a> removes your
       email, profile, and upcoming RSVPs on the spot. Optionally, you can also
       anonymize your name in past attendance lists.</li>
     <li><b>Unsubscribe from announcements</b> — one click from any
@@ -209,7 +142,15 @@
   <h2>Changes</h2>
   <p>
     If this policy changes, we'll update the date at the top and post a
-    notice on <a href="https://jxnfilm.club">jxnfilm.club</a>.
+    notice on <a href="%SITE_ORIGIN%">jxnfilm.club</a>.
   </p>
+
+  <footer class="site-footer">
+    <span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>
+    <nav class="site-footer-links">
+      <a href="/">Signup</a>
+      <a href="mailto:privacy@jxnfilm.club">Contact</a>
+    </nav>
+  </footer>
 </body>
 </html>

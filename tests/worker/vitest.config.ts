@@ -1,28 +1,42 @@
 import { defineWorkersProject } from '@cloudflare/vitest-pool-workers/config'
 import fs from 'node:fs'
 
-// Inline .html imports as string modules (matches `rules = [{ type = "Text", globs = ["**/*.html"] }]` in wrangler.toml)
-const htmlTextPlugin = {
-  name: 'html-as-text',
+// Mirrors the wrangler.toml module rules: .html/.css imports as Text (string
+// modules), .ico as Data (ArrayBuffer). Keep in sync with `rules` there.
+// Resolved ids get a `.wrangler-module` suffix so Vite's built-in CSS
+// pipeline never claims the .css imports (it would replace our string module
+// with an empty one).
+const SUFFIX = '.wrangler-module'
+const isText = (id: string) => id.endsWith('.html') || id.endsWith('.css')
+const isData = (id: string) => id.endsWith('.ico')
+
+const moduleRulesPlugin = {
+  name: 'wrangler-module-rules',
   enforce: 'pre' as const,
   resolveId(id: string, importer?: string) {
-    if (id.endsWith('.html')) {
+    if (isText(id) || isData(id)) {
       const path = importer ? new URL(id, 'file://' + importer).pathname : id
-      return { id: path, moduleSideEffects: false }
+      return { id: path + SUFFIX, moduleSideEffects: false }
     }
     return null
   },
   load(id: string) {
-    if (id.endsWith('.html')) {
-      const contents = fs.readFileSync(id, 'utf8')
+    if (!id.endsWith(SUFFIX)) return null
+    const file = id.slice(0, -SUFFIX.length)
+    if (isText(file)) {
+      const contents = fs.readFileSync(file, 'utf8')
       return `export default ${JSON.stringify(contents)};`
+    }
+    if (isData(file)) {
+      const bytes = Array.from(fs.readFileSync(file))
+      return `export default new Uint8Array([${bytes.join(',')}]).buffer;`
     }
     return null
   },
 }
 
 export default defineWorkersProject({
-  plugins: [htmlTextPlugin],
+  plugins: [moduleRulesPlugin],
   test: {
     name: 'worker',
     include: ['**/*.test.js'],

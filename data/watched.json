@@ -2,6 +2,13 @@
   "ElijahKarriem": [],
   "jsyd": [
     {
+      "link": "https://letterboxd.com/jsyd/film/spider-man-brand-new-day/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
+      "title": "Spider-Man: Brand New Day",
+      "watched_date": "2026-07-29",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/jsyd/film/pirates-of-the-caribbean-the-curse-of-the-black-pearl/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/9/5/2695-pirates-of-the-caribbean-the-curse-of-the-black-pearl-0-600-0-900-crop.jpg?v=272b36c0d8",
       "title": "Pirates of the Caribbean: The Curse of the Black Pearl",
@@ -21,22 +28,15 @@
       "title": "Spider-Man: Far From Home",
       "watched_date": "2026-07-28",
       "year": "2019"
-    },
-    {
-      "link": "https://letterboxd.com/jsyd/film/disclosure-day/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/5/9/2/5/1/1159251-disclosure-day-0-600-0-900-crop.jpg?v=9ae810e4bb",
-      "title": "Disclosure Day",
-      "watched_date": "2026-07-26",
-      "year": "2026"
     }
   ],
   "michaellamb": [
     {
-      "link": "https://letterboxd.com/michaellamb/film/rob-roy-1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/1/9/7/8/1601978-rob-roy-1-0-600-0-900-crop.jpg?v=80321bc237",
-      "title": "Rob Roy",
-      "watched_date": "2026-07-28",
-      "year": null
+      "link": "https://letterboxd.com/michaellamb/film/spider-man-brand-new-day/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
+      "title": "Spider-Man: Brand New Day",
+      "watched_date": "2026-07-29",
+      "year": "2026"
     },
     {
       "link": "https://letterboxd.com/michaellamb/film/spider-man-no-way-home/2/",

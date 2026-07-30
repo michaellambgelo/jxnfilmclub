@@ -455,6 +455,31 @@ async function renderRate() {
 
 let eventsCache = null
 let attendanceCache = null
+let eventsSort = 'upcoming'   // module scope — survives tab switches
+
+const attendeeCount = (e) => (attendanceCache[e.id] || []).length
+
+// Dates are YYYY-MM-DD strings — compare them as strings, never as Dates
+// (parsing them as UTC instants shifts them a day in America/Chicago).
+const EVENT_SORTS = {
+  'date-asc': (a, b) => String(a.date || '').localeCompare(String(b.date || '')),
+  'date-desc': (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
+  title: (a, b) => String(a.title || a.id).localeCompare(String(b.title || b.id), undefined, { sensitivity: 'base' }),
+  attendance: (a, b) => attendeeCount(b) - attendeeCount(a) || String(b.date || '').localeCompare(String(a.date || '')),
+}
+
+function sortEvents() {
+  if (eventsSort === 'upcoming') {
+    // Next screening on top (soonest first), then the past newest-first.
+    // Undated events sort into the past group, at the bottom.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+    const upcoming = eventsCache.filter(e => String(e.date || '') >= today).sort(EVENT_SORTS['date-asc'])
+    const past = eventsCache.filter(e => String(e.date || '') < today).sort(EVENT_SORTS['date-desc'])
+    eventsCache = [...upcoming, ...past]
+  } else {
+    eventsCache.sort(EVENT_SORTS[eventsSort])
+  }
+}
 
 async function renderEvents() {
   // Read per-event KV rows first; if the namespace is empty, bootstrap from
@@ -467,9 +492,6 @@ async function renderEvents() {
     const aggValue = aggRaw.values['events:all']
     eventsCache = tryParse(aggValue) || []
   }
-  // Sort by date for a stable, readable list.
-  eventsCache.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
-
   const attendanceRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'attend:' })}`)
   attendanceCache = {}
   for (const k of attendanceRaw.keys) {
@@ -477,14 +499,32 @@ async function renderEvents() {
     attendanceCache[eventId] = tryParse(attendanceRaw.values[k.name]) || []
   }
 
+  // Sorted after attendance loads — the attendance sort needs the counts.
+  sortEvents()
+
   content().innerHTML = `
     <h2>Events <span class="muted">(${eventsCache.length})</span></h2>
     <p class="section-hint">Edits write directly to <code>ATTENDANCE_KV</code> and appear on <code>/events</code> immediately via the Worker. <code>data/events.json</code> is the cron-snapshotted archive (every 6h).</p>
     <div class="toolbar">
       <button class="primary" data-action="event-new">+ new event</button>
+      <label class="ev-sort-label">sort
+        <select id="ev-sort">
+          <option value="upcoming">upcoming first</option>
+          <option value="date-desc">newest first</option>
+          <option value="date-asc">oldest first</option>
+          <option value="title">title A–Z</option>
+          <option value="attendance">most attended</option>
+        </select>
+      </label>
     </div>
     <div id="events-list">${renderEventCards()}</div>
   `
+  $('#ev-sort').value = eventsSort
+  $('#ev-sort').addEventListener('change', () => {
+    eventsSort = $('#ev-sort').value
+    sortEvents()
+    $('#events-list').innerHTML = renderEventCards()
+  })
 }
 
 // Mirrors worker/src/index.js:publicEventProjection — strips the host's

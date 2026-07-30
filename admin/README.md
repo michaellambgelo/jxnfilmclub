@@ -82,7 +82,7 @@ which remains what actually gets sent. Scripts never execute in the preview
 | **Sessions** | `session:{id}` cached snapshots | evict (does NOT revoke the JWT — use the Worker's `/session/revoke` for that) |
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
 | **Rate limits** | All `rate:*` counters; lockouts (≥5) are highlighted | delete a counter to unblock a user |
-| **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}` | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
+| **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
 
 ## What it does NOT do
 

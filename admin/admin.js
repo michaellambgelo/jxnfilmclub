@@ -177,6 +177,32 @@ async function renderMembers() {
   wireFilter($('#filter'), '#members-table tbody tr')
 }
 
+// Default compose template — email-safe (single table, inline styles, no
+// external CSS) so it renders in Gmail/Outlook/Apple Mail as-is. The Worker
+// appends the unsubscribe + postal footer automatically; don't add one here.
+// Palette mirrors css/tokens.css: ink #100f0e, paper #f0ebe0, brand #d7321f.
+const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:24px 0">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td align="center" style="background:#100f0e;padding:28px 24px">
+          <img src="https://jxnfilm.club/img/logo.png" width="96" height="96" alt="Jackson Film Club" style="display:block;border:0">
+          <p style="margin:14px 0 0;font-family:Georgia,'Times New Roman',serif;font-size:22px;letter-spacing:1px;color:#f0ebe0">Jackson Film Club</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:32px 32px 24px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <h1 style="margin:0 0 16px;font-size:26px;line-height:1.25;color:#100f0e">This month at the club</h1>
+          <p style="margin:0 0 16px;font-size:16px;line-height:1.6">Hi everyone — here's what's coming up. Replace this copy with the announcement: the film, the date, the venue, and anything folks should bring.</p>
+          <p style="margin:0 0 16px;font-size:16px;line-height:1.6"><strong>Next screening:</strong> <em>Film Title</em> (Year) — Saturday, Month 0 at 7:00 PM.</p>
+          <p style="margin:0 0 24px;font-size:16px;line-height:1.6">RSVP and details are on the events page.</p>
+          <p style="margin:0"><a href="https://jxnfilm.club/events" style="display:inline-block;background:#d7321f;color:#ffffff;text-decoration:none;font-size:16px;padding:12px 24px;border-radius:4px">See upcoming events</a></p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+
 async function renderNewsletter() {
   const [membersRes, historyRes] = await Promise.all([
     loadKv('member:'),
@@ -202,7 +228,7 @@ async function renderNewsletter() {
       <label>Subject<input id="nl-subject" type="text" placeholder="This month at Jackson Film Club"></label>
       <div class="nl-body">
         <div class="nl-fields">
-          <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>"></textarea></label>
+          <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>">${escapeHtml(NEWSLETTER_TEMPLATE_HTML)}</textarea></label>
           <label>Plain-text body <span class="muted">— fallback</span><textarea id="nl-text" rows="6" placeholder="…"></textarea></label>
         </div>
         <div class="nl-preview-wrap">

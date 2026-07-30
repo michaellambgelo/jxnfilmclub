@@ -116,7 +116,8 @@ describe('POST /admin/newsletter/send', () => {
     expect(unsubUrl).toContain('/unsubscribe?token=')
 
     // CAN-SPAM: unsubscribe link + postal address present in the body.
-    expect(msg.html).toContain('/unsubscribe?token=')
+    // The HTML footer must carry the link as a real anchor, not a bare URL.
+    expect(msg.html).toMatch(/<a href="[^"]*\/unsubscribe\?token=[^"]*">Unsubscribe<\/a>/)
     expect(msg.html).toContain('Jackson Film Club, PO Box 1')
     expect(msg.text).toContain('Unsubscribe:')
     expect(msg.text).toContain('Jackson Film Club, PO Box 1')

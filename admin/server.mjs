@@ -229,6 +229,16 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // GET /api/watched?env=  → proxies the join Worker's public /watched map
+  // (server-side fetch — the browser can't call it cross-origin itself).
+  if (method === 'GET' && url.pathname === '/api/watched') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/watched`)
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+    return json(res, workerRes.status, data)
+  }
   // Lightweight liveness probe.
   if (method === 'GET' && url.pathname === '/api/whoami') {
     const out = await runWrangler(['whoami']).catch(e => `not authenticated: ${e.message}`)

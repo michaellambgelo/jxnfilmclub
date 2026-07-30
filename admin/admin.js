@@ -204,6 +204,44 @@ const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpa
   </td></tr>
 </table>`
 
+// handle → display name for the "latest watches" section; refreshed on every
+// Newsletter tab render so inserts use the same member list the tab shows.
+let nlHandleNames = {}
+
+// Email-safe "latest from members" section. Mirrors the compose template's
+// structure (bg band + centered 600px white card, Georgia, brand red) so the
+// inserted block reads as a continuation of the card above it.
+function buildWatchedSectionHtml(entries) {
+  const rows = entries.map(e => `
+        <tr>
+          <td width="56" style="padding:8px 12px 8px 0;vertical-align:top">${e.poster ? `<img src="${attr(e.poster)}" width="48" height="72" alt="" style="display:block;border:0;border-radius:3px">` : ''}</td>
+          <td style="padding:8px 0;vertical-align:top">
+            <p style="margin:0;font-size:16px;line-height:1.4"><a href="${attr(e.link)}" style="color:#d7321f;text-decoration:none"><strong>${escapeHtml(e.title)}</strong></a>${e.year ? ` <span style="color:#6b675f">(${escapeHtml(e.year)})</span>` : ''}</p>
+            <p style="margin:2px 0 0;font-size:14px;color:#6b675f">${escapeHtml(e.name || '@' + e.handle)}${e.watched_date ? ' — ' + escapeHtml(fmtJoined(e.watched_date)) : ''}</p>
+          </td>
+        </tr>`).join('')
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <h2 style="margin:0 0 12px;font-size:20px;color:#100f0e">Latest from members on Letterboxd</h2>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}
+          </table>
+          <p style="margin:12px 0 0;font-size:14px"><a href="https://jxnfilm.club/watched" style="color:#d7321f">See all member activity &rarr;</a></p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+}
+
+function buildWatchedSectionText(entries) {
+  const lines = entries.map(e =>
+    `- ${e.title}${e.year ? ` (${e.year})` : ''} — ${e.name || '@' + e.handle}${e.watched_date ? ', ' + e.watched_date : ''}\n  ${e.link}`)
+  return `Latest from members on Letterboxd:\n${lines.join('\n')}\n\nSee all member activity: https://jxnfilm.club/watched`
+}
+
 async function renderNewsletter() {
   const [membersRes, historyRes] = await Promise.all([
     loadKv('member:'),
@@ -212,6 +250,7 @@ async function renderNewsletter() {
 
   const members = membersRes.keys.map(k => tryParse(membersRes.values[k.name])).filter(Boolean)
   const optedIn = members.filter(m => m.newsletter === true)
+  nlHandleNames = Object.fromEntries(members.filter(m => m.handle).map(m => [m.handle, m.name]))
 
   const history = historyRes.keys
     .map(k => tryParse(historyRes.values[k.name]))
@@ -248,6 +287,8 @@ async function renderNewsletter() {
         </div>
       </div>
       <div class="toolbar">
+        <input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert" style="width:64px">
+        <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
         <input id="nl-test-email" type="email" placeholder="you@example.com">
         <button data-action="nl-test">Send test</button>
         <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
@@ -757,6 +798,28 @@ document.addEventListener('click', async (e) => {
       if (id) await delKv(`session:${id}`).catch(() => {})
       toast(`${email} ${turningOn ? 'opted in' : 'opted out'}`)
       await switchTab(currentTab)
+    }
+    else if (a === 'nl-insert-watched') {
+      const limit = Math.max(1, Math.min(30, Number($('#nl-watched-count').value) || 8))
+      const map = await api('GET', `/api/watched?${qs({ env: env() })}`)
+      const entries = []
+      for (const [handle, films] of Object.entries(map || {})) {
+        for (const f of (films || [])) {
+          if (f && f.title && f.link) entries.push({ ...f, handle, name: nlHandleNames[handle] })
+        }
+      }
+      if (!entries.length) { toast('No member Letterboxd activity to insert', true); return }
+      // watched_date is a bare YYYY-MM-DD — sort as strings (never Dates);
+      // undated entries sink to the end.
+      entries.sort((x, y) => String(y.watched_date || '').localeCompare(String(x.watched_date || '')))
+      const top = entries.slice(0, limit)
+
+      const htmlField = $('#nl-html')
+      const textField = $('#nl-text')
+      htmlField.value = htmlField.value.trimEnd() + '\n' + buildWatchedSectionHtml(top)
+      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
+      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildWatchedSectionText(top)
+      toast(`Inserted ${top.length} ${top.length === 1 ? 'entry' : 'entries'} — edit or trim in the preview`)
     }
     else if (a === 'nl-test') {
       const subject = $('#nl-subject').value.trim()

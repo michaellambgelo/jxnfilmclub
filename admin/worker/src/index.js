@@ -175,6 +175,22 @@ async function handleNewsletterSend(request, env, q) {
   return json(workerRes.status, data)
 }
 
+// GET /api/watched?env= — proxy the join Worker's public /watched endpoint
+// over the service binding. The join Worker's CORS allowlist only names the
+// public site origin, so the admin UI can't fetch it directly; the binding
+// also keeps the hop off the public internet.
+async function handleWatchedProxy(env, q) {
+  if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+  const staging = q.env === 'staging'
+  const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
+  const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+  const workerRes = await service.fetch(`${origin}/watched`)
+  const text = await workerRes.text()
+  let data
+  try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+  return json(workerRes.status, data)
+}
+
 // --- Static files (Text module imports; nothing else ships) ---
 
 const STATIC = {
@@ -191,6 +207,10 @@ async function handle(request, env, access) {
   const method = request.method
   const q = Object.fromEntries(url.searchParams)
 
+  // GET /api/watched?env=  → handle-keyed map of recent member diary entries
+  if (method === 'GET' && url.pathname === '/api/watched') {
+    return handleWatchedProxy(env, q)
+  }
   // GET /api/kv?env=&binding=&prefix=  → { keys, values }
   if (method === 'GET' && url.pathname === '/api/kv') {
     const kv = kvFor(env, q.env, q.binding)

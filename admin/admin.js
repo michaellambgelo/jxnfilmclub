@@ -109,7 +109,8 @@ function fmtExpiry(unixSec) {
   if (rem < 0) return 'expired'
   if (rem < 60_000) return `${Math.floor(rem / 1000)}s`
   if (rem < 3_600_000) return `${Math.floor(rem / 60_000)}m`
-  return `${Math.floor(rem / 3_600_000)}h`
+  if (rem < 86_400_000) return `${Math.floor(rem / 3_600_000)}h`
+  return `${Math.floor(rem / 86_400_000)}d`
 }
 
 // --- Tab dispatch ---
@@ -372,8 +373,8 @@ async function renderPending() {
 }
 
 async function renderSessions() {
-  const { keys, values } = await loadKv('session:')
-  if (!keys.length) return content().innerHTML = '<p class="empty">No active session snapshots.</p>'
+  const [{ keys, values }, { keys: refreshKeys, values: refreshValues }] =
+    await Promise.all([loadKv('session:'), loadKv('refresh:')])
 
   const rows = keys.map(k => ({
     keyName: k.name,
@@ -382,9 +383,20 @@ async function renderSessions() {
     s: tryParse(values[k.name]),
   }))
 
-  content().innerHTML = `
-    <h2>Session snapshots <span class="muted">(${rows.length})</span></h2>
-    <p class="section-hint">Cached member snapshots, 1h TTL. Evicting one forces the next <code>/member/me</code> to re-read <code>member:{email}</code>. Does not revoke the bearer token — for that use the Worker's <code>/session/revoke</code> route (requires the token).</p>
+  // refresh:{id}:{secret} — split on the LAST colon; ids are opaque.
+  const devices = refreshKeys.map(k => {
+    const rest = k.name.slice('refresh:'.length)
+    const cut = rest.lastIndexOf(':')
+    return {
+      keyName: k.name,
+      id: rest.slice(0, cut),
+      secret: rest.slice(cut + 1),
+      expires: k.expiration,
+      r: tryParse(refreshValues[k.name]),
+    }
+  })
+
+  const snapshotsTable = rows.length ? `
     <table><thead><tr><th>Member ID</th><th>Email</th><th>Name</th><th>Handle</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
       ${rows.map(({ keyName, id, expires, s }) => `
         <tr>
@@ -400,6 +412,31 @@ async function renderSessions() {
         </tr>
       `).join('')}
     </tbody></table>
+  ` : '<p class="empty">No active session snapshots.</p>'
+
+  const devicesTable = devices.length ? `
+    <table><thead><tr><th>Member ID</th><th>Email</th><th>Token</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
+      ${devices.map(({ keyName, id, secret, expires, r }) => `
+        <tr>
+          <td><code class="id">${escapeHtml(id)}</code></td>
+          <td>${escapeHtml(r?.email) || '—'}</td>
+          <td><code>${escapeHtml(secret.slice(0, 6))}…</code></td>
+          <td>${fmtExpiry(expires)}</td>
+          <td class="actions">
+            <button class="danger" data-action="revoke-device" data-key="${attr(keyName)}">revoke</button>
+          </td>
+        </tr>
+      `).join('')}
+    </tbody></table>
+  ` : '<p class="empty">No remembered devices.</p>'
+
+  content().innerHTML = `
+    <h2>Session snapshots <span class="muted">(${rows.length})</span></h2>
+    <p class="section-hint">Cached member snapshots, 1h TTL. Evicting one forces the next <code>/member/me</code> to re-read <code>member:{email}</code>. Does not revoke the bearer token — for that use the Worker's <code>/session/revoke</code> route (requires the token).</p>
+    ${snapshotsTable}
+    <h2>Remembered devices <span class="muted">(${devices.length})</span></h2>
+    <p class="section-hint">30-day device refresh tokens from the <i>Remember my login on this device</i> checkbox — one row per opted-in browser, TTL slides forward on each silent refresh. Revoking sends that device back through the email-code flow; a bearer token it already holds stays valid until exp (max 1h).</p>
+    ${devicesTable}
   `
 }
 
@@ -699,6 +736,13 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Evict session:${id}?\n\nDeletes the cached snapshot only. Bearer token stays valid until exp (max 1h).`)) return
       try { await delKv(`session:${id}`) } catch { /* may not exist */ }
       toast(`Evicted session:${id}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'revoke-device') {
+      const key = btn.dataset.key
+      if (!confirm(`Revoke this remembered device?\n\n${key}\n\nIts next silent refresh fails and that browser must log in with an email code again. A bearer token it already holds stays valid until exp (max 1h).`)) return
+      await delKv(key)
+      toast('Remembered device revoked')
       await switchTab(currentTab)
     }
     else if (a === 'nl-toggle') {

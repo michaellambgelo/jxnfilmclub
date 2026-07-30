@@ -79,7 +79,7 @@ which remains what actually gets sent. Scripts never execute in the preview
 | **Members** | All `member:{email}` rows | clear rate limits, force-unlink Letterboxd (also patches `data/members.json`), evict session snapshot |
 | **Newsletter** | Compose/send a newsletter, opted-in recipients (with per-member opt-in/out toggles), and send history (`newsletter:sent:{ts}`) | toggle a member's `newsletter` flag (evicts their session), send a test to one address, send to all opted-in members |
 | **Pending** | `pending:{email}` signups with their OTP code | delete (use for stuck signups) |
-| **Sessions** | `session:{id}` cached snapshots | evict (does NOT revoke the JWT — use the Worker's `/session/revoke` for that) |
+| **Sessions** | `session:{id}` cached snapshots + `refresh:{id}:{secret}` remembered devices | evict snapshot (does NOT revoke the JWT — use the Worker's `/session/revoke` for that); revoke a remembered device (deletes the 30-day refresh record, forcing that browser back through the email-code flow) |
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
 | **Rate limits** | All `rate:*` counters; lockouts (≥5) are highlighted | delete a counter to unblock a user |
 | **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |

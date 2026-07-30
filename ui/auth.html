@@ -38,6 +38,53 @@
     else delete localStorage.jxnfc_session
   }
 
+  function decodeTokenExp(token) {
+    const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.exp
+  }
+
+  // Remember-this-device: trade the long-lived refresh token for a fresh
+  // 1-hour session token. A rejected token (revoked, account deleted, aged
+  // out) clears the stored session; a network failure leaves it in place so
+  // a flaky connection doesn't sign the member out of a remembered device.
+  async function refreshSession(s) {
+    try {
+      const res = await fetch(`${WORKER_ORIGIN}/session/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: s.refresh }),
+      })
+      if (!res.ok) {
+        setSession(null)
+        return null
+      }
+      const data = await res.json()
+      const next = {
+        token: data.token, email: data.email, id: data.id,
+        name: data.name, handle: data.handle,
+        exp: decodeTokenExp(data.token), refresh: s.refresh,
+      }
+      setSession(next)
+      return next
+    } catch {
+      return null
+    }
+  }
+
+  // Single entry point for "is there a usable session?": returns the stored
+  // session if its token is still live, silently refreshes when the device
+  // was remembered, else null. Exposed on globalThis so views compiled from
+  // other lib files (events RSVP, host form) share the exact same logic.
+  async function ensureSession() {
+    const s = getSession()
+    if (!s) return null
+    if (s.token && s.exp > Date.now()) return s
+    if (s.refresh) return refreshSession(s)
+    return null
+  }
+
+  globalThis.jxnfcEnsureSession = ensureSession
+
   // OTP in-flight state: matches the Worker's 10-minute OTP TTL so a user
   // who requested a code then navigated away lands back on the code-entry
   // step instead of re-typing their email. Cleared on verify success or
@@ -87,6 +134,14 @@
       <input type="text" name="code" required inputmode="numeric"
         maxlength="6" autocomplete="one-time-code" autofocus>
     </label>
+    <label class="prefRow">
+      <input type="checkbox" name="remember">
+      <span class="prefRow-text">
+        <span class="prefRow-title">Remember my login on this device</span>
+        <span class="prefRow-hint">Stay signed in for 30 days on this browser.
+          Skip this on a shared or public computer.</span>
+      </span>
+    </label>
     <button type="submit" :disabled="busy">
       { busy ? 'Verifying…' : 'Confirm membership' }
     </button>
@@ -113,10 +168,11 @@
       const fd = new FormData(e.target)
       const email = this.email || fd.get('email')
       const code = fd.get('code')
+      const remember = !!fd.get('remember')
       try {
-        const { token, id, name, handle } = await call('POST', '/signup/verify', { email, code })
+        const { token, id, name, handle, refresh } = await call('POST', '/signup/verify', { email, code, remember })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-        setSession({ token, email, id, name, handle, exp: payload.exp })
+        setSession({ token, email, id, name, handle, exp: payload.exp, refresh })
         clearOtpInflight()
         location.href = '/edit'
       } catch (err) {
@@ -146,6 +202,14 @@
       <input type="text" name="code" required inputmode="numeric"
         maxlength="6" autocomplete="one-time-code">
     </label>
+    <label :if="step === 'code'" class="prefRow">
+      <input type="checkbox" name="remember">
+      <span class="prefRow-text">
+        <span class="prefRow-title">Remember my login on this device</span>
+        <span class="prefRow-hint">Stay signed in for 30 days on this browser.
+          Skip this on a shared or public computer.</span>
+      </span>
+    </label>
 
     <button :if="step === 'email'" type="submit" :disabled="busy">
       { busy ? 'Sending…' : 'Log in' }
@@ -162,8 +226,10 @@
   <script>
     async mounted() {
       this.update({ step: 'email', email: '', busy: false, error: '' })
-      const s = getSession()
-      if (s?.token && s.exp > Date.now()) {
+      // ensureSession also covers a remembered device whose 1-hour token has
+      // lapsed: it silently refreshes instead of making them log in again.
+      const s = await ensureSession()
+      if (s) {
         location.href = '/edit'
         return
       }
@@ -194,11 +260,13 @@
     async verifyCode(e) {
       e.preventDefault()
       this.update({ busy: true, error: '' })
-      const code = new FormData(e.target).get('code')
+      const fd = new FormData(e.target)
+      const code = fd.get('code')
+      const remember = !!fd.get('remember')
       try {
-        const { token, id, name, handle } = await call('POST', '/otp/verify', { email: this.email, code })
+        const { token, id, name, handle, refresh } = await call('POST', '/otp/verify', { email: this.email, code, remember })
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
-        setSession({ token, email: this.email, id, name, handle, exp: payload.exp })
+        setSession({ token, email: this.email, id, name, handle, exp: payload.exp, refresh })
         clearOtpInflight()
         location.href = '/edit'
       } catch (err) {
@@ -339,8 +407,10 @@
         deleteBusy: false, deleteConfirmInput: '', deleteError: '',
       })
 
-      const s = getSession()
-      if (!s?.token || s.exp < Date.now()) {
+      // A remembered device with a lapsed 1-hour token gets a silent refresh
+      // here instead of a bounce to /signin.
+      const s = await ensureSession()
+      if (!s) {
         setSession(null)
         location.href = '/signin'
         return
@@ -455,11 +525,13 @@
 
     async signOut() {
       // Revoke server-side first so a copied token can't be replayed for the
-      // remaining ~1h. Best-effort: if the network is offline we still drop
-      // the local session — the token will still expire on schedule.
+      // remaining ~1h. Passing refresh also kills the remember-this-device
+      // token, so sign out means signed out even on a remembered browser.
+      // Best-effort: if the network is offline we still drop the local
+      // session — the token will still expire on schedule.
       const s = this.session
       if (s?.token) {
-        try { await call('POST', '/session/revoke', {}, s.token) } catch { /* ignore */ }
+        try { await call('POST', '/session/revoke', { refresh: s.refresh }, s.token) } catch { /* ignore */ }
       }
       setSession(null)
       clearOtpInflight()

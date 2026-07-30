@@ -5,6 +5,7 @@ import faviconIco from './favicon.ico'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
+const REFRESH_TTL = 30 * 24 * 3600  // 30 days — "remember this device" token
 // Cloudflare KV enforces a 60s minimum expirationTtl, so 60 is the floor for
 // both knobs. Throttle is permissive on the user side — a single stuck code
 // is still valid for OTP_TTL.
@@ -138,7 +139,8 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
 
-    if (request.method === 'POST' && pathname === '/session/revoke') return handleSessionRevoke(request, env)
+    if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
+    if (request.method === 'POST' && pathname === '/session/refresh') return handleSessionRefresh(request, env)
 
     // Public read endpoints — Worker is the live source of truth, SPA hits
     // these directly so member/event mutations appear without a redeploy.
@@ -292,7 +294,7 @@ async function handleSignup(request, env) {
 // carries a Letterboxd handle, it's promoted onto the member row and the
 // reverse index keys are written in the same pass — no separate verify step.
 async function handleSignupVerify(request, env) {
-  const { email, code } = await request.json()
+  const { email, code, remember } = await request.json()
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
 
   const attemptsKey = `rate:signup_verify_fail:${email}`
@@ -344,7 +346,8 @@ async function handleSignupVerify(request, env) {
   await dispatchGithub(env, 'add-member', addPayload)
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000, jti: randomToken(16) })
-  return json(env, { token, email, id, name: member.name, handle })
+  const refresh = remember === true ? await issueRefreshToken(env, member) : undefined
+  return json(env, { token, email, id, name: member.name, handle, refresh })
 }
 
 // --- Sign-in (returning members) ---
@@ -373,7 +376,7 @@ async function handleOtpRequest(request, env) {
 }
 
 async function handleOtpVerify(request, env) {
-  const { email, code } = await request.json()
+  const { email, code, remember } = await request.json()
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
 
   const attemptsKey = `rate:otp_verify_fail:${email}`
@@ -395,7 +398,8 @@ async function handleOtpVerify(request, env) {
 
   await writeSession(env, member)
   const token = await signToken(env, { email, id: member.id, exp: Date.now() + 3600_000, jti: randomToken(16) })
-  return json(env, { token, email, id: member.id, name: member.name, handle: member.handle })
+  const refresh = remember === true ? await issueRefreshToken(env, member) : undefined
+  return json(env, { token, email, id: member.id, name: member.name, handle: member.handle, refresh })
 }
 
 // --- Letterboxd link ---
@@ -545,6 +549,8 @@ async function handleMemberDelete(request, env) {
   await env.MEMBERS_KV.delete(`member:${claims.email}`)
   await removeFromMembersAll(env, member.id)
   if (member.id) await env.MEMBERS_KV.delete(`session:${member.id}`)
+  // Every remembered device dies with the account.
+  if (member.id) await purgeRefreshTokens(env, member.id)
   if (member.handle) {
     await env.MEMBERS_KV.delete(`email:${member.handle}`)
     await env.MEMBERS_KV.delete(`handle:${claims.email}`)
@@ -598,6 +604,13 @@ async function anonymizeAttendance(env, memberName) {
 async function handleSessionRevoke(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  // If the client remembered this device, revoke that too. Deleting a refresh
+  // token requires possessing it, so no ownership check is needed — the worst
+  // an attacker with someone else's token can do here is revoke it, which is
+  // exactly what we'd want.
+  const body = await request.json().catch(() => ({}))
+  const refreshKey = refreshKvKey(body && body.refresh)
+  if (refreshKey) await env.MEMBERS_KV.delete(refreshKey)
   // Tokens issued before jti was added can't be revoked server-side; the
   // client should still drop its localStorage session so this is best-effort
   // from their side. Return ok so the UI button always succeeds.
@@ -610,6 +623,78 @@ async function handleSessionRevoke(request, env) {
   // an attacker who somehow replays before the revocation propagates.
   if (claims.id) await env.MEMBERS_KV.delete(`session:${claims.id}`)
   return json(env, { ok: true })
+}
+
+// --- Remember-this-device refresh tokens ---
+//
+// A refresh token is `{memberId}.{secret}` where the secret is a 32-char
+// random string. The KV record `refresh:{id}:{secret}` is the source of
+// truth: presence means valid, deletion revokes instantly — no deny-list
+// needed (unlike the jti overlay for signed session tokens). Keying by
+// member id first lets sign-out delete one device and account deletion
+// prefix-list every device. Multiple devices each get their own token.
+//
+// Deliberately NOT rotated on use: rotation would let one tab's refresh
+// invalidate another tab's stored token mid-race. Instead the record's TTL
+// slides forward 30 days on every successful refresh, so an actively used
+// device stays signed in and an abandoned one ages out.
+
+function refreshKvKey(refresh) {
+  if (typeof refresh !== 'string') return null
+  // Split on the LAST dot: the secret is always the final segment and ids
+  // are opaque strings we don't want to make assumptions about.
+  const dot = refresh.lastIndexOf('.')
+  if (dot < 1 || dot === refresh.length - 1) return null
+  const id = refresh.slice(0, dot)
+  const secret = refresh.slice(dot + 1)
+  if (id.includes(':') || !/^[a-z0-9]{32}$/.test(secret)) return null
+  return `refresh:${id}:${secret}`
+}
+
+async function issueRefreshToken(env, member) {
+  const secret = randomToken(32)
+  await env.MEMBERS_KV.put(
+    `refresh:${member.id}:${secret}`,
+    JSON.stringify({ email: member.email }),
+    { expirationTtl: REFRESH_TTL },
+  )
+  return `${member.id}.${secret}`
+}
+
+async function purgeRefreshTokens(env, memberId) {
+  const list = await env.MEMBERS_KV.list({ prefix: `refresh:${memberId}:` })
+  for (const k of list.keys) await env.MEMBERS_KV.delete(k.name)
+}
+
+// POST /session/refresh — authenticated by the refresh token itself.
+// Trades a valid device token for a fresh 1-hour session token, so a
+// remembered device never has to re-run the email OTP flow. The member row
+// is re-read on every refresh: a deleted account invalidates the device
+// token immediately (and we clean up the orphaned record on sight).
+async function handleSessionRefresh(request, env) {
+  const { refresh } = await request.json().catch(() => ({}))
+  const key = refreshKvKey(refresh)
+  if (!key) return json(env, { error: 'invalid refresh token' }, 401)
+
+  const recordRaw = await env.MEMBERS_KV.get(key)
+  if (!recordRaw) return json(env, { error: 'invalid refresh token' }, 401)
+  const record = JSON.parse(recordRaw)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${record.email}`)
+  if (!memberRaw) {
+    await env.MEMBERS_KV.delete(key)
+    return json(env, { error: 'invalid refresh token' }, 401)
+  }
+  const member = JSON.parse(memberRaw)
+
+  // Slide the device token's 30-day window and refresh the session snapshot.
+  await env.MEMBERS_KV.put(key, recordRaw, { expirationTtl: REFRESH_TTL })
+  await writeSession(env, member)
+
+  const token = await signToken(env, {
+    email: member.email, id: member.id, exp: Date.now() + 3600_000, jti: randomToken(16),
+  })
+  return json(env, { token, email: member.email, id: member.id, name: member.name, handle: member.handle })
 }
 
 // Session KV overlay — session:{id} holds a short-TTL (1h) snapshot of the

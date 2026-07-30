@@ -18,7 +18,10 @@
       const raw = localStorage.jxnfc_session
       if (!raw) return false
       const s = JSON.parse(raw)
-      return !!(s?.token && s.exp > Date.now())
+      // A remembered device counts as signed in even after the 1-hour token
+      // lapses — the views silently refresh it on demand. If the refresh
+      // token turns out to be revoked, /edit bounces to /signin as usual.
+      return !!(s?.token && s.exp > Date.now()) || !!(s && s.refresh)
     } catch { return false }
   }
 

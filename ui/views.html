@@ -460,7 +460,18 @@
     }
 
     async mounted() {
-      this.update({ session: getSession(), attendance: {}, attendanceError: false, venues: [], handlesByName: {} })
+      const session = getSession()
+      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesByName: {} })
+      // Remembered device with a lapsed token: trade the device token for a
+      // fresh session in the background so RSVP affordances light up without
+      // a trip through /signin. jxnfcEnsureSession is installed by the auth
+      // lib at bundle load.
+      if (!session && globalThis.jxnfcEnsureSession) {
+        const self = this
+        globalThis.jxnfcEnsureSession().then(function(s) {
+          if (s) self.update({ session: s })
+        })
+      }
       const [all, { items: members }] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
@@ -874,7 +885,16 @@
 
     this.mounted = function() {
       // kind starts empty: the form stays [hidden] until a card is picked.
-      this.update({ session: getSession(), busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '', posterOptions: [] })
+      const session = getSession()
+      this.update({ session: session, busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '', posterOptions: [] })
+      // Remembered device with a lapsed token: silently refresh so the host
+      // form works without a bounce through /signin.
+      if (!session && globalThis.jxnfcEnsureSession) {
+        const self = this
+        globalThis.jxnfcEnsureSession().then(function(s) {
+          if (s) self.update({ session: s })
+        })
+      }
     }
 
     // Debounce timer + race-guard counters live at MODULE scope, not on

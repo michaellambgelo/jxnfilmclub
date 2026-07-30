@@ -65,6 +65,13 @@ npm run admin
 If the token for the selected env isn't set, the Send buttons return a clear
 error instead of failing silently. Always "Send test" to yourself first.
 
+The compose box prefills a branded, email-safe HTML template (the Worker
+appends the unsubscribe/postal footer — don't add one). The preview pane is
+**editable**: type directly into it or use the formatting toolbar (bold,
+italic, headings, list, link), and edits sync back into the HTML textarea,
+which remains what actually gets sent. Scripts never execute in the preview
+(`sandbox` without `allow-scripts`).
+
 ## Tabs
 
 | Tab | What it shows | Write ops |

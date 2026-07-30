@@ -232,8 +232,18 @@ async function renderNewsletter() {
           <label>Plain-text body <span class="muted">— fallback</span><textarea id="nl-text" rows="6" placeholder="…"></textarea></label>
         </div>
         <div class="nl-preview-wrap">
-          <label>Preview</label>
-          <iframe id="nl-preview" sandbox="" title="HTML preview"></iframe>
+          <label>Preview <span class="muted">— editable; edits sync back to the HTML</span></label>
+          <div class="nl-fmt" id="nl-fmt">
+            <button type="button" data-cmd="bold" title="Bold"><strong>B</strong></button>
+            <button type="button" data-cmd="italic" title="Italic"><em>I</em></button>
+            <button type="button" data-cmd="h1" title="Heading">H1</button>
+            <button type="button" data-cmd="h2" title="Subheading">H2</button>
+            <button type="button" data-cmd="p" title="Paragraph">¶</button>
+            <button type="button" data-cmd="insertUnorderedList" title="Bulleted list">• list</button>
+            <button type="button" data-cmd="createLink" title="Turn selection into a link">link</button>
+            <button type="button" data-cmd="removeFormat" title="Clear inline formatting">clear</button>
+          </div>
+          <iframe id="nl-preview" sandbox="allow-same-origin" title="HTML preview — editable"></iframe>
         </div>
       </div>
       <div class="toolbar">
@@ -281,14 +291,53 @@ async function renderNewsletter() {
     </section>
   `
 
-  // Live HTML preview — mirror the HTML body into the sandboxed iframe.
-  const htmlField = $('#nl-html')
-  const preview = $('#nl-preview')
-  const sync = () => { preview.srcdoc = htmlField.value }
-  htmlField.addEventListener('input', sync)
-  sync()
-
+  wireNewsletterPreview($('#nl-html'), $('#nl-preview'), $('#nl-fmt'))
   wireFilter($('#nl-filter'), '#nl-table tbody tr')
+}
+
+// Two-way compose editing: the textarea stays the source of truth (sends
+// read its value), the preview iframe doubles as a WYSIWYG surface over the
+// same HTML. sandbox=allow-same-origin lets this script drive the iframe
+// document while still refusing to execute anything in pasted HTML (no
+// allow-scripts).
+function wireNewsletterPreview(htmlField, preview, toolbar) {
+  // textarea → preview. Replaces the iframe document, so the editing
+  // wiring re-attaches on every load below.
+  const syncToPreview = () => { preview.srcdoc = htmlField.value }
+
+  // preview → textarea. Serializes the parsed body — the parser normalizes
+  // the source formatting, which is fine: the DOM is what gets emailed.
+  const syncFromPreview = () => { htmlField.value = preview.contentDocument.body.innerHTML }
+
+  htmlField.addEventListener('input', syncToPreview)
+
+  preview.addEventListener('load', () => {
+    const doc = preview.contentDocument
+    doc.designMode = 'on'
+    doc.addEventListener('input', syncFromPreview)
+  })
+
+  // mousedown would move focus out of the iframe and drop its text
+  // selection before the command runs — suppress it for the toolbar.
+  toolbar.addEventListener('mousedown', (e) => e.preventDefault())
+  toolbar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-cmd]')
+    if (!btn) return
+    const doc = preview.contentDocument
+    const cmd = btn.dataset.cmd
+    preview.contentWindow.focus()
+    if (cmd === 'h1' || cmd === 'h2' || cmd === 'p') {
+      doc.execCommand('formatBlock', false, '<' + cmd + '>')
+    } else if (cmd === 'createLink') {
+      const url = prompt('Link URL (https://…):')
+      if (url) doc.execCommand('createLink', false, url)
+    } else {
+      doc.execCommand(cmd, false, null)
+    }
+    syncFromPreview()
+  })
+
+  syncToPreview()
 }
 
 async function renderPending() {

@@ -201,6 +201,8 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   margin-bottom: 0.6rem;
 }
 .nl-body { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.8rem }
+.nl-fmt { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.4rem }
+.nl-fmt button { font-size: 0.8rem; padding: 0.15rem 0.55rem }
 #nl-preview {
   width: 100%;
   height: 320px;

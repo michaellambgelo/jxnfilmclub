@@ -6,6 +6,8 @@ node_modules/
 worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
+admin/worker/.wrangler/
+admin/worker/.dev.vars
 *.log
 bun.lock
 bun.lockb

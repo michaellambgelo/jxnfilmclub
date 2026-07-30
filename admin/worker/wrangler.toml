@@ -1,0 +1,67 @@
+name = "jxnfilmclub-admin"
+main = "src/index.js"
+compatibility_date = "2026-04-14"
+
+# Hosted admin portal. Cloudflare Access (One-time PIN) fronts this hostname;
+# the Worker independently verifies the Access JWT on every request.
+routes = [
+  { pattern = "admin.jxnfilm.club", custom_domain = true }
+]
+
+# No workers.dev / preview URLs — they would sidestep the Access-fronted
+# custom domain. The JWT gate would still 403, but don't expose them at all.
+workers_dev = false
+preview_urls = false
+
+# Mirrored by the module-rules plugin in tests/admin-worker/vitest.config.ts —
+# keep the two in sync. The SPA files in admin/ are imported as Text modules
+# so every byte is served from behind the JWT gate (Workers Assets would be
+# served before the Worker runs).
+rules = [
+  { type = "Text", globs = ["**/*.html", "**/*.css", "**/admin.js"], fallthrough = true }
+]
+
+# All four KV namespaces (ids match worker/wrangler.toml) — the portal has a
+# production/staging switcher instead of separate deployments.
+[[kv_namespaces]]
+binding = "MEMBERS_KV"
+id = "1a7b67fcd1944f5dbfa22656f9fac4e4"
+
+[[kv_namespaces]]
+binding = "ATTENDANCE_KV"
+id = "6d5a467495fb47fcb9514e0a85bb3b20"
+
+[[kv_namespaces]]
+binding = "MEMBERS_KV_STAGING"
+id = "66834b9613a34d3eba014791e3b5000f"
+
+[[kv_namespaces]]
+binding = "ATTENDANCE_KV_STAGING"
+id = "f6f23b3e546646d28a3a80f71ef35715"
+
+# Newsletter sends proxy through service bindings — a plain fetch() to
+# join.jxnfilm.club from a Worker on the same zone would NOT route through
+# the join Worker (it 522s at the DNS origin).
+[[services]]
+binding = "JOIN_WORKER"
+service = "jxnfilmclub-join"
+
+[[services]]
+binding = "JOIN_WORKER_STAGING"
+service = "jxnfilmclub-join-staging"
+
+[vars]
+# Zero Trust team domain + this app's Access AUD tag (the "jxnfilmclub
+# admin" Access application). The Worker fails closed (403) if either is
+# empty. Recreate via docs/SETUP.md §13 if the Access app is ever deleted.
+ACCESS_TEAM_DOMAIN = "michaellamb.cloudflareaccess.com"
+ACCESS_AUD = "b08f708acd3d1a6b9fb3f427242cbeb387b700c2cab20789c86f4e9650298dc5"
+
+# Secrets (set via `wrangler secret put`):
+#   ADMIN_TOKEN          - the join Worker's production ADMIN_TOKEN (newsletter proxy)
+#   ADMIN_TOKEN_STAGING  - the join Worker's staging ADMIN_TOKEN
+
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true

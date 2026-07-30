@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-**jxnfilmclub** is a membership directory for the Jackson Film Club. Membership is email-verified; linking a Letterboxd profile is optional and happens after signup. The site (`jxnfilm.club`) is a Nue SPA on GitHub Pages. The Worker (`join.jxnfilm.club`) is an API backend for signup, OTP, Letterboxd verification, and member edits — plus a tiny signup-form HTML page at its root. All session UI lives on the main site origin so tokens never cross origins.
+**jxnfilmclub** is a membership directory for the Jackson Film Club. Membership is email-verified; linking a Letterboxd profile is optional and happens after signup. The site (`jxnfilm.club`) is a Nue SPA on GitHub Pages. The Worker (`join.jxnfilm.club`) is an API backend for signup, OTP, Letterboxd verification, and member edits — plus a tiny signup-form HTML page at its root. All session UI lives on the main site origin so tokens never cross origins. A third origin, `admin.jxnfilm.club` (`admin/worker/`), hosts the operator dashboard behind Cloudflare Access — member session tokens never exist there.
 
 ## Tech Stack
 
@@ -28,6 +28,9 @@ cd worker && npx wrangler dev     # http://localhost:8787
 cd worker && npx wrangler deploy  # production
 cd worker && npx wrangler deploy --env staging
 
+# Admin worker (admin.jxnfilm.club — single env, binds prod + staging KV)
+cd admin/worker && npx wrangler deploy
+
 # Tests
 npm test              # Vitest: model + worker endpoints
 npm run test:e2e      # Playwright: SPA + signup + signin + LB flows
@@ -50,6 +53,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `worker/` | Cloudflare Worker at `join.jxnfilm.club` — all auth + signup + LB + member endpoints, plus `GET /` signup form. Daily cron (`17 8 * * *`, both envs) runs `scrubPastEvents()` — the privacy policy's 30-day retention promise (strips address/notes off past hosted events, deletes their `rsvp:*` records; manual trigger `POST /admin/scrub` behind `ADMIN_TOKEN`). Account deletion purges the member from all `rsvp:*` records (`purgeRsvps`). |
 | `worker/src/` | `index.js`, `signup.html`, `privacy.html` (the canonical privacy policy, served at `/privacy`; keep it in sync with actual data practices). `%SITE_ORIGIN%` and `%BRAND_CSS%` are replaced at response time by `render()`. `brand.css` is the Worker's shared "Night Shift" brand layer — token names/values mirrored verbatim from `css/tokens.css`, enforced by `tests/model/brand-sync.test.ts` (which also byte-compares `favicon.ico` against `img/favicon.ico`; the Worker serves it at `GET /favicon.ico`). JS-built pages (unsubscribe, RSVP cancel, browser 404) share the `page()` shell in `index.js`. |
 | `fonts/` | Self-hosted variable woff2 fonts (Playfair/Oswald/Newsreader + Fira Code) — `@font-face` in `css/tokens.css`; worker pages load them cross-origin from `jxnfilm.club/fonts/`. **No Google Fonts anywhere** — the privacy policy promises no third-party font requests. |
+| `admin/` | Admin dashboard SPA (`index.html`, `admin.js`, `style.css`) + two servers for it: `server.mjs` (local, shells to wrangler) and `admin/worker/` (hosted at `admin.jxnfilm.club` behind Cloudflare Access; binds all four KV namespaces + service bindings to both join Workers; Access-JWT gate fails closed). Excluded from the Nue build. See `admin/README.md`. |
 | `scripts/refresh_letterboxd.py` | 6-hour cron RSS scraper (feeds `watched.json` + `attendance.json`) |
 | `.github/workflows/` | `add-member` + `update-member` (repo_dispatch, id-keyed); `refresh-letterboxd` (cron); `test` (reusable) + `deploy-site` + `deploy-worker` (gated on test) |
 | `tests/model/` | Vitest model tests |
@@ -60,7 +64,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 
 ## Architecture Notes
 
-- **Two origins**: `jxnfilm.club` owns every UI view including code entry and sessions. `join.jxnfilm.club` hosts the top-level signup form and the API. After `POST /signup` the Worker redirects the browser to `jxnfilm.club/verify?email=...`, so session creation (`/signup/verify`) and `localStorage` live in one origin.
+- **Three origins**: `jxnfilm.club` owns every UI view including code entry and sessions. `join.jxnfilm.club` hosts the top-level signup form and the API. After `POST /signup` the Worker redirects the browser to `jxnfilm.club/verify?email=...`, so session creation (`/signup/verify`) and `localStorage` live in one origin. `admin.jxnfilm.club` (the admin Worker) is a deliberate, isolated third origin: it's operator-only (Cloudflare Access One-time PIN + an in-Worker Access-JWT check), serves its own UI and API from the same origin (no CORS), and never sees a member bearer token — the invariant that member tokens don't cross origins still holds.
 - **Data model**: members are keyed by a random `id` string, not by Letterboxd handle. The Worker's KV is the live source of truth for both members and events — the SPA fetches `GET /members` and `GET /events` on every page load, so new signups + admin edits appear immediately. `data/members.json` and `data/events.json` are cron-snapshotted archives (every 6h) that also serve as the bootstrap baseline for fresh KV namespaces and the SPA's fallback when the Worker is unreachable.
 - **KV schema**:
   - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Written on `/signup`, consumed by `/signup/verify`.

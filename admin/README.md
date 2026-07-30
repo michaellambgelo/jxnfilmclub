@@ -1,20 +1,38 @@
-# Local admin dashboard
+# Admin dashboard
 
-A browser-based admin panel for the jxnfilmclub Worker's remote KV. Lives in
-this repo for convenience but **never deploys** — the Nue build excludes
-`admin/` (see `site.yaml`) and there's no CI hook for it.
+A browser-based admin panel for the jxnfilmclub Worker's remote KV. One SPA
+(`index.html` + `admin.js` + `style.css`), two ways to serve it:
+
+- **Hosted (primary)** — `https://admin.jxnfilm.club`, served by the Worker
+  in `admin/worker/` with direct KV bindings. Deployed by
+  `.github/workflows/deploy-admin.yml`; the Nue site build still excludes
+  `admin/` (see `site.yaml`).
+- **Local (fallback)** — `npm run admin` serves it from `127.0.0.1` via
+  `server.mjs`, which shells to `wrangler kv …` for every operation.
+
+`admin.js` detects which mode it's in from the hostname (`HOSTED`).
 
 ## Trust model
 
-There is no auth in this code. The dashboard binds to `127.0.0.1` only and
-shells to `wrangler kv …` for every operation. Whoever can run `wrangler` on
-your machine (against your Cloudflare account) can use the dashboard.
-Whoever can't, can't. That's the gate.
+**Hosted**: two independent gates. Cloudflare Access (One-time PIN against
+an email allowlist, 1-week sessions) fronts the hostname at the edge, and
+the Worker separately verifies the `Cf-Access-Jwt-Assertion` JWT (RS256
+against the team JWKS, aud + issuer + expiry) before serving anything —
+including the static files. No valid JWT → 403, so a misconfigured Access
+app fails closed rather than open. There is no workers.dev URL.
 
-If the dashboard returns "wrangler … exited 1 / not authenticated", run
-`npx wrangler login` in `worker/` first.
+**Local**: no auth in the server process. It binds to `127.0.0.1` only and
+shells to `wrangler kv …`. Whoever can run `wrangler` on your machine
+(against your Cloudflare account) can use the dashboard. Whoever can't,
+can't. That's the gate. If it returns "wrangler … exited 1 / not
+authenticated", run `npx wrangler login` in `worker/` first.
 
 ## Run
+
+Hosted: open `https://admin.jxnfilm.club`, request a PIN for an allowlisted
+email.
+
+Local:
 
 ```bash
 npm run admin                       # http://localhost:5174
@@ -27,12 +45,16 @@ current tab so you don't accidentally act on the wrong namespace.
 
 ### Sending newsletters
 
-Recipient toggles need only your `wrangler` login (they're plain KV writes).
-**Sending** goes through the Worker's `/admin/newsletter/send`, which requires
-the bearer `ADMIN_TOKEN`. The browser never holds it — the local server proxies
-the send and reads the token from its own environment. Export it before
-`npm run admin`, matching the Worker secret(s) you set with
-`wrangler secret put ADMIN_TOKEN`:
+Recipient toggles are plain KV writes. **Sending** goes through the join
+Worker's `/admin/newsletter/send`, which requires the bearer `ADMIN_TOKEN`.
+The browser never holds it in either mode:
+
+- **Hosted**: the admin Worker proxies the send over service bindings
+  (`JOIN_WORKER` / `JOIN_WORKER_STAGING`) using its `ADMIN_TOKEN` /
+  `ADMIN_TOKEN_STAGING` secrets. Nothing to export.
+- **Local**: `server.mjs` proxies the send and reads the token from its own
+  environment. Export it before `npm run admin`, matching the join Worker
+  secret(s) you set with `wrangler secret put ADMIN_TOKEN`:
 
 ```bash
 export ADMIN_TOKEN=<prod value>
@@ -58,8 +80,10 @@ error instead of failing silently. Always "Send test" to yourself first.
 ## What it does NOT do
 
 - Doesn't dispatch the `add-member` / `update-member` GitHub workflows. If
-  you edit `data/members.json` here (via "unlink LB"), commit the diff
-  manually — the public site picks it up on the next deploy.
+  you edit `data/members.json` here (via "unlink LB" in **local** mode),
+  commit the diff manually — the public site picks it up on the next
+  deploy. The hosted portal never touches `data/*.json`; the 6h snapshot
+  crons reconcile it from KV.
 - Doesn't write to `attendance:all` aggregate independently of `attend:{id}`;
   the "remove attendee" action does keep them consistent, but raw KV writes
   via wrangler don't.
@@ -67,11 +91,14 @@ error instead of failing silently. Always "Send test" to yourself first.
   individual JWTs (no jti index). The Newsletter tab is the one email surface
   it does drive, and only via the token-guarded Worker endpoint.
 
-## Why a local dashboard, not a hosted admin route?
+## Why both a hosted portal and a local dashboard?
 
-A hosted admin route would need its own auth, audit log, and CSRF. By keeping
-this local-only with wrangler as the gate, the surface stays tiny — no
-secrets in CI, no dashboard auth to rotate, no extra cors origins to maintain.
-(The one secret involved, `ADMIN_TOKEN` for the newsletter send, lives only in
-your local shell and the Worker — never in the browser or CI.) The tradeoff:
-it doesn't work from your phone.
+The dashboard started local-only — wrangler as the gate meant no dashboard
+auth to build, no secrets in CI, no extra CORS origins. The tradeoff was
+that it didn't work away from the laptop, so the hosted portal now fronts
+the same SPA with Cloudflare Access supplying the auth (One-time PIN
+allowlist) and a JWT check in the Worker backing it up. Auth still isn't
+hand-rolled, tokens still never reach the browser (sends proxy through
+service bindings), and CORS never entered the picture — the admin origin
+serves both UI and API. The local dashboard stays as the fallback and as
+the only surface that can patch `data/members.json` directly.

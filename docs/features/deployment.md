@@ -1,6 +1,6 @@
 # Deployment
 
-The project has two deploy targets: the static site (GitHub Pages) and the Worker API (Cloudflare Workers), each with CI gates and automated triggers.
+The project has three deploy targets: the static site (GitHub Pages), the Worker API (Cloudflare Workers), and the admin Worker (Cloudflare Workers, behind Cloudflare Access), each with CI gates and automated triggers.
 
 ## Site Deployment
 
@@ -60,6 +60,10 @@ flowchart TD
 | Production | `join.jxnfilm.club` | Prod MEMBERS_KV + ATTENDANCE_KV |
 | Staging | `join-staging.jxnfilm.club` | Staging MEMBERS_KV + ATTENDANCE_KV |
 
+## Admin Worker Deployment
+
+The hosted admin portal (`admin.jxnfilm.club`, `admin/worker/`) is a single Worker that binds **all four** KV namespaces (prod + staging) with an in-app env switcher, so it deploys from `main` only — there is no staging variant. `deploy-admin.yml` triggers on pushes touching `admin/**`, gates on the reusable test workflow, and runs `wrangler deploy` from `admin/worker/`. The hostname is a Workers Custom Domain fronted by a Cloudflare Access application (One-time PIN); the Worker additionally verifies the Access JWT itself and fails closed. See `admin/README.md` and `docs/SETUP.md` §13.
+
 ## CI: Build Check + Test
 
 - **Build check** (`build-check.yml`): runs on PRs. Parallel site build (`npm run build`) + worker dry-run (`wrangler deploy --dry-run`).
@@ -77,6 +81,7 @@ Member and event changes appear in the SPA **immediately** — the Worker is the
 |------|------|
 | `.github/workflows/deploy-site.yml` | Site build + deploy |
 | `.github/workflows/deploy-worker.yml` | Worker deploy (prod/staging) |
+| `.github/workflows/deploy-admin.yml` | Admin worker deploy (main only, serves both envs) |
 | `.github/workflows/build-check.yml` | PR validation |
 | `.github/workflows/test.yml` | Reusable test workflow |
 | `.github/workflows/snapshot-members.yml` | 6h cron: snapshots `GET /members` → `data/members.json` |

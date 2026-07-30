@@ -36,3 +36,19 @@ jobs:
       - run: npm ci
       - name: Dry-run deploy
         run: npx wrangler deploy --dry-run
+
+  admin-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: admin/worker/package-lock.json
+      - run: npm ci
+      - name: Dry-run deploy
+        run: npx wrangler deploy --dry-run

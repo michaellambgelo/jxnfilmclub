@@ -336,6 +336,44 @@ do that unless you actually want to backfill production.
 
 ---
 
+## 13. Admin portal (`admin.jxnfilm.club`)
+
+One-time setup for the hosted admin dashboard (`admin/worker/`). Order
+matters: create the Access app **before** filling the Worker's vars — the
+Worker 403s everything (fails closed) until `ACCESS_AUD` is set, which is
+safe but not useful.
+
+1. **Cloudflare Access application** (Zero Trust → Access → Applications,
+   or the API with a token holding *Access: Apps and Policies: Edit*):
+   - Type **Self-hosted**, domain `admin.jxnfilm.club`,
+     session duration **1 week** (`168h`), auto-redirect to identity on.
+   - Login method: **One-time PIN** (the IdP already exists on the
+     `michaellamb.cloudflareaccess.com` team from now-store).
+   - Allow policy: include emails `michael@michaellamb.dev` and
+     `lambm07@gmail.com`.
+   - Copy the application's **AUD tag**.
+2. **Fill the vars** in `admin/worker/wrangler.toml`:
+   `ACCESS_TEAM_DOMAIN = "michaellamb.cloudflareaccess.com"`,
+   `ACCESS_AUD = "<aud tag>"`.
+3. **Secrets** (values = the join Worker's per-env `ADMIN_TOKEN`):
+   ```bash
+   cd admin/worker
+   npx wrangler secret put ADMIN_TOKEN
+   npx wrangler secret put ADMIN_TOKEN_STAGING
+   ```
+4. **Deploy**: `npx wrangler deploy` from `admin/worker/`. The custom
+   domain (DNS + cert) is created automatically on first deploy.
+5. **Verify**:
+   ```bash
+   curl -sI https://admin.jxnfilm.club/          # 302 to the Access login
+   curl -s  https://admin.jxnfilm.club/ \
+     -H 'Cf-Access-Jwt-Assertion: bogus'         # {"error":"forbidden"} (JWT gate)
+   ```
+   Then log in with a PIN'd email and smoke each tab against the
+   **staging** env first.
+
+---
+
 ## Troubleshooting
 
 - **`wrangler deploy` fails with "route not found"** — zone isn't reachable. Confirm `jxnfilm.club` is active in Cloudflare.

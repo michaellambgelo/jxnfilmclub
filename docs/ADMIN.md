@@ -1,13 +1,27 @@
 # Admin runbook
 
-Admin work for jxnfilmclub stays in this repo. There is no admin UI and
-no admin endpoint on the Worker — every state change is a script run
-(with `wrangler` talking to production KV) plus, when appropriate, a
-git commit to `data/`.
+Admin work for jxnfilmclub happens through three surfaces:
 
-**Golden rule:** any admin op that writes to KV is paired with a
-companion `data/` commit in the same session so git history and KV
-never drift.
+- **The hosted admin portal** — `https://admin.jxnfilm.club`, behind
+  Cloudflare Access (One-time PIN, allowlisted emails). Primary UI for
+  KV state: members, newsletter, pending signups, sessions, rate
+  limits, events. See `admin/README.md`.
+- **The local admin dashboard** — `npm run admin`, same UI served from
+  `127.0.0.1` with your `wrangler` login as the gate. Fallback when
+  Cloudflare/Access is having a day, and the only surface that can
+  patch `data/members.json` directly.
+- **Admin scripts** — the `scripts/admin/*.mjs` runbook below (with
+  `wrangler` talking to production KV) plus, when appropriate, a git
+  commit to `data/`.
+
+The join Worker also has two token-gated endpoints
+(`POST /admin/newsletter/send`, `POST /admin/scrub` — bearer
+`ADMIN_TOKEN`); the portal's newsletter send goes through the former.
+
+**Golden rule** for script-driven ops: any admin op that writes to KV is
+paired with a companion `data/` commit in the same session so git
+history and KV never drift. (Portal writes rely on the 6h snapshot
+crons to reconcile `data/*.json` instead.)
 
 ## Prerequisites
 
@@ -169,9 +183,9 @@ node scripts/admin/seed-member.mjs \
 - No `workflow_dispatch` admin actions — the repo is public and workflow
   run inputs + logs are publicly readable, which would leak emails.
 - No encrypted in-repo admin data — scale doesn't justify age/sops yet.
-- No admin endpoint on the Worker — nothing to secure against misuse if
-  it doesn't exist.
+- No admin API surface beyond the two token-gated join-Worker endpoints
+  and the Access-gated admin Worker — everything else stays scripts +
+  `wrangler`.
 
-If any of the above stops making sense (second admin without CLI
-access, more than a handful of ops per month, incident retention
-needs), revisit.
+If any of the above stops making sense (more than a handful of ops per
+month, incident retention needs), revisit.

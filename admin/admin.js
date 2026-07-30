@@ -1,8 +1,11 @@
-// jxnfilmclub local admin dashboard — vanilla JS, no build step.
+// jxnfilmclub admin dashboard — vanilla JS, no build step.
 //
-// All KV ops route through `/api/kv` which shells to `wrangler kv key …` on
-// the server. The trust boundary is your local `wrangler` login; this UI has
-// no auth of its own. Binds to 127.0.0.1 only.
+// Dual-mode: served by admin/server.mjs on 127.0.0.1 (local — KV ops shell
+// to `wrangler`, trust boundary is your wrangler login) or by the admin
+// Worker at admin.jxnfilm.club (hosted — direct KV bindings behind
+// Cloudflare Access + a JWT gate). Same /api surface either way, except
+// /api/file (members.json patching) which is local-only.
+const HOSTED = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 
 const $ = (sel) => document.querySelector(sel)
 const env = () => $('#env').value
@@ -548,7 +551,10 @@ document.addEventListener('click', async (e) => {
     }
     else if (a === 'unlink-lb') {
       const { email, handle, id } = btn.dataset
-      if (!confirm(`Force-unlink @${handle} from ${email}?\n\nThis updates MEMBERS_KV (member row + reverse indices + pending token + session snapshot) AND data/members.json in this checkout. Commit the JSON diff afterward.`)) return
+      const fileNote = HOSTED
+        ? 'data/members.json reconciles via the snapshot cron (≤6h).'
+        : 'AND data/members.json in this checkout — commit the JSON diff afterward.'
+      if (!confirm(`Force-unlink @${handle} from ${email}?\n\nThis updates MEMBERS_KV (member row + reverse indices + pending token + session snapshot). ${fileNote}`)) return
       // KV side
       const { values } = await loadKv(`member:${email}`)
       const member = tryParse(values[`member:${email}`])
@@ -559,13 +565,16 @@ document.addEventListener('click', async (e) => {
       await delKv(`email:${handle}`).catch(() => {})
       await delKv(`handle:${email}`).catch(() => {})
       if (id) await delKv(`session:${id}`).catch(() => {})
-      // JSON projection
-      const raw = await getFile('data/members.json')
-      const all = JSON.parse(raw)
-      const idx = all.findIndex(m => m.id === id)
-      if (idx !== -1) {
-        delete all[idx].handle
-        await putFile('data/members.json', JSON.stringify(all, null, 2) + '\n')
+      // JSON projection — local checkout only; the hosted Worker has no
+      // filesystem and the 6h snapshot-members cron self-heals the file.
+      if (!HOSTED) {
+        const raw = await getFile('data/members.json')
+        const all = JSON.parse(raw)
+        const idx = all.findIndex(m => m.id === id)
+        if (idx !== -1) {
+          delete all[idx].handle
+          await putFile('data/members.json', JSON.stringify(all, null, 2) + '\n')
+        }
       }
       toast(`Unlinked @${handle} from ${email}`)
       await switchTab(currentTab)
@@ -682,11 +691,12 @@ document.querySelectorAll('#tabs button').forEach(b => {
   b.addEventListener('click', () => switchTab(b.dataset.tab))
 })
 
-api('GET', '/api/whoami').then(({ wrangler }) => {
-  // First line of `wrangler whoami` output: usually the account email or "Not logged in".
-  $('#whoami').textContent = (wrangler || '').split('\n').find(l => l.trim()) || ''
+api('GET', '/api/whoami').then(({ wrangler, email }) => {
+  // Hosted: the Access-verified email. Local: first line of `wrangler
+  // whoami` output — usually the account email or "Not logged in".
+  $('#whoami').textContent = email || (wrangler || '').split('\n').find(l => l.trim()) || ''
 }).catch(() => {
-  $('#whoami').textContent = '(wrangler check failed)'
+  $('#whoami').textContent = HOSTED ? '(whoami failed)' : '(wrangler check failed)'
 })
 
 switchTab('members')

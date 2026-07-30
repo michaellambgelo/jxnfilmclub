@@ -19,6 +19,8 @@ docs_for_file() {
     model/index.ts)                echo "events members-directory watched" ;;
     scripts/refresh_letterboxd.py) echo "watched home" ;;
     scripts/refresh_spotify.py)    echo "home" ;;
+    admin/admin.js|admin/server.mjs|admin/index.html) echo "admin/README.md" ;;
+    admin/worker/*)                echo "admin/README.md deployment" ;;
     .github/workflows/deploy-*)    echo "deployment" ;;
     .github/workflows/build-*)     echo "deployment" ;;
     .github/workflows/test.yml)    echo "deployment" ;;
@@ -37,7 +39,12 @@ DOCS=$(docs_for_file "$REL")
 
 STALE=""
 for doc in $DOCS; do
-  p="docs/features/${doc}.md"
+  # Entries containing a slash are repo-relative doc paths; bare names live
+  # under docs/features/.
+  case "$doc" in
+    */*) p="$doc" ;;
+    *)   p="docs/features/${doc}.md" ;;
+  esac
   [ -f "$p" ] && STALE="$STALE $p"
 done
 

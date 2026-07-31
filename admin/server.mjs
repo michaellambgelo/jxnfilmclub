@@ -21,11 +21,24 @@ const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
 const VALID_FILES = new Set(['data/events.json', 'data/members.json'])
 const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json', 'data/takes.json'])
 
-// Deployed Worker origins per env — target for the newsletter-send proxy.
-const WORKER_ORIGINS = {
-  production: 'https://join.jxnfilm.club',
-  staging: 'https://join-staging.jxnfilm.club',
-}
+// E2E mode: when ADMIN_E2E_WORKER_ORIGIN is set (playwright.config.ts), all
+// KV ops talk to that join worker's /__test/kv shim (wrangler dev --local
+// with E2E_MODE=true) instead of shelling to `wrangler kv --remote`, and the
+// admin proxies target the same origin. This is the only way the admin
+// backend and the e2e join worker can share KV state: the wrangler CLI hits
+// real Cloudflare KV, and a second Miniflare on the same persist dir races
+// the first (see the SQLITE_BUSY note below). Unset → behavior unchanged.
+const E2E_ORIGIN = process.env.ADMIN_E2E_WORKER_ORIGIN || null
+
+// Deployed Worker origins per env — target for the newsletter/unlink/watched
+// proxies. In E2E mode both envs collapse onto the single local dev worker
+// (which already runs `--env staging`).
+const WORKER_ORIGINS = E2E_ORIGIN
+  ? { production: E2E_ORIGIN, staging: E2E_ORIGIN }
+  : {
+      production: 'https://join.jxnfilm.club',
+      staging: 'https://join-staging.jxnfilm.club',
+    }
 
 class HttpError extends Error {
   constructor(status, msg) { super(msg); this.status = status }
@@ -65,12 +78,31 @@ function runWrangler(args, stdinBody) {
 
 // --- KV helpers ---
 
+// E2E transport: speak to the local join worker's /__test/kv shim. The shim's
+// list returns names only (no expiration metadata) — the sessions tab shows
+// "—" for expirations in e2e runs, which is acceptable.
+async function e2eKv(method, params, body) {
+  const url = new URL(`${E2E_ORIGIN}/__test/kv`)
+  for (const [k, v] of Object.entries(params)) if (v != null) url.searchParams.set(k, v)
+  const res = await fetch(url, {
+    method,
+    ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+  })
+  if (!res.ok) throw new HttpError(502, `e2e kv ${method} → ${res.status}`)
+  return res.json()
+}
+
 // `--remote` is required since wrangler v4 flipped the default for KV ops
 // from remote to local; without it we'd be reading/writing the local
 // miniflare SQLite store (and racing whatever `wrangler dev` happens to
 // hold the same DB open — SQLITE_BUSY in the admin UI).
 async function kvList(env, binding, prefix) {
   checkBinding(binding)
+  if (E2E_ORIGIN) {
+    envFlags(env) // still validate the env param
+    const { keys } = await e2eKv('GET', { ns: binding, prefix: prefix || '' })
+    return keys.map(name => ({ name }))
+  }
   const args = ['kv', 'key', 'list', '--binding', binding, '--remote', ...envFlags(env)]
   if (prefix) args.push('--prefix', prefix)
   const out = await runWrangler(args)
@@ -79,6 +111,11 @@ async function kvList(env, binding, prefix) {
 
 async function kvGet(env, binding, key) {
   checkBinding(binding)
+  if (E2E_ORIGIN) {
+    envFlags(env)
+    const { value } = await e2eKv('GET', { ns: binding, key })
+    return value
+  }
   // wrangler exits non-zero on "key not found", which we surface as null.
   try {
     return await runWrangler(['kv', 'key', 'get', '--binding', binding, '--remote', key, ...envFlags(env)])
@@ -110,11 +147,21 @@ async function kvBulkGet(env, binding, keys) {
 
 async function kvPut(env, binding, key, value) {
   checkBinding(binding)
+  if (E2E_ORIGIN) {
+    envFlags(env)
+    await e2eKv('POST', {}, { ns: binding, key, value })
+    return
+  }
   await runWrangler(['kv', 'key', 'put', '--binding', binding, '--remote', key, value, ...envFlags(env)])
 }
 
 async function kvDelete(env, binding, key) {
   checkBinding(binding)
+  if (E2E_ORIGIN) {
+    envFlags(env)
+    await e2eKv('DELETE', {}, { ns: binding, key })
+    return
+  }
   await runWrangler(['kv', 'key', 'delete', '--binding', binding, '--remote', key, ...envFlags(env)])
 }
 
@@ -229,6 +276,32 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // POST /api/member/unlink?env=  body = JSON { email }
+  // Proxies to the deployed Worker's /admin/member/unlink — the canonical
+  // unlink cascade (member row + reverse indices + members:all + session +
+  // update-member dispatch). Note: local mode no longer patches
+  // data/members.json directly for this action; the update-member dispatch
+  // commits it to main, and this checkout converges on `git pull`.
+  if (method === 'POST' && url.pathname === '/api/member/unlink') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before unlinking`)
+    }
+    const body = await readBody(req)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/member/unlink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body,
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
   // GET /api/watched?env=  → proxies the join Worker's public /watched map
   // (server-side fetch — the browser can't call it cross-origin itself).
   if (method === 'GET' && url.pathname === '/api/watched') {
@@ -239,8 +312,10 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = {} }
     return json(res, workerRes.status, data)
   }
-  // Lightweight liveness probe.
+  // Lightweight liveness probe. In E2E mode skip the wrangler subprocess —
+  // there's no Cloudflare auth involved and each spawn costs ~1s per page load.
   if (method === 'GET' && url.pathname === '/api/whoami') {
+    if (E2E_ORIGIN) return json(res, 200, { email: 'e2e@local', mode: 'e2e' })
     const out = await runWrangler(['whoami']).catch(e => `not authenticated: ${e.message}`)
     return json(res, 200, { wrangler: out.trim() })
   }

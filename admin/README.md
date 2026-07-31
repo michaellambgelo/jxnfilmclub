@@ -76,7 +76,7 @@ which remains what actually gets sent. Scripts never execute in the preview
 
 | Tab | What it shows | Write ops |
 |-----|---------------|-----------|
-| **Members** | All `member:{email}` rows | clear rate limits, force-unlink Letterboxd (also patches `data/members.json`), evict session snapshot |
+| **Members** | All `member:{email}` rows | clear rate limits, force-unlink Letterboxd (proxies the join Worker's `POST /admin/member/unlink` — full cascade incl. `members:all` + `update-member` dispatch; shows as "repair LB" when only the aggregate still carries a handle), evict session snapshot |
 | **Newsletter** | Compose/send a newsletter, opted-in recipients (with per-member opt-in/out toggles), and send history (`newsletter:sent:{ts}`) | toggle a member's `newsletter` flag (evicts their session), insert a "Latest from members on Letterboxd" section (live diary entries via `GET /api/watched`, count configurable, appended to both HTML and text bodies), send a test to one address, send to all opted-in members |
 | **Pending** | `pending:{email}` signups with their OTP code | delete (use for stuck signups) |
 | **Sessions** | `session:{id}` cached snapshots + `refresh:{id}:{secret}` remembered devices | evict snapshot (does NOT revoke the JWT — use the Worker's `/session/revoke` for that); revoke a remembered device (deletes the 30-day refresh record, forcing that browser back through the email-code flow) |
@@ -86,11 +86,12 @@ which remains what actually gets sent. Scripts never execute in the preview
 
 ## What it does NOT do
 
-- Doesn't dispatch the `add-member` / `update-member` GitHub workflows. If
-  you edit `data/members.json` here (via "unlink LB" in **local** mode),
-  commit the diff manually — the public site picks it up on the next
-  deploy. The hosted portal never touches `data/*.json`; the 6h snapshot
-  crons reconcile it from KV.
+- Doesn't dispatch the `add-member` GitHub workflow or patch `data/*.json`
+  itself. The one exception is indirect: "unlink LB" proxies the join
+  Worker's cascade, which dispatches `update-member` (committing
+  `handle: null` to `data/members.json` on main) — `git pull` afterward if
+  you're working from a local checkout. Everything else reconciles via the
+  6h snapshot crons.
 - Doesn't write to `attendance:all` aggregate independently of `attend:{id}`;
   the "remove attendee" action does keep them consistent, but raw KV writes
   via wrangler don't.

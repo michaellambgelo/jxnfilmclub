@@ -32,8 +32,8 @@ cd worker && npx wrangler deploy --env staging
 cd admin/worker && npx wrangler deploy
 
 # Tests
-npm test              # Vitest: model + worker endpoints
-npm run test:e2e      # Playwright: SPA + signup + signin + LB flows
+npm test              # Vitest workspace: model + worker + admin-worker + admin (4 projects)
+npm run test:e2e      # Playwright: SPA + signup + signin + LB + admin dashboard flows
 npm run test:e2e:ui   # Playwright interactive UI mode
 ```
 
@@ -53,13 +53,15 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `worker/` | Cloudflare Worker at `join.jxnfilm.club` — all auth + signup + LB + member endpoints, plus `GET /` signup form. Daily cron (`17 8 * * *`, both envs) runs `scrubPastEvents()` — the privacy policy's 30-day retention promise (strips address/notes off past hosted events, deletes their `rsvp:*` records; manual trigger `POST /admin/scrub` behind `ADMIN_TOKEN`). Account deletion purges the member from all `rsvp:*` records (`purgeRsvps`). |
 | `worker/src/` | `index.js`, `signup.html`, `privacy.html` (the canonical privacy policy, served at `/privacy`; keep it in sync with actual data practices). `%SITE_ORIGIN%` and `%BRAND_CSS%` are replaced at response time by `render()`. `brand.css` is the Worker's shared "Night Shift" brand layer — token names/values mirrored verbatim from `css/tokens.css`, enforced by `tests/model/brand-sync.test.ts` (which also byte-compares `favicon.ico` against `img/favicon.ico`; the Worker serves it at `GET /favicon.ico`). JS-built pages (unsubscribe, RSVP cancel, browser 404) share the `page()` shell in `index.js`. |
 | `fonts/` | Self-hosted variable woff2 fonts (Playfair/Oswald/Newsreader + Fira Code) — `@font-face` in `css/tokens.css`; worker pages load them cross-origin from `jxnfilm.club/fonts/`. **No Google Fonts anywhere** — the privacy policy promises no third-party font requests. |
-| `admin/` | Admin dashboard SPA (`index.html`, `admin.js`, `style.css`) + two servers for it: `server.mjs` (local, shells to wrangler) and `admin/worker/` (hosted at `admin.jxnfilm.club` behind Cloudflare Access; binds all four KV namespaces + service bindings to both join Workers; Access-JWT gate fails closed). Excluded from the Nue build. See `admin/README.md`. |
+| `admin/` | Admin dashboard SPA (`index.html`, `admin.js`, `lib.js` — pure helpers, unit-tested in `tests/admin/`, `style.css`) + two servers for it: `server.mjs` (local, shells to wrangler; `ADMIN_E2E_WORKER_ORIGIN` switches KV ops to a local worker's `/__test/kv` for e2e) and `admin/worker/` (hosted at `admin.jxnfilm.club` behind Cloudflare Access; binds all four KV namespaces + service bindings to both join Workers; Access-JWT gate fails closed). Member moderation (force-unlink Letterboxd) goes through the join Worker's `POST /admin/member/unlink` (ADMIN_TOKEN bearer), never raw KV writes. Excluded from the Nue build. See `admin/README.md`. |
 | `scripts/refresh_letterboxd.py` | 6-hour cron RSS scraper (feeds `watched.json` + `attendance.json`) |
 | `.github/workflows/` | `add-member` + `update-member` (repo_dispatch, id-keyed); `refresh-letterboxd` (cron); `test` (reusable) + `deploy-site` + `deploy-worker` (gated on test) |
-| `tests/model/` | Vitest model tests |
-| `tests/worker/` | Vitest + Workers pool: `signup.test.js`, `otp.test.js`, `member-update.test.js`, `letterboxd.test.js` |
-| `tests/e2e/` | Playwright specs + Letterboxd HTTP stub (`letterboxd-stub.mjs` with a `/__prime` endpoint) |
-| `playwright.config.ts` | Boots nue, wrangler dev, and the LB stub as three webServers |
+| `tests/model/` | Vitest model tests (node env) + `brand-sync.test.ts` |
+| `tests/worker/` | Vitest + Workers pool — 15 endpoint/behavior suites: signup, otp, letterboxd (self-service + admin unlink), member-update, member-delete, members-events, newsletter, scrub, screenings, attendance, watched, security, session-refresh, tmdb, pages |
+| `tests/admin-worker/` | Vitest + Workers pool for the admin Worker: Access-JWT gate, `/api/kv`, join-worker proxies (newsletter, member unlink, watched), routing fallthrough |
+| `tests/admin/` | Plain-node Vitest for the admin SPA's pure helpers (`admin/lib.js`) |
+| `tests/e2e/` | Playwright specs (`fixtures.ts` + site/signup/signin/letterboxd/member-delete/remember-me/screenings/revocation/rate-limit/admin) |
+| `playwright.config.ts` | Boots nue (8083), wrangler dev (8787), and the admin server in E2E mode (5175) as three webServers |
 | `site.yaml` | Nue config: `meta.title`, `import_map`, include/exclude for the SPA bundler |
 
 ## Architecture Notes
@@ -69,7 +71,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 - **KV schema**:
   - `pending:{email}` — `{ name, handle?, code }`, 10min TTL. Written on `/signup`, consumed by `/signup/verify`.
   - `member:{email}` — `{ id, email, name, pronouns, handle, joined }`. Canonical per-member row (holds the email, which never leaves KV).
-  - `members:all` — array of public projections `[{ id, name, joined, pronouns?, handle? }]` served verbatim by `GET /members`. Patched in lockstep by every mutating handler (`/signup/verify`, `/member/update`, `/letterboxd/unlink`, `/member/delete`). Bootstrapped from `data/members.json` on cold KV via `bootstrapMembers` (mirrors `bootstrapAttendance`).
+  - `members:all` — array of public projections `[{ id, name, joined, pronouns?, handle? }]` served verbatim by `GET /members`. Patched in lockstep by every mutating handler (`/signup/verify`, `/member/update`, `/letterboxd/unlink`, `/admin/member/unlink`, `/member/delete`). Bootstrapped from `data/members.json` on cold KV via `bootstrapMembers` (mirrors `bootstrapAttendance`).
   - `members:bootstrapped` — `'1'` marker; presence means the JSON→KV seed has run.
   - `session:{id}` — full member snapshot keyed by member id, 1h TTL (matches JWT exp). Write-through overlay refreshed on `/signup/verify`, `/otp/verify`, `/member/update`, `/letterboxd/unlink`. `/member/me` reads this first and falls back to `member:{email}` on miss, reseeding — same baseline-on-miss pattern as `readAttendees`. `/session/revoke` deletes this so a stale snapshot can't be replayed before revocation propagates.
   - `email:{handle}` / `handle:{email}` — bidirectional handle ↔ email link. Written on `/signup/verify` (when the signup payload carried a handle) and on `/member/update` whenever a member sets or changes their handle. The reverse index enforces handle uniqueness across the directory.
@@ -106,15 +108,16 @@ Nue's dhtml compiler has sharp edges worth remembering:
 ## Testing
 
 ### Unit + Workers (Vitest)
-`tests/model/` and `tests/worker/`. Worker tests use `@cloudflare/vitest-pool-workers` (`SELF.fetch`, direct KV binding access). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests.
+Four workspace projects: `tests/model/` (node), `tests/worker/` + `tests/admin-worker/` (`@cloudflare/vitest-pool-workers` — `SELF.fetch` / `worker.fetch`, direct KV binding access), and `tests/admin/` (node, for `admin/lib.js`). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests; the proxy tests in `tests/admin-worker/admin-worker.test.js` are the template for new admin-worker routes.
 
 ### E2E (Playwright)
-`tests/e2e/` — `site.spec.ts`, `signup.spec.ts`, `signin.spec.ts`, `letterboxd.spec.ts`. `playwright.config.ts` boots three webServers:
+`tests/e2e/` — SPA/member specs plus `admin.spec.ts` (the admin dashboard against the local admin server). `playwright.config.ts` boots three webServers:
 
 | Port | Service | Notes |
 |------|---------|-------|
 | 8083 | `nue serve` | Static site |
-| 8787 | `wrangler dev` | Worker with `E2E_MODE=true` + `OTP_SIGNING_KEY=e2e-test-signing-key` + `SITE_ORIGIN=http://localhost:8083` |
+| 8787 | `wrangler dev` | Worker with `E2E_MODE=true` + `OTP_SIGNING_KEY=e2e-test-signing-key` + `ADMIN_TOKEN=e2e-admin-token` + `SITE_ORIGIN=http://localhost:8083` |
+| 5175 | `node admin/server.mjs` | Admin dashboard with `ADMIN_E2E_WORKER_ORIGIN=http://localhost:8787` — KV ops go through the join worker's `/__test/kv` shim (shared simulated KV) instead of `wrangler kv --remote`, and the newsletter/unlink/watched proxies target the local worker. The hosted admin Worker (Access JWT, service bindings) is not e2e-testable — it stays covered by `tests/admin-worker/`. |
 
 **E2E-only Worker shims** (gated by `env.E2E_MODE === 'true'`):
 - `/__test/kv` supports `POST { key, value, ttl }`, `DELETE { key }` or `DELETE ?prefix=...`, and `GET ?key=...` or `GET ?prefix=...`. Use `seedKv()` / `wipeKv()` helpers from `tests/e2e/fixtures.ts`.
@@ -138,5 +141,4 @@ Nue's dhtml compiler has sharp edges worth remembering:
 - **Worker secrets in wrangler dev**: production secrets (`OTP_SIGNING_KEY`, `RESEND_API_KEY`, `GITHUB_TOKEN`) aren't read locally. Pass them via `--var` (see `playwright.config.ts`) or a `worker/.dev.vars` file.
 - **GitHub Pages returns HTTP 404 for every path that isn't a real file.** The `deploy-site.yml` workflow copies `index.html` to `404.html` so the SPA still renders, but the response status stays 404 and the browser logs a console error for `signin:1 / verify:1 / edit:1` on cold loads. Harmless — the SPA takes over after the HTML lands.
 - **RSS scraper is a scaffold** — `scripts/refresh_letterboxd.py` walks the members list but the Letterboxd RSS field names (`letterboxd_filmtitle`, etc.) need verification against a real feed.
-- **`model/mocks/`** is dead code left over from the template — safe to delete.
 - **Don't hand-edit `.dist/`** — build output.

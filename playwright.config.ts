@@ -2,6 +2,11 @@ import { defineConfig, devices } from '@playwright/test'
 
 const SITE_PORT = 8083
 const WORKER_PORT = 8787
+// Not 5174 (the real local admin's default): reuseExistingServer is OFF for
+// the admin server too, and a port clash with a developer's running admin —
+// which talks to production KV via wrangler — must fail loudly, never be
+// adopted.
+const ADMIN_PORT = 5175
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -48,11 +53,29 @@ export default defineConfig({
         `--var SITE_ORIGIN:http://localhost:${SITE_PORT}`,
         '--var E2E_MODE:true',
         '--var OTP_SIGNING_KEY:e2e-test-signing-key',
+        '--var ADMIN_TOKEN:e2e-admin-token',
         '--var GITHUB_OWNER:test --var GITHUB_REPO:test',
       ].join(' '),
       port: WORKER_PORT,
       reuseExistingServer: false,
       timeout: 60_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      // Admin dashboard in E2E mode: KV ops go to the join worker's
+      // /__test/kv shim (shared simulated KV) instead of `wrangler kv
+      // --remote`, and the admin proxies target the same local worker.
+      // reuseExistingServer OFF for the same reason as the worker entry.
+      command: 'node admin/server.mjs',
+      env: {
+        ADMIN_PORT: String(ADMIN_PORT),
+        ADMIN_E2E_WORKER_ORIGIN: `http://localhost:${WORKER_PORT}`,
+        ADMIN_TOKEN: 'e2e-admin-token',
+      },
+      port: ADMIN_PORT,
+      reuseExistingServer: false,
+      timeout: 30_000,
       stdout: 'pipe',
       stderr: 'pipe',
     },

@@ -18,7 +18,7 @@ preview_urls = false
 # so every byte is served from behind the JWT gate (Workers Assets would be
 # served before the Worker runs).
 rules = [
-  { type = "Text", globs = ["**/*.html", "**/*.css", "**/admin.js"], fallthrough = true }
+  { type = "Text", globs = ["**/*.html", "**/*.css", "**/admin.js", "**/lib.js"], fallthrough = true }
 ]
 
 # All four KV namespaces (ids match worker/wrangler.toml) — the portal has a
@@ -39,9 +39,9 @@ id = "66834b9613a34d3eba014791e3b5000f"
 binding = "ATTENDANCE_KV_STAGING"
 id = "f6f23b3e546646d28a3a80f71ef35715"
 
-# Newsletter sends proxy through service bindings — a plain fetch() to
-# join.jxnfilm.club from a Worker on the same zone would NOT route through
-# the join Worker (it 522s at the DNS origin).
+# Admin proxies (newsletter send, member unlink, watched) go through service
+# bindings — a plain fetch() to join.jxnfilm.club from a Worker on the same
+# zone would NOT route through the join Worker (it 522s at the DNS origin).
 [[services]]
 binding = "JOIN_WORKER"
 service = "jxnfilmclub-join"
@@ -58,7 +58,7 @@ ACCESS_TEAM_DOMAIN = "michaellamb.cloudflareaccess.com"
 ACCESS_AUD = "b08f708acd3d1a6b9fb3f427242cbeb387b700c2cab20789c86f4e9650298dc5"
 
 # Secrets (set via `wrangler secret put`):
-#   ADMIN_TOKEN          - the join Worker's production ADMIN_TOKEN (newsletter proxy)
+#   ADMIN_TOKEN          - the join Worker's production ADMIN_TOKEN (newsletter + unlink proxies)
 #   ADMIN_TOKEN_STAGING  - the join Worker's staging ADMIN_TOKEN
 
 [observability]

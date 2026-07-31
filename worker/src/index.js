@@ -138,6 +138,7 @@ async function route(request, env) {
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
+    if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
     if (request.method === 'POST' && pathname === '/session/refresh') return handleSessionRefresh(request, env)
@@ -404,10 +405,49 @@ async function handleOtpVerify(request, env) {
 
 // --- Letterboxd link ---
 //
-// Handle setting now lives in /member/update (members self-assert; the local
-// admin dashboard handles disputes). Only unlinking has a dedicated endpoint
-// because the cascade is distinct (reverse-index cleanup + JSON projection
-// update with handle: null).
+// Handle setting now lives in /member/update (members self-assert; admin
+// disputes go through POST /admin/member/unlink below). Only unlinking has
+// dedicated endpoints because the cascade is distinct (reverse-index cleanup
+// + JSON projection update with handle: null).
+
+// Full unlink cascade, shared by POST /letterboxd/unlink (member
+// self-service) and POST /admin/member/unlink (admin moderation).
+// Idempotent: running it against a member whose handle is already null still
+// re-projects the members:all row (publicMemberProjection omits falsy
+// handles), repairing any stale aggregate state.
+async function unlinkCascade(env, member) {
+  // Capture the aggregate row's handle before patching — a drifted state can
+  // leave a handle in members:all (and a stray email: index) after the
+  // canonical row already lost it.
+  const aggRow = (await readMembersAll(env)).find(m => m.id === member.id)
+  const staleAggHandle = aggRow ? aggRow.handle : null
+
+  const handle = member.handle
+  member.handle = null
+  await env.MEMBERS_KV.put(`member:${member.email}`, JSON.stringify(member))
+  if (handle) await env.MEMBERS_KV.delete(`email:${handle}`)
+  if (staleAggHandle && staleAggHandle !== handle) {
+    // Only clean the stray reverse index if it still points at this member —
+    // another member may have legitimately claimed the handle since.
+    const owner = await env.MEMBERS_KV.get(`email:${staleAggHandle}`)
+    if (owner === member.email) await env.MEMBERS_KV.delete(`email:${staleAggHandle}`)
+  }
+  await env.MEMBERS_KV.delete(`handle:${member.email}`)
+  await env.MEMBERS_KV.delete(`lb_token:${member.email}`)
+  await patchMembersAll(env, publicMemberProjection(member))
+  // Rebuild /watched from the corrected aggregate on next request instead of
+  // serving the unlinked member's RSS for up to 15 more minutes.
+  await env.MEMBERS_KV.delete('watched:cache')
+  await writeSession(env, member)
+
+  // `handle: null` tells update-member.yml to drop the field from the
+  // public members.json row.
+  await dispatchGithub(env, 'update-member', {
+    id: member.id,
+    updates: { handle: null },
+  })
+  return { unlinked: handle || staleAggHandle || null }
+}
 
 // POST /letterboxd/unlink — authenticated
 // Drops the verified Letterboxd link from the member row and public JSON.
@@ -421,22 +461,30 @@ async function handleLbUnlink(request, env) {
   const member = JSON.parse(memberRaw)
   if (!member.handle) return json(env, { error: 'no Letterboxd linked' }, 400)
 
-  const handle = member.handle
-  member.handle = null
-  await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
-  await env.MEMBERS_KV.delete(`email:${handle}`)
-  await env.MEMBERS_KV.delete(`handle:${claims.email}`)
-  await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
-  await patchMembersAll(env, publicMemberProjection(member))
-  await writeSession(env, member)
-
-  // `handle: null` tells update-member.yml to drop the field from the
-  // public members.json row.
-  await dispatchGithub(env, 'update-member', {
-    id: member.id,
-    updates: { handle: null },
-  })
+  await unlinkCascade(env, member)
   return json(env, { ok: true })
+}
+
+// POST /admin/member/unlink — bearer-auth with ADMIN_TOKEN (same gate as
+// newsletter send / scrub). Admin moderation path: force-unlink a member's
+// Letterboxd handle. Unlike the self-service endpoint there's no no-handle
+// guard — this is also the idempotent repair path for canonical-vs-aggregate
+// drift (member row already unlinked but members:all still shows the handle).
+async function handleAdminMemberUnlink(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+
+  let body
+  try { body = await request.json() } catch { body = {} }
+  if (!isValidEmail(body.email)) return json(env, { error: 'invalid email' }, 400)
+
+  const memberRaw = await env.MEMBERS_KV.get(`member:${body.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  return json(env, { ok: true, ...await unlinkCascade(env, member) })
 }
 
 // --- Member read + update ---

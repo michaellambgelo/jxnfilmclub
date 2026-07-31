@@ -7,6 +7,13 @@
 // /api/file (members.json patching) which is local-only.
 const HOSTED = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 
+// Pure helpers live in lib.js so tests/admin/lib.test.js can import them
+// without booting the SPA.
+import {
+  qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
+  buildWatchedSectionHtml, buildWatchedSectionText,
+} from './lib.js'
+
 const $ = (sel) => document.querySelector(sel)
 const env = () => $('#env').value
 const content = () => $('#content')
@@ -27,7 +34,6 @@ async function api(method, path, body) {
   return data
 }
 
-const qs = (params) => new URLSearchParams(params).toString()
 const kvUrl = (params) => `/api/kv?${qs({ env: env(), binding: 'MEMBERS_KV', ...params })}`
 
 const loadKv  = (prefix, binding = 'MEMBERS_KV') =>
@@ -40,15 +46,6 @@ const getFile = (path) => api('GET', `/api/file?${qs({ path })}`).then(r => r.co
 const putFile = (path, content) => api('PUT', `/api/file?${qs({ path })}`, content)
 
 // --- UI helpers ---
-
-function escapeHtml(s) {
-  if (s == null) return ''
-  return String(s)
-    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;').replaceAll("'", '&#39;')
-}
-
-function attr(s) { return escapeHtml(s) }
 
 function toast(msg, isErr = false) {
   const el = $('#toast')
@@ -73,44 +70,6 @@ function showModal(title, body) {
   $('#modal-title').textContent = title
   $('#modal-body').textContent = body
   $('#modal').showModal()
-}
-
-function tryParse(s) {
-  if (s == null) return null
-  try { return JSON.parse(s) } catch { return null }
-}
-
-function fmtAge(ms) {
-  if (!ms) return '—'
-  const sec = Math.floor((Date.now() - ms) / 1000)
-  if (sec < 60) return `${sec}s ago`
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
-  return `${Math.floor(sec / 86400)}d ago`
-}
-
-function fmtJoined(iso) {
-  if (!iso) return '—'
-  // Legacy rows stored a bare YYYY-MM-DD (no time-of-day) — parsing that as
-  // a UTC instant and reformatting in America/Chicago would roll it back a
-  // day, so only run real timestamps through the timezone conversion.
-  const bareDate = /^\d{4}-\d{2}-\d{2}$/.test(iso)
-  const d = new Date(bareDate ? iso + 'T00:00:00' : iso)
-  if (isNaN(d)) return escapeHtml(iso)
-  const opts = { year: 'numeric', month: 'short', day: 'numeric' }
-  if (!bareDate) opts.timeZone = 'America/Chicago'
-  return d.toLocaleDateString('en-US', opts)
-}
-
-function fmtExpiry(unixSec) {
-  if (!unixSec) return '—'
-  const ms = unixSec * 1000
-  const rem = ms - Date.now()
-  if (rem < 0) return 'expired'
-  if (rem < 60_000) return `${Math.floor(rem / 1000)}s`
-  if (rem < 3_600_000) return `${Math.floor(rem / 60_000)}m`
-  if (rem < 86_400_000) return `${Math.floor(rem / 3_600_000)}h`
-  return `${Math.floor(rem / 86_400_000)}d`
 }
 
 // --- Tab dispatch ---
@@ -146,6 +105,13 @@ async function renderMembers() {
     m: tryParse(values[k.name]),
   })).filter(r => r.m)
 
+  // The public aggregate (what GET /members serves). A handle here without a
+  // matching canonical handle means drifted state — surface a "repair LB"
+  // button so the canonical unlink cascade can scrub it.
+  const aggRes = await loadKv('members:all')
+  const agg = Object.fromEntries(
+    (tryParse(aggRes.values['members:all']) || []).filter(r => r.handle).map(r => [r.id, r.handle]))
+
   content().innerHTML = `
     <h2>Members <span class="muted">(${rows.length})</span></h2>
     <div class="search">
@@ -167,7 +133,7 @@ async function renderMembers() {
             <td class="actions">
               <button data-action="member-view" data-key="${attr(keyName)}">view</button>
               <button data-action="clear-rate" data-email="${attr(m.email)}">clear rate limits</button>
-              ${m.handle ? `<button class="danger" data-action="unlink-lb" data-email="${attr(m.email)}" data-id="${attr(m.id)}" data-handle="${attr(m.handle)}">unlink LB</button>` : ''}
+              ${(m.handle || agg[m.id]) ? `<button class="danger" data-action="unlink-lb" data-email="${attr(m.email)}" data-id="${attr(m.id)}" data-handle="${attr(m.handle || agg[m.id])}">${m.handle ? 'unlink LB' : 'repair LB'}</button>` : ''}
               <button class="danger" data-action="evict-session" data-id="${attr(m.id)}">evict session</button>
             </td>
           </tr>
@@ -207,40 +173,6 @@ const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpa
 // handle → display name for the "latest watches" section; refreshed on every
 // Newsletter tab render so inserts use the same member list the tab shows.
 let nlHandleNames = {}
-
-// Email-safe "latest from members" section. Mirrors the compose template's
-// structure (bg band + centered 600px white card, Georgia, brand red) so the
-// inserted block reads as a continuation of the card above it.
-function buildWatchedSectionHtml(entries) {
-  const rows = entries.map(e => `
-        <tr>
-          <td width="56" style="padding:8px 12px 8px 0;vertical-align:top">${e.poster ? `<img src="${attr(e.poster)}" width="48" height="72" alt="" style="display:block;border:0;border-radius:3px">` : ''}</td>
-          <td style="padding:8px 0;vertical-align:top">
-            <p style="margin:0;font-size:16px;line-height:1.4"><a href="${attr(e.link)}" style="color:#d7321f;text-decoration:none"><strong>${escapeHtml(e.title)}</strong></a>${e.year ? ` <span style="color:#6b675f">(${escapeHtml(e.year)})</span>` : ''}</p>
-            <p style="margin:2px 0 0;font-size:14px;color:#6b675f">${escapeHtml(e.name || '@' + e.handle)}${e.watched_date ? ' — ' + escapeHtml(fmtJoined(e.watched_date)) : ''}</p>
-          </td>
-        </tr>`).join('')
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
-  <tr><td align="center">
-    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
-      <tr>
-        <td style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
-          <h2 style="margin:0 0 12px;font-size:20px;color:#100f0e">Latest from members on Letterboxd</h2>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}
-          </table>
-          <p style="margin:12px 0 0;font-size:14px"><a href="https://jxnfilm.club/watched" style="color:#d7321f">See all member activity &rarr;</a></p>
-        </td>
-      </tr>
-    </table>
-  </td></tr>
-</table>`
-}
-
-function buildWatchedSectionText(entries) {
-  const lines = entries.map(e =>
-    `- ${e.title}${e.year ? ` (${e.year})` : ''} — ${e.name || '@' + e.handle}${e.watched_date ? ', ' + e.watched_date : ''}\n  ${e.link}`)
-  return `Latest from members on Letterboxd:\n${lines.join('\n')}\n\nSee all member activity: https://jxnfilm.club/watched`
-}
 
 async function renderNewsletter() {
   const [membersRes, historyRes] = await Promise.all([
@@ -743,32 +675,9 @@ document.addEventListener('click', async (e) => {
       toast(`Cleared ${cleared} counter(s) for ${email}`)
     }
     else if (a === 'unlink-lb') {
-      const { email, handle, id } = btn.dataset
-      const fileNote = HOSTED
-        ? 'data/members.json reconciles via the snapshot cron (≤6h).'
-        : 'AND data/members.json in this checkout — commit the JSON diff afterward.'
-      if (!confirm(`Force-unlink @${handle} from ${email}?\n\nThis updates MEMBERS_KV (member row + reverse indices + pending token + session snapshot). ${fileNote}`)) return
-      // KV side
-      const { values } = await loadKv(`member:${email}`)
-      const member = tryParse(values[`member:${email}`])
-      if (member) {
-        delete member.handle
-        await putKv(`member:${email}`, JSON.stringify(member))
-      }
-      await delKv(`email:${handle}`).catch(() => {})
-      await delKv(`handle:${email}`).catch(() => {})
-      if (id) await delKv(`session:${id}`).catch(() => {})
-      // JSON projection — local checkout only; the hosted Worker has no
-      // filesystem and the 6h snapshot-members cron self-heals the file.
-      if (!HOSTED) {
-        const raw = await getFile('data/members.json')
-        const all = JSON.parse(raw)
-        const idx = all.findIndex(m => m.id === id)
-        if (idx !== -1) {
-          delete all[idx].handle
-          await putFile('data/members.json', JSON.stringify(all, null, 2) + '\n')
-        }
-      }
+      const { email, handle } = btn.dataset
+      if (!confirm(`Force-unlink @${handle} from ${email}?\n\nRuns the full unlink cascade on the join Worker (member row + reverse indices + pending token + members:all projection + session snapshot + update-member commit).`)) return
+      await api('POST', `/api/member/unlink?${qs({ env: env() })}`, JSON.stringify({ email }))
       toast(`Unlinked @${handle} from ${email}`)
       await switchTab(currentTab)
     }

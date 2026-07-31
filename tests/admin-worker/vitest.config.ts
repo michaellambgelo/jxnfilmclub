@@ -1,13 +1,15 @@
 import { defineWorkersProject } from '@cloudflare/vitest-pool-workers/config'
 import fs from 'node:fs'
 
-// Mirrors admin/worker/wrangler.toml module rules: .html/.css AND admin.js
-// import as Text (string modules). Keep in sync with `rules` there. Same
-// suffix trick as tests/worker/vitest.config.ts so Vite's CSS pipeline never
-// claims the .css imports.
+// Mirrors admin/worker/wrangler.toml module rules: .html/.css AND admin.js +
+// lib.js import as Text (string modules). Keep in sync with `rules` there.
+// Same suffix trick as tests/worker/vitest.config.ts so Vite's CSS pipeline
+// never claims the .css imports.
 const SUFFIX = '.wrangler-module'
 const isText = (id: string) =>
-  id.endsWith('.html') || id.endsWith('.css') || id.endsWith('/admin.js') || id === 'admin.js'
+  id.endsWith('.html') || id.endsWith('.css') ||
+  id.endsWith('/admin.js') || id === 'admin.js' ||
+  id.endsWith('/lib.js') || id === 'lib.js'
 
 const moduleRulesPlugin = {
   name: 'wrangler-module-rules',

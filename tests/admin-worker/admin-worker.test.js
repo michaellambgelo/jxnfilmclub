@@ -101,7 +101,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -127,6 +127,11 @@ describe('access gate', () => {
     const js = await call('/admin.js', { token: await signToken() })
     expect(js.status).toBe(200)
     expect(await js.text()).toContain('HOSTED')
+
+    const lib = await call('/lib.js', { token: await signToken() })
+    expect(lib.status).toBe(200)
+    expect(lib.headers.get('Content-Type')).toContain('javascript')
+    expect(await lib.text()).toContain('buildWatchedSectionHtml')
   })
 
   it('whoami reflects the verified JWT email', async () => {
@@ -201,20 +206,22 @@ describe('/api/file', () => {
   })
 })
 
-// --- Newsletter proxy: service binding + token selection per env ---
+// --- Join-worker proxies: service binding + token selection per env ---
+
+function stubService(response = { sent: 3 }, status = 200, raw = false) {
+  const calls = []
+  const service = {
+    fetch: vi.fn(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return raw
+        ? new Response(response, { status })
+        : Response.json(response, { status })
+    }),
+  }
+  return { service, calls }
+}
 
 describe('/api/newsletter/send', () => {
-  function stubService(response = { sent: 3 }, status = 200) {
-    const calls = []
-    const service = {
-      fetch: vi.fn(async (url, init) => {
-        calls.push({ url: String(url), init })
-        return Response.json(response, { status })
-      }),
-    }
-    return { service, calls }
-  }
-
   it('production uses JOIN_WORKER with ADMIN_TOKEN against join.jxnfilm.club', async () => {
     const { service, calls } = stubService()
     const res = await call('/api/newsletter/send?env=production', {
@@ -255,5 +262,108 @@ describe('/api/newsletter/send', () => {
     })
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain('ADMIN_TOKEN')
+  })
+})
+
+// --- Member unlink proxy: same shape as the newsletter proxy ---
+
+describe('/api/member/unlink', () => {
+  it('production uses JOIN_WORKER with ADMIN_TOKEN against join.jxnfilm.club', async () => {
+    const { service, calls } = stubService({ ok: true, unlinked: 'modhandle' })
+    const res = await call('/api/member/unlink?env=production', {
+      method: 'POST', body: JSON.stringify({ email: 'adm@example.com' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ ok: true, unlinked: 'modhandle' })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/member/unlink')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe('{"email":"adm@example.com"}')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with ADMIN_TOKEN_STAGING against join-staging', async () => {
+    const { service, calls } = stubService({ ok: true })
+    const res = await call('/api/member/unlink?env=staging', {
+      method: 'POST', body: JSON.stringify({ email: 'adm@example.com' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/member/unlink')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('relays the join worker error status/body', async () => {
+    const { service } = stubService({ error: 'member not found' }, 404)
+    const res = await call('/api/member/unlink?env=production', {
+      method: 'POST', body: '{"email":"ghost@example.com"}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('member not found')
+  })
+
+  it('400s when the token secret is missing', async () => {
+    const { service } = stubService()
+    const res = await call('/api/member/unlink?env=production', {
+      method: 'POST', body: '{}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service, ADMIN_TOKEN: '' },
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain('ADMIN_TOKEN')
+  })
+})
+
+// --- Watched proxy: unauthenticated pass-through over the service binding ---
+
+describe('/api/watched', () => {
+  it('production proxies JOIN_WORKER /watched with no Authorization header', async () => {
+    const { service, calls } = stubService({ modhandle: [{ title: 'Film' }] })
+    const res = await call('/api/watched?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ modhandle: [{ title: 'Film' }] })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/watched')
+    expect(calls[0].init?.headers?.Authorization).toBeUndefined()
+  })
+
+  it('staging proxies JOIN_WORKER_STAGING against join-staging', async () => {
+    const { service, calls } = stubService({})
+    const res = await call('/api/watched?env=staging', {
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/watched')
+  })
+
+  it('400s on an invalid env', async () => {
+    const res = await call('/api/watched?env=nope', { token: await signToken() })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid env: nope')
+  })
+
+  it('degrades a non-JSON upstream body to {} with the status relayed', async () => {
+    const { service } = stubService('<html>cf error page</html>', 522, true)
+    const res = await call('/api/watched?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(522)
+    expect(await res.json()).toEqual({})
+  })
+})
+
+// --- Routing fallthrough ---
+
+describe('routing fallthrough', () => {
+  it('404s an unknown GET path with a valid token', async () => {
+    const res = await call('/nonexistent', { token: await signToken() })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('not found')
+  })
+
+  it('405s an unrouted non-GET method with a valid token', async () => {
+    const res = await call('/api/kv?env=production&binding=MEMBERS_KV&key=x', {
+      method: 'PATCH', body: 'x', token: await signToken(),
+    })
+    expect(res.status).toBe(405)
+    expect((await res.json()).error).toBe('method not allowed')
   })
 })

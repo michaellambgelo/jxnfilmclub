@@ -16,6 +16,7 @@
 
 import indexHtml from '../../index.html'
 import adminJs from '../../admin.js'
+import libJs from '../../lib.js'
 import styleCss from '../../style.css'
 
 const VALID_ENVS = new Set(['production', 'staging'])
@@ -150,9 +151,12 @@ async function kvValues(kv, names) {
   return values
 }
 
-// --- Newsletter proxy (service bindings — see wrangler.toml) ---
+// --- Admin proxies to the join Worker (service bindings — see wrangler.toml) ---
 
-async function handleNewsletterSend(request, env, q) {
+// Generic bearer-authenticated proxy to the join Worker's /admin/* routes.
+// The join Worker derives link origins from request.url, so pass its real
+// public URL through the service binding.
+async function proxyJoinAdmin(request, env, q, adminPath) {
   if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
   const staging = q.env === 'staging'
   const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
@@ -161,10 +165,8 @@ async function handleNewsletterSend(request, env, q) {
     const name = staging ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
     throw new HttpError(400, `set the ${name} secret on the admin worker before sending`)
   }
-  // The join Worker derives unsubscribe-link origins from request.url, so
-  // pass its real public URL through the service binding.
   const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
-  const workerRes = await service.fetch(`${origin}/admin/newsletter/send`, {
+  const workerRes = await service.fetch(`${origin}${adminPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: await request.text(),
@@ -197,6 +199,7 @@ const STATIC = {
   '/': [indexHtml, 'text/html; charset=utf-8'],
   '/index.html': [indexHtml, 'text/html; charset=utf-8'],
   '/admin.js': [adminJs, 'application/javascript; charset=utf-8'],
+  '/lib.js': [libJs, 'application/javascript; charset=utf-8'],
   '/style.css': [styleCss, 'text/css; charset=utf-8'],
 }
 
@@ -236,7 +239,14 @@ async function handle(request, env, access) {
   }
   // POST /api/newsletter/send?env=  body = JSON { subject, html?, text?, testTo? }
   if (method === 'POST' && url.pathname === '/api/newsletter/send') {
-    return handleNewsletterSend(request, env, q)
+    return proxyJoinAdmin(request, env, q, '/admin/newsletter/send')
+  }
+  // POST /api/member/unlink?env=  body = JSON { email } — force-unlink a
+  // member's Letterboxd handle via the join Worker's canonical cascade
+  // (member row + reverse indices + members:all + session + update-member
+  // dispatch). Idempotent repair path for aggregate drift.
+  if (method === 'POST' && url.pathname === '/api/member/unlink') {
+    return proxyJoinAdmin(request, env, q, '/admin/member/unlink')
   }
   // Identity comes from the verified Access JWT.
   if (method === 'GET' && url.pathname === '/api/whoami') {

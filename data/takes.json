@@ -20,36 +20,6 @@
     "year": "1959"
   },
   {
-    "handle": "jsyd",
-    "link": "https://letterboxd.com/jsyd/film/spider-man-no-way-home/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/0/7/8/7/560787-spider-man-no-way-home-0-600-0-900-crop.jpg?v=a336d4f40c",
-    "rating": "4.5",
-    "review": "Discord Double feature w/Michael",
-    "title": "Spider-Man: No Way Home",
-    "watched_date": "2026-07-28",
-    "year": "2021"
-  },
-  {
-    "handle": "jsyd",
-    "link": "https://letterboxd.com/jsyd/film/spider-man-far-from-home/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/2/9/7/7/362977-spider-man-far-from-home-0-600-0-900-crop.jpg?v=d139fbf2ae",
-    "rating": "5.0",
-    "review": "Zendaya + Tom Holland 4-ever \ud83d\udc95 . . . Double feature before Brand New Day. Watched it for the first time again.",
-    "title": "Spider-Man: Far From Home",
-    "watched_date": "2026-07-28",
-    "year": "2019"
-  },
-  {
-    "handle": "jsyd",
-    "link": "https://letterboxd.com/jsyd/film/pirates-of-the-caribbean-the-curse-of-the-black-pearl/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/9/5/2695-pirates-of-the-caribbean-the-curse-of-the-black-pearl-0-600-0-900-crop.jpg?v=272b36c0d8",
-    "rating": "5.0",
-    "review": "Twitch friends movie night some were all being pirates in Black Flag Resynced",
-    "title": "Pirates of the Caribbean: The Curse of the Black Pearl",
-    "watched_date": "2026-07-25",
-    "year": "2003"
-  },
-  {
     "handle": "jon_knowledge",
     "link": "https://letterboxd.com/jon_knowledge/film/the-great-muppet-caper/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/2/7/2/6/42726-the-great-muppet-caper-0-600-0-900-crop.jpg?v=fb1d4c7fa9",
@@ -88,5 +58,35 @@
     "title": "Masters of the Universe",
     "watched_date": "2026-06-10",
     "year": "2026"
+  },
+  {
+    "handle": "jdavidlewis",
+    "link": "https://letterboxd.com/jdavidlewis/film/the-fantastic-4-first-steps/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/4/3/9/6/7/543967-the-fantastic-four-first-steps-0-600-0-900-crop.jpg?v=ab7c919b04",
+    "rating": "5.0",
+    "review": "Simply put - Fantastic",
+    "title": "The Fantastic 4: First Steps",
+    "watched_date": "2025-07-24",
+    "year": "2025"
+  },
+  {
+    "handle": "jdavidlewis",
+    "link": "https://letterboxd.com/jdavidlewis/film/superman-2025/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/7/0/5/0/957050-superman-2025-0-600-0-900-crop.jpg?v=54e41a55ff",
+    "rating": "5.0",
+    "review": "I won\u2019t shut up about this film for a long time.",
+    "title": "Superman",
+    "watched_date": "2025-07-16",
+    "year": "2025"
+  },
+  {
+    "handle": "jdavidlewis",
+    "link": "https://letterboxd.com/jdavidlewis/film/snow-white-2025/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/7/9/5/9/0/379590-disneys-snow-white-0-600-0-900-crop.jpg?v=150e421404",
+    "rating": "2.0",
+    "review": "Yall this film\u2026.not good. And it\u2019s really not worth me trying to type out my thoughts.",
+    "title": "Snow White",
+    "watched_date": "2025-06-09",
+    "year": "2025"
   }
 ]

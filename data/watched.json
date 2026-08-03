@@ -61,6 +61,13 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/dreams-2025/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/2/5/0/1/1022501-dreams-2025-0-600-0-900-crop.jpg?v=b8ca1803e1",
+      "title": "Dreams",
+      "watched_date": "2026-08-03",
+      "year": "2025"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/ikiru/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/5/9/5/49595-ikiru-0-600-0-900-crop.jpg?v=3b6666bd18",
       "title": "Ikiru",
@@ -80,13 +87,6 @@
       "title": "Spider-Man: Brand New Day",
       "watched_date": "2026-07-30",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/ben-hur-1959/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/4/5/9/51459-ben-hur-0-600-0-900-crop.jpg?v=05db23182b",
-      "title": "Ben-Hur",
-      "watched_date": "2026-07-30",
-      "year": "1959"
     }
   ]
 }

@@ -461,11 +461,15 @@
   color: var(--brand);
 }
 
-.leaders-link {
-  display: block;
-  text-align: center;
-  margin-top: 18px;
+.leaders-note {
+  margin: 18px 0 0;
   font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.leaders-note a {
+  color: var(--brand);
 }
 
 /* ------- hot takes ------- */

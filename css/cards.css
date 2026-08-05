@@ -142,6 +142,24 @@
   color: var(--ink-4);
 }
 
+/* Compact host avatar inline with the "Hosted by" text */
+.event-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.event-host .avatar {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex-shrink: 0;
+}
+
+.event-host .avatar b {
+  font-size: 0.75em;
+  line-height: 1.75;
+}
+
 .event-attendance {
   margin-top: auto;
   padding-top: .75rem;

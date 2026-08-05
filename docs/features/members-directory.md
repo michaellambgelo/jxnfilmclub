@@ -48,7 +48,12 @@ flowchart TD
 
 ## Avatar Widget
 
-Each member gets a deterministic avatar with a colored background:
+Members with a linked Letterboxd handle show their Letterboxd avatar when the
+Worker's `GET /avatars` map has one (see [watched.md](watched.md) — og:image
+scrape, 7-day KV cache, default-avatar filtering). The widget's `:src` prop
+renders the image with an `onerror` fallback to the letter avatar.
+
+Everyone else gets the deterministic letter avatar with a colored background:
 - Color is derived from the first letter of the member's name
 - 16 colors total (8 dark + 8 light), indexed by `(charCode - 97) / 2`
 - Dark backgrounds get white text, light backgrounds get black text

@@ -43,6 +43,25 @@ is deliberately not cached so an outage never gets pinned for a full TTL.
 Takes source. Consumers: home "The Last Four", the `/watched` view, and the
 host panel's diary quick-picks.
 
+## Avatars (`GET /avatars`)
+
+A sibling endpoint with the same architecture: Letterboxd has no API and RSS
+carries no profile avatar, so the Worker scrapes each linked member's profile
+page (`letterboxd.com/{handle}/`) for its `og:image` meta tag and serves a
+handle-keyed URL map. Cached at `avatars:cache` in `MEMBERS_KV` for **7 days**
+as `{ sig, map }` — `sig` is the sorted linked-handle list, recomputed on every
+hit so a newly linked handle rebuilds immediately instead of waiting out the
+TTL. Letterboxd's grey default avatar (asset path contains `/static/img/`) is
+filtered out so those members keep the letter avatar. A total miss is not
+cached (same outage guard as watched). `E2E_MODE` returns `{}` so e2e specs
+keep asserting letter avatars.
+
+Consumers via `getAvatars()` in `model/index.ts` (no static fallback — the
+letter `<avatar>` in `ui/widgets.html` is the fallback, via its `:src` prop +
+onerror handler): member directory cards, `/watched` member headers, the
+event card's "Hosted by" line, and the `/edit` Letterboxd panel (direct
+Worker fetch). Tests: `tests/worker/avatars.test.js`.
+
 ## Poster Image Extraction
 
 Poster URLs are extracted from the RSS entry's `<description>` HTML via regex:

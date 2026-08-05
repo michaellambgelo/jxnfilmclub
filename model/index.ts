@@ -55,6 +55,22 @@ export async function getWatched(): Promise<Record<string, any[]>> {
   } catch { return {} }
 }
 
+// Letterboxd avatars: handle-keyed map of avatar URLs, scraped by the Worker
+// from each linked member's profile og:image and KV-cached for a week. No
+// static fallback — a missing entry just means the letter avatar renders.
+export async function getAvatars(): Promise<Record<string, string>> {
+  const origin = resolveWorkerOrigin()
+  if (!origin) return {}
+  try {
+    const res = await fetch(`${origin}/avatars`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data
+    }
+  } catch { /* letter avatars cover it */ }
+  return {}
+}
+
 export async function getMembers(opts = {}) {
   return getList('members', opts)
 }

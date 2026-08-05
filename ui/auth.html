@@ -319,8 +319,11 @@
       <h2 class="lb-head"><img class="lb-mark" src="/img/letterboxd-decal-dots.svg" alt="" width="28" height="28"> Letterboxd</h2>
 
       <div :if="member.handle">
-        <p class="ok">Linked as
-          <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>.
+        <p class="ok lb-linked">
+          <avatar :name="member.name || member.handle" :src="lbAvatar || ''"/>
+          <span>Linked as
+            <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>.
+          </span>
         </p>
         <button type="button" class="-ghost -danger" :onclick="unlinkLb" :disabled="lbBusy">
           { lbBusy ? 'Removing…' : 'Remove Letterboxd link' }
@@ -425,7 +428,20 @@
         member = await call('GET', '/member/me', undefined, s.token)
       } catch { /* fall through with empty defaults */ }
 
-      this.update({ loading: false, session: s, member })
+      // Letterboxd avatar for the linked panel — absent map entry or fetch
+      // failure just leaves the letter avatar.
+      let lbAvatar = ''
+      if (member.handle) {
+        try {
+          const ar = await fetch(WORKER_ORIGIN + '/avatars')
+          if (ar.ok) {
+            const map = await ar.json()
+            lbAvatar = (map && map[member.handle]) || ''
+          }
+        } catch { /* letter avatar fallback */ }
+      }
+
+      this.update({ loading: false, session: s, member, lbAvatar })
 
       if (state.event) await this.loadEvent(state.event, s)
     }

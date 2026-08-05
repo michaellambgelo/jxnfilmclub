@@ -325,6 +325,39 @@
   margin: 0;
 }
 
+/* The Letterboxd panel's linked line: avatar sits inline with the text
+   (the span keeps the prose as one flex item so the gap only separates
+   avatar from text). */
+.auth .ok.lb-linked {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.auth .ok.lb-linked .avatar {
+  width: 1.8rem;
+  height: 1.8rem;
+  flex-shrink: 0;
+}
+
+.auth .ok.lb-linked .avatar b {
+  font-size: 1em;
+  line-height: 1.8;
+}
+
+/* Links inside status blocks otherwise fall to UA default blue/purple,
+   which is unreadable on the dark ok/err fills (same class of bug as
+   .auth .actions a.plain above). */
+.auth .ok a {
+  color: var(--ok-fg);
+  text-decoration: underline;
+}
+
+.auth .err a {
+  color: var(--err-fg);
+  text-decoration: underline;
+}
+
 /* The verification token chip rendered in the Letterboxd pending panel.
    Fira Code makes the tag visually distinct from prose and aligns with
    the brand mono treatment for any jxnfc-verify-XXXX string. */

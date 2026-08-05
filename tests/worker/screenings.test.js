@@ -164,6 +164,51 @@ describe('POST /events — create hosted screening', () => {
     const r2 = await createScreening(token, { capacity: 0 })
     expect(r2.status).toBe(400)
   })
+
+  it('house screenings take an optional showtime; malformed times rejected', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: rTok } = await getTokenFor('rsvper@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { time: '19:00' })).json()
+    expect(created.event.time).toBe('19:00')
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.time).toBe('19:00')
+    const list = await (await req('/events')).json()
+    expect(list.find(e => e.id === created.id).time).toBe('19:00')
+
+    const bad1 = await createScreening(hostTok, { time: '7pm' })
+    expect(bad1.status).toBe(400)
+    const bad2 = await createScreening(hostTok, { time: '25:00' })
+    expect(bad2.status).toBe(400)
+
+    // RSVP email carries both the showtime and the private address.
+    const sent = captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: rTok })
+    expect(sent[0].subject).toContain('at 7:00 pm')
+    expect(sent[0].text).toContain('Showtime: 7:00 pm')
+    expect(sent[0].text).toContain('Address:')
+  })
+
+  it('house showtime PATCH notifies confirmed RSVPs; empty time clears it', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: rTok } = await getTokenFor('rsvper@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { time: '19:00' })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: rTok })
+
+    let sent = captureEmails()
+    const res = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { time: '20:00' } })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].text).toContain('time: 19:00 → 20:00')
+
+    const cleared = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { time: '' } })
+    expect(cleared.status).toBe(200)
+    const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.time).toBeUndefined()
+    const list = await (await req('/events')).json()
+    expect(list.find(e => e.id === created.id).time).toBeUndefined()
+  })
 })
 
 describe('POST /events/:id/rsvp + waitlist', () => {
@@ -553,6 +598,30 @@ describe('theater meetups (kind: meetup)', () => {
     const list = await (await req('/events')).json()
     const pub = list.find(e => e.id === created.id)
     expect(pub.letterboxd_uri).toBe('https://letterboxd.com/qa/film/the-matrix/')
+  })
+
+  it('PATCH with empty or null letterboxd_uri unlinks, on both kinds', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const meetup = await (await createMeetup(hostTok)).json()
+    const house = await (await createScreening(hostTok)).json()
+
+    // '' is what the Unlink Diary Entry button sends; null covers API callers.
+    for (const [id, clear] of [[meetup.id, ''], [house.id, null]]) {
+      await req(`/events/${id}`, { method: 'PATCH', token: hostTok,
+        body: { letterboxd_uri: 'https://boxd.it/abc123' } })
+      const sent = captureEmails()
+      const res = await req(`/events/${id}`, { method: 'PATCH', token: hostTok,
+        body: { letterboxd_uri: clear } })
+      expect(res.status).toBe(200)
+      expect((await res.json()).event.letterboxd_uri).toBeUndefined()
+      const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${id}`))
+      expect(raw.letterboxd_uri).toBeUndefined()
+      const list2 = await (await req('/events')).json()
+      expect(list2.find(e => e.id === id).letterboxd_uri).toBeUndefined()
+      // Not a where/when change — nobody gets emailed.
+      expect(sent).toHaveLength(0)
+    }
   })
 
   it('host view returns kind/venue/time, null address', async () => {

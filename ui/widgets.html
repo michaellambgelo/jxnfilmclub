@@ -1,9 +1,11 @@
 
 <!doctype dhtml lib>
 
-<!-- Avatar: deterministic background color from first letter of name -->
+<!-- Avatar: optional image (Letterboxd avatar URL via :src) with the
+     deterministic letter fallback — first letter of name picks the color -->
 <figure :is="avatar" class="avatar { dark_mod }" --bg="{ color }">
-  <b :if="letter">{ letter }</b>
+  <img :if="showImg" src="{ src }" alt="" :onerror="imgFailed">
+  <b :if="!showImg && letter">{ letter }</b>
 
   <script>
     const DARK  = '064789 679436 427AA1 D55672 481620 363946 F34213 3E2F5B'
@@ -15,6 +17,12 @@
     const i = Math.max(0, Math.round(num / 2))
     this.color = '#' + (COLORS[i] || COLORS[0])
     this.dark_mod = i < 9 ? 'is-dark' : ''
+    this.showImg = !!this.src
+
+    // A dead CDN URL falls back to the letter instead of a broken image.
+    this.imgFailed = function() {
+      this.update({ showImg: false })
+    }
   </script>
 </figure>
 

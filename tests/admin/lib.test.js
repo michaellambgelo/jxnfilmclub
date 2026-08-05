@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText,
+  fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
 } from '../../admin/lib.js'
 
 afterEach(() => {
@@ -144,5 +145,87 @@ describe('buildWatchedSectionText', () => {
     expect(text).toContain('- The Third Man (1949) — Mo, 2026-07-20\n  https://l/1')
     expect(text).toContain('- Film — @someuser\n  https://l/2')
     expect(text).toContain('See all member activity: https://jxnfilm.club/watched')
+  })
+})
+
+describe('fmtShowtime', () => {
+  it('converts 24h HH:MM to h:mm am/pm', () => {
+    expect(fmtShowtime('19:30')).toBe('7:30 pm')
+    expect(fmtShowtime('00:05')).toBe('12:05 am')
+    expect(fmtShowtime('12:00')).toBe('12:00 pm')
+    expect(fmtShowtime('09:15')).toBe('9:15 am')
+  })
+
+  it('returns empty string for missing/malformed input', () => {
+    expect(fmtShowtime('')).toBe('')
+    expect(fmtShowtime(undefined)).toBe('')
+    expect(fmtShowtime('7pm')).toBe('')
+  })
+})
+
+describe('buildEventsSectionHtml', () => {
+  const houseEvent = {
+    id: '2099-06-15-test', title: 'June Screening', film: 'Crash', year: 1996,
+    date: '2099-06-15', time: '19:00', venue: "Mo's house", poster: 'https://img.tmdb.org/p.jpg',
+    letterboxd_uri: 'https://boxd.it/abc', hostId: 'm1', hostName: 'Mo',
+    capacity: 8, address: '123 Secret St, Jackson, MS', notes: 'Gate code 4321',
+  }
+
+  it('renders poster, linked film, year, date+showtime, venue, host — never private fields', () => {
+    const html = buildEventsSectionHtml([houseEvent])
+    expect(html).toContain('src="https://img.tmdb.org/p.jpg"')
+    expect(html).toContain('href="https://boxd.it/abc"')
+    expect(html).toContain('<strong>Crash</strong>')
+    expect(html).toContain('(1996)')
+    expect(html).toContain('Jun 15, 2099')
+    expect(html).toContain('at 7:00 pm')
+    expect(html).toContain('Mo&#39;s house')
+    expect(html).toContain('Hosted by Mo')
+    expect(html).toContain('https://jxnfilm.club/events')
+    // Canonical event: rows carry the private address/notes — they must
+    // never reach the newsletter.
+    expect(html).not.toContain('123 Secret St')
+    expect(html).not.toContain('Gate code')
+    expect(html).not.toContain('4321')
+    expect(html).not.toContain('capacity')
+  })
+
+  it('unlinked film renders plain; venue falls back for hosted rows without one', () => {
+    const html = buildEventsSectionHtml([{
+      title: 'Mystery Night', date: '2099-07-01', hostId: 'm2', hostName: 'Sam',
+    }])
+    // Title renders plain — the only anchor is the See-all footer link.
+    expect(html).toContain('<strong>Mystery Night</strong>')
+    expect(html.match(/<a href/g)).toHaveLength(1)
+    expect(html).toContain('Member-hosted screening')
+    expect(html).not.toContain(' at ')  // no time segment
+  })
+
+  it('renders bare dates without a day shift and escapes hostile fields', () => {
+    const html = buildEventsSectionHtml([{
+      title: '<script>alert(1)</script>', date: '2099-09-01',
+      venue: '<b>x</b>', hostName: '"><img onerror=1>', hostId: 'm3',
+      letterboxd_uri: 'https://x.example/"><script>',
+    }])
+    expect(html).toContain('Sep 1, 2099')
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('https://x.example/&quot;&gt;')
+  })
+})
+
+describe('buildEventsSectionText', () => {
+  it('renders full and minimal line shapes, never private fields', () => {
+    const text = buildEventsSectionText([
+      { title: 'June Screening', film: 'Crash', year: 1996, date: '2099-06-15', time: '19:00',
+        venue: "Mo's house", hostId: 'm1', hostName: 'Mo', letterboxd_uri: 'https://boxd.it/abc',
+        address: '123 Secret St', notes: 'Gate code' },
+      { title: 'Mystery Night', date: '2099-07-01', hostId: 'm2' },
+    ])
+    expect(text).toContain("- Crash (1996) — 2099-06-15 at 7:00 pm, Mo's house, hosted by Mo\n  https://boxd.it/abc")
+    expect(text).toContain('- Mystery Night — 2099-07-01, Member-hosted screening')
+    expect(text).toContain('See all events: https://jxnfilm.club/events')
+    expect(text).not.toContain('Secret St')
+    expect(text).not.toContain('Gate code')
   })
 })

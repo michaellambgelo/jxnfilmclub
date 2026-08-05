@@ -31,6 +31,7 @@ test.describe('member-hosted screenings', () => {
     await page.locator('input[name="film"]').fill('Crash')
     await page.getByLabel('Date').fill('2099-06-15')
     await page.locator('input[name="address"]').fill(SECRET_ADDRESS)
+    await page.locator('input[name="time"]').fill('19:30')
     await page.getByLabel('Capacity').fill('4')
     await page.getByRole('button', { name: /create screening/i }).click()
 
@@ -41,6 +42,7 @@ test.describe('member-hosted screenings', () => {
     await expect(card).toBeVisible()
     await expect(card).toContainText(/Hosted by Host McHostface/i)
     await expect(card).toContainText(/0 \/ 4 RSVPed/)
+    await expect(card).toContainText(/7:30 pm/)
 
     // The full rendered events page must contain ZERO trace of the address.
     const html = await page.content()
@@ -55,6 +57,7 @@ test.describe('member-hosted screenings', () => {
     expect(ours).toBeTruthy()
     expect(ours.hostName).toBe('Host McHostface')
     expect(ours.capacity).toBe(4)
+    expect(ours.time).toBe('19:30')
     expect(ours.venue).toBe("Host McHostface's house")  // public-friendly label, auto-stamped
     expect(ours.address).toBeUndefined()
     expect(JSON.stringify(list)).not.toContain('Evergreen Terrace')

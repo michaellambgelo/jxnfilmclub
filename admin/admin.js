@@ -12,6 +12,7 @@ const HOSTED = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText,
+  buildEventsSectionHtml, buildEventsSectionText,
 } from './lib.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -219,6 +220,7 @@ async function renderNewsletter() {
         </div>
       </div>
       <div class="toolbar">
+        <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
         <input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert" style="width:64px">
         <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
         <input id="nl-test-email" type="email" placeholder="you@example.com">
@@ -602,7 +604,7 @@ function renderEventCards() {
         ${hosted ? `
         <div><label>Host name</label><input type="text" name="hostName" value="${attr(e.hostName || '')}"></div>
         <div><label>Kind <span class="muted">— house | meetup</span></label><input type="text" name="kind" value="${attr(e.kind || '')}" placeholder="house | meetup"></div>
-        <div><label>Time <span class="muted">— meetup showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
+        <div><label>Time <span class="muted">— showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
         <div><label>Capacity</label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
         <div style="grid-column:1/-1"><label>Address <span class="muted">— private; only emailed to confirmed RSVPs</span></label>
           <input type="text" name="address" value="${attr(e.address || '')}"></div>
@@ -707,6 +709,33 @@ document.addEventListener('click', async (e) => {
       if (id) await delKv(`session:${id}`).catch(() => {})
       toast(`${email} ${turningOn ? 'opted in' : 'opted out'}`)
       await switchTab(currentTab)
+    }
+    else if (a === 'nl-insert-events') {
+      // Fetch fresh rather than relying on eventsCache — the Events tab may
+      // never have rendered this session. Same per-event → aggregate
+      // fallback as renderEvents().
+      const perEvent = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'event:' })}`)
+      let events
+      if (perEvent.keys.length) {
+        events = perEvent.keys.map(k => tryParse(perEvent.values[k.name])).filter(Boolean)
+      } else {
+        const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
+        events = tryParse(aggRaw.values['events:all']) || []
+      }
+      // Dates are bare YYYY-MM-DD Central-time calendar days — compare as
+      // strings against a Central "today", never via new Date().
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+      const upcoming = events
+        .filter(e => String(e.date || '') >= today)
+        .sort((x, y) => String(x.date).localeCompare(String(y.date)))
+      if (!upcoming.length) { toast('No upcoming events to insert', true); return }
+
+      const htmlField = $('#nl-html')
+      const textField = $('#nl-text')
+      htmlField.value = htmlField.value.trimEnd() + '\n' + buildEventsSectionHtml(upcoming)
+      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
+      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildEventsSectionText(upcoming)
+      toast(`Inserted ${upcoming.length} upcoming ${upcoming.length === 1 ? 'event' : 'events'} — edit or trim in the preview`)
     }
     else if (a === 'nl-insert-watched') {
       const limit = Math.max(1, Math.min(30, Number($('#nl-watched-count').value) || 8))

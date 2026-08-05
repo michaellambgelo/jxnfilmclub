@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars } from 'app'
 </script>
 
 
@@ -302,7 +302,7 @@
 
   <div class="card-grid member-grid">
     <article :each="el in items" key="{ el.id || el.handle }" class="member-card">
-      <avatar :name="el.name"/>
+      <avatar :name="el.name" :src="avatarFor(el.handle)"/>
       <h3>{ el.name }</h3>
       <a :if="el.handle" class="handle"
         href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
@@ -314,6 +314,13 @@
   <script>
     state.on('query sort', () => this.reload())
 
+    // NB: brace literals inside attribute values are template syntax, so the
+    // avatar map lookup lives here instead of inline in :src.
+    avatarFor(handle) {
+      const map = this.avatars || {}
+      return handle ? (map[handle] || '') : ''
+    }
+
     async reload() {
       const { items, total } = await getMembers({
         search: state.query,
@@ -324,6 +331,9 @@
     }
 
     async mounted() {
+      // Avatars land before the first card render so the grid paints once.
+      const avatars = await getAvatars().catch(function() { return {} })
+      this.update({ avatars: avatars })
       await this.reload()
     }
   </script>
@@ -336,7 +346,7 @@
 
   <section :each="member in members" key="{ member.handle }" class="watched-member">
     <header class="watched-member-header">
-      <avatar :name="member.name"/>
+      <avatar :name="member.name" :src="avatarFor(member.handle)"/>
       <div>
         <h2>{ member.name }</h2>
         <a :if="member.handle" href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
@@ -361,15 +371,21 @@
   <p :if="members && !members.length" class="empty-state">No watched films to show yet.</p>
 
   <script>
+    avatarFor(handle) {
+      const map = this.avatars || {}
+      return handle ? (map[handle] || '') : ''
+    }
+
     async mounted() {
-      const [{ items }, watched] = await Promise.all([
+      const [{ items }, watched, avatars] = await Promise.all([
         getMembers({ limit: 1000 }),
         getWatched().catch(() => ({})),
+        getAvatars().catch(() => ({})),
       ])
       const members = items
         .filter(m => m.handle && watched[m.handle]?.length)
         .map(m => ({ ...m, films: watched[m.handle] }))
-      this.update({ members })
+      this.update({ members, avatars })
     }
   </script>
 </article>
@@ -410,6 +426,7 @@
       :event="el"
       :session="session"
       :handles="handlesByName"
+      :avatars="avatars"
       :attendees="attendance[el.id] || []"/>
   </div>
 
@@ -461,7 +478,7 @@
 
     async mounted() {
       const session = getSession()
-      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesByName: {} })
+      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesByName: {}, avatars: {} })
       // Remembered device with a lapsed token: trade the device token for a
       // fresh session in the background so RSVP affordances light up without
       // a trip through /signin. jxnfcEnsureSession is installed by the auth
@@ -472,16 +489,19 @@
           if (s) self.update({ session: s })
         })
       }
-      const [all, { items: members }] = await Promise.all([
+      const [all, { items: members }, avatars] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
+        getAvatars().catch(() => ({})),
       ])
       const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
       const handlesByName = {}
       for (const m of members) {
         if (m.handle) handlesByName[m.name] = m.handle
       }
-      this.update({ venues, handlesByName })
+      // Avatars ride the same update as venues/handles — a later update would
+      // detach every event-card sibling and reset scroll (see the card note).
+      this.update({ venues, handlesByName, avatars })
       await this.reload()
     }
   </script>
@@ -508,7 +528,7 @@
     </p>
     <p class="event-meta">
       <span :if="event.venue" class="event-venue">{ event.venue }</span>
-      <span :if="event.hostId" class="event-host">Hosted by { event.hostName || 'a member' }</span>
+      <span :if="event.hostId" class="event-host"><avatar :name="event.hostName || 'a member'" :src="hostAvatarSrc()"/>Hosted by { event.hostName || 'a member' }</span>
       <span class="event-date">{ formatDate(event.date) }</span>
       <span :if="event.time" class="event-time">{ formatTime(event.time) }</span>
     </p>
@@ -562,12 +582,14 @@
       <div class="host-lb">
         <p :if="event.letterboxd_uri" class="host-lb-current">The film title links to
           <a href="{ event.letterboxd_uri }" target="_blank" rel="noopener">your Letterboxd entry</a>.</p>
+        <button :if="event.letterboxd_uri" type="button" class="attend-btn attend-btn-remove"
+          :disabled="lbBusy" :onclick="unlinkLbUri">{ lbBusy ? 'Removing' : 'Unlink Diary Entry' }</button>
         <p :if="!event.letterboxd_uri" class="host-lb-current">Link your Letterboxd diary entry so the film title points to it.</p>
-        <div class="host-lb-picks">
+        <div :if="!event.letterboxd_uri" class="host-lb-picks">
           <button :each="(d, i) in diary" key="{ d.link }" type="button" class="lb-pick"
             data-idx="{ i }" :disabled="lbBusy" :onclick="linkDiary">{ d.title }{ d.watched_date ? ' · ' + d.watched_date : '' }</button>
         </div>
-        <div class="host-lb-manual">
+        <div :if="!event.letterboxd_uri" class="host-lb-manual">
           <input type="url" name="lbUri" placeholder="https://letterboxd.com/you/film/..." :disabled="lbBusy">
           <button type="button" class="attend-btn" :disabled="lbBusy" :onclick="saveLbUri">{ lbBusy ? 'Saving' : 'Save link' }</button>
         </div>
@@ -625,6 +647,15 @@
       }
     }
 
+    // Host avatar via the name->handle map + avatar map props. Lives here
+    // because brace literals inside attribute values are template syntax.
+    this.hostAvatarSrc = function() {
+      const handles = this.handles || {}
+      const avatars = this.avatars || {}
+      const handle = handles[this.event.hostName]
+      return handle ? (avatars[handle] || '') : ''
+    }
+
     this.patchLbUri = async function(uri) {
       this.update({ lbBusy: true, lbLinkError: '' })
       try {
@@ -659,6 +690,12 @@
         return
       }
       this.patchLbUri(uri)
+    }
+
+    // One click, no confirm: PATCH an empty letterboxd_uri so the worker
+    // deletes the key, then the reload re-renders the picker + URL input.
+    this.unlinkLbUri = function() {
+      this.patchLbUri('')
     }
 
     this.formatDate = function(ts) {
@@ -835,7 +872,7 @@
         <option :each="v in THEATERS" key="{ v }" value="{ v }">{ v }</option>
       </select>
       <span class="hint">Want a venue added? Email venues@jxnfilm.club</span></label>
-    <label :hidden="kind !== 'meetup'">Showtime <span class="hint">— optional</span>
+    <label>Showtime <span class="hint">— optional</span>
       <input type="time" name="time"></label>
     <label>Capacity <span class="hint">{ kind === 'meetup' ? '— optional; leave blank for no cap' : '' }</span>
       <input type="number" name="capacity" :required="kind === 'house'" min="1" max="1000" placeholder="8"></label>
@@ -995,13 +1032,13 @@
         capacity: fd.get('capacity') ? Number(fd.get('capacity')) : undefined,
         notes: fd.get('notes') || undefined,
         poster: this.posterUrl || undefined,
+        time: fd.get('time') || undefined,
       }
       if (kind === 'house') {
         body.address = fd.get('address')
         body.venue = fd.get('houseVenue') || undefined
       } else {
         body.venue = fd.get('venue')
-        body.time = fd.get('time') || undefined
       }
       try {
         const res = await fetch(WORKER_ORIGIN + '/events', {

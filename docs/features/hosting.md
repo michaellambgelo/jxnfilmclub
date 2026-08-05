@@ -9,7 +9,7 @@ One form, two kinds, chosen by a location toggle:
 | Address visibility | Never public — only emailed to confirmed RSVPs | N/A (no address stored, even if submitted) |
 | Public venue label | Optional "Public label" field; defaults to `{hostName}'s house`, matching the curated-list convention | The theater name itself |
 | Capacity | Required (1–1000), waitlist when full | Optional; no cap → every RSVP confirms, no waitlist |
-| Showtime | — | Optional `time` (HH:MM, rendered h:mm am/pm) |
+| Showtime | Optional `time` (HH:MM, rendered h:mm am/pm) | Optional `time` (HH:MM, rendered h:mm am/pm) |
 | Framing | "Your living room is a cinema" | Self-organized — buy your own ticket; the club just shows up together |
 
 Both kinds share the RSVP flow (`POST/DELETE /events/:id/rsvp`, confirmation
@@ -87,8 +87,9 @@ an admin bulk-rename is an optional future cleanup.
   a curated theater event to fix the home page's House/Venue tag (the legacy
   heuristic regex `/house|porch|backyard|home/i` would otherwise mislabel
   venues like "Patton House & Gallery").
-- On meetups, PATCH treats an explicit `''`/`null` for `capacity` or `time` as
-  a clear; un-capping promotes the entire waitlist.
+- PATCH treats an explicit `''`/`null` for `time` (both kinds) or `capacity`
+  (meetups only — house capacity is required) as a clear; un-capping a meetup
+  promotes the entire waitlist.
 
 ## Poster search (TMDB)
 
@@ -121,6 +122,11 @@ handle is linked) plus a manual URL field. Picking or saving PATCHes
 `boxd.it` URLs; not a where/when change, so no RSVP notification emails),
 and the card's film title then links to the entry. Uses the same
 `publicEventProjection` field curated events already use.
+
+Once linked, the quick-picks and URL field are hidden — the block shows only
+the confirmation line plus an "Unlink Diary Entry" button. One click PATCHes
+an empty `letterboxd_uri`, which the Worker treats as delete-on-empty (same
+pattern as meetup `capacity`/`time`), and the picker returns.
 
 ## Form UX constraint (nuedom)
 

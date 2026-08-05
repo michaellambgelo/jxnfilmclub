@@ -57,7 +57,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `scripts/refresh_letterboxd.py` | 6-hour cron RSS scraper (feeds `watched.json` + `attendance.json`) |
 | `.github/workflows/` | `add-member` + `update-member` (repo_dispatch, id-keyed); `refresh-letterboxd` (cron); `test` (reusable) + `deploy-site` + `deploy-worker` (gated on test) |
 | `tests/model/` | Vitest model tests (node env) + `brand-sync.test.ts` |
-| `tests/worker/` | Vitest + Workers pool — 15 endpoint/behavior suites: signup, otp, letterboxd (self-service + admin unlink), member-update, member-delete, members-events, newsletter, scrub, screenings, attendance, watched, security, session-refresh, tmdb, pages |
+| `tests/worker/` | Vitest + Workers pool — 16 endpoint/behavior suites: signup, otp, letterboxd (self-service + admin unlink), member-update, member-delete, members-events, newsletter, scrub, screenings, attendance, watched, avatars, security, session-refresh, tmdb, pages |
 | `tests/admin-worker/` | Vitest + Workers pool for the admin Worker: Access-JWT gate, `/api/kv`, join-worker proxies (newsletter, member unlink, watched), routing fallthrough |
 | `tests/admin/` | Plain-node Vitest for the admin SPA's pure helpers (`admin/lib.js`) |
 | `tests/e2e/` | Playwright specs (`fixtures.ts` + site/signup/signin/letterboxd/member-delete/remember-me/screenings/revocation/rate-limit/admin) |

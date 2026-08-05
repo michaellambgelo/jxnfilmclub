@@ -149,6 +149,7 @@ async function route(request, env) {
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(env)
+    if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
     // Poster search for the /host form — members only (keeps the TMDB key
     // server-side and the endpoint un-scrapeable).
     if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
@@ -1228,6 +1229,85 @@ function unescapeXml(s) {
     .replace(/&amp;/g, '&')
 }
 
+// --- Letterboxd avatars (profile-page og:image via the Worker) ---
+//
+// GET /avatars — public. Handle-keyed map of each linked member's Letterboxd
+// avatar URL, scraped from the profile page's og:image meta tag (Letterboxd
+// has no API and RSS carries no avatar). Cached in KV for a week — avatars
+// churn slowly — with a membership signature so a newly linked handle
+// invalidates the cache immediately instead of waiting out the TTL. The SPA
+// falls back to the letter <avatar> for any handle absent from the map.
+
+const AVATARS_CACHE_TTL = 86400 * 7 // seconds
+
+function avatarsResponse(env, data) {
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600', ...cors(env) },
+  })
+}
+
+// Membership signature: sorted linked-handle list. Cheap to recompute (one
+// KV read) and changes exactly when the avatar set should.
+function avatarsSig(members) {
+  return members.map(m => m && m.handle).filter(Boolean).sort().join(',')
+}
+
+// Per-isolate in-flight coalescing, same pattern as watchedInflight.
+let avatarsInflight = null
+
+async function handleAvatarsGet(env) {
+  if (env.E2E_MODE === 'true') return avatarsResponse(env, {})
+  const members = await readMembersAll(env)
+  const cached = await env.MEMBERS_KV.get('avatars:cache')
+  if (cached) {
+    try {
+      const rec = JSON.parse(cached)
+      if (rec.sig === avatarsSig(members)) return avatarsResponse(env, rec.map || {})
+    } catch { /* rebuild below */ }
+  }
+  if (!avatarsInflight) {
+    avatarsInflight = buildAvatars(env, members).finally(() => { avatarsInflight = null })
+  }
+  return avatarsResponse(env, await avatarsInflight)
+}
+
+async function buildAvatars(env, members) {
+  const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
+  const out = {}
+  await Promise.all(handles.map(async handle => {
+    try {
+      const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/`, {
+        headers: { 'User-Agent': 'jxnfilmclub-join' },
+        cf: { cacheTtl: 86400, cacheEverything: true },
+      })
+      if (!res.ok) return
+      const url = parseOgImage(await res.text())
+      if (url) out[handle] = url
+    } catch { /* profile down: handle absent, letter avatar covers it */ }
+  }))
+
+  // Don't cache a total miss (e.g. Letterboxd outage) — that would pin the
+  // outage for a full week. Partial results are cached as best-effort.
+  if (!handles.length || Object.keys(out).length) {
+    const rec = { sig: avatarsSig(members), map: out }
+    await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec), { expirationTtl: AVATARS_CACHE_TTL })
+  }
+  return out
+}
+
+// Attribute-order-tolerant og:image extraction. Members without a custom
+// avatar get Letterboxd's grey default (asset path contains /static/img/) —
+// skip it so the letter avatar renders instead.
+function parseOgImage(html) {
+  const m = /<meta\s[^>]*(?:property|name)="og:image"[^>]*>/.exec(String(html))
+  if (!m) return ''
+  const c = /content="([^"]+)"/.exec(m[0])
+  const url = c ? c[1] : ''
+  if (!url || !/^https:\/\//.test(url)) return ''
+  if (url.includes('/static/img/')) return ''
+  return url
+}
+
 // --- Member-hosted screenings (RSVP + private address) ---
 //
 // Member-hosted screenings live in the same `event:{id}` rows as admin-curated
@@ -1353,7 +1433,8 @@ const MEETUP_SELF_ORGANIZED =
   'This meetup is self-organized — buy your own ticket and get yourself there; the club just shows up together.'
 
 function fmtScreeningWhen(event) {
-  // Date as-is (YYYY-MM-DD); meetups may carry an optional showtime.
+  // Date as-is (YYYY-MM-DD); hosted events of either kind may carry an
+  // optional showtime.
   if (!event.date) return 'TBD'
   return event.time ? `${event.date} at ${fmtTime(event.time)}` : event.date
 }
@@ -1367,11 +1448,11 @@ function rsvpEmailBody(event, address, notes, cancelUrl) {
   ]
   if (event.kind === 'meetup') {
     lines.push(`Venue: ${event.venue}`)
-    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-    lines.push('', MEETUP_SELF_ORGANIZED)
   } else {
     lines.push('Address:', address)
   }
+  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   if (notes) {
     lines.push('', 'Notes from the host:', notes)
   }
@@ -1407,11 +1488,11 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   )
   if (event.kind === 'meetup') {
     lines.push(`Venue: ${event.venue}`)
-    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-    lines.push('', MEETUP_SELF_ORGANIZED)
   } else {
     lines.push(`Address: ${event.address || '(see host)'}`)
   }
+  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   if (event.notes) lines.push('', 'Notes from the host:', event.notes)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
@@ -1475,6 +1556,13 @@ function validScreeningInput(body) {
     return { error: 'date is required (YYYY-MM-DD)' }
   }
   out.date = body.date
+  // Showtime is optional on both kinds — house screenings have one too.
+  if (body.time != null && body.time !== '') {
+    if (typeof body.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
+      return { error: 'time must be HH:MM (24-hour)' }
+    }
+    out.time = body.time
+  }
   if (out.kind === 'meetup') {
     if (typeof body.venue !== 'string' || !THEATERS.includes(body.venue.trim())) {
       return { error: 'venue must be one of the listed theaters' }
@@ -1486,12 +1574,6 @@ function validScreeningInput(body) {
         return { error: 'capacity must be a positive integer (≤1000)' }
       }
       out.capacity = cap
-    }
-    if (body.time != null && body.time !== '') {
-      if (typeof body.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
-        return { error: 'time must be HH:MM (24-hour)' }
-      }
-      out.time = body.time
     }
   } else {
     if (typeof body.address !== 'string' || !body.address.trim() || body.address.length > MAX_ADDRESS) {
@@ -1673,14 +1755,20 @@ async function handleUpdateEvent(request, env, eventId) {
   }
 
   const updated = { ...event, ...v.value, hostId: event.hostId, hostName: event.hostName }
+  // letterboxd_uri is clearable on both kinds: an explicit ''/null in the
+  // body deletes the key (the validator only omits empties; the spread
+  // would otherwise resurrect the old value). Backs the host panel's
+  // "Unlink Diary Entry" button.
+  if (body.letterboxd_uri === '' || body.letterboxd_uri === null) delete updated.letterboxd_uri
+  // Showtime is optional on both kinds, so an explicit ''/null clears it.
+  if (body.time === '' || body.time === null) delete updated.time
   if (updated.kind === 'meetup') {
     // A meetup must never store an address, even one left over on the stale
-    // row. Capacity and time are optional here, so an explicit ''/null in the
-    // body clears them (the validator only omits empties; the spread would
+    // row. Capacity is optional here, so an explicit ''/null in the body
+    // clears it (the validator only omits empties; the spread would
     // otherwise resurrect the old value).
     delete updated.address
     if (body.capacity === '' || body.capacity === null) delete updated.capacity
-    if (body.time === '' || body.time === null) delete updated.time
   }
   await writeEvent(env, updated)
 

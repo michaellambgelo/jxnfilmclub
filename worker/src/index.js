@@ -80,9 +80,12 @@ export default {
 
   // Daily cron (see [triggers] in wrangler.toml): privacy retention promise
   // from /privacy — 30 days after a screening, attendee emails and the host's
-  // address/notes are deleted.
+  // address/notes are deleted. Also reconciles members:all against the
+  // canonical member: rows so any race-dropped aggregate entry self-heals
+  // within a day even with no member activity.
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(scrubPastEvents(env))
+    ctx.waitUntil(reconcileMembersAll(env))
   },
 }
 
@@ -993,23 +996,50 @@ async function readMembersAll(env) {
 // reflects the change without waiting on a snapshot.
 async function patchMembersAll(env, projection) {
   if (!projection || !projection.id) return
-  const allRaw = await env.MEMBERS_KV.get('members:all')
-  const all = allRaw ? safeParseArray(allRaw) : await bootstrapMembers(env)
-  const idx = all.findIndex(m => m.id === projection.id)
-  if (idx === -1) all.push(projection)
-  else all[idx] = projection
-  await env.MEMBERS_KV.put('members:all', JSON.stringify(all))
+  await reconcileMembersAll(env, { ensure: projection })
 }
 
 async function removeFromMembersAll(env, id) {
   if (!id) return
+  await reconcileMembersAll(env, { excludeId: id })
+}
+
+// KV has no transactions, so the old read-modify-write upsert could lose a
+// concurrent signup: two /signup/verify calls inside the ~60s edge-propagation
+// window each read an aggregate missing the other's append, and the later
+// write clobbered the earlier one (dropped a real member on 2026-08-05).
+// Every aggregate write now reconciles against the canonical member:{email}
+// rows: union of the current aggregate and every canonical projection
+// (canonical wins), plus the caller's own row via `ensure` (a just-put row
+// may not be list-visible yet) and minus `excludeId` (a just-deleted one may
+// still be). A concurrent clobber can still drop a row for a moment, but the
+// next mutation — or the daily cron's bare reconcile — restores it from the
+// canonical row, so drift is transient instead of permanent. Aggregate rows
+// without a canonical KV row (data/members.json baseline members, e2e seeds)
+// are preserved untouched.
+async function reconcileMembersAll(env, { ensure = null, excludeId = null } = {}) {
   const allRaw = await env.MEMBERS_KV.get('members:all')
-  if (!allRaw) return
-  const all = safeParseArray(allRaw)
-  const filtered = all.filter(m => m.id !== id)
-  if (filtered.length !== all.length) {
-    await env.MEMBERS_KV.put('members:all', JSON.stringify(filtered))
+  const all = allRaw ? safeParseArray(allRaw) : await bootstrapMembers(env)
+  const upsert = (proj) => {
+    if (!proj || !proj.id) return
+    const idx = all.findIndex(m => m.id === proj.id)
+    if (idx === -1) all.push(proj)
+    else all[idx] = proj
   }
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'member:', cursor })
+    const rows = await Promise.all(page.keys.map(k => env.MEMBERS_KV.get(k.name)))
+    for (const raw of rows) {
+      if (!raw) continue
+      try { upsert(publicMemberProjection(JSON.parse(raw))) } catch { /* skip corrupt row */ }
+    }
+    cursor = page.list_complete ? null : page.cursor
+  } while (cursor)
+  upsert(ensure)
+  const out = excludeId ? all.filter(m => m.id !== excludeId) : all
+  await env.MEMBERS_KV.put('members:all', JSON.stringify(out))
+  return out
 }
 
 // One-shot per KV namespace: seed members:all from data/members.json baseline,
@@ -1956,13 +1986,16 @@ async function scrubPastEvents(env) {
 }
 
 // POST /admin/scrub — bearer-auth with ADMIN_TOKEN (same gate as the
-// newsletter send). Manual trigger for the daily scheduled scrub.
+// newsletter send). Manual trigger for the daily scheduled scrub; mirrors the
+// cron by also reconciling members:all (ops repair for aggregate drift).
 async function handleAdminScrub(request, env) {
   const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
   if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
     return json(env, { error: 'unauthorized' }, 401)
   }
-  return json(env, { ok: true, ...await scrubPastEvents(env) })
+  const reconciled = await reconcileMembersAll(env)
+  const scrub = await scrubPastEvents(env)
+  return json(env, { ok: true, ...scrub, reconciledMembers: reconciled.length })
 }
 
 // Account-deletion sweep: remove the member's {memberId, name, email, at}

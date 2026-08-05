@@ -116,8 +116,8 @@ Setup per environment: `cd worker && npx wrangler secret put TMDB_API_KEY`
 
 On the Events tab, the host-only panel on their own event card has a
 "Letterboxd" block: quick-pick buttons for the host's recent diary entries
-(from `/data/watched.json`, keyed by their linked handle — empty when no
-handle is linked) plus a manual URL field. Picking or saving PATCHes
+(live from the Worker's `GET /watched`, KV-cached ~15 min, keyed by their
+linked handle — empty when no handle is linked) plus a manual URL field. Picking or saving PATCHes
 `letterboxd_uri` (host-auth; validated server-side to `letterboxd.com` /
 `boxd.it` URLs; not a where/when change, so no RSVP notification emails),
 and the card's film title then links to the entry. Uses the same

@@ -5,8 +5,11 @@ A public listing of all club screenings and events with search, venue filtering,
 This doc covers the curated listing + post-hoc attendance ("I was there").
 Member-hosted events (house screenings and theater meetups, `hostId` set) swap
 the attendance toggle for an RSVP/waitlist affordance and are documented in
-[hosting.md](hosting.md); their cards additionally show "Hosted by", the RSVP
-meter, a showtime for meetups, and meetup self-organized copy.
+[hosting.md](hosting.md); their cards additionally show a "Hosted by" line
+with the host's avatar (Letterboxd avatar via `GET /avatars` when the host
+has a linked handle, letter avatar otherwise — see
+[watched.md](watched.md)), the RSVP meter, an optional showtime (either
+kind), and meetup self-organized copy.
 
 ## Page Layout
 

@@ -78,6 +78,13 @@ Handles set at signup time are promoted onto the member row inside
 `/signup/verify` (same uniqueness check, same reverse-index write) — no
 separate post-signup step.
 
+Linking a handle also surfaces the member's **Letterboxd avatar**: the
+Worker's `GET /avatars` scrapes the profile page's `og:image` (7-day KV
+cache; see [watched.md](watched.md)) and the `/edit` panel shows it beside
+"Linked as @{handle}", as do the member directory, watched headers, and
+event host lines. Members without a custom Letterboxd avatar (or without a
+handle) keep the letter avatar.
+
 ### Unlink Confirmation
 
 When removing a Letterboxd link, the user sees:

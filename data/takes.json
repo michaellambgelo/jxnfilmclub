@@ -100,6 +100,16 @@
     "year": "2026"
   },
   {
+    "handle": "Skwatchinit",
+    "link": "https://letterboxd.com/skwatchinit/film/wuthering-heights-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/6/9/1/1/1196911-wuthering-heights-2026-0-600-0-900-crop.jpg?v=7d02cf3bdc",
+    "rating": "3.0",
+    "review": "Can\u2019t believe people watched this in a theater w other people",
+    "title": "Wuthering Heights",
+    "watched_date": "2026-05-06",
+    "year": "2026"
+  },
+  {
     "handle": "jdavidlewis",
     "link": "https://letterboxd.com/jdavidlewis/film/project-hail-mary/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/6/1/1/2/8/8/611288-project-hail-mary-0-600-0-900-crop.jpg?v=ac31b6ec03",
@@ -118,5 +128,55 @@
     "title": "The Super Mario Galaxy Movie",
     "watched_date": "2026-04-11",
     "year": "2026"
+  },
+  {
+    "handle": "Skwatchinit",
+    "link": "https://letterboxd.com/skwatchinit/film/marty-supreme/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/7/4/9/9/1197499-marty-supreme-0-600-0-900-crop.jpg?v=b14a26bb43",
+    "rating": "3.0",
+    "review": "Uncut Gems but ping pong",
+    "title": "Marty Supreme",
+    "watched_date": "2026-01-04",
+    "year": "2025"
+  },
+  {
+    "handle": "Skwatchinit",
+    "link": "https://letterboxd.com/skwatchinit/film/mysterious-skin/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/uo/r7/1v/1j/wynnf6LT4ueuCuREPRMtHGQIk5T-0-600-0-900-crop.jpg?v=b0c8031954",
+    "rating": "4.5",
+    "review": "A half a star was taken off due to the trauma, only after the movie ended did I realized my stomach hurt bc I wasn\u2019t breathing the whole time \ud83e\udee0 still a story that is worth telling and they did a beautiful job of it.",
+    "title": "Mysterious Skin",
+    "watched_date": "2024-02-09",
+    "year": "2004"
+  },
+  {
+    "handle": "TAPINMEDIA",
+    "link": "https://letterboxd.com/tapinmedia/film/baby-boy/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/7/8/1/41781-baby-boy-0-600-0-900-crop.jpg?v=4200453261",
+    "rating": "5.0",
+    "review": "The great deconstruction of the hood movie. Sort of deals with every issue pro & con that sub genre. And also supremely entertaining and deeply relatable. Singleton\u2019s masterpiece. -Ian",
+    "title": "Baby Boy",
+    "watched_date": null,
+    "year": "2001"
+  },
+  {
+    "handle": "TAPINMEDIA",
+    "link": "https://letterboxd.com/tapinmedia/film/marie-antoinette-2006/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/k7/u1/3i/lu/xOdzoe3tC8X1v7M2Z86sdfjpVrO-0-600-0-900-crop.jpg?v=4b6cfecbaf",
+    "rating": "5.0",
+    "review": "Extremely ironic how every masterpiece from Sofia Coppola came AFTER her Oscar win. And they're all majorly underappreciated. -Ian",
+    "title": "Marie Antoinette",
+    "watched_date": null,
+    "year": "2006"
+  },
+  {
+    "handle": "TAPINMEDIA",
+    "link": "https://letterboxd.com/tapinmedia/film/miami-vice/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/9/6/8/51968-miami-vice-0-600-0-900-crop.jpg?v=323641dcfe",
+    "rating": "4.5",
+    "review": "Hyper-Real meat-and-potatoes cinema. Quintessentially American and somehow supremely forward-thinking. Like a proto-Speed Racer in a fascinating way. -Ian",
+    "title": "Miami Vice",
+    "watched_date": null,
+    "year": "2006"
   }
 ]

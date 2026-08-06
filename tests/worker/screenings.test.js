@@ -209,6 +209,35 @@ describe('POST /events — create hosted screening', () => {
     const list = await (await req('/events')).json()
     expect(list.find(e => e.id === created.id).time).toBeUndefined()
   })
+
+  it('update-email diff always matches the stored row (no phantom changes)', async () => {
+    // Regression: pre-a95211b the diff was computed from the validator
+    // output, which dropped house showtimes — so a diary-link PATCH emailed
+    // every RSVP "time: 20:00 → (blank)" while KV kept the time.
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: rTok } = await getTokenFor('rsvper@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { time: '20:00' })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: rTok })
+
+    // PATCH that touches nothing diffable → no update email, time intact.
+    let sent = captureEmails()
+    const link = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { letterboxd_uri: 'https://letterboxd.com/host/film/halloween-1978/' } })
+    expect(link.status).toBe(200)
+    expect(sent).toHaveLength(0)
+    let raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.time).toBe('20:00')
+
+    // Real clear → the email's diff and the stored row agree: both blank.
+    sent = captureEmails()
+    const cleared = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { time: '' } })
+    expect(cleared.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].text).toContain('time: 20:00 → (blank)')
+    expect(sent[0].text).not.toContain('Showtime:')
+    raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
+    expect(raw.time).toBeUndefined()
+  })
 })
 
 describe('POST /events/:id/rsvp + waitlist', () => {

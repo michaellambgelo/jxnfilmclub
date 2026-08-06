@@ -1777,13 +1777,6 @@ async function handleUpdateEvent(request, env, eventId) {
     return json(env, { error: `cannot reduce capacity below the ${rsvp.confirmed.length} already-confirmed RSVPs` }, 400)
   }
 
-  const changes = []
-  for (const field of ['date', 'time', 'address', 'venue']) {
-    if ((event[field] || '') !== (v.value[field] || '')) {
-      changes.push({ field, from: event[field] || '', to: v.value[field] || '' })
-    }
-  }
-
   const updated = { ...event, ...v.value, hostId: event.hostId, hostName: event.hostName }
   // letterboxd_uri is clearable on both kinds: an explicit ''/null in the
   // body deletes the key (the validator only omits empties; the spread
@@ -1799,6 +1792,16 @@ async function handleUpdateEvent(request, env, eventId) {
     // otherwise resurrect the old value).
     delete updated.address
     if (body.capacity === '' || body.capacity === null) delete updated.capacity
+  }
+
+  // Diff the final row, not v.value: the delete-on-empty rules above run
+  // after validation, and a diff computed pre-mutation can disagree with
+  // what's stored (the pre-a95211b "time → (blank)" phantom email).
+  const changes = []
+  for (const field of ['date', 'time', 'address', 'venue']) {
+    if ((event[field] || '') !== (updated[field] || '')) {
+      changes.push({ field, from: event[field] || '', to: updated[field] || '' })
+    }
   }
   await writeEvent(env, updated)
 

@@ -265,6 +265,43 @@ describe('/api/newsletter/send', () => {
   })
 })
 
+// --- TMDB poster search proxy: GET with the admin token, no body ---
+
+describe('/api/tmdb/search', () => {
+  it('production uses JOIN_WORKER with ADMIN_TOKEN and passes the query through', async () => {
+    const { service, calls } = stubService({ results: [{ id: 603, title: 'The Matrix' }] })
+    const res = await call('/api/tmdb/search?env=production&q=the%20matrix', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect((await res.json()).results).toHaveLength(1)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/tmdb/search?q=the+matrix')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with ADMIN_TOKEN_STAGING against join-staging', async () => {
+    const { service, calls } = stubService({ results: [] })
+    const res = await call('/api/tmdb/search?env=staging&q=halloween', {
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/tmdb/search?q=halloween')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('relays the join worker error status/body and 400s without the secret', async () => {
+    const { service } = stubService({ error: 'unauthorized' }, 401)
+    const denied = await call('/api/tmdb/search?env=production&q=x', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(denied.status).toBe(401)
+    const missing = await call('/api/tmdb/search?env=production&q=x', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service, ADMIN_TOKEN: '' },
+    })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('ADMIN_TOKEN')
+  })
+})
+
 // --- Member unlink proxy: same shape as the newsletter proxy ---
 
 describe('/api/member/unlink', () => {

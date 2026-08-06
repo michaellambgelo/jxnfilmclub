@@ -302,6 +302,26 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // GET /api/tmdb/search?env=&q=  → proxies the join Worker's admin-gated
+  // TMDB poster search with ADMIN_TOKEN held server-side, mirroring the
+  // hosted admin worker's /api/tmdb/search.
+  if (method === 'GET' && url.pathname === '/api/tmdb/search') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before searching`)
+    }
+    const workerRes = await fetch(
+      `${WORKER_ORIGINS[q.env]}/admin/tmdb/search?${new URLSearchParams({ q: q.q || '' })}`,
+      { headers: { Authorization: `Bearer ${token}` } })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
   // GET /api/watched?env=  → proxies the join Worker's public /watched map
   // (server-side fetch — the browser can't call it cross-origin itself).
   if (method === 'GET' && url.pathname === '/api/watched') {

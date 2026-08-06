@@ -13,6 +13,7 @@ import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText,
   buildEventsSectionHtml, buildEventsSectionText,
+  buildPosterBlockHtml, buildPosterBlockText,
 } from './lib.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -174,6 +175,7 @@ const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpa
 // handle → display name for the "latest watches" section; refreshed on every
 // Newsletter tab render so inserts use the same member list the tab shows.
 let nlHandleNames = {}
+let nlPosterResults = []
 
 async function renderNewsletter() {
   const [membersRes, historyRes] = await Promise.all([
@@ -227,6 +229,12 @@ async function renderNewsletter() {
         <button data-action="nl-test">Send test</button>
         <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
       </div>
+      <div class="toolbar nl-poster-bar">
+        <input id="nl-poster-q" type="text" placeholder="film title…" title="Search TMDB for a poster">
+        <button data-action="nl-poster-search">Find poster</button>
+        <input id="nl-poster-link" type="url" placeholder="link URL — where the poster points (optional)">
+      </div>
+      <div id="nl-poster-results" class="nl-poster-results" hidden></div>
     </section>
 
     <section class="nl-recipients">
@@ -758,6 +766,39 @@ document.addEventListener('click', async (e) => {
       htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
       textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildWatchedSectionText(top)
       toast(`Inserted ${top.length} ${top.length === 1 ? 'entry' : 'entries'} — edit or trim in the preview`)
+    }
+    else if (a === 'nl-poster-search') {
+      const query = $('#nl-poster-q').value.trim()
+      if (!query) { toast('Enter a film title to search', true); return }
+      const r = await api('GET', `/api/tmdb/search?${qs({ env: env(), q: query })}`)
+      nlPosterResults = r.results || []
+      const strip = $('#nl-poster-results')
+      if (!nlPosterResults.length) {
+        strip.hidden = true
+        toast(`No posters found for "${query}"`, true)
+        return
+      }
+      strip.innerHTML = nlPosterResults.map((p, i) => `
+        <button type="button" class="nl-poster-thumb" data-action="nl-poster-pick" data-idx="${i}"
+          title="Insert this poster">
+          <img src="${attr(p.thumb)}" alt="">
+          <span>${escapeHtml(p.title)}${p.year ? ` (${escapeHtml(p.year)})` : ''}</span>
+        </button>`).join('')
+      strip.hidden = false
+    }
+    else if (a === 'nl-poster-pick') {
+      const p = nlPosterResults[Number(btn.dataset.idx)]
+      if (!p) return
+      const link = $('#nl-poster-link').value.trim()
+      const block = { poster: p.poster, link, title: p.title, year: p.year }
+      const htmlField = $('#nl-html')
+      const textField = $('#nl-text')
+      htmlField.value = htmlField.value.trimEnd() + '\n' + buildPosterBlockHtml(block)
+      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
+      const textLine = buildPosterBlockText(block)
+      if (textLine) textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + textLine
+      $('#nl-poster-results').hidden = true
+      toast(`Inserted ${p.title} poster${link ? ' (linked)' : ''} — edit or move it in the preview`)
     }
     else if (a === 'nl-test') {
       const subject = $('#nl-subject').value.trim()

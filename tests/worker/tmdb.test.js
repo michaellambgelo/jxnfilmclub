@@ -90,6 +90,32 @@ describe('GET /tmdb/search — poster search proxy', () => {
   })
 })
 
+describe('GET /admin/tmdb/search — newsletter poster picker (ADMIN_TOKEN gate)', () => {
+  it('rejects a missing or wrong bearer token', async () => {
+    expect((await req('/admin/tmdb/search?q=matrix')).status).toBe(401)
+    expect((await req('/admin/tmdb/search?q=matrix', { token: 'wrong' })).status).toBe(401)
+  })
+
+  it('returns the same trimmed results as the member route', async () => {
+    mockFetch(async () => new Response(JSON.stringify(TMDB_FIXTURE), { status: 200 }))
+    const res = await req('/admin/tmdb/search?q=matrix', { token: 'test-admin-token' })
+    expect(res.status).toBe(200)
+    const { results } = await res.json()
+    expect(results).toHaveLength(2) // Reloaded (no poster_path) dropped
+    expect(results[0]).toEqual({
+      id: 603, title: 'The Matrix', year: '1999',
+      poster: 'https://image.tmdb.org/t/p/w500/matrix.jpg',
+      thumb: 'https://image.tmdb.org/t/p/w92/matrix.jpg',
+    })
+  })
+
+  it('a member session token is not an admin token', async () => {
+    const token = await getTokenFor('poster@example.com')
+    mockFetch(async () => new Response(JSON.stringify(TMDB_FIXTURE), { status: 200 }))
+    expect((await req('/admin/tmdb/search?q=matrix', { token })).status).toBe(401)
+  })
+})
+
 const POSTERS_FIXTURE = {
   posters: [
     { file_path: '/main.jpg', iso_639_1: 'en' },

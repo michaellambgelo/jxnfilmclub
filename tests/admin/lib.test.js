@@ -3,6 +3,7 @@ import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText,
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
+  buildPosterBlockHtml, buildPosterBlockText,
 } from '../../admin/lib.js'
 
 afterEach(() => {
@@ -227,5 +228,44 @@ describe('buildEventsSectionText', () => {
     expect(text).toContain('See all events: https://jxnfilm.club/events')
     expect(text).not.toContain('Secret St')
     expect(text).not.toContain('Gate code')
+  })
+})
+
+describe('buildPosterBlockHtml / buildPosterBlockText', () => {
+  const block = {
+    poster: 'https://image.tmdb.org/t/p/w500/x.jpg',
+    link: 'https://jxnfilm.club/events',
+    title: 'Halloween', year: '1978',
+  }
+
+  it('wraps the poster and caption in the link when one is given', () => {
+    const html = buildPosterBlockHtml(block)
+    expect(html).toContain('<a href="https://jxnfilm.club/events"')
+    expect(html).toContain('src="https://image.tmdb.org/t/p/w500/x.jpg"')
+    expect(html).toContain('alt="Halloween (1978) poster"')
+    expect(html).toContain('Halloween (1978)')
+  })
+
+  it('renders an unlinked poster when no link is given', () => {
+    const html = buildPosterBlockHtml({ ...block, link: '' })
+    expect(html).not.toContain('<a ')
+    expect(html).toContain('src="https://image.tmdb.org/t/p/w500/x.jpg"')
+  })
+
+  it('escapes attacker-controlled title and link values', () => {
+    const html = buildPosterBlockHtml({
+      poster: 'https://image.tmdb.org/t/p/w500/x.jpg',
+      link: 'https://x.example/"onmouseover="a',
+      title: '<script>alert(1)</script>', year: '',
+    })
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('https://x.example/&quot;onmouseover=&quot;a')
+  })
+
+  it('text fallback is "caption: link", degrading when parts are missing', () => {
+    expect(buildPosterBlockText(block)).toBe('Halloween (1978): https://jxnfilm.club/events')
+    expect(buildPosterBlockText({ ...block, link: '' })).toBe('Halloween (1978)')
+    expect(buildPosterBlockText({ link: 'https://x.example', title: '', year: '' })).toBe('https://x.example')
   })
 })

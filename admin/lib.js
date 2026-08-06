@@ -87,6 +87,39 @@ export function buildWatchedSectionText(entries) {
   return `Latest from members on Letterboxd:\n${lines.join('\n')}\n\nSee all member activity: https://jxnfilm.club/watched`
 }
 
+// Email-safe standalone poster block for the newsletter composer: one
+// centered TMDB poster in the same white-card shell as the sections below,
+// optionally wrapped in a link the admin supplies (event page, Letterboxd,
+// tickets — anything).
+export function buildPosterBlockHtml({ poster, link, title, year }) {
+  const caption = `${title || ''}${year ? ` (${year})` : ''}`
+  const img = `<img src="${attr(poster)}" width="220" alt="${attr(caption ? caption + ' poster' : 'poster')}" style="display:block;border:0;border-radius:4px;max-width:100%">`
+  const inner = link
+    ? `<a href="${attr(link)}" style="text-decoration:none">${img}</a>`
+    : img
+  const captionHtml = caption
+    ? `<p style="margin:10px 0 0;font-size:14px;color:#6b675f">${link
+        ? `<a href="${attr(link)}" style="color:#d7321f;text-decoration:none">${escapeHtml(caption)}</a>`
+        : escapeHtml(caption)}</p>`
+    : ''
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td align="center" style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          ${inner}${captionHtml}
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+}
+
+export function buildPosterBlockText({ link, title, year }) {
+  const caption = `${title || ''}${year ? ` (${year})` : ''}`.trim()
+  return link ? (caption ? `${caption}: ${link}` : link) : caption
+}
+
 // '19:30' -> '7:30 pm'. Port of the worker's fmtTime; empty-safe.
 export function fmtShowtime(hhmm) {
   if (typeof hhmm !== 'string' || !/^\d{2}:\d{2}$/.test(hhmm)) return ''

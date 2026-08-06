@@ -140,6 +140,7 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
+    if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
 
@@ -1641,6 +1642,21 @@ function validScreeningInput(body) {
 async function handleTmdbSearch(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  return tmdbSearchResponse(request, env)
+}
+
+// GET /admin/tmdb/search — bearer-auth with ADMIN_TOKEN (same gate as the
+// other /admin routes). Backs the admin newsletter composer's poster picker;
+// same proxy body as the member route so the TMDB key stays a Worker secret.
+async function handleAdminTmdbSearch(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  return tmdbSearchResponse(request, env)
+}
+
+async function tmdbSearchResponse(request, env) {
   const q = (new URL(request.url).searchParams.get('q') || '').trim()
   if (!q) return json(env, { results: [] })
   if (env.E2E_MODE === 'true') {

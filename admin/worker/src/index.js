@@ -177,6 +177,28 @@ async function proxyJoinAdmin(request, env, q, adminPath) {
   return json(workerRes.status, data)
 }
 
+// GET /api/tmdb/search?env=&q= — proxy the join Worker's admin-gated TMDB
+// poster search over the service binding. The TMDB key stays a join-Worker
+// secret; the admin token stays server-side here.
+async function handleTmdbProxy(env, q) {
+  if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+  const staging = q.env === 'staging'
+  const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
+  const token = staging ? (env.ADMIN_TOKEN_STAGING || env.ADMIN_TOKEN) : env.ADMIN_TOKEN
+  if (!token) {
+    const name = staging ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+    throw new HttpError(400, `set the ${name} secret on the admin worker before searching`)
+  }
+  const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+  const workerRes = await service.fetch(
+    `${origin}/admin/tmdb/search?${new URLSearchParams({ q: q.q || '' })}`,
+    { headers: { Authorization: `Bearer ${token}` } })
+  const text = await workerRes.text()
+  let data
+  try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+  return json(workerRes.status, data)
+}
+
 // GET /api/watched?env= — proxy the join Worker's public /watched endpoint
 // over the service binding. The join Worker's CORS allowlist only names the
 // public site origin, so the admin UI can't fetch it directly; the binding
@@ -213,6 +235,10 @@ async function handle(request, env, access) {
   // GET /api/watched?env=  → handle-keyed map of recent member diary entries
   if (method === 'GET' && url.pathname === '/api/watched') {
     return handleWatchedProxy(env, q)
+  }
+  // GET /api/tmdb/search?env=&q=  → { results } for the newsletter poster picker
+  if (method === 'GET' && url.pathname === '/api/tmdb/search') {
+    return handleTmdbProxy(env, q)
   }
   // GET /api/kv?env=&binding=&prefix=  → { keys, values }
   if (method === 'GET' && url.pathname === '/api/kv') {

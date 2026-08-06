@@ -37,7 +37,7 @@ NEWSLETTER_POSTAL_ADDRESS = "Jackson Film Club, 4420 Ridgewood Rd, Jackson, MS 3
 #   GITHUB_TOKEN      - fine-grained PAT, Contents: Write on jxnfilmclub
 #   RESEND_API_KEY    - Resend.com API key (free tier: 3k/mo)
 #   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
-#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send + /admin/scrub + /admin/member/unlink
+#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send + /admin/scrub + /admin/member/unlink + GET /admin/tmdb/search
 
 # Daily privacy scrub (scrubPastEvents): 30 days after a screening, delete its
 # rsvp:{id} record (attendee emails) and strip address/notes off event:{id}.

@@ -214,6 +214,17 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   background: #fff;
 }
 .nl-compose .toolbar input[type="email"] { max-width: 260px }
+.nl-poster-bar { margin-top: 0.5rem }
+.nl-poster-bar input[type="text"] { max-width: 220px }
+.nl-poster-bar input[type="url"] { max-width: 340px }
+.nl-poster-results { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem }
+.nl-poster-thumb {
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  width: 104px; padding: 0.4rem; font-size: 0.75rem; line-height: 1.2;
+  text-align: center; cursor: pointer;
+}
+.nl-poster-thumb img { width: 92px; height: 138px; object-fit: cover; border-radius: 3px; display: block }
+.nl-poster-thumb span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical }
 @media (max-width: 760px) { .nl-body { grid-template-columns: 1fr } }
 
 .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem }

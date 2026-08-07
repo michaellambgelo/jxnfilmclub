@@ -89,6 +89,36 @@
       "year": "2006"
     }
   ],
+  "calissippi": [
+    {
+      "link": "https://letterboxd.com/calissippi/film/the-goonies/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/2/5/4/47254-the-goonies-0-600-0-900-crop.jpg?v=fc8eb0611b",
+      "title": "The Goonies",
+      "watched_date": "2026-07-31",
+      "year": "1985"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/spider-man-brand-new-day/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
+      "title": "Spider-Man: Brand New Day",
+      "watched_date": "2026-07-30",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/inside-out-2015/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/8/4/113284-inside-out-0-600-0-900-crop.jpg?v=de03b9b6ef",
+      "title": "Inside Out",
+      "watched_date": "2026-07-30",
+      "year": "2015"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/spider-man-no-way-home/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/0/7/8/7/560787-spider-man-no-way-home-0-600-0-900-crop.jpg?v=a336d4f40c",
+      "title": "Spider-Man: No Way Home",
+      "watched_date": "2026-07-29",
+      "year": "2021"
+    }
+  ],
   "heath_walt": [
     {
       "link": "https://letterboxd.com/heath_walt/film/cape-fear-1991/",

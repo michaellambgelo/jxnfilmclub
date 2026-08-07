@@ -92,6 +92,8 @@ describe('buildSocialCopy content', () => {
 })
 
 describe('buildRoundupData', () => {
+  // Anchor the 7-day window so these tests never age out.
+  const TODAY = { today: '2026-08-07' }
   const watchedMap = {
     michaellamb: [
       { title: 'Chungking Express', year: '1994', link: 'https://boxd.it/a', poster: 'https://a.ltrbxd.com/p1.jpg', watched_date: '2026-08-05' },
@@ -105,7 +107,7 @@ describe('buildRoundupData', () => {
   }
 
   it('aggregates with zero member attribution', () => {
-    const { films } = buildRoundupData(watchedMap)
+    const { films } = buildRoundupData(watchedMap, TODAY)
     for (const f of films) {
       expect(Object.keys(f).every(k => ['title', 'year', 'link', 'poster', 'watched_date'].includes(k))).toBe(true)
     }
@@ -114,17 +116,37 @@ describe('buildRoundupData', () => {
   })
 
   it('dedupes by title+year, counts all entries in total, sorts newest-first', () => {
-    const { films, total } = buildRoundupData(watchedMap)
+    const { films, total } = buildRoundupData(watchedMap, TODAY)
     expect(total).toBe(4)
     expect(films).toHaveLength(3)
     expect(films[0].watched_date).toBe('2026-08-06')
     expect(films.map(f => f.title.toLowerCase())).toEqual(['chungking express', 'stalker', 'paris, texas'])
   })
 
+  it('windows to the last 7 days inclusive and drops undated entries', () => {
+    const map = {
+      someone: [
+        { title: 'In Window Edge', watched_date: '2026-08-01' },   // cutoff day — included
+        { title: 'Too Old', watched_date: '2026-07-31' },          // 8 days back — excluded
+        { title: 'Ancient', watched_date: '2026-07-01' },
+        { title: 'No Date At All' },                               // unverifiable — excluded
+      ],
+    }
+    const { films, total } = buildRoundupData(map, TODAY)
+    expect(films.map(f => f.title)).toEqual(['In Window Edge'])
+    expect(total).toBe(1)
+  })
+
+  it('honors a custom window length', () => {
+    const map = { someone: [{ title: 'Old But Wanted', watched_date: '2026-07-15' }] }
+    expect(buildRoundupData(map, TODAY).films).toHaveLength(0)
+    expect(buildRoundupData(map, { ...TODAY, days: 30 }).films).toHaveLength(1)
+  })
+
   it('respects limit and tolerates empty/absent input', () => {
-    expect(buildRoundupData(watchedMap, { limit: 1 }).films).toHaveLength(1)
-    expect(buildRoundupData(null)).toEqual({ films: [], total: 0 })
-    expect(buildRoundupData({})).toEqual({ films: [], total: 0 })
+    expect(buildRoundupData(watchedMap, { ...TODAY, limit: 1 }).films).toHaveLength(1)
+    expect(buildRoundupData(null, TODAY)).toEqual({ films: [], total: 0 })
+    expect(buildRoundupData({}, TODAY)).toEqual({ films: [], total: 0 })
   })
 })
 
@@ -152,7 +174,7 @@ describe('roundup copy', () => {
   it('lists all films with the logged total on facebook', () => {
     const text = buildSocialCopy('roundup', 'facebook', { films, total: 14 })
     expect(text).toContain('Chungking Express (1994)')
-    expect(text).toContain('14 films logged by members recently')
+    expect(text).toContain('14 films logged by members in the last week')
   })
 })
 

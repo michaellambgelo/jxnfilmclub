@@ -272,9 +272,9 @@ export function buildSocialCopy(kind, platform, data = {}) {
 
 function roundupCopy(platform, { films = [], total = 0 } = {}) {
   const names = films.map(f => f.title + (f.year ? ` (${f.year})` : ''))
-  // "recently", not "this week" — /watched serves each member's last four
-  // diary entries regardless of date, so a weekly claim could overstate.
-  const logged = `${total} film${total === 1 ? '' : 's'} logged by members recently.`
+  // buildRoundupData windows entries to the last 7 days, so the weekly
+  // claim is accurate.
+  const logged = `${total} film${total === 1 ? '' : 's'} logged by members in the last week.`
   if (platform === 'instagram') {
     return `📽️ WHAT THE CLUB IS WATCHING\n\n${names.join('\n')}\n\n${logged} Follow along at the link in bio.\n\n${IG_TAGS}`
   }
@@ -284,7 +284,7 @@ function roundupCopy(platform, { films = [], total = 0 } = {}) {
   if (platform === 'bluesky' || platform === 'x') {
     const limit = PLATFORM_LIMITS[platform]
     let list = names.join(' · ')
-    const wrap = (l) => `📽️ Recently watched by the club: ${l}\n\n${WATCHED_URL}`
+    const wrap = (l) => `📽️ Watched by the club this week: ${l}\n\n${WATCHED_URL}`
     let used = names.length
     while (used > 1 && wrap(list).length > limit) {
       used--
@@ -299,13 +299,26 @@ function roundupCopy(platform, { films = [], total = 0 } = {}) {
 // Aggregate a /watched handle-keyed map into public-safe roundup data.
 // Member identity is dropped HERE — nothing downstream ever sees a handle
 // or name. Films watched by several members appear once; `total` counts the
-// underlying diary entries. watched_date is a bare YYYY-MM-DD — sorted as
-// strings, never Dates.
-export function buildRoundupData(watchedMap, { limit = 8 } = {}) {
+// underlying diary entries. watched_date is a bare YYYY-MM-DD — sorted and
+// compared as strings, never Dates.
+//
+// Windowed to the last `days` calendar days (default 7, Central time,
+// inclusive of today) so the copy's weekly claim is honest — /watched serves
+// each member's last-four entries regardless of age. Undated entries are
+// dropped: recency can't be verified, and this feeds public posts.
+export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}) {
+  const ref = /^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))
+    ? today
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+  // Parse + reformat in the same (local) frame, so the day never shifts.
+  const cut = new Date(ref + 'T00:00:00')
+  cut.setDate(cut.getDate() - (days - 1))
+  const cutoff = cut.toLocaleDateString('en-CA')
+
   const entries = []
   for (const films of Object.values(watchedMap || {})) {
     for (const f of (films || [])) {
-      if (f && f.title) entries.push(f)
+      if (f && f.title && f.watched_date && String(f.watched_date) >= cutoff) entries.push(f)
     }
   }
   entries.sort((a, b) => String(b.watched_date || '').localeCompare(String(a.watched_date || '')))

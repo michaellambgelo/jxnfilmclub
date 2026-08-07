@@ -370,7 +370,7 @@ async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
 
   c.font = `500 ${Math.round(W * 0.026)}px ${LABEL}`
   c.fillStyle = PAPER_2
-  c.fillText(`${total} film${total === 1 ? '' : 's'} logged by members recently`, pad, ty)
+  c.fillText(`${total} film${total === 1 ? '' : 's'} logged by members in the last week`, pad, ty)
 
   footer(c, W, H, pad, 'jxnfilm.club/watched')
 }
@@ -436,11 +436,12 @@ export async function renderContentGen(context) {
   if (!cg.events.some(e => e.id === cg.eventId)) cg.eventId = cg.events[0]?.id || null
 
   const isEventKind = cg.kind !== 'roundup'
+  const roundupEmpty = !isEventKind && !(cg.roundup && cg.roundup.films.length)
   ctx.content().innerHTML = `
     <h2>Content Gen</h2>
     <p class="section-hint">Social media copy + downloadable cards from live ${escapeHtml(ctx.env())} data.
       Output is public-safe by construction: host addresses/notes never leave KV, and member watches
-      are aggregated — film titles and posters only, no names or handles.</p>
+      are aggregated over the last 7 days — film titles and posters only, no names or handles.</p>
 
     <section class="cg-controls">
       <label>Post type
@@ -459,7 +460,8 @@ export async function renderContentGen(context) {
       </label>`}
     </section>
 
-    ${!cg.events.length && isEventKind ? '<p class="empty">No events in KV — create one on the Events tab first.</p>' : `
+    ${roundupEmpty ? '<p class="empty">No member watches logged in the last 7 days — nothing to round up.</p>'
+      : !cg.events.length && isEventKind ? '<p class="empty">No events in KV — create one on the Events tab first.</p>' : `
     <div class="cg-body">
       <section class="cg-graphic">
         <h3>Card</h3>
@@ -517,7 +519,7 @@ export async function renderContentGen(context) {
     }, 'image/png')
   })
 
-  if (cg.events.length || !isEventKind) {
+  if ((isEventKind && cg.events.length) || (!isEventKind && !roundupEmpty)) {
     renderCopyPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }

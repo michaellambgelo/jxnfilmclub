@@ -176,10 +176,11 @@ test.describe('admin dashboard', () => {
     await expect(canvas).toHaveAttribute('width', '1200')
     await expect(page.getByRole('button', { name: 'Download PNG' })).toBeVisible()
 
-    // Roundup mode swaps the event picker for the collage-size control
-    // (E2E_MODE /watched is empty — the tab must still render).
+    // Roundup mode swaps the event picker for the collage-size control.
+    // E2E_MODE /watched is empty → the 7-day window has nothing, so the tab
+    // shows the empty state instead of generating a hollow post.
     await page.locator('#cg-kind').selectOption('roundup')
     await expect(page.locator('#cg-limit')).toBeVisible()
-    await expect(page.locator('.cg-copy-card[data-platform="discord"] textarea')).toHaveValue(/What the club is watching/)
+    await expect(page.locator('#content .empty')).toHaveText(/No member watches logged in the last 7 days/)
   })
 })

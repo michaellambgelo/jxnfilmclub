@@ -170,13 +170,16 @@ function label(c, text, x, y, px, color = BRAND) {
   c.letterSpacing = '0px'
 }
 
-function footer(c, W, H, pad, url) {
+// `x` defaults to the bottom padding; pass it separately when the footer
+// belongs to a side panel rather than the card's left edge.
+function footer(c, W, H, pad, url, x = pad) {
   c.fillStyle = BRAND
-  c.fillRect(pad, H - pad - 6, Math.round(W * 0.075), 6)
+  c.fillRect(x, H - pad - 6, Math.round(W * 0.075), 6)
   c.font = `500 ${Math.round(W * 0.024)}px ${LABEL}`
   c.letterSpacing = '2px'
   c.fillStyle = PAPER_4
-  c.fillText(url.toUpperCase(), pad, H - pad - 22)
+  c.textBaseline = 'alphabetic'
+  c.fillText(url.toUpperCase(), x, H - pad - 22)
   c.letterSpacing = '0px'
 }
 
@@ -323,56 +326,101 @@ async function drawRecapCard(c, W, H, event, count) {
   footer(c, W, H, pad, 'jxnfilm.club/events')
 }
 
+// Aspect-correct poster wall: 2:3 tiles with gutters and rounded corners,
+// grid centered in its area, incomplete last row centered. Posters are
+// natively 2:3, so drawCover here is a near-no-op crop — no more chopped
+// heads from arbitrary cell shapes.
+function drawPosterWall(c, posters, area) {
+  const n = posters.length
+  if (!n) return
+  const g = Math.max(10, Math.round(area.w * 0.018))
+  // Pick the column count that yields the biggest tiles that still fit.
+  let best = null
+  for (let cols = 1; cols <= Math.min(n, 4); cols++) {
+    const rows = Math.ceil(n / cols)
+    let tw = (area.w - g * (cols + 1)) / cols
+    const fit = (area.h - g * (rows + 1)) / (rows * tw * 1.5)
+    if (fit < 1) tw *= fit
+    if (!best || tw > best.tw) best = { cols, rows, tw }
+  }
+  const { cols, rows, tw } = best
+  const th = tw * 1.5
+  const gridH = rows * th + g * (rows - 1)
+  const y0 = area.y + (area.h - gridH) / 2
+  let i = 0
+  for (let r = 0; r < rows; r++) {
+    const inRow = Math.min(cols, n - r * cols)
+    const rowW = inRow * tw + g * (inRow - 1)
+    let x = area.x + (area.w - rowW) / 2
+    const y = y0 + r * (th + g)
+    for (let k = 0; k < inRow; k++, i++) {
+      c.save()
+      if (c.roundRect) {
+        c.beginPath()
+        c.roundRect(x, y, tw, th, Math.round(tw * 0.035))
+        c.clip()
+      }
+      c.fillStyle = SURFACE
+      c.fillRect(x, y, tw, th)
+      drawCover(c, posters[i], x, y, tw, th)
+      c.restore()
+      x += tw + g
+    }
+  }
+}
+
 async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
   const pad = Math.round(W * 0.065)
+  const landscape = W > H
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
 
-  const posters = (await Promise.all(films.map(f => loadImage(f.poster)))).filter(Boolean)
-  const bandH = Math.round(H * (H > W ? 0.3 : 0.38))
-  const gridH = H - bandH
+  const posters = (await Promise.all(films.map(f => loadImage(f.poster)))).filter(Boolean).slice(0, 8)
 
-  if (posters.length) {
-    const tall = H > W * 1.2
-    const n = Math.min(posters.length, 8)
-    const cols = tall ? 2 : n >= 6 ? Math.min(4, n) : n >= 4 ? 2 : n
-    const rows = Math.ceil(n / cols)
-    const cw = W / cols
-    const ch = gridH / rows
-    for (let i = 0; i < n; i++) {
-      const gx = (i % cols) * cw
-      const gy = Math.floor(i / cols) * ch
-      c.fillStyle = SURFACE
-      c.fillRect(gx, gy, Math.ceil(cw), Math.ceil(ch))
-      drawCover(c, posters[i], gx, gy, Math.ceil(cw), Math.ceil(ch))
-    }
-    const fade = c.createLinearGradient(0, gridH - 120, 0, gridH)
-    fade.addColorStop(0, 'rgba(16,15,14,0)')
-    fade.addColorStop(1, 'rgba(16,15,14,1)')
-    c.fillStyle = fade
-    c.fillRect(0, gridH - 120, W, 120)
+  // Landscape: wall fills the left, text panel on the right (footer inside
+  // the panel). Portrait/square: wall on top, text centered below, footer
+  // bottom-left as on the other cards.
+  const tall = H >= W * 1.5   // story-shaped: give the wall more room, scale type up
+  let wall, text, footX
+  if (landscape) {
+    const panelW = Math.round(W * 0.42)
+    wall = { x: 0, y: 0, w: W - panelW, h: H }
+    text = { x: W - panelW + Math.round(pad * 0.4), y: 0, w: panelW - Math.round(pad * 0.4) - pad, h: H - Math.round(H * 0.14) }
+    footX = text.x
+  } else {
+    const wallH = Math.round(H * (tall ? 0.68 : 0.62))
+    wall = { x: 0, y: 0, w: W, h: wallH }
+    text = { x: pad, y: wallH, w: W - pad * 2, h: H - wallH - Math.round(H * 0.09) }
+    footX = pad
   }
+  if (posters.length) drawPosterWall(c, posters, wall)
+  else if (!landscape) text = { x: pad, y: 0, w: W - pad * 2, h: H - Math.round(H * 0.09) }
 
-  let ty = gridH + Math.round(bandH * 0.16)
-  c.textBaseline = 'top'
-  label(c, 'Jackson Film Club', pad, ty, Math.round(W * 0.019))
-  ty += Math.round(W * 0.022)
-
-  let hPx = Math.round(W * 0.052)
+  // Measure the text block, then center it vertically in its area.
+  const labelPx = Math.round(W * (landscape ? 0.016 : tall ? 0.023 : 0.019))
+  const hPx = Math.round(W * (landscape ? 0.036 : tall ? 0.064 : 0.052))
+  const countPx = Math.round(W * (landscape ? 0.019 : tall ? 0.031 : 0.026))
   c.font = `800 ${hPx}px ${DISPLAY}`
-  let lines = wrapText(c, 'What the club is watching', W - pad * 2)
+  const lines = wrapText(c, 'What the club is watching', text.w)
+  const gap = Math.round(hPx * 0.55)
+  const blockH = labelPx + gap + lines.length * Math.round(hPx * 1.12) + gap + countPx
+  let ty = text.y + Math.max(0, Math.round((text.h - blockH) / 2))
+
+  c.textBaseline = 'top'
+  label(c, 'Jackson Film Club', text.x, ty, labelPx)
+  ty += labelPx + gap
+  c.font = `800 ${hPx}px ${DISPLAY}`
   c.fillStyle = PAPER
   for (const line of lines) {
-    c.fillText(line, pad, ty)
+    c.fillText(line, text.x, ty)
     ty += Math.round(hPx * 1.12)
   }
-  ty += Math.round(hPx * 0.35)
-
-  c.font = `500 ${Math.round(W * 0.026)}px ${LABEL}`
+  ty += gap
+  c.font = `500 ${countPx}px ${LABEL}`
   c.fillStyle = PAPER_2
-  c.fillText(`${total} film${total === 1 ? '' : 's'} logged by members in the last week`, pad, ty)
+  c.fillText(`${total} film${total === 1 ? '' : 's'} logged by members in the last week`, text.x, ty)
 
-  footer(c, W, H, pad, 'jxnfilm.club/watched')
+  footer(c, W, H, pad, 'jxnfilm.club/watched', footX)
 }
 
 async function renderCanvas() {
@@ -524,3 +572,7 @@ export async function renderContentGen(context) {
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
 }
+
+// Exported for the headless visual-QA harness and future tests; admin.js
+// only uses renderContentGen.
+export { loadFonts, drawEventCard, drawRecapCard, drawRoundupCard }

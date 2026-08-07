@@ -140,4 +140,46 @@ test.describe('admin dashboard', () => {
 
     await expect.poll(() => getKv(page, key)).toBeNull()
   })
+
+  test('content gen builds copy + canvas from an event; private fields never render', async ({ page }) => {
+    // Hosted event with the private fields that must never reach social output.
+    const ev = {
+      id: 'cg-e2e-screening', title: 'CG Test Night', film: 'Sherlock Jr.',
+      year: 1924, date: '2030-01-15', time: '19:30', venue: 'The Parlor',
+      hostId: 'id-host', hostName: 'Hosty',
+      address: '456 Hidden Lane', notes: 'gate code 9999',
+    }
+    const res = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${ev.id}`, value: JSON.stringify(ev) },
+    })
+    expect(res.ok()).toBeTruthy()
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+
+    // Copy panel: one card per platform, populated from the event.
+    await expect(page.locator('.cg-copy-card')).toHaveCount(5)
+    const fb = page.locator('.cg-copy-card[data-platform="facebook"] textarea')
+    await expect(fb).toHaveValue(/Sherlock Jr\. \(1924\)/)
+    await expect(fb).toHaveValue(/The Parlor/)
+
+    // Private fields are nowhere in the rendered tab.
+    const html = await page.locator('#content').innerHTML()
+    expect(html).not.toContain('Hidden Lane')
+    expect(html).not.toContain('9999')
+
+    // Canvas renders at the selected size and follows the size switcher.
+    const canvas = page.locator('#cg-canvas')
+    await expect(canvas).toBeVisible()
+    await expect(canvas).toHaveAttribute('width', '1080')
+    await page.locator('.cg-size[data-size="fb"]').click()
+    await expect(canvas).toHaveAttribute('width', '1200')
+    await expect(page.getByRole('button', { name: 'Download PNG' })).toBeVisible()
+
+    // Roundup mode swaps the event picker for the collage-size control
+    // (E2E_MODE /watched is empty — the tab must still render).
+    await page.locator('#cg-kind').selectOption('roundup')
+    await expect(page.locator('#cg-limit')).toBeVisible()
+    await expect(page.locator('.cg-copy-card[data-platform="discord"] textarea')).toHaveValue(/What the club is watching/)
+  })
 })

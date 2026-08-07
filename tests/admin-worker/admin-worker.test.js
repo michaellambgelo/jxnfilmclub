@@ -101,7 +101,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -132,6 +132,11 @@ describe('access gate', () => {
     expect(lib.status).toBe(200)
     expect(lib.headers.get('Content-Type')).toContain('javascript')
     expect(await lib.text()).toContain('buildWatchedSectionHtml')
+
+    const cgen = await call('/contentgen.js', { token: await signToken() })
+    expect(cgen.status).toBe(200)
+    expect(cgen.headers.get('Content-Type')).toContain('javascript')
+    expect(await cgen.text()).toContain('renderContentGen')
   })
 
   it('whoami reflects the verified JWT email', async () => {
@@ -402,5 +407,60 @@ describe('routing fallthrough', () => {
     })
     expect(res.status).toBe(405)
     expect((await res.json()).error).toBe('method not allowed')
+  })
+})
+
+// --- /api/img: same-origin image proxy for Content Gen canvas rendering ---
+
+describe('/api/img', () => {
+  const imgUrl = (u) => `/api/img?url=${encodeURIComponent(u)}`
+
+  it('proxies an allowlisted https image with its content type', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/cdn-cgi/access/certs')) return Response.json({ keys: [publicJwk] })
+      if (String(url) === 'https://image.tmdb.org/t/p/w500/poster.jpg') {
+        return new Response(bytes, { headers: { 'Content-Type': 'image/jpeg' } })
+      }
+      return new Response('unexpected', { status: 500 })
+    })
+    const res = await call(imgUrl('https://image.tmdb.org/t/p/w500/poster.jpg'), { token: await signToken() })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/jpeg')
+    expect(res.headers.get('Cache-Control')).toContain('max-age=3600')
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes)
+  })
+
+  it('403s a non-allowlisted host and non-https schemes', async () => {
+    for (const bad of ['https://evil.example.com/x.jpg', 'http://image.tmdb.org/x.jpg']) {
+      const res = await call(imgUrl(bad), { token: await signToken() })
+      expect(res.status, bad).toBe(403)
+    }
+  })
+
+  it('400s a malformed url', async () => {
+    const res = await call(imgUrl('not a url'), { token: await signToken() })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid url')
+  })
+
+  it('502s a non-image upstream response', async () => {
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/cdn-cgi/access/certs')) return Response.json({ keys: [publicJwk] })
+      return new Response('<html>not an image</html>', { headers: { 'Content-Type': 'text/html' } })
+    })
+    const res = await call(imgUrl('https://image.tmdb.org/x.jpg'), { token: await signToken() })
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toContain('not an image')
+  })
+
+  it('502s an upstream error status', async () => {
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/cdn-cgi/access/certs')) return Response.json({ keys: [publicJwk] })
+      return new Response('nope', { status: 404 })
+    })
+    const res = await call(imgUrl('https://a.ltrbxd.com/gone.jpg'), { token: await signToken() })
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toContain('image fetch failed: 404')
   })
 })

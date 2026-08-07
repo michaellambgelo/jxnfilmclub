@@ -332,6 +332,24 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = {} }
     return json(res, workerRes.status, data)
   }
+  // GET /api/img?url=  → proxied image bytes for Content Gen canvas
+  // rendering (same-origin, so the canvas isn't CORS-tainted). Mirrors the
+  // hosted admin worker's allowlist — keep the two in sync.
+  if (method === 'GET' && url.pathname === '/api/img') {
+    const IMG_PROXY_HOSTS = new Set(['image.tmdb.org', 'a.ltrbxd.com', 's.ltrbxd.com', 'jxnfilm.club'])
+    let target
+    try { target = new URL(q.url) } catch { throw new HttpError(400, 'invalid url') }
+    if (target.protocol !== 'https:' || !IMG_PROXY_HOSTS.has(target.hostname)) {
+      throw new HttpError(403, `host not allowed: ${target.hostname || '(none)'}`)
+    }
+    const imgRes = await fetch(target.href)
+    if (!imgRes.ok) throw new HttpError(502, `image fetch failed: ${imgRes.status}`)
+    const type = imgRes.headers.get('content-type') || ''
+    if (!type.startsWith('image/')) throw new HttpError(502, `not an image: ${type || '(no content-type)'}`)
+    const buf = Buffer.from(await imgRes.arrayBuffer())
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600', 'Content-Length': buf.length })
+    return res.end(buf)
+  }
   // Lightweight liveness probe. In E2E mode skip the wrangler subprocess —
   // there's no Cloudflare auth involved and each spawn costs ~1s per page load.
   if (method === 'GET' && url.pathname === '/api/whoami') {

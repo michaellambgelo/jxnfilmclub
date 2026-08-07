@@ -83,6 +83,7 @@ which remains what actually gets sent. Scripts never execute in the preview
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
 | **Rate limits** | All `rate:*` counters; lockouts (≥5) are highlighted | delete a counter to unblock a user |
 | **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
+| **Content Gen** | Social media content built from live KV data: per-platform copy (Instagram / Facebook / Discord / Bluesky / X, with character counters against each platform's limit) and canvas-rendered PNG cards (IG post/story, FB, Bluesky/X sizes) in the Night Shift brand. Post types: event announcement / week-of / day-of reminders (event pick), post-event recap (`attend:{id}` count), member-watches roundup (`GET /api/watched` poster collage). Public-safe by construction: events pass through `socialEventView` (no address/notes/capacity) and watches through `buildRoundupData` (film titles/posters only — zero member names or handles). Poster images load via the same-origin `GET /api/img` proxy (https-only host allowlist) so the canvas stays untainted and PNG export works. | read-only against KV — output is copy-to-clipboard text + downloaded PNGs |
 
 ## What it does NOT do
 

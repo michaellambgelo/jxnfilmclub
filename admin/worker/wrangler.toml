@@ -18,7 +18,7 @@ preview_urls = false
 # so every byte is served from behind the JWT gate (Workers Assets would be
 # served before the Worker runs).
 rules = [
-  { type = "Text", globs = ["**/*.html", "**/*.css", "**/admin.js", "**/lib.js"], fallthrough = true }
+  { type = "Text", globs = ["**/*.html", "**/*.css", "**/admin.js", "**/lib.js", "**/contentgen.js"], fallthrough = true }
 ]
 
 # All four KV namespaces (ids match worker/wrangler.toml) — the portal has a

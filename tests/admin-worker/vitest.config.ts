@@ -9,7 +9,8 @@ const SUFFIX = '.wrangler-module'
 const isText = (id: string) =>
   id.endsWith('.html') || id.endsWith('.css') ||
   id.endsWith('/admin.js') || id === 'admin.js' ||
-  id.endsWith('/lib.js') || id === 'lib.js'
+  id.endsWith('/lib.js') || id === 'lib.js' ||
+  id.endsWith('/contentgen.js') || id === 'contentgen.js'
 
 const moduleRulesPlugin = {
   name: 'wrangler-module-rules',

@@ -17,6 +17,7 @@
 import indexHtml from '../../index.html'
 import adminJs from '../../admin.js'
 import libJs from '../../lib.js'
+import contentgenJs from '../../contentgen.js'
 import styleCss from '../../style.css'
 
 const VALID_ENVS = new Set(['production', 'staging'])
@@ -215,6 +216,32 @@ async function handleWatchedProxy(env, q) {
   return json(workerRes.status, data)
 }
 
+// GET /api/img?url= — same-origin image proxy for the Content Gen tab's
+// canvas rendering (a cross-origin poster drawn into a canvas taints it and
+// blocks PNG export). Https-only + strict host allowlist so this is never an
+// open proxy, on top of the Access gate every route already sits behind.
+export const IMG_PROXY_HOSTS = new Set([
+  'image.tmdb.org',   // TMDB posters (event poster URLs, poster search)
+  'a.ltrbxd.com',     // Letterboxd CDN (RSS diary-entry posters)
+  's.ltrbxd.com',     // Letterboxd static assets
+  'jxnfilm.club',     // club logo / site imagery
+])
+
+async function handleImgProxy(q) {
+  let target
+  try { target = new URL(q.url) } catch { throw new HttpError(400, 'invalid url') }
+  if (target.protocol !== 'https:' || !IMG_PROXY_HOSTS.has(target.hostname)) {
+    throw new HttpError(403, `host not allowed: ${target.hostname || '(none)'}`)
+  }
+  const res = await fetch(target.href, { cf: { cacheEverything: true, cacheTtl: 3600 } })
+  if (!res.ok) throw new HttpError(502, `image fetch failed: ${res.status}`)
+  const type = res.headers.get('Content-Type') || ''
+  if (!type.startsWith('image/')) throw new HttpError(502, `not an image: ${type || '(no content-type)'}`)
+  return new Response(res.body, {
+    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' },
+  })
+}
+
 // --- Static files (Text module imports; nothing else ships) ---
 
 const STATIC = {
@@ -222,6 +249,7 @@ const STATIC = {
   '/index.html': [indexHtml, 'text/html; charset=utf-8'],
   '/admin.js': [adminJs, 'application/javascript; charset=utf-8'],
   '/lib.js': [libJs, 'application/javascript; charset=utf-8'],
+  '/contentgen.js': [contentgenJs, 'application/javascript; charset=utf-8'],
   '/style.css': [styleCss, 'text/css; charset=utf-8'],
 }
 
@@ -239,6 +267,10 @@ async function handle(request, env, access) {
   // GET /api/tmdb/search?env=&q=  → { results } for the newsletter poster picker
   if (method === 'GET' && url.pathname === '/api/tmdb/search') {
     return handleTmdbProxy(env, q)
+  }
+  // GET /api/img?url=  → proxied image bytes (Content Gen canvas source)
+  if (method === 'GET' && url.pathname === '/api/img') {
+    return handleImgProxy(q)
   }
   // GET /api/kv?env=&binding=&prefix=  → { keys, values }
   if (method === 'GET' && url.pathname === '/api/kv') {

@@ -168,6 +168,170 @@ export function buildEventsSectionHtml(events) {
 </table>`
 }
 
+// --- Content Gen (social media) builders ---
+//
+// Everything below is fed to PUBLIC social posts. Two hard rules, enforced
+// here at the source rather than in the UI:
+//   1. Events pass through socialEventView() — a house host's private
+//      `address`/`notes` (and `capacity`) can never reach generated content.
+//   2. Member watches pass through buildRoundupData() — aggregate only:
+//      film titles/posters survive, member names and handles do not.
+
+// Public-safe view of a canonical `event:` KV row for social content.
+// Mirrors the Worker's publicEventProjection field list, minus capacity.
+export function socialEventView(e) {
+  if (!e) return null
+  const out = {}
+  for (const k of ['id', 'title', 'film', 'year', 'date', 'venue', 'poster',
+                   'letterboxd_uri', 'hostName', 'hostId', 'kind', 'time']) {
+    if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
+  }
+  return out
+}
+
+// 'YYYY-MM-DD' -> 'Saturday, June 12'. Parses as a local calendar day (the
+// T00:00:00 suffix) so the day never shifts across timezones; anything that
+// isn't a bare date echoes back unchanged.
+export function fmtSocialDate(iso, { short = false } = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return String(iso || '')
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('en-US', short
+    ? { weekday: 'short', month: 'short', day: 'numeric' }
+    : { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
+// Post-length ceilings per platform; null = no practical limit.
+export const PLATFORM_LIMITS = {
+  instagram: null,
+  facebook: null,
+  discord: 2000,
+  bluesky: 300,
+  x: 280,
+}
+
+export const PLATFORM_LABELS = {
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  discord: 'Discord',
+  bluesky: 'Bluesky',
+  x: 'X',
+}
+
+const EVENTS_URL = 'https://jxnfilm.club/events'
+const WATCHED_URL = 'https://jxnfilm.club/watched'
+const IG_TAGS = '#JacksonFilmClub #JXN #FilmClub'
+
+// Shared phrasing pieces for an event, built from the public view only.
+function eventBits(event) {
+  const e = socialEventView(event) || {}
+  const name = e.film || e.title || ''
+  const titled = name + (e.year ? ` (${e.year})` : '')
+  const when = fmtSocialDate(e.date) + (e.time ? ` · ${fmtShowtime(e.time)}` : '')
+  const whenShort = fmtSocialDate(e.date, { short: true }) + (e.time ? ` · ${fmtShowtime(e.time)}` : '')
+  const venue = e.venue || (e.hostId ? 'a member-hosted screening' : '')
+  return { e, name, titled, when, whenShort, venue }
+}
+
+// kind: announce | weekof | dayof | recap | roundup
+// platform: instagram | facebook | discord | bluesky | x
+// data: { event?, count?, films?, total? } — count is the attendance count
+// for recaps; films/total come from buildRoundupData().
+export function buildSocialCopy(kind, platform, data = {}) {
+  if (kind === 'roundup') return roundupCopy(platform, data)
+  const { e, titled, when, whenShort, venue } = eventBits(data.event)
+  const lead = { announce: 'NEXT SCREENING', weekof: 'THIS WEEK', dayof: 'TONIGHT' }[kind]
+
+  if (kind === 'recap') {
+    const n = Number(data.count) || 0
+    const crowd = n > 0 ? `${n} of us came out${venue ? ` to ${venue}` : ''}. ` : ''
+    if (platform === 'instagram') {
+      return `🎬 That's a wrap on ${titled}. ${crowd}Thanks for watching with us — see what's next at the link in bio.\n\n${IG_TAGS}`
+    }
+    if (platform === 'discord') {
+      return `🎬 That's a wrap on **${titled}**. ${crowd}Thanks for watching with us!${e.letterboxd_uri ? `\n${e.letterboxd_uri}` : ''}`
+    }
+    if (platform === 'bluesky' || platform === 'x') {
+      return `🎬 That's a wrap on ${titled}. ${crowd}See what's next: ${EVENTS_URL}`
+    }
+    return `🎬 That's a wrap on ${titled}. ${crowd}Thanks for watching with us — see what's next: ${EVENTS_URL}`
+  }
+
+  // announce / weekof / dayof
+  if (platform === 'instagram') {
+    return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP at the link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `🎬 **${lead}: ${titled}**\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nRSVP: ${EVENTS_URL}${e.letterboxd_uri ? `\n${e.letterboxd_uri}` : ''}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    return `🎬 ${lead}: ${titled}\n📅 ${whenShort}${venue ? ` · ${venue}` : ''}\n\nRSVP: ${EVENTS_URL}`
+  }
+  // facebook
+  return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP and details: ${EVENTS_URL}`
+}
+
+function roundupCopy(platform, { films = [], total = 0 } = {}) {
+  const names = films.map(f => f.title + (f.year ? ` (${f.year})` : ''))
+  // "recently", not "this week" — /watched serves each member's last four
+  // diary entries regardless of date, so a weekly claim could overstate.
+  const logged = `${total} film${total === 1 ? '' : 's'} logged by members recently.`
+  if (platform === 'instagram') {
+    return `📽️ WHAT THE CLUB IS WATCHING\n\n${names.join('\n')}\n\n${logged} Follow along at the link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `📽️ **What the club is watching**\n${names.map(n => `- ${n}`).join('\n')}\n\n${logged} ${WATCHED_URL}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    const limit = PLATFORM_LIMITS[platform]
+    let list = names.join(' · ')
+    const wrap = (l) => `📽️ Recently watched by the club: ${l}\n\n${WATCHED_URL}`
+    let used = names.length
+    while (used > 1 && wrap(list).length > limit) {
+      used--
+      list = names.slice(0, used).join(' · ') + ` + ${names.length - used} more`
+    }
+    return wrap(list)
+  }
+  // facebook
+  return `📽️ What the club is watching\n\n${names.join('\n')}\n\n${logged} See all member activity: ${WATCHED_URL}`
+}
+
+// Aggregate a /watched handle-keyed map into public-safe roundup data.
+// Member identity is dropped HERE — nothing downstream ever sees a handle
+// or name. Films watched by several members appear once; `total` counts the
+// underlying diary entries. watched_date is a bare YYYY-MM-DD — sorted as
+// strings, never Dates.
+export function buildRoundupData(watchedMap, { limit = 8 } = {}) {
+  const entries = []
+  for (const films of Object.values(watchedMap || {})) {
+    for (const f of (films || [])) {
+      if (f && f.title) entries.push(f)
+    }
+  }
+  entries.sort((a, b) => String(b.watched_date || '').localeCompare(String(a.watched_date || '')))
+  const seen = new Set()
+  const films = []
+  for (const f of entries) {
+    const key = `${String(f.title).toLowerCase()}|${f.year || ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const out = { title: f.title }
+    if (f.year) out.year = f.year
+    if (f.link) out.link = f.link
+    if (f.poster) out.poster = f.poster
+    if (f.watched_date) out.watched_date = f.watched_date
+    films.push(out)
+  }
+  return { films: films.slice(0, limit), total: entries.length }
+}
+
+// 'jfc-announce-2026-06-12-passion-ig-post.png'
+export function socialFileName(kind, sizeKey, event) {
+  const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const parts = ['jfc', kind, slug(event && (event.id || event.film || event.title)), sizeKey]
+  return parts.filter(Boolean).join('-') + '.png'
+}
+
 export function buildEventsSectionText(events) {
   const lines = events.map(e => {
     const name = e.film || e.title || ''

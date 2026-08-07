@@ -15,6 +15,7 @@ import {
   buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
 } from './lib.js'
+import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
 const env = () => $('#env').value
@@ -84,6 +85,7 @@ const TABS = {
   revoked: renderRevoked,
   rate: renderRate,
   events: renderEvents,
+  contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
 }
 
 let currentTab = 'members'

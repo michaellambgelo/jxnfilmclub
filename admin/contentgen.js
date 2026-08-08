@@ -14,7 +14,8 @@
 import {
   escapeHtml, attr, tryParse, qs,
   socialEventView, buildSocialCopy, buildRoundupData, socialFileName,
-  fmtSocialDate, fmtShowtime, PLATFORM_LIMITS, PLATFORM_LABELS,
+  fmtSocialDate, fmtShowtime, fmtMonth, daysUntil, countdownLead,
+  PLATFORM_LIMITS, PLATFORM_LABELS,
 } from './lib.js'
 
 // --- Brand (mirrors css/tokens.css "Night Shift" values) ---
@@ -68,11 +69,24 @@ const SIZES = {
 
 const KINDS = {
   announce: 'Event announcement',
-  weekof: 'Week-of reminder',
-  dayof: 'Day-of reminder',
+  countdown: 'Countdown',
   recap: 'Post-event recap',
+  lineup: 'Season lineup',
+  monthwrap: 'Monthly wrap',
+  episode: 'New podcast episode',
+  milestone: 'Milestone',
   roundup: 'Member watches roundup',
 }
+
+const EPISODES_URL = 'https://jxnfilm.club/data/episodes.json'
+const MILESTONE_STATS = {
+  members: 'Members',
+  screenings: 'Screenings held',
+  attendance: 'Total attendance',
+}
+
+const centralToday = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
 
 const PLATFORMS = ['instagram', 'facebook', 'discord', 'bluesky', 'x']
 
@@ -86,6 +100,11 @@ let cg = {
   events: [],          // public views, sorted upcoming-first
   attendCounts: {},    // event id -> attendee count
   roundup: null,       // { films, total } from buildRoundupData
+  episodes: null,      // [{ title, date, url }] from the public site
+  episodeIdx: 0,
+  wrapMonth: null,     // 'YYYY-MM' selected for the monthly wrap
+  stat: 'members',     // selected milestone stat
+  membersCount: 0,
 }
 
 let ctx = null         // { api, env, content, toast } injected by admin.js
@@ -125,12 +144,60 @@ async function loadRoundup() {
   cg.roundup = buildRoundupData(map, { limit: cg.limit })
 }
 
+// Episodes live in the repo, not KV — the built site serves data/episodes.json
+// with ACAO:*, so both admin origins fetch it directly. Newest first.
+async function loadEpisodes() {
+  if (cg.episodes) return
+  try {
+    const res = await fetch(EPISODES_URL)
+    cg.episodes = (await res.json()).episodes || []
+  } catch {
+    cg.episodes = []
+  }
+}
+
+// members:all length — only needed for the milestone card.
+async function loadMembersCount() {
+  const raw = await ctx.api('GET', `/api/kv?${qs({ env: ctx.env(), binding: 'MEMBERS_KV', prefix: 'members:all' })}`)
+  cg.membersCount = (tryParse(raw.values['members:all']) || []).length
+}
+
 const currentEvent = () => cg.events.find(e => e.id === cg.eventId) || cg.events[0] || null
+const upcomingEvents = () => cg.events.filter(e => String(e.date || '') >= centralToday())
+const pastEvents = () => cg.events.filter(e => String(e.date || '') < centralToday())
+
+// Past-event months (YYYY-MM), newest first, for the monthly wrap selector.
+const wrapMonths = () =>
+  [...new Set(pastEvents().map(e => String(e.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort().reverse()
+
+function monthwrapData() {
+  const month = cg.wrapMonth || wrapMonths()[0]
+  const evs = pastEvents().filter(e => String(e.date || '').startsWith(month + '-'))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  return {
+    month,
+    monthLabel: fmtMonth(month),
+    events: evs,
+    films: evs.map(e => (e.film || e.title || '') + (e.year ? ` (${e.year})` : '')),
+    screenings: evs.length,
+    attendees: evs.reduce((sum, e) => sum + (cg.attendCounts[e.id] || 0), 0),
+  }
+}
+
+function milestoneValue(stat) {
+  if (stat === 'members') return cg.membersCount
+  if (stat === 'screenings') return pastEvents().length
+  return Object.values(cg.attendCounts).reduce((a, b) => a + b, 0)
+}
 
 function copyData() {
   if (cg.kind === 'roundup') return cg.roundup || { films: [], total: 0 }
+  if (cg.kind === 'episode') return { episode: (cg.episodes || [])[cg.episodeIdx] || null }
+  if (cg.kind === 'lineup') return { events: upcomingEvents().slice(0, 4) }
+  if (cg.kind === 'monthwrap') return monthwrapData()
+  if (cg.kind === 'milestone') return { stat: cg.stat, value: milestoneValue(cg.stat) }
   const event = currentEvent()
-  return { event, count: event ? (cg.attendCounts[event.id] || 0) : 0 }
+  return { event, count: event ? (cg.attendCounts[event.id] || 0) : 0, today: centralToday() }
 }
 
 // --- Canvas plumbing ---
@@ -185,7 +252,7 @@ function footer(c, W, H, pad, url, x = pad) {
 
 // --- Card templates ---
 
-async function drawEventCard(c, W, H, event, kind) {
+async function drawEventCard(c, W, H, event, lead) {
   const e = event || {}
   const name = e.film || e.title || 'Untitled'
   const poster = await loadImage(e.poster)
@@ -221,8 +288,7 @@ async function drawEventCard(c, W, H, event, kind) {
     ty = Math.round(H * 0.24)
   }
 
-  const leads = { announce: 'Next screening', weekof: 'This week', dayof: 'Tonight' }
-  label(c, `Jackson Film Club · ${leads[kind] || leads.announce}`, tx, ty, Math.round(W * 0.021))
+  label(c, `Jackson Film Club · ${lead || 'Next screening'}`, tx, ty, Math.round(W * 0.021))
   ty += Math.round(W * 0.02)
 
   // Film title — Playfair, wrapped, shrink-to-fit.
@@ -369,13 +435,15 @@ function drawPosterWall(c, posters, area) {
   }
 }
 
-async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
+// Shared wall-card layout: poster wall + label/heading/sub-lines text block
+// + footer. Used by the roundup, season lineup, and monthly wrap.
+async function drawWallCard(c, W, H, { posterUrls = [], heading, subLines = [], footerUrl }) {
   const pad = Math.round(W * 0.065)
   const landscape = W > H
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
 
-  const posters = (await Promise.all(films.map(f => loadImage(f.poster)))).filter(Boolean).slice(0, 8)
+  const posters = (await Promise.all(posterUrls.map(loadImage))).filter(Boolean).slice(0, 8)
 
   // Landscape: wall fills the left, text panel on the right (footer inside
   // the panel). Portrait/square: wall on top, text centered below, footer
@@ -385,42 +453,178 @@ async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
   if (landscape) {
     const panelW = Math.round(W * 0.42)
     wall = { x: 0, y: 0, w: W - panelW, h: H }
-    text = { x: W - panelW + Math.round(pad * 0.4), y: 0, w: panelW - Math.round(pad * 0.4) - pad, h: H - Math.round(H * 0.14) }
+    text = { x: W - panelW + Math.round(pad * 0.4), y: 0, w: panelW - Math.round(pad * 0.4) - pad, h: H - (pad + Math.round(W * 0.045)) }
     footX = text.x
   } else {
     const wallH = Math.round(H * (tall ? 0.68 : 0.62))
     wall = { x: 0, y: 0, w: W, h: wallH }
-    text = { x: pad, y: wallH, w: W - pad * 2, h: H - wallH - Math.round(H * 0.09) }
+    text = { x: pad, y: wallH, w: W - pad * 2, h: H - wallH - (pad + Math.round(W * 0.045)) }
     footX = pad
   }
   if (posters.length) drawPosterWall(c, posters, wall)
-  else if (!landscape) text = { x: pad, y: 0, w: W - pad * 2, h: H - Math.round(H * 0.09) }
+  else if (!landscape) text = { x: pad, y: 0, w: W - pad * 2, h: H - (pad + Math.round(W * 0.045)) }
 
   // Measure the text block, then center it vertically in its area.
   const labelPx = Math.round(W * (landscape ? 0.016 : tall ? 0.023 : 0.019))
   const hPx = Math.round(W * (landscape ? 0.036 : tall ? 0.064 : 0.052))
   const countPx = Math.round(W * (landscape ? 0.019 : tall ? 0.031 : 0.026))
-  c.font = `800 ${hPx}px ${DISPLAY}`
-  const lines = wrapText(c, 'What the club is watching', text.w)
-  const gap = Math.round(hPx * 0.55)
-  const blockH = labelPx + gap + lines.length * Math.round(hPx * 1.12) + gap + countPx
-  let ty = text.y + Math.max(0, Math.round((text.h - blockH) / 2))
+  // Measure at full size; if the block overflows its area (e.g. a 4-line
+  // lineup on a square card), shrink the whole block to fit rather than
+  // colliding with the footer.
+  const fit = (k) => {
+    const L = Math.round(labelPx * k)
+    const Hh = Math.round(hPx * k)
+    const C = Math.round(countPx * k)
+    c.font = `800 ${Hh}px ${DISPLAY}`
+    const lines = wrapText(c, heading, text.w)
+    const gap = Math.round(Hh * 0.55)
+    const subH = Math.round(C * 1.55)
+    return { L, Hh, C, lines, gap, subH, blockH: L + gap + lines.length * Math.round(Hh * 1.12) + gap + subLines.length * subH }
+  }
+  let m = fit(1)
+  if (m.blockH > text.h) m = fit(Math.max(0.6, text.h / m.blockH))
+  let ty = text.y + Math.max(0, Math.round((text.h - m.blockH) / 2))
 
   c.textBaseline = 'top'
-  label(c, 'Jackson Film Club', text.x, ty, labelPx)
+  label(c, 'Jackson Film Club', text.x, ty, m.L)
+  ty += m.L + m.gap
+  c.font = `800 ${m.Hh}px ${DISPLAY}`
+  c.fillStyle = PAPER
+  for (const line of m.lines) {
+    c.fillText(line, text.x, ty)
+    ty += Math.round(m.Hh * 1.12)
+  }
+  ty += m.gap
+  c.font = `500 ${m.C}px ${LABEL}`
+  c.fillStyle = PAPER_2
+  for (const sub of subLines) {
+    c.fillText(sub, text.x, ty)
+    ty += m.subH
+  }
+
+  footer(c, W, H, pad, footerUrl, footX)
+}
+
+const eventDisplayName = (e) => (e.film || e.title || '') + (e.year ? ` (${e.year})` : '')
+
+async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
+  return drawWallCard(c, W, H, {
+    posterUrls: films.map(f => f.poster),
+    heading: 'What the club is watching',
+    subLines: [`${total} film${total === 1 ? '' : 's'} logged by members in the last week`],
+    footerUrl: 'jxnfilm.club/watched',
+  })
+}
+
+async function drawLineupCard(c, W, H, { events = [] } = {}) {
+  return drawWallCard(c, W, H, {
+    posterUrls: events.map(e => e.poster),
+    heading: 'Coming up at the club',
+    subLines: events.map(e => `${fmtSocialDate(e.date, { short: true })} — ${eventDisplayName(e)}`),
+    footerUrl: 'jxnfilm.club/events',
+  })
+}
+
+async function drawMonthwrapCard(c, W, H, d) {
+  const stats = `${d.screenings} screening${d.screenings === 1 ? '' : 's'}` +
+    (d.attendees > 0 ? ` · ${d.attendees} attendee${d.attendees === 1 ? '' : 's'}` : '')
+  return drawWallCard(c, W, H, {
+    posterUrls: (d.events || []).map(e => e.poster),
+    heading: `That was ${d.monthLabel}`,
+    subLines: [stats],
+    footerUrl: 'jxnfilm.club/events',
+  })
+}
+
+// Big-numeral stat card, recap-style: brand-red value + stacked unit words.
+const MILESTONE_UNITS = {
+  members: ['MEMBERS', 'STRONG'],
+  screenings: ['SCREENINGS', 'AND COUNTING'],
+  attendance: ['SEATS', 'FILLED'],
+}
+
+async function drawMilestoneCard(c, W, H, { stat, value = 0 } = {}) {
+  const pad = Math.round(W * 0.065)
+  c.fillStyle = INK
+  c.fillRect(0, 0, W, H)
+
+  const units = MILESTONE_UNITS[stat] || MILESTONE_UNITS.members
+  const numPx = Math.round(Math.min(W, H) * 0.34)
+  const ofPx = Math.round(W * 0.035)
+  const thanksPx = Math.round(W * 0.028)
+  const gap = Math.round(H * 0.05)
+  const blockH = Math.round(W * 0.021) + Math.round(W * 0.025) + Math.round(numPx * 1.05) + gap + thanksPx
+  let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
+
+  c.textBaseline = 'top'
+  label(c, 'Jackson Film Club · Milestone', pad, ty, Math.round(W * 0.021))
+  ty += Math.round(W * 0.025) + Math.round(W * 0.01)
+
+  c.font = `800 ${numPx}px ${DISPLAY}`
+  c.fillStyle = BRAND
+  c.fillText(String(value), pad, ty)
+  const numW = c.measureText(String(value)).width
+  c.font = `500 ${ofPx}px ${LABEL}`
+  c.fillStyle = PAPER_2
+  c.fillText(units[0], pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42))
+  c.fillText(units[1], pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
+  ty += Math.round(numPx * 1.05) + gap
+
+  c.font = `italic 500 ${thanksPx}px ${DISPLAY}`
+  c.fillStyle = PAPER
+  c.fillText('Thank you, Jackson.', pad, ty)
+
+  footer(c, W, H, pad, 'jxnfilm.club')
+}
+
+// Typographic episode card — the podcast has no per-episode artwork the
+// admin can legally rehost, so the type carries it.
+async function drawEpisodeCard(c, W, H, { episode } = {}) {
+  const e = episode || {}
+  const pad = Math.round(W * 0.065)
+  const landscape = W > H
+  c.fillStyle = INK
+  c.fillRect(0, 0, W, H)
+
+  const labelPx = Math.round(W * 0.021)
+  let titlePx = Math.round(W * (landscape ? 0.052 : 0.062))
+  const metaPx = Math.round(W * 0.027)
+  const tw = W - pad * 2
+
+  c.font = `800 ${titlePx}px ${DISPLAY}`
+  let lines = wrapText(c, e.title || 'New episode', tw)
+  while (lines.length > 4 && titlePx > Math.round(W * 0.038)) {
+    titlePx = Math.round(titlePx * 0.88)
+    c.font = `800 ${titlePx}px ${DISPLAY}`
+    lines = wrapText(c, e.title || 'New episode', tw)
+  }
+  const gap = Math.round(titlePx * 0.6)
+  const blockH = labelPx + gap + lines.length * Math.round(titlePx * 1.12) + gap + metaPx * 2 + Math.round(metaPx * 0.8)
+  let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
+
+  c.textBaseline = 'top'
+  label(c, 'Jackson Film Club · New podcast episode', pad, ty, labelPx)
   ty += labelPx + gap
-  c.font = `800 ${hPx}px ${DISPLAY}`
+  c.font = `800 ${titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
   for (const line of lines) {
-    c.fillText(line, text.x, ty)
-    ty += Math.round(hPx * 1.12)
+    c.fillText(line, pad, ty)
+    ty += Math.round(titlePx * 1.12)
   }
   ty += gap
-  c.font = `500 ${countPx}px ${LABEL}`
-  c.fillStyle = PAPER_2
-  c.fillText(`${total} film${total === 1 ? '' : 's'} logged by members in the last week`, text.x, ty)
+  if (e.date) {
+    c.font = `500 ${metaPx}px ${LABEL}`
+    c.fillStyle = PAPER_2
+    c.fillText(fmtSocialDate(e.date), pad, ty)
+    ty += Math.round(metaPx * 1.8)
+  }
+  c.font = `500 ${Math.round(metaPx * 0.85)}px ${LABEL}`
+  c.letterSpacing = '2px'
+  c.fillStyle = PAPER_4
+  c.fillText('LISTEN WHEREVER YOU GET PODCASTS', pad, ty)
+  c.letterSpacing = '0px'
 
-  footer(c, W, H, pad, 'jxnfilm.club/watched', footX)
+  footer(c, W, H, pad, 'jxnfilm.club')
 }
 
 async function renderCanvas() {
@@ -434,8 +638,13 @@ async function renderCanvas() {
   c.textBaseline = 'alphabetic'
   const data = copyData()
   if (cg.kind === 'roundup') await drawRoundupCard(c, w, h, data)
+  else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data)
+  else if (cg.kind === 'monthwrap') await drawMonthwrapCard(c, w, h, data)
+  else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data)
+  else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data)
   else if (cg.kind === 'recap') await drawRecapCard(c, w, h, data.event, data.count)
-  else await drawEventCard(c, w, h, data.event, cg.kind)
+  else if (cg.kind === 'countdown') await drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)))
+  else await drawEventCard(c, w, h, data.event, 'Next screening')
 }
 
 // --- Copy panel ---
@@ -481,10 +690,59 @@ export async function renderContentGen(context) {
   ctx = context
   await loadEvents()
   if (cg.kind === 'roundup') await loadRoundup()
+  if (cg.kind === 'episode') await loadEpisodes()
+  if (cg.kind === 'milestone') await loadMembersCount()
   if (!cg.events.some(e => e.id === cg.eventId)) cg.eventId = cg.events[0]?.id || null
+  if (!wrapMonths().includes(cg.wrapMonth)) cg.wrapMonth = wrapMonths()[0] || null
+  if (cg.episodes && cg.episodeIdx >= cg.episodes.length) cg.episodeIdx = 0
 
-  const isEventKind = cg.kind !== 'roundup'
-  const roundupEmpty = !isEventKind && !(cg.roundup && cg.roundup.films.length)
+  const needsEvent = ['announce', 'countdown', 'recap'].includes(cg.kind)
+  const emptyMsg =
+    needsEvent && !cg.events.length ? 'No events in KV — create one on the Events tab first.'
+    : cg.kind === 'roundup' && !(cg.roundup && cg.roundup.films.length) ? 'No member watches logged in the last 7 days — nothing to round up.'
+    : cg.kind === 'lineup' && !upcomingEvents().length ? 'No upcoming events — the lineup needs at least one.'
+    : cg.kind === 'monthwrap' && !cg.wrapMonth ? 'No past events yet — nothing to wrap.'
+    : cg.kind === 'episode' && !(cg.episodes && cg.episodes.length) ? 'Could not load episodes from jxnfilm.club/data/episodes.json.'
+    : null
+
+  const controls = {
+    event: () => `
+      <label>Event
+        <select id="cg-event">
+          ${cg.events.map(e => `<option value="${attr(e.id)}" ${e.id === cg.eventId ? 'selected' : ''}>${escapeHtml(`${e.date || '????'} — ${e.film || e.title || e.id}`)}</option>`).join('')}
+        </select>
+      </label>`,
+    limit: () => `
+      <label>Films in collage
+        <input id="cg-limit" type="number" min="1" max="8" value="${attr(cg.limit)}" style="width:64px">
+      </label>`,
+    episode: () => `
+      <label>Episode
+        <select id="cg-episode">
+          ${(cg.episodes || []).map((ep, i) => `<option value="${i}" ${i === cg.episodeIdx ? 'selected' : ''}>${escapeHtml(`${ep.date || ''} — ${ep.title}`)}</option>`).join('')}
+        </select>
+      </label>`,
+    month: () => `
+      <label>Month
+        <select id="cg-month">
+          ${wrapMonths().map(m => `<option value="${attr(m)}" ${m === cg.wrapMonth ? 'selected' : ''}>${escapeHtml(fmtMonth(m))}</option>`).join('')}
+        </select>
+      </label>`,
+    stat: () => `
+      <label>Stat
+        <select id="cg-stat">
+          ${Object.entries(MILESTONE_STATS).map(([k, v]) => `<option value="${attr(k)}" ${k === cg.stat ? 'selected' : ''}>${escapeHtml(`${v} (${milestoneValue(k)})`)}</option>`).join('')}
+        </select>
+      </label>`,
+  }
+  const kindControls =
+    needsEvent ? controls.event()
+    : cg.kind === 'roundup' ? controls.limit()
+    : cg.kind === 'episode' && cg.episodes && cg.episodes.length ? controls.episode()
+    : cg.kind === 'monthwrap' && cg.wrapMonth ? controls.month()
+    : cg.kind === 'milestone' ? controls.stat()
+    : ''
+
   ctx.content().innerHTML = `
     <h2>Content Gen</h2>
     <p class="section-hint">Social media copy + downloadable cards from live ${escapeHtml(ctx.env())} data.
@@ -497,19 +755,10 @@ export async function renderContentGen(context) {
           ${Object.entries(KINDS).map(([k, v]) => `<option value="${attr(k)}" ${k === cg.kind ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')}
         </select>
       </label>
-      ${isEventKind ? `
-      <label>Event
-        <select id="cg-event">
-          ${cg.events.map(e => `<option value="${attr(e.id)}" ${e.id === cg.eventId ? 'selected' : ''}>${escapeHtml(`${e.date || '????'} — ${e.film || e.title || e.id}`)}</option>`).join('')}
-        </select>
-      </label>` : `
-      <label>Films in collage
-        <input id="cg-limit" type="number" min="1" max="8" value="${attr(cg.limit)}" style="width:64px">
-      </label>`}
+      ${kindControls}
     </section>
 
-    ${roundupEmpty ? '<p class="empty">No member watches logged in the last 7 days — nothing to round up.</p>'
-      : !cg.events.length && isEventKind ? '<p class="empty">No events in KV — create one on the Events tab first.</p>' : `
+    ${emptyMsg ? `<p class="empty">${escapeHtml(emptyMsg)}</p>` : `
     <div class="cg-body">
       <section class="cg-graphic">
         <h3>Card</h3>
@@ -533,19 +782,36 @@ export async function renderContentGen(context) {
     cg.kind = kindSel.value
     await ctx.withBusy(() => renderContentGen(ctx))
   })
+  const refresh = () => {
+    renderCopyPanel()
+    renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
+  }
   const evSel = document.querySelector('#cg-event')
   if (evSel) evSel.addEventListener('change', () => {
     cg.eventId = evSel.value
-    renderCopyPanel()
-    renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
+    refresh()
   })
   const limitInput = document.querySelector('#cg-limit')
   if (limitInput) limitInput.addEventListener('change', async () => {
     cg.limit = Math.max(1, Math.min(8, Number(limitInput.value) || 8))
     limitInput.value = cg.limit
     await loadRoundup()
-    renderCopyPanel()
-    renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
+    refresh()
+  })
+  const epSel = document.querySelector('#cg-episode')
+  if (epSel) epSel.addEventListener('change', () => {
+    cg.episodeIdx = Number(epSel.value) || 0
+    refresh()
+  })
+  const monthSel = document.querySelector('#cg-month')
+  if (monthSel) monthSel.addEventListener('change', () => {
+    cg.wrapMonth = monthSel.value
+    refresh()
+  })
+  const statSel = document.querySelector('#cg-stat')
+  if (statSel) statSel.addEventListener('change', () => {
+    cg.stat = statSel.value
+    refresh()
   })
   document.querySelectorAll('.cg-size').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -561,13 +827,19 @@ export async function renderContentGen(context) {
       if (!blob) return ctx.toast('PNG export failed', true)
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = socialFileName(cg.kind, cg.size, cg.kind === 'roundup' ? null : currentEvent())
+      const fileTag =
+        needsEvent ? currentEvent()
+        : cg.kind === 'episode' ? { title: ((cg.episodes || [])[cg.episodeIdx] || {}).title }
+        : cg.kind === 'monthwrap' ? { title: cg.wrapMonth }
+        : cg.kind === 'milestone' ? { title: cg.stat }
+        : null
+      a.download = socialFileName(cg.kind, cg.size, fileTag)
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     }, 'image/png')
   })
 
-  if ((isEventKind && cg.events.length) || (!isEventKind && !roundupEmpty)) {
+  if (!emptyMsg) {
     renderCopyPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
@@ -575,4 +847,7 @@ export async function renderContentGen(context) {
 
 // Exported for the headless visual-QA harness and future tests; admin.js
 // only uses renderContentGen.
-export { loadFonts, drawEventCard, drawRecapCard, drawRoundupCard }
+export {
+  loadFonts, drawEventCard, drawRecapCard, drawRoundupCard,
+  drawLineupCard, drawMonthwrapCard, drawEpisodeCard, drawMilestoneCard,
+}

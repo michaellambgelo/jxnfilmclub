@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, socialFileName,
-  fmtSocialDate, PLATFORM_LIMITS,
+  fmtSocialDate, fmtMonth, daysUntil, countdownLead, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
 // A canonical hosted-event KV row — includes every private field that must
@@ -24,7 +24,7 @@ const HOSTED_EVENT = {
   notes: 'Gate code is 4471, park on the side street',
 }
 
-const EVENT_KINDS = ['announce', 'weekof', 'dayof', 'recap']
+const EVENT_KINDS = ['announce', 'countdown', 'recap']
 const PLATFORMS = ['instagram', 'facebook', 'discord', 'bluesky', 'x']
 
 describe('socialEventView', () => {
@@ -46,10 +46,18 @@ describe('buildSocialCopy privacy', () => {
   it('never leaks address or notes in any kind × platform combination', () => {
     for (const kind of EVENT_KINDS) {
       for (const platform of PLATFORMS) {
-        const text = buildSocialCopy(kind, platform, { event: HOSTED_EVENT, count: 12 })
+        const text = buildSocialCopy(kind, platform, { event: HOSTED_EVENT, count: 12, today: '2026-06-01' })
         expect(text, `${kind}/${platform}`).not.toContain('Secret Street')
         expect(text, `${kind}/${platform}`).not.toContain('4471')
       }
+    }
+  })
+
+  it('lineup never leaks private fields either', () => {
+    for (const platform of PLATFORMS) {
+      const text = buildSocialCopy('lineup', platform, { events: [HOSTED_EVENT] })
+      expect(text, platform).not.toContain('Secret Street')
+      expect(text, platform).not.toContain('4471')
     }
   })
 })
@@ -71,11 +79,15 @@ describe('buildSocialCopy content', () => {
     expect(text).not.toContain('https://')
   })
 
-  it('discord announce is markdown with the letterboxd link', () => {
-    const text = buildSocialCopy('dayof', 'discord', { event: HOSTED_EVENT })
-    expect(text).toContain('**')
-    expect(text).toContain('TONIGHT')
-    expect(text).toContain(HOSTED_EVENT.letterboxd_uri)
+  it('discord countdown is markdown with the letterboxd link and a dynamic lead', () => {
+    const tonight = buildSocialCopy('countdown', 'discord', { event: HOSTED_EVENT, today: '2026-06-12' })
+    expect(tonight).toContain('**')
+    expect(tonight).toContain('TONIGHT')
+    expect(tonight).toContain(HOSTED_EVENT.letterboxd_uri)
+    expect(buildSocialCopy('countdown', 'instagram', { event: HOSTED_EVENT, today: '2026-06-11' })).toContain('TOMORROW')
+    expect(buildSocialCopy('countdown', 'facebook', { event: HOSTED_EVENT, today: '2026-06-07' })).toContain('5 DAYS AWAY')
+    // Past event: fall back to the announce lead rather than a negative count.
+    expect(buildSocialCopy('countdown', 'facebook', { event: HOSTED_EVENT, today: '2026-07-01' })).toContain('NEXT SCREENING')
   })
 
   it('recap includes the attendance count, and omits it when zero', () => {
@@ -175,6 +187,101 @@ describe('roundup copy', () => {
     const text = buildSocialCopy('roundup', 'facebook', { films, total: 14 })
     expect(text).toContain('Chungking Express (1994)')
     expect(text).toContain('14 films logged by members in the last week')
+  })
+})
+
+describe('daysUntil / countdownLead / fmtMonth', () => {
+  it('counts whole calendar days from bare date strings', () => {
+    expect(daysUntil('2026-06-12', '2026-06-12')).toBe(0)
+    expect(daysUntil('2026-06-12', '2026-06-11')).toBe(1)
+    expect(daysUntil('2026-06-12', '2026-06-01')).toBe(11)
+    expect(daysUntil('2026-06-12', '2026-07-01')).toBe(-19)
+    expect(daysUntil('', '2026-06-12')).toBeNull()
+    expect(daysUntil('2026-06-12', 'nope')).toBeNull()
+  })
+
+  it('phrases the lead per distance, falling back for past/undated', () => {
+    expect(countdownLead(0)).toBe('Tonight')
+    expect(countdownLead(1)).toBe('Tomorrow')
+    expect(countdownLead(5)).toBe('5 days away')
+    expect(countdownLead(-1)).toBe('Next screening')
+    expect(countdownLead(null)).toBe('Next screening')
+  })
+
+  it('formats YYYY-MM as a month name', () => {
+    expect(fmtMonth('2026-08')).toBe('August 2026')
+    expect(fmtMonth('garbage')).toBe('garbage')
+  })
+})
+
+describe('episode copy', () => {
+  const episode = { title: 'The Muppets — Appreciating the Original Films', date: '2026-07-31', url: 'https://podcasters.spotify.com/pod/show/jxnfilmclub/episodes/x' }
+
+  it('carries the listen URL everywhere except instagram', () => {
+    for (const p of ['facebook', 'discord', 'bluesky', 'x']) {
+      expect(buildSocialCopy('episode', p, { episode }), p).toContain(episode.url)
+    }
+    const ig = buildSocialCopy('episode', 'instagram', { episode })
+    expect(ig).toContain('link in bio')
+    expect(ig).not.toContain('https://')
+    expect(ig).toContain(episode.title)
+  })
+
+  it('fits bluesky and x limits with a real-length title', () => {
+    for (const p of ['bluesky', 'x']) {
+      expect(buildSocialCopy('episode', p, { episode }).length, p).toBeLessThanOrEqual(PLATFORM_LIMITS[p])
+    }
+  })
+})
+
+describe('lineup copy', () => {
+  const events = [
+    { ...HOSTED_EVENT },
+    { id: 'e2', film: 'Sherlock Jr.', year: 1924, date: '2026-06-20' },
+    { id: 'e3', film: 'Cape Fear', year: 1991, date: '2026-06-28' },
+  ]
+
+  it('lists each event with its date on facebook', () => {
+    const text = buildSocialCopy('lineup', 'facebook', { events })
+    expect(text).toContain('Fri, Jun 12 — The Passion of Joan of Arc (1928)')
+    expect(text).toContain('Sat, Jun 20 — Sherlock Jr. (1924)')
+    expect(text).toContain('https://jxnfilm.club/events')
+  })
+
+  it('shrinks to fit bluesky/x limits', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({ id: `x${i}`, film: `A Considerably Overlong Film Title Number ${i}`, year: 2000 + i, date: `2026-07-0${i + 1}` }))
+    for (const p of ['bluesky', 'x']) {
+      const text = buildSocialCopy('lineup', p, { events: many })
+      expect(text.length, p).toBeLessThanOrEqual(PLATFORM_LIMITS[p])
+      expect(text).toContain('more')
+    }
+  })
+})
+
+describe('monthwrap copy', () => {
+  const data = { monthLabel: 'August 2026', films: ['Jaws (1975)', 'Cape Fear (1991)'], screenings: 2, attendees: 19 }
+
+  it('carries films and stats on facebook, stats-only on x', () => {
+    const fb = buildSocialCopy('monthwrap', 'facebook', data)
+    expect(fb).toContain('That was August 2026')
+    expect(fb).toContain('Jaws (1975)')
+    expect(fb).toContain('2 screenings · 19 attendees')
+    const x = buildSocialCopy('monthwrap', 'x', data)
+    expect(x.length).toBeLessThanOrEqual(PLATFORM_LIMITS.x)
+    expect(x).toContain('2 screenings · 19 attendees')
+  })
+
+  it('omits the attendee clause when zero', () => {
+    expect(buildSocialCopy('monthwrap', 'facebook', { ...data, attendees: 0 })).not.toContain('attendee')
+  })
+})
+
+describe('milestone copy', () => {
+  it('phrases each stat', () => {
+    expect(buildSocialCopy('milestone', 'facebook', { stat: 'members', value: 25 })).toContain("We're now 25 members strong")
+    expect(buildSocialCopy('milestone', 'discord', { stat: 'screenings', value: 12 })).toContain('12 screenings and counting')
+    expect(buildSocialCopy('milestone', 'x', { stat: 'attendance', value: 150 })).toContain('150 seats filled')
+    expect(buildSocialCopy('milestone', 'x', { stat: 'attendance', value: 150 }).length).toBeLessThanOrEqual(PLATFORM_LIMITS.x)
   })
 })
 

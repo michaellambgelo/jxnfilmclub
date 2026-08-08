@@ -219,7 +219,29 @@ export const PLATFORM_LABELS = {
 
 const EVENTS_URL = 'https://jxnfilm.club/events'
 const WATCHED_URL = 'https://jxnfilm.club/watched'
+const SITE_URL = 'https://jxnfilm.club'
 const IG_TAGS = '#JacksonFilmClub #JXN #FilmClub'
+
+// Whole days from `today` until `date` — both bare YYYY-MM-DD strings,
+// parsed as local calendar days so the count never shifts across timezones.
+export function daysUntil(date, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))) return null
+  return Math.round((new Date(date + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000)
+}
+
+// Countdown lead phrase. Past/undated events fall back to the announce lead.
+export function countdownLead(days) {
+  if (days == null || days < 0) return 'Next screening'
+  if (days === 0) return 'Tonight'
+  if (days === 1) return 'Tomorrow'
+  return `${days} days away`
+}
+
+// '2026-08' -> 'August 2026'
+export function fmtMonth(ym) {
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return String(ym || '')
+  return new Date(ym + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
 
 // Shared phrasing pieces for an event, built from the public view only.
 function eventBits(event) {
@@ -232,14 +254,26 @@ function eventBits(event) {
   return { e, name, titled, when, whenShort, venue }
 }
 
-// kind: announce | weekof | dayof | recap | roundup
+// kind: announce | countdown | recap | roundup | episode | lineup | monthwrap | milestone
 // platform: instagram | facebook | discord | bluesky | x
-// data: { event?, count?, films?, total? } — count is the attendance count
-// for recaps; films/total come from buildRoundupData().
+// data by kind:
+//   announce/recap — { event, count? }        (count = attendance, recap only)
+//   countdown      — { event, today? }        (today = YYYY-MM-DD anchor for tests)
+//   roundup        — { films, total }         (from buildRoundupData)
+//   episode        — { episode: { title, date?, url } }
+//   lineup         — { events: [...] }        (upcoming, already sorted)
+//   monthwrap      — { monthLabel, films: [names], screenings, attendees }
+//   milestone      — { stat: members|screenings|attendance, value }
 export function buildSocialCopy(kind, platform, data = {}) {
   if (kind === 'roundup') return roundupCopy(platform, data)
+  if (kind === 'episode') return episodeCopy(platform, data.episode || {})
+  if (kind === 'lineup') return lineupCopy(platform, data.events || [])
+  if (kind === 'monthwrap') return monthwrapCopy(platform, data)
+  if (kind === 'milestone') return milestoneCopy(platform, data)
   const { e, titled, when, whenShort, venue } = eventBits(data.event)
-  const lead = { announce: 'NEXT SCREENING', weekof: 'THIS WEEK', dayof: 'TONIGHT' }[kind]
+  const lead = kind === 'countdown'
+    ? countdownLead(daysUntil(e.date, data.today || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()))).toUpperCase()
+    : 'NEXT SCREENING'
 
   if (kind === 'recap') {
     const n = Number(data.count) || 0
@@ -256,7 +290,7 @@ export function buildSocialCopy(kind, platform, data = {}) {
     return `🎬 That's a wrap on ${titled}. ${crowd}Thanks for watching with us — see what's next: ${EVENTS_URL}`
   }
 
-  // announce / weekof / dayof
+  // announce / countdown
   if (platform === 'instagram') {
     return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP at the link in bio.\n\n${IG_TAGS}`
   }
@@ -268,6 +302,83 @@ export function buildSocialCopy(kind, platform, data = {}) {
   }
   // facebook
   return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP and details: ${EVENTS_URL}`
+}
+
+function episodeCopy(platform, { title = '', date, url = '' }) {
+  const dated = date ? ` (${fmtSocialDate(date, { short: true })})` : ''
+  if (platform === 'instagram') {
+    return `🎙️ NEW EPISODE\n\n${title}\n\nListen at the link in bio.\n\n${IG_TAGS} #Podcast`
+  }
+  if (platform === 'discord') {
+    return `🎙️ **New episode: ${title}**${dated}\n${url}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    return `🎙️ New episode: ${title}\n\n${url}`
+  }
+  return `🎙️ New episode of the Jackson Film Club podcast\n\n${title}\n\nListen: ${url}`
+}
+
+function lineupCopy(platform, events) {
+  // Double-enforce the public projection even though callers already do.
+  const rows = events.map(ev => {
+    const e = socialEventView(ev) || {}
+    const name = (e.film || e.title || '') + (e.year ? ` (${e.year})` : '')
+    return { name, when: fmtSocialDate(e.date, { short: true }) }
+  })
+  const lines = rows.map(r => `${r.when} — ${r.name}`)
+  if (platform === 'instagram') {
+    return `🎬 COMING UP AT THE CLUB\n\n${lines.join('\n')}\n\nRSVP at the link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `🎬 **Coming up**\n${lines.map(l => `- ${l}`).join('\n')}\n\nRSVP: ${EVENTS_URL}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    const limit = PLATFORM_LIMITS[platform]
+    const wrap = (l) => `🎬 Coming up: ${l}\n\nRSVP: ${EVENTS_URL}`
+    let used = rows.length
+    let list = lines.join(' · ')
+    while (used > 1 && wrap(list).length > limit) {
+      used--
+      list = lines.slice(0, used).join(' · ') + ` + ${lines.length - used} more`
+    }
+    return wrap(list)
+  }
+  return `🎬 Coming up at Jackson Film Club\n\n${lines.join('\n')}\n\nRSVP and details: ${EVENTS_URL}`
+}
+
+function monthwrapCopy(platform, { monthLabel = '', films = [], screenings = 0, attendees = 0 } = {}) {
+  const stats = `${screenings} screening${screenings === 1 ? '' : 's'}` +
+    (attendees > 0 ? ` · ${attendees} attendee${attendees === 1 ? '' : 's'}` : '')
+  if (platform === 'instagram') {
+    return `🎬 THAT WAS ${monthLabel.toUpperCase()}\n\n${films.join('\n')}\n\n${stats}. See what's next at the link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `🎬 **That was ${monthLabel}**\n${films.map(f => `- ${f}`).join('\n')}\n\n${stats}. Up next: ${EVENTS_URL}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    return `🎬 That was ${monthLabel} at the film club: ${stats}.\n\nWhat's next: ${EVENTS_URL}`
+  }
+  return `🎬 That was ${monthLabel} at Jackson Film Club\n\n${films.join('\n')}\n\n${stats}. See what's next: ${EVENTS_URL}`
+}
+
+const MILESTONE_PHRASES = {
+  members: (v) => `We're now ${v} members strong.`,
+  screenings: (v) => `${v} screenings and counting.`,
+  attendance: (v) => `${v} seats filled since our first screening.`,
+}
+
+function milestoneCopy(platform, { stat, value = 0 } = {}) {
+  const phrase = (MILESTONE_PHRASES[stat] || MILESTONE_PHRASES.members)(value)
+  if (platform === 'instagram') {
+    return `🎉 MILESTONE\n\n${phrase}\n\nThank you, Jackson. Come join us — link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `🎉 **${phrase}** Thanks for being here, y'all.`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    return `🎉 ${phrase} Thank you, Jackson.\n\n${SITE_URL}`
+  }
+  return `🎉 ${phrase} Thank you, Jackson — come join us: ${SITE_URL}`
 }
 
 function roundupCopy(platform, { films = [], total = 0 } = {}) {

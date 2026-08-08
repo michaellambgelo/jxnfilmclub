@@ -1,4 +1,34 @@
 {
+  "Crockett1848": [
+    {
+      "link": "https://letterboxd.com/crockett1848/film/the-drama/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/5/4/9/4/1205494-the-drama-0-600-0-900-crop.jpg?v=2320acafd5",
+      "title": "The Drama",
+      "watched_date": "2026-08-07",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/crockett1848/film/the-odyssey-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
+      "title": "The Odyssey",
+      "watched_date": "2026-07-18",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/crockett1848/film/gosford-park/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/8/8/7/6/48876-gosford-park-0-600-0-900-crop.jpg?v=56085296ca",
+      "title": "Gosford Park",
+      "watched_date": "2026-06-05",
+      "year": "2001"
+    },
+    {
+      "link": "https://letterboxd.com/crockett1848/film/sorcerer/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/5/6/5/0/25650-sorcerer-0-600-0-900-crop.jpg?v=8dd4d17006",
+      "title": "Sorcerer",
+      "watched_date": "2026-06-01",
+      "year": "1977"
+    }
+  ],
   "Moviemont": [
     {
       "link": "https://letterboxd.com/moviemont/film/y-tu-mama-tambien/",
@@ -87,6 +117,36 @@
       "title": "D\u00e9j\u00e0 Vu",
       "watched_date": null,
       "year": "2006"
+    }
+  ],
+  "badmov1eenjoyer": [
+    {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/spider-man-brand-new-day/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
+      "title": "Spider-Man: Brand New Day",
+      "watched_date": "2026-08-06",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/the-color-of-money/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/9/3/0/44930-the-color-of-money-0-600-0-900-crop.jpg?v=e9d86f8587",
+      "title": "The Color of Money",
+      "watched_date": "2026-07-29",
+      "year": "1986"
+    },
+    {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/how-to-make-a-killing-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/9/5/0/4/399504-how-to-make-a-killing-2026-0-600-0-900-crop.jpg?v=be2948f44a",
+      "title": "How to Make a Killing",
+      "watched_date": "2026-07-28",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/the-odyssey-2026/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
+      "title": "The Odyssey",
+      "watched_date": "2026-07-25",
+      "year": "2026"
     }
   ],
   "calissippi": [

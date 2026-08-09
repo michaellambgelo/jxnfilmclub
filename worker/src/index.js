@@ -1269,16 +1269,20 @@ function unescapeXml(s) {
     .replace(/&amp;/g, '&')
 }
 
-// --- Letterboxd avatars (profile-page og:image via the Worker) ---
+// --- Letterboxd avatars (films-subpage header via the Worker) ---
 //
 // GET /avatars — public. Handle-keyed map of each linked member's Letterboxd
-// avatar URL, scraped from the profile page's og:image meta tag (Letterboxd
-// has no API and RSS carries no avatar). Cached in KV for a week — avatars
-// churn slowly — with a membership signature so a newly linked handle
-// invalidates the cache immediately instead of waiting out the TTL. The SPA
-// falls back to the letter <avatar> for any handle absent from the map.
+// avatar URL, scraped from the /{handle}/films/ subpage's profile header
+// (Letterboxd has no open API and RSS carries no avatar). The profile ROOT
+// page sat behind a Cloudflare bot challenge as of Aug 2026 — unreachable to
+// a Worker fetch — while the films subpage stayed open; its og:image is a
+// generic share card, but the header <img> is the real avatar. Cached in KV
+// for a week — avatars churn slowly — with a membership signature so a newly
+// linked handle invalidates the cache immediately instead of waiting out the
+// TTL. The SPA falls back to the letter <avatar> for any absent handle.
 
 const AVATARS_CACHE_TTL = 86400 * 7 // seconds
+const AVATARS_MISS_TTL = 3600       // total-miss backoff (outage / challenge spread)
 
 function avatarsResponse(env, data) {
   return new Response(JSON.stringify(data), {
@@ -1316,36 +1320,38 @@ async function buildAvatars(env, members) {
   const out = {}
   await Promise.all(handles.map(async handle => {
     try {
-      const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/`, {
+      const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/films/`, {
         headers: { 'User-Agent': 'jxnfilmclub-join' },
         cf: { cacheTtl: 86400, cacheEverything: true },
       })
       if (!res.ok) return
-      const url = parseOgImage(await res.text())
+      const url = parseProfileAvatar(await res.text())
       if (url) out[handle] = url
     } catch { /* profile down: handle absent, letter avatar covers it */ }
   }))
 
-  // Don't cache a total miss (e.g. Letterboxd outage) — that would pin the
-  // outage for a full week. Partial results are cached as best-effort.
-  if (!handles.length || Object.keys(out).length) {
-    const rec = { sig: avatarsSig(members), map: out }
-    await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec), { expirationTtl: AVATARS_CACHE_TTL })
-  }
+  // Partial results are cached as best-effort for the full week. A TOTAL
+  // miss (Letterboxd outage, or their bot challenge spreading to the films
+  // subpage) is cached only briefly: long enough that page loads stop
+  // re-firing dozens of doomed fetches, short enough to recover within the
+  // hour. The sig check still busts either cache the moment membership
+  // handles change.
+  const ttl = handles.length && !Object.keys(out).length ? AVATARS_MISS_TTL : AVATARS_CACHE_TTL
+  const rec = { sig: avatarsSig(members), map: out }
+  await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec), { expirationTtl: ttl })
   return out
 }
 
-// Attribute-order-tolerant og:image extraction. Members without a custom
-// avatar get Letterboxd's grey default (asset path contains /static/img/) —
-// skip it so the letter avatar renders instead.
-function parseOgImage(html) {
-  const m = /<meta\s[^>]*(?:property|name)="og:image"[^>]*>/.exec(String(html))
+// First custom-upload avatar URL in the films subpage — that's the profile
+// header portrait. Custom uploads live under /resized/avatar/upload/;
+// members without one get a /static/img/ default that never matches this
+// pattern, so the letter avatar covers them. The size segment of the URL is
+// rewritable server-side — request 80px so the 2.2rem circle stays crisp on
+// retina displays (the page itself ships 48px).
+function parseProfileAvatar(html) {
+  const m = /https:\/\/a\.ltrbxd\.com\/resized\/avatar\/upload\/[^"'\s]*avtr-[^"'\s]*/.exec(String(html))
   if (!m) return ''
-  const c = /content="([^"]+)"/.exec(m[0])
-  const url = c ? c[1] : ''
-  if (!url || !/^https:\/\//.test(url)) return ''
-  if (url.includes('/static/img/')) return ''
-  return url
+  return m[0].replace(/avtr-0-[0-9]+-0-[0-9]+-crop/, 'avtr-0-80-0-80-crop')
 }
 
 // --- Member-hosted screenings (RSVP + private address) ---

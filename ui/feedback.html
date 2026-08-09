@@ -1,0 +1,133 @@
+<!doctype dhtml lib>
+
+<!-- Beta feedback capture. One shared form (feedback-form) used by both the
+     /feedback page (feedback-view, mounted by the router) and the floating
+     launcher (feedback-widget, mounted globally from index.html). Submissions
+     POST to the join Worker's /feedback endpoint; identity is resolved
+     server-side from the bearer token when one is attached — the body never
+     carries identity fields. -->
+
+<script>
+  function resolveWorkerOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+  const FEEDBACK_ORIGIN = resolveWorkerOrigin()
+
+  function getFeedbackSession() {
+    try {
+      const raw = localStorage.jxnfc_session
+      const s = raw ? JSON.parse(raw) : null
+      return s?.token && s.exp > Date.now() ? s : null
+    } catch { return null }
+  }
+</script>
+
+<div :is="feedback-form" class="auth feedback-form">
+  <form :onsubmit="submit" :hidden="sent">
+    <label>Type
+      <select name="category" required>
+        <option value="bug">Something is broken</option>
+        <option value="idea">An idea or a request</option>
+        <option value="other">Something else</option>
+      </select>
+    </label>
+    <label>Your feedback
+      <textarea name="message" required rows="5" maxlength="2000"
+        placeholder="What works? What is confusing? What should we build next?"></textarea>
+    </label>
+    <label class="prefRow" :hidden="!session">
+      <input type="checkbox" name="anonymous">
+      <span class="prefRow-text">
+        <span class="prefRow-title">Send anonymously</span>
+        <span class="prefRow-hint">{ session ? 'Otherwise this is sent as ' + (session.name || session.email) + '.' : '' }</span>
+      </span>
+    </label>
+    <div class="actions">
+      <button type="submit" :disabled="busy">{ busy ? 'Sending…' : 'Send feedback' }</button>
+    </div>
+    <p class="fb-err" :if="error">{ error }</p>
+  </form>
+  <p class="fb-ok" :hidden="!sent">Thanks — we read every piece of feedback.</p>
+  <div class="actions" :hidden="!sent">
+    <button type="button" class="plain" :onclick="reset">Send more feedback</button>
+  </div>
+
+  <script>
+    this.mounted = function() {
+      this.update({ busy: false, sent: false, error: '', session: getFeedbackSession() })
+      // Remembered device with a lapsed token: resolve silently so the
+      // anonymity row and its sent-as hint reflect reality.
+      const self = this
+      if (!this.session && globalThis.jxnfcEnsureSession) {
+        globalThis.jxnfcEnsureSession().then(function(s) { if (s) self.update({ session: s }) })
+      }
+    }
+
+    this.submit = async function(e) {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const message = String(fd.get('message') || '').trim()
+      if (!message) return
+      this.update({ busy: true, error: '' })
+      const self = this
+      try {
+        const headers = { 'Content-Type': 'application/json' }
+        let session = null
+        if (globalThis.jxnfcEnsureSession) session = await globalThis.jxnfcEnsureSession()
+        if (session && session.token) headers.Authorization = 'Bearer ' + session.token
+        const res = await fetch(FEEDBACK_ORIGIN + '/feedback', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            category: String(fd.get('category') || ''),
+            message: message,
+            page: location.pathname,
+            anonymous: !!fd.get('anonymous'),
+          }),
+        })
+        const data = await res.json().catch(function() { return {} })
+        if (!res.ok) throw new Error(data.error || 'something went wrong — try again')
+        self.update({ busy: false, sent: true })
+      } catch (err) {
+        self.update({ busy: false, error: err && err.message || 'something went wrong — try again' })
+      }
+    }
+
+    this.reset = function() {
+      const box = this.root.querySelector('textarea')
+      if (box) box.value = ''
+      this.update({ sent: false, error: '' })
+    }
+  </script>
+</div>
+
+<article :is="feedback-view" class="auth">
+  <h1>Feedback</h1>
+  <p class="lede">The site is in beta and we are actively shaping it.
+    Tell us what breaks, what confuses you, and what you want next.
+    Anonymous is fine — no account needed.</p>
+  <feedback-form/>
+</article>
+
+<div :is="feedback-widget" class="feedback-widget">
+  <button type="button" class="feedback-fab" :onclick="toggle">{ open ? 'Close' : 'Feedback' }</button>
+  <div class="feedback-panel" :hidden="!open">
+    <p class="feedback-panel-title">Beta feedback</p>
+    <feedback-form/>
+  </div>
+
+  <script>
+    this.mounted = function() {
+      this.update({ open: false })
+    }
+
+    this.toggle = function() {
+      this.update({ open: !this.open })
+    }
+  </script>
+</div>

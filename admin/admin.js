@@ -85,6 +85,7 @@ const TABS = {
   revoked: renderRevoked,
   rate: renderRate,
   events: renderEvents,
+  feedback: renderFeedback,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
 }
 
@@ -437,6 +438,36 @@ async function renderRevoked() {
         <tr>
           <td><code>${escapeHtml(k.name.slice('revoked:'.length))}</code></td>
           <td>${fmtExpiry(k.expiration)}</td>
+        </tr>
+      `).join('')}
+    </tbody></table>
+  `
+}
+
+async function renderFeedback() {
+  const { keys, values } = await loadKv('feedback:')
+  if (!keys.length) return content().innerHTML = '<p class="empty">No feedback.</p>'
+
+  // Every field here is site-visitor-controlled free text — the message
+  // especially — so everything goes through escapeHtml/attr. Newest first.
+  const rows = keys.map(k => ({ k, v: tryParse(values[k.name]) })).filter(r => r.v)
+  rows.sort((a, b) => String(b.v.at || '').localeCompare(String(a.v.at || '')))
+
+  content().innerHTML = `
+    <h2>Feedback <span class="muted">(${rows.length})</span></h2>
+    <p class="section-hint">Beta feedback from the site widget and <code>/feedback</code>. Records auto-expire after 90 days — <b>export before they age out</b> (this tab's data is <code>GET /api/kv?prefix=feedback:</code> as JSON). Delete = handled. "From" is empty for anonymous submissions; identity is stripped automatically if the member deletes their account.</p>
+    <table><thead><tr><th>When</th><th>Type</th><th>From</th><th>Page</th><th>Message</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
+      ${rows.map(({ k, v }) => `
+        <tr>
+          <td title="${attr(v.at)}">${fmtAge(Date.parse(v.at) || 0)}</td>
+          <td>${escapeHtml(v.category)}</td>
+          <td>${v.member ? `${escapeHtml(v.member.name || '')} <span class="muted">${escapeHtml(v.member.email || '')}</span>` : '<span class="muted">anonymous</span>'}</td>
+          <td><code>${escapeHtml(v.page || '')}</code></td>
+          <td class="prewrap">${escapeHtml(v.message)}</td>
+          <td>${fmtExpiry(k.expiration)}</td>
+          <td class="actions">
+            <button class="danger" data-action="del-key" data-key="${attr(k.name)}">handled</button>
+          </td>
         </tr>
       `).join('')}
     </tbody></table>

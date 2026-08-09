@@ -103,11 +103,14 @@
     <div class="wrap site-footer-row">
       <span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>
       <nav class="site-footer-links">
+        <a href="/feedback">Feedback</a>
         <a href="https://join.jxnfilm.club/privacy">Privacy</a>
         <a href="mailto:privacy@jxnfilm.club">Contact</a>
       </nav>
     </div>
   </footer>
+
+  <feedback-widget/>
 
   <div class="policy-toast" :hidden="!policyToast" role="status">
     <a href="{ policyUrl }">Our privacy policy was updated — see what changed</a>
@@ -125,6 +128,7 @@
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :
         type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
+        type === 'feedback' ? 'feedback-view' :   // beta feedback form (anonymous ok)
                              'home-view'
       this.mount(view, 'article')
     })

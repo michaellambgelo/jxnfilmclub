@@ -95,6 +95,8 @@ th {
 }
 tbody tr:hover { background: #fafafa }
 td.actions { white-space: nowrap }
+/* Feedback messages: keep author line breaks, wrap long words, cap width */
+td.prewrap { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 28rem }
 td.actions button { margin-right: 0.3rem }
 
 code, .id { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em }

@@ -17,6 +17,7 @@ Detailed documentation of every user-facing feature in jxnfilm.club, including M
 | [Home Page](home.md) | Landing page with podcast embed and episode list |
 | [Deployment](deployment.md) | CI/CD for the static site and Cloudflare Worker |
 | [Navigation](navigation.md) | SPA routing, auth state, session management |
+| [Beta Feedback](feedback.md) | Anonymous-friendly feedback capture (widget + /feedback) with admin triage |
 
 ## Architecture Overview
 

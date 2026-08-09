@@ -12,9 +12,10 @@ REL="${FILE#*/jxnfilmclub/}"
 # Map source file patterns to feature doc names
 docs_for_file() {
   case "$1" in
-    worker/src/index.js)           echo "signup signin member-profile attendance hosting watched" ;;
+    worker/src/index.js)           echo "signup signin member-profile attendance hosting watched feedback" ;;
     ui/views.html)                 echo "events members-directory watched home attendance hosting" ;;
     ui/auth.html)                  echo "signup signin member-profile attendance" ;;
+    ui/feedback.html)              echo "feedback" ;;
     ui/widgets.html)               echo "members-directory" ;;
     model/index.ts)                echo "events members-directory watched" ;;
     scripts/refresh_letterboxd.py) echo "watched home" ;;

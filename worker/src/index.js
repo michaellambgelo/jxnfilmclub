@@ -17,6 +17,13 @@ const SEND_THROTTLE = 60
 const SIGNUP_THROTTLE = 60
 const MAX_OTP_FAILURES = 5   // wrong-code lockout per email per OTP window
 
+// Beta feedback capture (docs/features/feedback.md). Records auto-expire so
+// the privacy promise ("we keep feedback at most 90 days") holds by design.
+const FEEDBACK_TTL = 90 * 24 * 3600
+const FEEDBACK_THROTTLE = 60
+const FEEDBACK_CATEGORIES = ['bug', 'idea', 'other']
+const MAX_FEEDBACK = 2000
+
 // Screening dates are calendar days in the club's home timezone (Jackson, MS).
 // Gating "today" off UTC instead would roll over 5-6 hours early each evening
 // Central time, blocking same-day event creation and cancelling/scrubbing
@@ -145,6 +152,8 @@ async function route(request, env) {
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
+
+    if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
@@ -610,6 +619,8 @@ async function handleMemberUpdate(request, env) {
 // entries (attend:{eventId} in ATTENDANCE_KV) are intentionally kept as
 // historical record — only the member identity is removed. RSVP records
 // (which carry the member's email) are purged everywhere via purgeRsvps().
+// Feedback records are identity-stripped (text kept as anonymous feedback)
+// via stripFeedbackIdentity().
 async function handleMemberDelete(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -646,6 +657,8 @@ async function handleMemberDelete(request, env) {
     await env.MEMBERS_KV.delete(`handle:${claims.email}`)
   }
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
+  // Feedback keeps its text as anonymous feedback; only the identity goes.
+  if (member.id) await stripFeedbackIdentity(env, member.id)
 
   // Revoke this token so a stolen copy can't be used to re-sign-in or hit
   // any other authenticated endpoint during the JWT's remaining lifetime.
@@ -684,6 +697,80 @@ async function anonymizeAttendance(env, memberName) {
     const eventId = k.name.slice('attend:'.length)
     // Reuse writeAttendees so attendance:all aggregate stays in lockstep.
     await writeAttendees(env, eventId, arr)
+  }
+}
+
+// POST /feedback — beta-phase active feedback capture.
+// Anonymous submissions are allowed; when a valid bearer token is present the
+// member identity is attached server-side (never trusted from the body), and
+// `anonymous: true` lets a signed-in member opt out of attaching it. The
+// absolute expiry is duplicated into the value so the account-deletion
+// identity strip can rewrite the record without clearing its TTL — a bare
+// put() would make the record permanent and break the 90-day retention
+// promise in /privacy.
+async function handleFeedback(request, env) {
+  const body = await request.json().catch(() => ({}))
+
+  if (!FEEDBACK_CATEGORIES.includes(body.category)) {
+    return json(env, { error: 'invalid category' }, 400)
+  }
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  if (!message || message.length > MAX_FEEDBACK) {
+    return json(env, { error: `message must be 1-${MAX_FEEDBACK} characters` }, 400)
+  }
+  const page = typeof body.page === 'string' ? body.page.slice(0, 200) : null
+
+  // First IP-keyed throttle in the Worker: every other rate-limited endpoint
+  // requires an email to key on, but anonymous feedback has none.
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+  if (!await throttle(env, `rate:feedback:${ip}`, FEEDBACK_THROTTLE)) {
+    return json(env, { error: 'too many submissions — try again in a minute' }, 429)
+  }
+
+  let member = null
+  const claims = await authorize(request, env)
+  if (claims && body.anonymous !== true) {
+    const snapshot = await readSession(env, claims)
+    member = { id: claims.id, email: claims.email, name: snapshot?.name || null }
+  }
+
+  const expiresAt = Math.floor(Date.now() / 1000) + FEEDBACK_TTL
+  await env.MEMBERS_KV.put(
+    `feedback:${Date.now()}:${randomToken(8)}`,
+    JSON.stringify({
+      at: new Date().toISOString(),
+      category: body.category,
+      message,
+      page,
+      member,
+      expiresAt,
+    }),
+    { expirationTtl: FEEDBACK_TTL },
+  )
+
+  return json(env, { ok: true })
+}
+
+// Feedback half of the account-deletion cascade: strip the member's identity
+// from their feedback records but keep the message as anonymous feedback.
+// The rewrite carries the record's original absolute expiry; a record within
+// KV's 60s expiration floor is deleted outright instead of rewritten.
+async function stripFeedbackIdentity(env, memberId) {
+  if (!memberId) return
+  const list = await env.MEMBERS_KV.list({ prefix: 'feedback:' })
+  for (const k of list.keys) {
+    const raw = await env.MEMBERS_KV.get(k.name)
+    if (!raw) continue
+    let rec
+    try { rec = JSON.parse(raw) } catch { continue }
+    if (!rec?.member || rec.member.id !== memberId) continue
+    rec.member = null
+    const remaining = (rec.expiresAt || 0) - Math.floor(Date.now() / 1000)
+    if (remaining < 60) {
+      await env.MEMBERS_KV.delete(k.name)
+    } else {
+      await env.MEMBERS_KV.put(k.name, JSON.stringify(rec), { expiration: rec.expiresAt })
+    }
   }
 }
 

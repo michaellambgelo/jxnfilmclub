@@ -429,6 +429,32 @@ async function handleOtpVerify(request, env) {
 // Idempotent: running it against a member whose handle is already null still
 // re-projects the members:all row (publicMemberProjection omits falsy
 // handles), repairing any stale aggregate state.
+// Surgically remove one handle from the stale-while-error Letterboxd caches
+// (watched:cache / avatars:cache) so an unlinked member stops serving
+// immediately without sacrificing anyone else's last-good data. This is a
+// read-modify-write, which members:all deliberately avoids — safe here
+// because a racing rebuild filters to current membership anyway, so a
+// clobbered evict self-heals on the next rebuild (worst case: one extra
+// freshness window). Tolerates both record shapes; an unparseable record is
+// deleted outright and rebuilt from scratch.
+async function evictHandleFromCaches(env, handle) {
+  if (!handle) return
+  for (const key of ['watched:cache', 'avatars:cache']) {
+    const raw = await env.MEMBERS_KV.get(key)
+    if (!raw) continue
+    try {
+      const rec = JSON.parse(raw)
+      const map = rec && typeof rec.map === 'object' && rec.map ? rec.map : rec
+      if (map && typeof map === 'object' && handle in map) {
+        delete map[handle]
+        await env.MEMBERS_KV.put(key, JSON.stringify(rec))
+      }
+    } catch {
+      await env.MEMBERS_KV.delete(key)
+    }
+  }
+}
+
 async function unlinkCascade(env, member) {
   // Capture the aggregate row's handle before patching — a drifted state can
   // leave a handle in members:all (and a stray email: index) after the
@@ -449,9 +475,11 @@ async function unlinkCascade(env, member) {
   await env.MEMBERS_KV.delete(`handle:${member.email}`)
   await env.MEMBERS_KV.delete(`lb_token:${member.email}`)
   await patchMembersAll(env, publicMemberProjection(member))
-  // Rebuild /watched from the corrected aggregate on next request instead of
-  // serving the unlinked member's RSS for up to 15 more minutes.
-  await env.MEMBERS_KV.delete('watched:cache')
+  // The unlinked member's RSS/avatar stop serving immediately — but only
+  // their entry goes. Deleting the whole record (the old approach) would
+  // destroy every member's last-good stale-while-error data whenever an
+  // unlink landed mid-Letterboxd-outage.
+  await evictHandleFromCaches(env, handle || staleAggHandle)
   await writeSession(env, member)
 
   // `handle: null` tells update-member.yml to drop the field from the
@@ -1179,12 +1207,30 @@ async function fetchEventsBaseline(env) {
 // --- Live Last Four Watched (Letterboxd RSS via the Worker) ---
 //
 // GET /watched — public. Handle-keyed map of each linked member's last four
-// diary entries, fetched live from Letterboxd RSS and cached in KV for
-// WATCHED_CACHE_TTL so the site stays minutes-fresh without hammering
-// Letterboxd (per-feed fetches are also edge-cached). data/watched.json
-// (6h cron) remains the SPA's offline fallback and the Hot Takes source.
+// diary entries, fetched live from Letterboxd RSS. Stale-while-error cache:
+// the KV record `{ map, fetchedAt, missAt? }` persists with NO expiration,
+// and freshness is checked in code — a stale record triggers a rebuild, but
+// the last good data keeps serving through any Letterboxd outage, however
+// long. A rebuild can only replace an entry it successfully refetched; a
+// TOTAL miss just stamps missAt so retries back off. Per-feed fetches are
+// also edge-cached. data/watched.json (6h cron) remains the SPA's offline
+// fallback and the Hot Takes source.
 
-const WATCHED_CACHE_TTL = 900 // seconds; KV minimum expirationTtl is 60
+const WATCHED_CACHE_TTL = 900 // seconds; freshness window (checked in code, not a KV TTL)
+const WATCHED_MISS_TTL = 120  // total-miss backoff before retrying upstream
+
+// Tolerates the pre-stale-while-error record shape (the bare map): it reads
+// as stale-but-present and upgrades on the next successful rebuild.
+function readWatchedRecord(raw) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed.fetchedAt === undefined && parsed.missAt === undefined
+      ? { map: parsed, fetchedAt: 0 }
+      : parsed
+  } catch { return null }
+}
 
 // Browser-cacheable response: the SPA calls /watched once per event card, so
 // a short max-age lets the browser dedupe across cards and navigations.
@@ -1200,38 +1246,52 @@ let watchedInflight = null
 
 async function handleWatchedGet(env) {
   if (env.E2E_MODE === 'true') return watchedResponse(env, {})
-  const cached = await env.MEMBERS_KV.get('watched:cache')
-  if (cached) {
-    try { return watchedResponse(env, JSON.parse(cached)) } catch { /* refetch below */ }
+  const rec = readWatchedRecord(await env.MEMBERS_KV.get('watched:cache'))
+  const now = Date.now()
+  if (rec) {
+    const fresh = now - (rec.fetchedAt || 0) < WATCHED_CACHE_TTL * 1000
+    const backoff = rec.missAt && now - rec.missAt < WATCHED_MISS_TTL * 1000
+    if (fresh || backoff) return watchedResponse(env, rec.map)
   }
   if (!watchedInflight) {
-    watchedInflight = buildWatched(env).finally(() => { watchedInflight = null })
+    watchedInflight = buildWatched(env, rec).finally(() => { watchedInflight = null })
   }
   return watchedResponse(env, await watchedInflight)
 }
 
-async function buildWatched(env) {
+async function buildWatched(env, prevRec) {
   const members = await readMembersAll(env)
   const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
+  const prev = (prevRec && prevRec.map) || {}
   const out = {}
+  let fetchedAny = false
   await Promise.all(handles.map(async handle => {
     try {
       const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`, {
         headers: { 'User-Agent': 'jxnfilmclub-join' },
         cf: { cacheTtl: WATCHED_CACHE_TTL, cacheEverything: true },
       })
-      if (!res.ok) return
+      if (!res.ok) throw new Error(`status ${res.status}`)
+      fetchedAny = true
       const films = parseLetterboxdRss(await res.text())
       if (films.length) out[handle] = films
-    } catch { /* feed down: leave the handle absent, others still serve */ }
+      // A 200 with an empty feed is genuinely empty — the entry drops.
+    } catch {
+      // Feed unreachable (outage / challenge): carry the last good entry.
+      if (prev[handle]) out[handle] = prev[handle]
+    }
   }))
 
-  // Don't cache a total miss (e.g. Letterboxd outage) — that would pin the
-  // outage for a full TTL. Partial results are cached as best-effort.
-  if (!handles.length || Object.keys(out).length) {
-    await env.MEMBERS_KV.put('watched:cache', JSON.stringify(out), { expirationTtl: WATCHED_CACHE_TTL })
-  }
-  return out
+  // `out` is built strictly from CURRENT membership handles, so unlinked or
+  // deleted members never ride along on carried-forward data. Any successful
+  // fetch counts as a fresh build; a TOTAL miss re-stores the carried map
+  // with a missAt stamp so retries back off without ever discarding the last
+  // good data. No KV expiration — the record must outlive any outage.
+  const rec = (!handles.length || fetchedAny)
+    ? { map: out, fetchedAt: Date.now() }
+    : { map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: Date.now() }
+  await env.MEMBERS_KV.put('watched:cache', JSON.stringify(rec))
+  return rec.map
 }
 
 // Minimal RSS extraction matching scripts/refresh_letterboxd.py: last four
@@ -1276,13 +1336,31 @@ function unescapeXml(s) {
 // (Letterboxd has no open API and RSS carries no avatar). The profile ROOT
 // page sat behind a Cloudflare bot challenge as of Aug 2026 — unreachable to
 // a Worker fetch — while the films subpage stayed open; its og:image is a
-// generic share card, but the header <img> is the real avatar. Cached in KV
-// for a week — avatars churn slowly — with a membership signature so a newly
-// linked handle invalidates the cache immediately instead of waiting out the
-// TTL. The SPA falls back to the letter <avatar> for any absent handle.
+// generic share card, but the header <img> is the real avatar.
+//
+// Stale-while-error cache, same scheme as watched:cache: the KV record
+// `{ sig, map, fetchedAt, missAt? }` persists with NO expiration, freshness
+// (one week — avatars churn slowly) is checked in code, rebuilds carry the
+// last good entry forward for any handle they fail to refetch, and a TOTAL
+// miss stamps missAt so retries back off without discarding data. The
+// membership signature still forces a rebuild the moment a handle links or
+// unlinks. The SPA falls back to the letter <avatar> for any absent handle.
 
-const AVATARS_CACHE_TTL = 86400 * 7 // seconds
+const AVATARS_CACHE_TTL = 86400 * 7 // seconds; freshness window (checked in code, not a KV TTL)
 const AVATARS_MISS_TTL = 3600       // total-miss backoff (outage / challenge spread)
+
+// Tolerates the pre-stale-while-error record shape ({ sig, map } with no
+// fetchedAt): it reads as stale-but-present and upgrades on the next
+// successful rebuild.
+function readAvatarsRecord(raw) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.map !== 'object' || !parsed.map) return null
+    if (parsed.fetchedAt === undefined) parsed.fetchedAt = 0
+    return parsed
+  } catch { return null }
+}
 
 function avatarsResponse(env, data) {
   return new Response(JSON.stringify(data), {
@@ -1302,44 +1380,51 @@ let avatarsInflight = null
 async function handleAvatarsGet(env) {
   if (env.E2E_MODE === 'true') return avatarsResponse(env, {})
   const members = await readMembersAll(env)
-  const cached = await env.MEMBERS_KV.get('avatars:cache')
-  if (cached) {
-    try {
-      const rec = JSON.parse(cached)
-      if (rec.sig === avatarsSig(members)) return avatarsResponse(env, rec.map || {})
-    } catch { /* rebuild below */ }
+  const rec = readAvatarsRecord(await env.MEMBERS_KV.get('avatars:cache'))
+  const now = Date.now()
+  if (rec) {
+    const fresh = rec.sig === avatarsSig(members) && now - (rec.fetchedAt || 0) < AVATARS_CACHE_TTL * 1000
+    const backoff = rec.missAt && now - rec.missAt < AVATARS_MISS_TTL * 1000
+    if (fresh || backoff) return avatarsResponse(env, rec.map)
   }
   if (!avatarsInflight) {
-    avatarsInflight = buildAvatars(env, members).finally(() => { avatarsInflight = null })
+    avatarsInflight = buildAvatars(env, members, rec).finally(() => { avatarsInflight = null })
   }
   return avatarsResponse(env, await avatarsInflight)
 }
 
-async function buildAvatars(env, members) {
+async function buildAvatars(env, members, prevRec) {
   const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
+  const prev = (prevRec && prevRec.map) || {}
   const out = {}
+  let fetchedAny = false
   await Promise.all(handles.map(async handle => {
     try {
       const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/films/`, {
         headers: { 'User-Agent': 'jxnfilmclub-join' },
         cf: { cacheTtl: 86400, cacheEverything: true },
       })
-      if (!res.ok) return
+      if (!res.ok) throw new Error(`status ${res.status}`)
+      fetchedAny = true
       const url = parseProfileAvatar(await res.text())
       if (url) out[handle] = url
-    } catch { /* profile down: handle absent, letter avatar covers it */ }
+      // A 200 without a custom upload: the member uses the Letterboxd
+      // default — the entry drops and the letter avatar covers them.
+    } catch {
+      // Profile unreachable (outage / challenge): carry the last good URL.
+      if (prev[handle]) out[handle] = prev[handle]
+    }
   }))
 
-  // Partial results are cached as best-effort for the full week. A TOTAL
-  // miss (Letterboxd outage, or their bot challenge spreading to the films
-  // subpage) is cached only briefly: long enough that page loads stop
-  // re-firing dozens of doomed fetches, short enough to recover within the
-  // hour. The sig check still busts either cache the moment membership
-  // handles change.
-  const ttl = handles.length && !Object.keys(out).length ? AVATARS_MISS_TTL : AVATARS_CACHE_TTL
-  const rec = { sig: avatarsSig(members), map: out }
-  await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec), { expirationTtl: ttl })
-  return out
+  // Same contract as buildWatched: `out` is built strictly from CURRENT
+  // membership handles, any successful fetch counts as a fresh build, and a
+  // TOTAL miss re-stores the carried map with a missAt stamp. No KV
+  // expiration — the record must outlive any outage.
+  const rec = (!handles.length || fetchedAny)
+    ? { sig: avatarsSig(members), map: out, fetchedAt: Date.now() }
+    : { sig: avatarsSig(members), map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: Date.now() }
+  await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec))
+  return rec.map
 }
 
 // First custom-upload avatar URL in the films subpage — that's the profile

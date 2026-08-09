@@ -107,18 +107,57 @@ describe('GET /avatars — Letterboxd avatar map via the films subpage', () => {
     expect(await r3.json()).toEqual({ qa: UPSIZED('1/2/3') })
   })
 
-  it('a total miss is negative-cached briefly — page loads stop re-firing the fan-out', async () => {
-    // Pre-challenge behavior never cached a total miss, which meant every
-    // /avatars request re-fired one doomed fetch per member while Letterboxd
-    // was unreachable. Now the empty map is cached (short TTL) and the sig
-    // check still busts it when membership changes.
+  it('a total miss with no history is backed off — page loads stop re-firing the fan-out', async () => {
     await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
     const failing = vi.fn(async () => new Response('nope', { status: 403 }))
     mockFetch(failing)
     expect(await (await req('/avatars')).json()).toEqual({})
     expect(await env.MEMBERS_KV.get('avatars:cache')).not.toBeNull()
     await req('/avatars')
-    expect(failing).toHaveBeenCalledTimes(1) // served from the negative cache
+    expect(failing).toHaveBeenCalledTimes(1) // served from the missAt backoff
+  })
+
+  it('stale-while-error: a total miss serves and preserves the last good map', async () => {
+    await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
+    const lastGood = { qa: UPSIZED('1/2/3') }
+    // Stale record (fetchedAt beyond the 7-day window) from before the outage.
+    await env.MEMBERS_KV.put('avatars:cache', JSON.stringify({ sig: 'qa', map: lastGood, fetchedAt: Date.now() - 8 * 86400_000 }))
+
+    const failing = vi.fn(async () => new Response('nope', { status: 403 }))
+    mockFetch(failing)
+    expect(await (await req('/avatars')).json()).toEqual(lastGood)
+    expect(failing).toHaveBeenCalledTimes(1)
+
+    const rec = JSON.parse(await env.MEMBERS_KV.get('avatars:cache'))
+    expect(rec.map).toEqual(lastGood)
+    expect(rec.missAt).toBeTruthy()
+
+    // Backoff: no new fan-out on the next request.
+    expect(await (await req('/avatars')).json()).toEqual(lastGood)
+    expect(failing).toHaveBeenCalledTimes(1)
+  })
+
+  it('stale-while-error: a partial outage carries failed handles forward, drops ex-members', async () => {
+    // gone is in the old cache but no longer in the membership.
+    await seedMembers([
+      { id: 'a', name: 'A', handle: 'qa' },
+      { id: 'b', name: 'B', handle: 'down' },
+    ])
+    await env.MEMBERS_KV.put('avatars:cache', JSON.stringify({
+      sig: 'down,gone,qa',
+      map: { qa: UPSIZED('old'), down: UPSIZED('down'), gone: UPSIZED('gone') },
+      fetchedAt: Date.now() - 8 * 86400_000,
+    }))
+    mockFetch(async (url) =>
+      String(url).includes('/down/') ? new Response('nope', { status: 403 }) : new Response(filmsHtml(AVATAR_IMG('new')), { status: 200 }))
+
+    const data = await (await req('/avatars')).json()
+    expect(data.qa).toBe(UPSIZED('new'))     // refetched fresh
+    expect(data.down).toBe(UPSIZED('down'))  // carried forward
+    expect(data.gone).toBeUndefined()        // no longer a member handle
+
+    const rec = JSON.parse(await env.MEMBERS_KV.get('avatars:cache'))
+    expect(rec.missAt).toBeUndefined()       // partial success = fresh build
   })
 
   it('no linked handles → empty map, no upstream fetches', async () => {

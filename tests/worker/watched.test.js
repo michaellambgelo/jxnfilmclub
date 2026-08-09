@@ -99,7 +99,7 @@ describe('GET /watched — live Last Four via the Worker', () => {
     expect(Object.keys(await r3.json())).toEqual(['qa'])
   })
 
-  it('a failing feed drops only that handle; a total miss is not cached', async () => {
+  it('a failing feed with no history drops only that handle', async () => {
     await seedMembers([
       { id: 'a', name: 'A', handle: 'qa' },
       { id: 'b', name: 'B', handle: 'down' },
@@ -108,15 +108,64 @@ describe('GET /watched — live Last Four via the Worker', () => {
       String(url).includes('/down/') ? new Response('nope', { status: 500 }) : new Response(QA_FEED, { status: 200 }))
     const data = await (await req('/watched')).json()
     expect(Object.keys(data)).toEqual(['qa'])
+  })
 
-    // Total outage: nothing cached, so the next request retries upstream.
-    await env.MEMBERS_KV.delete('watched:cache')
+  it('stale-while-error: a total miss serves the last good map, keeps it stored, and backs off retries', async () => {
+    await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
+    const lastGood = { qa: [{ title: 'Old Film', link: 'https://letterboxd.com/qa/film/old/' }] }
+    // Stale record (fetchedAt beyond the 900s window) from before the outage.
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({ map: lastGood, fetchedAt: Date.now() - 3600_000 }))
+
     const failing = vi.fn(async () => new Response('nope', { status: 500 }))
     mockFetch(failing)
-    expect(await (await req('/watched')).json()).toEqual({})
-    expect(await env.MEMBERS_KV.get('watched:cache')).toBeNull()
-    await req('/watched')
-    expect(failing).toHaveBeenCalledTimes(4) // 2 handles × 2 requests — no poisoned cache
+    expect(await (await req('/watched')).json()).toEqual(lastGood)
+    expect(failing).toHaveBeenCalledTimes(1)
+
+    // The record survives the failed rebuild — stamped with missAt, map intact.
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(rec.map).toEqual(lastGood)
+    expect(rec.missAt).toBeTruthy()
+
+    // Backoff: the next request serves stale without re-firing the fan-out.
+    expect(await (await req('/watched')).json()).toEqual(lastGood)
+    expect(failing).toHaveBeenCalledTimes(1)
+  })
+
+  it('stale-while-error: a partial outage carries failed handles forward and updates the rest', async () => {
+    // gonefromclub is in the old cache but no longer in the membership.
+    await seedMembers([
+      { id: 'a', name: 'A', handle: 'qa' },
+      { id: 'b', name: 'B', handle: 'down' },
+    ])
+    const downOld = [{ title: 'Down Old', link: 'https://letterboxd.com/down/film/x/' }]
+    const goneOld = [{ title: 'Gone', link: 'https://letterboxd.com/gonefromclub/film/y/' }]
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({
+      map: { qa: [{ title: 'Qa Old', link: 'https://letterboxd.com/qa/film/z/' }], down: downOld, gonefromclub: goneOld },
+      fetchedAt: Date.now() - 3600_000,
+    }))
+    mockFetch(async (url) =>
+      String(url).includes('/down/') ? new Response('nope', { status: 500 }) : new Response(QA_FEED, { status: 200 }))
+
+    const data = await (await req('/watched')).json()
+    expect(data.qa.map(f => f.title)[0]).toBe('Film One & a Half')  // refetched fresh
+    expect(data.down).toEqual(downOld)                              // carried forward
+    expect(data.gonefromclub).toBeUndefined()                       // no longer a member handle
+
+    // Any successful fetch counts as a fresh build — no missAt stamp.
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(rec.missAt).toBeUndefined()
+  })
+
+  it('legacy bare-map records read as stale-but-present and upgrade on rebuild', async () => {
+    await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({ qa: [{ title: 'Legacy', link: 'https://letterboxd.com/qa/film/l/' }] }))
+    const fetcher = vi.fn(async () => new Response(QA_FEED, { status: 200 }))
+    mockFetch(fetcher)
+    const data = await (await req('/watched')).json()
+    expect(fetcher).toHaveBeenCalledTimes(1)  // legacy = stale → rebuilt
+    expect(data.qa[0].title).toBe('Film One & a Half')
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(rec.fetchedAt).toBeTruthy()        // upgraded to the new shape
   })
 
   it('no linked handles → empty map, no upstream fetches', async () => {

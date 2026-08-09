@@ -95,7 +95,18 @@ describe('POST /admin/member/unlink', () => {
       { id: 'adm1', name: 'Mod Target', handle: 'modhandle', joined: '2026-01-01' },
     ]))
     await env.MEMBERS_KV.put('members:bootstrapped', '1')
-    await env.MEMBERS_KV.put('watched:cache', '{}')
+    // Stale-while-error records: the unlink must evict ONLY this member's
+    // entry — other members keep their last-good data (a full delete here
+    // would blank the Watched page club-wide during a Letterboxd outage).
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({
+      map: { modhandle: [{ title: 'F', link: 'https://letterboxd.com/x/' }], other: [{ title: 'G', link: 'https://letterboxd.com/y/' }] },
+      fetchedAt: Date.now(),
+    }))
+    await env.MEMBERS_KV.put('avatars:cache', JSON.stringify({
+      sig: 'modhandle,other',
+      map: { modhandle: 'https://a.ltrbxd.com/m.jpg', other: 'https://a.ltrbxd.com/o.jpg' },
+      fetchedAt: Date.now(),
+    }))
 
     const calls = []
     mockFetch(async (url, init) => {
@@ -112,7 +123,14 @@ describe('POST /admin/member/unlink', () => {
     expect(await env.MEMBERS_KV.get('email:modhandle')).toBeNull()
     expect(await env.MEMBERS_KV.get('handle:adm@example.com')).toBeNull()
     expect(await env.MEMBERS_KV.get('lb_token:adm@example.com')).toBeNull()
-    expect(await env.MEMBERS_KV.get('watched:cache')).toBeNull()
+
+    // Surgical cache eviction: modhandle gone from both maps, other intact.
+    const watched = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(watched.map.modhandle).toBeUndefined()
+    expect(watched.map.other).toBeTruthy()
+    const avatars = JSON.parse(await env.MEMBERS_KV.get('avatars:cache'))
+    expect(avatars.map.modhandle).toBeUndefined()
+    expect(avatars.map.other).toBe('https://a.ltrbxd.com/o.jpg')
 
     // The public aggregate row loses its handle — the invariant the old
     // admin-SPA raw-KV unlink violated (members-events.test.js asserts the

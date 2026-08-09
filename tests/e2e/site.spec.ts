@@ -98,11 +98,61 @@ test.describe('events view', () => {
 })
 
 test.describe('avatar widget', () => {
-  test('renders with deterministic background color', async ({ page }) => {
+  test('letter fallback renders the uniform circle with a white monogram', async ({ page }) => {
+    // The per-letter palette was removed 2026-08-09 (it never rendered — CSS
+    // var name mismatch — and half the letters got near-invisible black
+    // monograms on the gray fallback). Contract now: uniform --line-2 circle,
+    // always-white letter, regardless of the member's first initial.
     await page.goto('/members')
-    const avatar = page.locator('figure.avatar').first()
-    await expect(avatar).toBeVisible()
-    const bg = await avatar.getAttribute('style')
-    expect(bg).toMatch(/--bg:\s*#[0-9A-F]{6}/i)
+    const letterAvatars = page.locator('figure.avatar:has(b)')
+    await expect(letterAvatars.first()).toBeVisible()
+    const count = Math.min(await letterAvatars.count(), 10)
+    for (let i = 0; i < count; i++) {
+      const b = letterAvatars.nth(i).locator('b')
+      await expect(b).toHaveCSS('color', 'rgb(255, 255, 255)')
+    }
+    // No stray inline custom property from the old palette path.
+    const style = await letterAvatars.first().getAttribute('style')
+    expect(style || '').not.toContain('--bg')
+  })
+})
+
+test.describe('privacy-policy update toast', () => {
+  test('shows once when the stored ack is older, then re-stamps and stays gone', async ({ page }) => {
+    // A stale ack simulates a returning visitor from before the policy bump.
+    // Init scripts run on EVERY navigation, so guard the seed with a marker —
+    // otherwise the second goto would re-prime the toast.
+    await page.addInitScript(() => {
+      if (!localStorage.__e2e_ack_seeded) {
+        localStorage.__e2e_ack_seeded = '1'
+        localStorage.jxnfc_privacy_ack = '2000-01-01'
+      }
+    })
+    await page.goto('/members')
+    const toast = page.locator('.policy-toast')
+    await expect(toast).toBeVisible()
+    await expect(toast.locator('a')).toContainText(/privacy policy was updated/i)
+
+    // The × dismisses it without navigating.
+    await toast.locator('.policy-toast-close').click()
+    await expect(toast).toBeHidden()
+
+    // The ack was re-stamped at fetch time (async — poll for it).
+    await expect.poll(() => page.evaluate(() => localStorage.jxnfc_privacy_ack)).not.toBe('2000-01-01')
+    const ack = await page.evaluate(() => localStorage.jxnfc_privacy_ack)
+    expect(ack).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    // Next load is silent: the stored ack now matches the served version.
+    await page.goto('/events')
+    await expect(page.locator('h1')).toHaveText('Events')
+    await expect(toast).toBeHidden()
+  })
+
+  test('fresh visitor gets no toast — the ack is stored silently', async ({ page }) => {
+    await page.goto('/members')
+    await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
+    // Poll: the version fetch is async, so the ack may land after page load.
+    await expect.poll(() => page.evaluate(() => localStorage.jxnfc_privacy_ack)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    await expect(page.locator('.policy-toast')).toBeHidden()
   })
 })

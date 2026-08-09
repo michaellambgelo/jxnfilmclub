@@ -85,6 +85,21 @@ describe('POST /admin/scrub', () => {
     expect(await env.ATTENDANCE_KV.get('rsvp:evt-future')).not.toBeNull()
   })
 
+  it('guest entries (guest: memberIds, host-entered emails) scrub with the record', async () => {
+    // Backs the privacy-policy claim that guest emails inherit the 30-day
+    // deletion: the wholesale rsvp:{id} delete never inspects entry shapes.
+    await seedEvent('evt-guests', daysFromNow(-40))
+    await seedRsvp('evt-guests', [
+      { memberId: 'm1', name: 'Alice', email: 'alice@example.com', at: 1 },
+      { memberId: 'guest:abc12345', name: 'Gwen Guest', email: 'gwen@example.com', at: 2, addedBy: 'host-1' },
+      { memberId: 'guest:def67890', name: 'Quiet Sam', at: 3, addedBy: 'admin' },
+    ])
+
+    const res = await scrub()
+    expect(res.status).toBe(200)
+    expect(await env.ATTENDANCE_KV.get('rsvp:evt-guests')).toBeNull()
+  })
+
   it('deletes orphaned rsvp records whose event row is gone', async () => {
     // Keep events:all present (bootstrapped) so the scrub doesn't try to seed.
     await seedEvent('evt-live', daysFromNow(3))

@@ -5,7 +5,7 @@
   text-align: center;
   margin: 0;
   border-radius: 2rem;
-  background-color: var(--bg-color, var(--line-2));
+  background-color: var(--line-2);
 }
 
 .avatar img {
@@ -21,10 +21,6 @@
   font-weight: 500;
   font-size: 1.2em;
   line-height: 2.2;
-  color: black;
-}
-
-.is-dark b {
   color: white;
 }
 

@@ -13,6 +13,35 @@
     autolink: true,
   })
 
+  function resolveWorkerOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+  const WORKER_ORIGIN = resolveWorkerOrigin()
+
+  // One-time "privacy policy updated" toast. The worker serves the policy's
+  // revision date (parsed from the page itself); we compare it to a
+  // per-browser ack in localStorage. First visit stores silently — a brand
+  // new visitor has no earlier policy to be notified about. A later revision
+  // returns true exactly once, then the fresh stamp suppresses it until the
+  // next bump. Failures (offline, endpoint missing) resolve false: the toast
+  // is a courtesy, never a blocker.
+  async function checkPrivacyVersion() {
+    try {
+      const res = await fetch(WORKER_ORIGIN + '/privacy/version')
+      if (!res.ok) return false
+      const { updated } = await res.json()
+      if (!updated) return false
+      const seen = localStorage.jxnfc_privacy_ack
+      localStorage.jxnfc_privacy_ack = updated
+      return !!seen && seen !== updated
+    } catch { return false }
+  }
+
   function isSignedIn() {
     try {
       const raw = localStorage.jxnfc_session
@@ -80,6 +109,11 @@
     </div>
   </footer>
 
+  <div class="policy-toast" :hidden="!policyToast" role="status">
+    <a href="{ policyUrl }">Our privacy policy was updated — see what changed</a>
+    <button type="button" class="policy-toast-close" aria-label="Dismiss" :onclick="dismissPolicyToast">&times;</button>
+  </div>
+
   <script>
     state.on('type', ({ type }) => {
       this.update({ signedIn: isSignedIn(), menuOpen: false })
@@ -99,9 +133,18 @@
       this.update({ menuOpen: !this.menuOpen })
     }
 
+    dismissPolicyToast() {
+      this.update({ policyToast: false })
+    }
+
     mounted() {
-      this.update({ signedIn: isSignedIn(), menuOpen: false })
+      this.update({ signedIn: isSignedIn(), menuOpen: false, policyToast: false, policyUrl: WORKER_ORIGIN + '/privacy' })
       state.init()
+      checkPrivacyVersion().then(show => {
+        if (!show) return
+        this.update({ policyToast: true })
+        setTimeout(() => this.update({ policyToast: false }), 12000)
+      })
     }
   </script>
 

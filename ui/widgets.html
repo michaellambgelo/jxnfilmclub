@@ -1,22 +1,17 @@
 
 <!doctype dhtml lib>
 
-<!-- Avatar: optional image (Letterboxd avatar URL via :src) with the
-     deterministic letter fallback — first letter of name picks the color -->
-<figure :is="avatar" class="avatar { dark_mod }" --bg="{ color }">
+<!-- Avatar: optional image (Letterboxd avatar URL via :src) with a letter
+     fallback — uniform Night Shift circle, always-white letter. A per-letter
+     color palette used to live here but never rendered (the CSS var name
+     never matched), and the uniform gray it fell back to is the look we
+     kept on purpose (2026-08-09). -->
+<figure :is="avatar" class="avatar">
   <img :if="showImg" src="{ src }" alt="" :onerror="imgFailed">
   <b :if="!showImg && letter">{ letter }</b>
 
   <script>
-    const DARK  = '064789 679436 427AA1 D55672 481620 363946 F34213 3E2F5B'
-    const LIGHT = 'A5BE00 F1E8B8 EBF2FA 00FFC5 E0CA3C EDF4ED CAD2C5 CCFF66'
-    const COLORS = (DARK + ' ' + LIGHT).split(' ')
-
-    const letter = this.letter = (this.name || '?')[0]
-    const num = letter.toLowerCase().charCodeAt(0) - 97
-    const i = Math.max(0, Math.round(num / 2))
-    this.color = '#' + (COLORS[i] || COLORS[0])
-    this.dark_mod = i < 9 ? 'is-dark' : ''
+    this.letter = (this.name || '?')[0]
     this.showImg = !!this.src
 
     // A dead CDN URL falls back to the letter instead of a broken image.

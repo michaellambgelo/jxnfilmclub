@@ -667,6 +667,292 @@ describe('theater meetups (kind: meetup)', () => {
   })
 })
 
+describe('POST/DELETE /events/:id/rsvp/guest — manual guest RSVPs', () => {
+  const ADMIN = 'test-admin-token'  // tests/worker/vitest.config.ts
+
+  it('auth matrix: anon 401, non-host 403, host 200, admin token 200; 404/409 guards', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: other } = await getTokenFor('other@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+
+    const anon = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', body: { name: 'G' } })
+    expect(anon.status).toBe(401)
+    const nonHost = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: other, body: { name: 'G' } })
+    expect(nonHost.status).toBe(403)
+    const missing = await req('/events/nope/rsvp/guest', { method: 'POST', token: hostTok, body: { name: 'G' } })
+    expect(missing.status).toBe(404)
+
+    // Curated (non-hosted) event → 409.
+    await env.ATTENDANCE_KV.put('event:curated-1', JSON.stringify({ id: 'curated-1', title: 'Curated', date: '2099-01-01' }))
+    const curated = await req('/events/curated-1/rsvp/guest', { method: 'POST', token: ADMIN, body: { name: 'G' } })
+    expect(curated.status).toBe(409)
+
+    // Past screening → 409 on BOTH verbs: removal routes through cancelRsvp,
+    // whose promotion path would email an address for a finished screening.
+    await env.ATTENDANCE_KV.put('event:past-1', JSON.stringify({ id: 'past-1', title: 'Past', date: '2000-01-01', hostId: 'someone' }))
+    const past = await req('/events/past-1/rsvp/guest', { method: 'POST', token: ADMIN, body: { name: 'G' } })
+    expect(past.status).toBe(409)
+    const pastRm = await req('/events/past-1/rsvp/guest', { method: 'DELETE', token: ADMIN, body: { id: 'guest:abc12345' } })
+    expect(pastRm.status).toBe(409)
+
+    const byHost = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Guest One' } })
+    expect(byHost.status).toBe(200)
+    const byAdmin = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: ADMIN, body: { name: 'Guest Two' } })
+    expect(byAdmin.status).toBe(200)
+  })
+
+  it('emailed guest → confirmed, one opt-out-framed email with address + cancel link; KV entry tagged', async () => {
+    const { token: hostTok, member: host } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+
+    const sent = captureEmails()
+    const res = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Gwen Guest', email: 'gwen@example.com' } })
+    const data = await res.json()
+    expect(data.status).toBe('confirmed')
+    expect(data.id).toMatch(/^guest:[a-z0-9]{8}$/)
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['gwen@example.com'])
+    expect(sent[0].text).toContain(`${host.name} added you to the guest list`)
+    expect(sent[0].text).toContain('123 Main St')
+    expect(sent[0].text).toContain('Buzzer 5')
+    expect(sent[0].text).toContain('/rsvp/cancel?token=')
+    expect(sent[0].text).toContain('30 days')
+
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed).toHaveLength(1)
+    expect(rsvp.confirmed[0].memberId).toBe(data.id)
+    expect(rsvp.confirmed[0].email).toBe('gwen@example.com')
+    expect(rsvp.confirmed[0].addedBy).toBe(host.id)
+
+    // Public attend: mirror includes the guest name.
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual(['Gwen Guest'])
+  })
+
+  it('admin add stamps addedBy: admin (never the operator email)', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: ADMIN, body: { name: 'Ada' } })
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed[0].addedBy).toBe('admin')
+  })
+
+  it('name-only guest → confirmed, zero emails, no email key stored', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+    const sent = captureEmails()
+    const res = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Sam' } })
+    expect((await res.json()).status).toBe('confirmed')
+    expect(sent).toHaveLength(0)
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect('email' in rsvp.confirmed[0]).toBe(false)
+  })
+
+  it('validates name and email', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+    const noName = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { email: 'x@example.com' } })
+    expect(noName.status).toBe(400)
+    const badEmail = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'G', email: 'not-an-email' } })
+    expect(badEmail.status).toBe(400)
+  })
+
+  it('full event: no force → waitlisted (no email); force → confirmed over capacity', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })  // fills the room
+
+    const sent = captureEmails()
+    const wl = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Waity', email: 'waity@example.com' } })).json()
+    expect(wl.status).toBe('waitlisted')
+    expect(wl.position).toBe(1)
+    expect(sent).toHaveLength(0)
+
+    const forced = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Vip', email: 'vip@example.com', force: true } })).json()
+    expect(forced.status).toBe('confirmed')
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed).toHaveLength(2)  // capacity 1 + forced guest
+    expect(rsvp.waitlist).toHaveLength(1)
+    // Forced confirm sends the confirmation email.
+    expect(sent.find(e => e.to[0] === 'vip@example.com')).toBeTruthy()
+  })
+
+  it('dedupes by email across lists and against members; name-only never dedupes', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 10 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+
+    // Same guest email twice → 409 (case-insensitive).
+    const g1 = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'G', email: 'dupe@example.com' } })
+    expect(g1.status).toBe(200)
+    const g2 = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'G2', email: 'DUPE@example.com' } })
+    expect(g2.status).toBe(409)
+
+    // Guest email matching an existing member RSVP → 409.
+    const g3 = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'M1 Again', email: 'm1@example.com' } })
+    expect(g3.status).toBe(409)
+
+    // Two name-only Sams both get in.
+    const s1 = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Sam' } })
+    const s2 = await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Sam' } })
+    expect(s1.status).toBe(200)
+    expect(s2.status).toBe(200)
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed.filter(r => r.name === 'Sam')).toHaveLength(2)
+  })
+
+  it('member self-RSVP after being host-added with the same email → 409', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('walkin@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok)).json()
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Walk In', email: 'walkin@example.com' } })
+    const res = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    expect(res.status).toBe(409)
+  })
+
+  it('guest one-click cancel works; promotion only happens when there is real space', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    const { token: t2 } = await getTokenFor('m2@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })  // confirmed 1/1
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t2 })  // waitlisted
+
+    // Force-add an emailed guest → confirmed 2/1.
+    const sent = captureEmails()
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Gwen', email: 'gwen@example.com', force: true } })
+    const url = sent[0].text.match(/\/rsvp\/cancel\?token=([^\s]+)/)
+    expect(url).toBeTruthy()
+
+    // Guest cancels via the email token: room goes 2/1 → 1/1, still full, so
+    // the waitlisted member must NOT be promoted.
+    const promoSent = captureEmails()
+    const ok = await req(`/rsvp/cancel?token=${url[1]}`, { method: 'POST' })
+    expect(ok.status).toBe(200)
+    expect(promoSent).toHaveLength(0)
+    let rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed).toHaveLength(1)
+    expect(rsvp.waitlist).toHaveLength(1)
+
+    // Now the confirmed member cancels: 1/1 → 0/1, real space → promotion.
+    const promo2 = captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'DELETE', token: t1 })
+    expect(promo2.find(e => e.to[0] === 'm2@example.com')).toBeTruthy()
+    rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed).toHaveLength(1)
+    expect(rsvp.waitlist).toHaveLength(0)
+  })
+
+  it('DELETE removes a guest; conditional promotion; guests-only rule; idempotent', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    const { token: t2 } = await getTokenFor('m2@example.com')
+    const { token: other } = await getTokenFor('other@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })  // confirmed 1/1
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t2 })  // waitlisted
+    const forced = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Over Cap', force: true } })).json()
+
+    // Member ids are rejected — members keep their own agency.
+    const rsvpBefore = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    const memberId = rsvpBefore.confirmed.find(r => !r.memberId.startsWith('guest:')).memberId
+    const memberRm = await req(`/events/${created.id}/rsvp/guest`, { method: 'DELETE', token: hostTok, body: { id: memberId } })
+    expect(memberRm.status).toBe(400)
+
+    // Non-host can't remove.
+    const intruder = await req(`/events/${created.id}/rsvp/guest`, { method: 'DELETE', token: other, body: { id: forced.id } })
+    expect(intruder.status).toBe(403)
+
+    // Removing the forced guest (2/1 → 1/1, still full) promotes nobody.
+    const sent = captureEmails()
+    const rm = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'DELETE', token: hostTok, body: { id: forced.id } })).json()
+    expect(rm.status).toBe('cancelled')
+    expect(rm.promoted).toBe(false)
+    expect(sent).toHaveLength(0)
+
+    // Unknown guest id → idempotent not-rsvped.
+    const again = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'DELETE', token: hostTok, body: { id: forced.id } })).json()
+    expect(again.status).toBe('not-rsvped')
+
+    // Removing a confirmed guest when a real slot frees → promotes + emails.
+    await req(`/events/${created.id}/rsvp`, { method: 'DELETE', token: t1 })  // t2 promoted into the slot
+    const g = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Late', force: true } })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })    // t1 back on waitlist
+    const promoSent = captureEmails()
+    const rm2 = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'DELETE', token: hostTok, body: { id: g.id } })).json()
+    expect(rm2.promoted).toBe(false)  // 2/1 → 1/1: still no space
+    // and finally a real cancel frees the slot for t1
+    await req(`/events/${created.id}/rsvp`, { method: 'DELETE', token: t2 })
+    expect(promoSent.find(e => e.to[0] === 'm1@example.com')).toBeTruthy()
+  })
+
+  it('regression: unrelated PATCH still works while over capacity; capacity guard still fires when touched', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Extra', force: true } })  // 2/1
+
+    const title = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { title: 'Still Editable' } })
+    expect(title.status).toBe(200)
+
+    const shrink = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { capacity: 1 } })
+    expect(shrink.status).toBe(400)
+
+    // Capacity increase to cover the overflow is fine and promotes nobody
+    // (there is no waitlist).
+    const grow = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { capacity: 3 } })
+    expect(grow.status).toBe(200)
+  })
+
+  it('name-only guests are skipped by update + cancellation email loops', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 3 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Quiet Sam' } })
+
+    let sent = captureEmails()
+    await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { address: '999 New Address' } })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['m1@example.com'])
+
+    sent = captureEmails()
+    await req(`/events/${created.id}`, { method: 'DELETE', token: hostTok })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['m1@example.com'])
+  })
+
+  it('host view lists guests with ids for removal, still no member ids or emails', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: t1 } = await getTokenFor('m1@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, { capacity: 1 })).json()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: t1 })
+    const g = await (await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token: hostTok, body: { name: 'Gwen', email: 'gwen@example.com' } })).json()
+
+    const data = await (await req(`/events/${created.id}/host`, { token: hostTok })).json()
+    expect(data.guests).toEqual([{ id: g.id, name: 'Gwen', list: 'waitlist' }])
+    expect(JSON.stringify(data)).not.toContain('@example.com')
+    expect(JSON.stringify(data)).not.toContain('id-m1')
+  })
+})
+
 describe('/rsvp/cancel?token=… — one-click cancel from email', () => {
   it('valid token POST cancels + promotes; tampered token → 400', async () => {
     // Issue ALL tokens first so the capture handler installed below isn't

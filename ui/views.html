@@ -595,6 +595,10 @@
         <p :if="lbLinkError" class="rsvp-err">{ lbLinkError }</p>
       </div>
 
+      <!-- Manual guest RSVPs live in their own component: the event-card
+           script is near the compiler serialization cap (10k chars). -->
+      <host-guests :event="event" :session="session" :guests="hostView.guests" :attendees="attendees"/>
+
       <div class="host-actions">
         <button type="button" class="attend-btn attend-btn-remove" :onclick="cancelScreening">Cancel screening</button>
       </div>
@@ -806,6 +810,100 @@
     }
   </script>
 </article>
+
+<!-- Host-panel guest list: manual RSVPs for non-members the host invites
+     directly. Split out of event-card because component scripts over 10k
+     chars get truncated by the compiler serialization step. Mutations reload
+     the page (same idiom as diary linking and cancel screening). -->
+<div :is="host-guests" class="host-guests">
+  <p class="host-guests-title"><strong>Guest list</strong></p>
+  <p class="host-guests-hint">Add someone who is not a member. Email is optional — with one we send the address and a cancel link; without one they get no emails.</p>
+  <div :if="guests && guests.length" class="host-guest-rows">
+    <div :each="g in guests" key="{ g.id }" class="host-guest-row">
+      <span>{ g.name }{ g.list === 'waitlist' ? ' (waitlist)' : '' }</span>
+      <button type="button" class="attend-btn attend-btn-remove" data-id="{ g.id }"
+        :disabled="busy" :onclick="removeGuest">Remove</button>
+    </div>
+  </div>
+  <div class="host-guest-add">
+    <input type="text" name="guestName" placeholder="Guest name" :disabled="busy">
+    <input type="email" name="guestEmail" placeholder="Email (optional)" :disabled="busy">
+    <button type="button" class="attend-btn" :disabled="busy" :onclick="addGuest">{ busy ? 'Adding' : 'Add guest' }</button>
+  </div>
+  <label class="host-guest-force" :hidden="!isFull()">
+    <input type="checkbox" name="guestForce" :disabled="busy">
+    Screening is full — confirm over capacity instead of waitlisting
+  </label>
+  <p :if="err" class="rsvp-err">{ err }</p>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    this.mounted = function() {
+      this.update({ busy: false, err: '' })
+    }
+
+    this.isFull = function() {
+      return !!(this.event.capacity && (this.attendees || []).length >= this.event.capacity)
+    }
+
+    this.callGuest = async function(method, body) {
+      const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp/guest', {
+        method: method,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.session.token },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(function () { return {} })
+      if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+      return data
+    }
+
+    this.addGuest = async function() {
+      if (!this.session) return
+      const nameInput = this.root.querySelector('input[name="guestName"]')
+      const emailInput = this.root.querySelector('input[name="guestEmail"]')
+      const forceInput = this.root.querySelector('input[name="guestForce"]')
+      const name = nameInput ? nameInput.value.trim() : ''
+      const email = emailInput ? emailInput.value.trim() : ''
+      if (!name) {
+        this.update({ err: 'Guest name is required.' })
+        return
+      }
+      this.update({ busy: true, err: '' })
+      try {
+        const body = { name: name }
+        if (email) body.email = email
+        if (forceInput && forceInput.checked && this.isFull()) body.force = true
+        await this.callGuest('POST', body)
+        location.reload()
+      } catch (e) {
+        this.update({ busy: false, err: e.message })
+      }
+    }
+
+    this.removeGuest = async function(e) {
+      if (!this.session) return
+      const id = e.currentTarget.dataset.id
+      if (!id) return
+      this.update({ busy: true, err: '' })
+      try {
+        await this.callGuest('DELETE', { id: id })
+        location.reload()
+      } catch (e2) {
+        this.update({ busy: false, err: e2.message })
+      }
+    }
+  </script>
+</div>
 
 
 <!-- Host-a-screening-or-meetup form at /host. Members-only.

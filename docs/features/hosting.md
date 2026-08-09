@@ -60,6 +60,54 @@ deleted. `scrubPastEvents()` in `worker/src/index.js` delivers on that:
 
 Tests: `tests/worker/scrub.test.js`.
 
+## Guest RSVPs (manual add by host or admin)
+
+Hosts can put non-members on their own guest list — people who want to attend
+one screening without joining the club. `POST /events/:id/rsvp/guest` (body
+`{ name, email?, force? }`) and `DELETE /events/:id/rsvp/guest` (body `{ id }`)
+share one auth helper (`authorizeGuestManager`): `ADMIN_TOKEN` bearer equality
+first (the admin dashboard proxies through `/api/rsvp/guest` on both admin
+servers), else member bearer + `event.hostId === claims.id`. Both go through
+`writeRsvp()` so the `attend:{id}` mirror and `attendance:all` stay in sync.
+
+Semantics:
+
+- **Entry shape**: `{ memberId: 'guest:xxxxxxxx', name, email?, at, addedBy }`.
+  The `guest:` prefix is the discriminator everywhere (`isGuestId`); `addedBy`
+  is `'admin'` or the host's member id — an audit field that lives only in the
+  private `rsvp:{id}` record and dies with it in the 30-day scrub.
+- **Email is optional.** With one, the guest gets `sendGuestRsvpEmail` — the
+  standard details (address for house screenings, notes, showtime) with an
+  intro naming who added them and the cancel link framed as an opt-out. The
+  cancel token flow (`/rsvp/cancel?token=`) works for guests unchanged.
+  Name-only guests are never emailed: all three screening senders early-return
+  on a missing email, which also covers update/cancellation loops and waitlist
+  promotions.
+- **Capacity**: same rules as self-serve RSVP — confirm if space, else
+  waitlist. `force: true` confirms over capacity (host's call; the SPA only
+  surfaces the checkbox when the event is full). `cancelRsvp` only promotes
+  the waitlist head when `confirmed.length < capacity` after the splice, so a
+  cancel on an over-capacity event doesn't promote into a still-full room;
+  the PATCH capacity-decrease guard only fires when the PATCH actually
+  touches capacity.
+- **Dedupe**: an email may appear once per event across both lists (409 on
+  conflict, and symmetrically a member self-RSVPing with an email the host
+  already added gets 409). Name-only guests never dedupe — two Sams can both
+  come.
+- **Removal is guests-only** (400 on non-`guest:` ids): members self-cancel
+  via button or email link; a host silently removing a member would be a
+  privacy/UX footgun. The host panel and the admin Events tab both render
+  remove buttons on guest entries only.
+- **Host view**: `GET /events/:id/host` adds `guests: [{ id, name, list }]`
+  (guest entries only — member ids and emails stay unexposed) so the SPA can
+  render remove buttons.
+- **Privacy**: guest emails live in `rsvp:{id}` and inherit the 30-day scrub
+  wholesale; `purgeRsvps` (account deletion) correctly never matches guests.
+  The policy (`worker/src/privacy.html`) names the guest flow explicitly.
+
+Tests: `tests/worker/screenings.test.js` (guest suite),
+`tests/admin-worker/admin-worker.test.js` (`/api/rsvp/guest` proxy).
+
 ## Theater allowlist
 
 Meetup venues are validated server-side against `THEATERS` in

@@ -157,7 +157,7 @@ async function kvValues(kv, names) {
 // Generic bearer-authenticated proxy to the join Worker's /admin/* routes.
 // The join Worker derives link origins from request.url, so pass its real
 // public URL through the service binding.
-async function proxyJoinAdmin(request, env, q, adminPath) {
+async function proxyJoinAdmin(request, env, q, adminPath, method = 'POST') {
   if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
   const staging = q.env === 'staging'
   const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
@@ -168,7 +168,7 @@ async function proxyJoinAdmin(request, env, q, adminPath) {
   }
   const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
   const workerRes = await service.fetch(`${origin}${adminPath}`, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: await request.text(),
   })
@@ -305,6 +305,14 @@ async function handle(request, env, access) {
   // dispatch). Idempotent repair path for aggregate drift.
   if (method === 'POST' && url.pathname === '/api/member/unlink') {
     return proxyJoinAdmin(request, env, q, '/admin/member/unlink')
+  }
+  // POST/DELETE /api/rsvp/guest?env=&event=  body = JSON { name, email?,
+  // force? } (POST) or { id } (DELETE) — manual guest add/remove via the join
+  // Worker's real handlers, so capacity/waitlist/email logic and the attend:
+  // mirror all hold (never a raw KV write).
+  if ((method === 'POST' || method === 'DELETE') && url.pathname === '/api/rsvp/guest') {
+    if (!q.event) throw new HttpError(400, 'event required')
+    return proxyJoinAdmin(request, env, q, `/events/${encodeURIComponent(q.event)}/rsvp/guest`, method)
   }
   // Identity comes from the verified Access JWT.
   if (method === 'GET' && url.pathname === '/api/whoami') {

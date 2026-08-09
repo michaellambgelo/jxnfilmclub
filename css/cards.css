@@ -297,6 +297,73 @@ button.lb-pick:hover:not(:disabled) {
   flex: none;
 }
 
+/* Host panel: manual guest RSVPs (non-member invites) */
+.host-guests {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75em 0;
+}
+
+.host-guests-title {
+  margin: 0;
+  font-size: 88%;
+}
+
+.host-guests-hint {
+  margin: 0;
+  font-size: 88%;
+  color: var(--ink-3);
+}
+
+.host-guest-rows {
+  display: grid;
+  gap: 4px;
+}
+
+.host-guest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 88%;
+}
+
+.host-guest-row .attend-btn {
+  width: auto;
+  flex: none;
+}
+
+.host-guest-add {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.host-guest-add input {
+  flex: 1;
+  min-width: 8rem;
+  font: inherit;
+  font-size: 88%;
+  padding: 0.35em 0.6em;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+}
+
+.host-guest-add .attend-btn {
+  width: auto;
+  flex: none;
+}
+
+.host-guest-force {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 88%;
+  color: var(--ink-3);
+}
+
 /* Filter header shared by members + events views: allow controls to wrap
  * onto multiple rows on narrow screens rather than overflowing. */
 

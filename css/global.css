@@ -306,3 +306,50 @@ main > nav {
   opacity: 1;
   color: var(--brand);
 }
+
+/* One-time "privacy policy updated" toast (index.html root component).
+ * display:flex would beat the [hidden] UA rule, so re-assert it. */
+.policy-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(92vw, 34rem);
+  padding: 0.6em 1em;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.45);
+  font-size: 88%;
+  z-index: 100;
+}
+
+.policy-toast[hidden] {
+  display: none;
+}
+
+.policy-toast a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.policy-toast a:hover {
+  text-decoration: underline;
+}
+
+.policy-toast-close {
+  font: inherit;
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0 0.2em;
+  line-height: 1;
+}
+
+.policy-toast-close:hover {
+  color: var(--ink);
+}

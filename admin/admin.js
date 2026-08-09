@@ -477,6 +477,7 @@ async function renderRate() {
 
 let eventsCache = null
 let attendanceCache = null
+let rsvpCache = null
 let eventsSort = 'upcoming'   // module scope — survives tab switches
 
 const attendeeCount = (e) => (attendanceCache[e.id] || []).length
@@ -519,6 +520,12 @@ async function renderEvents() {
   for (const k of attendanceRaw.keys) {
     const eventId = k.name.slice('attend:'.length)
     attendanceCache[eventId] = tryParse(attendanceRaw.values[k.name]) || []
+  }
+  const rsvpRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'rsvp:' })}`)
+  rsvpCache = {}
+  for (const k of rsvpRaw.keys) {
+    const eventId = k.name.slice('rsvp:'.length)
+    rsvpCache[eventId] = tryParse(rsvpRaw.values[k.name]) || { confirmed: [], waitlist: [] }
   }
 
   // Sorted after attendance loads — the attendance sort needs the counts.
@@ -636,9 +643,37 @@ function renderEventCards() {
           `).join('') || '<li class="muted">no attendees</li>'}
         </ul>
       </div>
+      ${hosted ? renderRsvpSection(e) : ''}
     </div>
   `
   }).join('')
+}
+
+// RSVP section for hosted events: real confirmed/waitlist entries (emails
+// visible — this dashboard already reads raw KV behind Access), guest tags,
+// and a manual guest add form. Adds/removes go through /api/rsvp/guest →
+// join Worker, NOT raw KV, so capacity/waitlist/emails/mirrors all hold.
+function renderRsvpSection(e) {
+  const rsvp = (rsvpCache && rsvpCache[e.id]) || { confirmed: [], waitlist: [] }
+  const isGuest = r => typeof r.memberId === 'string' && r.memberId.startsWith('guest:')
+  const renderEntry = (r, tag) => `
+    <li>${escapeHtml(r.name || '(no name)')}${r.email ? ` &lt;${escapeHtml(r.email)}&gt;` : ''}${tag ? ` <span class="muted">${tag}</span>` : ''}${isGuest(r) ? ' <span class="muted">[guest]</span>' : ''}
+      ${isGuest(r) ? `<button class="danger" data-action="guest-rm" data-event="${attr(e.id)}" data-id="${attr(r.memberId)}">remove guest</button>` : ''}
+    </li>`
+  return `
+      <div class="attendance rsvp-admin">
+        <strong>RSVPs (${rsvp.confirmed.length} confirmed${rsvp.waitlist.length ? `, ${rsvp.waitlist.length} waitlisted` : ''})</strong>
+        <ul>
+          ${rsvp.confirmed.map(r => renderEntry(r, '')).join('') || '<li class="muted">no RSVPs</li>'}
+          ${rsvp.waitlist.map(r => renderEntry(r, '(waitlist)')).join('')}
+        </ul>
+        <div class="guest-add toolbar">
+          <input type="text" name="guest-name" placeholder="Guest name">
+          <input type="email" name="guest-email" placeholder="Email (optional)">
+          <label class="muted"><input type="checkbox" name="guest-force"> force over capacity</label>
+          <button class="primary" data-action="guest-add" data-event="${attr(e.id)}">add guest</button>
+        </div>
+      </div>`
 }
 
 // --- Filter helper ---
@@ -861,6 +896,26 @@ document.addEventListener('click', async (e) => {
       eventsCache.push(fresh)
       await writeEventKv(fresh)
       toast(`Created event "${id}"`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'guest-add') {
+      const wrap = btn.closest('.guest-add')
+      const name = (wrap.querySelector('input[name="guest-name"]').value || '').trim()
+      const email = (wrap.querySelector('input[name="guest-email"]').value || '').trim()
+      const force = wrap.querySelector('input[name="guest-force"]').checked
+      if (!name) { toast('Guest name is required', true); return }
+      const body = { name }
+      if (email) body.email = email
+      if (force) body.force = true
+      const r = await api('POST', `/api/rsvp/guest?${qs({ env: env(), event: btn.dataset.event })}`, JSON.stringify(body))
+      toast(`Added ${name} (${r.status})${email ? ' — confirmation emailed' : ''}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'guest-rm') {
+      const { event: eventId, id } = btn.dataset
+      if (!confirm(`Remove this guest from ${eventId}?\n\nIf they were confirmed and a waitlist exists, the next person is promoted and emailed.`)) return
+      await api('DELETE', `/api/rsvp/guest?${qs({ env: env(), event: eventId })}`, JSON.stringify({ id }))
+      toast('Guest removed')
       await switchTab(currentTab)
     }
     else if (a === 'attend-rm') {

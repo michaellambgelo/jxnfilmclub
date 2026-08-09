@@ -354,6 +354,63 @@ describe('/api/member/unlink', () => {
   })
 })
 
+// --- Guest RSVP proxy: POST adds, DELETE removes, both via the join worker ---
+
+describe('/api/rsvp/guest', () => {
+  it('POST proxies to the join worker guest endpoint with the admin token', async () => {
+    const { service, calls } = stubService({ ok: true, status: 'confirmed', id: 'guest:abc12345' })
+    const res = await call('/api/rsvp/guest?env=production&event=2099-01-15-test-ab12', {
+      method: 'POST', body: JSON.stringify({ name: 'Gwen', email: 'gwen@example.com' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ ok: true, status: 'confirmed', id: 'guest:abc12345' })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/events/2099-01-15-test-ab12/rsvp/guest')
+    expect(calls[0].init.method).toBe('POST')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe('{"name":"Gwen","email":"gwen@example.com"}')
+  })
+
+  it('DELETE proxies with method DELETE and the guest id body', async () => {
+    const { service, calls } = stubService({ ok: true, status: 'cancelled', promoted: false })
+    const res = await call('/api/rsvp/guest?env=production&event=evt-1', {
+      method: 'DELETE', body: JSON.stringify({ id: 'guest:abc12345' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/events/evt-1/rsvp/guest')
+    expect(calls[0].init.method).toBe('DELETE')
+    expect(calls[0].init.body).toBe('{"id":"guest:abc12345"}')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with the staging token', async () => {
+    const { service, calls } = stubService({ ok: true, status: 'confirmed', id: 'guest:x' })
+    const res = await call('/api/rsvp/guest?env=staging&event=evt-2', {
+      method: 'POST', body: JSON.stringify({ name: 'G' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/events/evt-2/rsvp/guest')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('400s without an event param; relays join worker errors', async () => {
+    const { service } = stubService({ error: 'that email already has an RSVP for this screening' }, 409)
+    const missing = await call('/api/rsvp/guest?env=production', {
+      method: 'POST', body: '{"name":"G"}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('event')
+
+    const dupe = await call('/api/rsvp/guest?env=production&event=evt-3', {
+      method: 'POST', body: '{"name":"G","email":"d@example.com"}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(dupe.status).toBe(409)
+    expect((await dupe.json()).error).toContain('already has an RSVP')
+  })
+})
+
 // --- Watched proxy: unauthenticated pass-through over the service binding ---
 
 describe('/api/watched', () => {

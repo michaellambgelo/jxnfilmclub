@@ -1,5 +1,9 @@
 import privacyHtml from './privacy.html'
 import signupHtml from './signup.html'
+
+// The policy page is the single source of truth for its own revision date.
+// Null if the marker ever goes missing — the SPA treats that as "no toast".
+const PRIVACY_UPDATED = (privacyHtml.match(/Last updated: (\d{4}-\d{2}-\d{2})/) || [])[1] || null
 import brandCss from './brand.css'
 import faviconIco from './favicon.ico'
 
@@ -118,6 +122,9 @@ async function route(request, env) {
 
     if (request.method === 'GET' && pathname === '/')        return html(render(signupHtml, env))
     if (request.method === 'GET' && pathname === '/privacy') return html(render(privacyHtml, env))
+    // Revision date for the SPA's one-time "policy updated" toast — parsed
+    // from the policy page itself so there is exactly one date to bump.
+    if (request.method === 'GET' && pathname === '/privacy/version') return json(env, { updated: PRIVACY_UPDATED })
     // Same icon as the main site (img/favicon.ico); the copy in worker/src is
     // byte-parity-tested. Served first-party so the browser's automatic
     // /favicon.ico request doesn't 404.
@@ -169,7 +176,7 @@ async function route(request, env) {
       if (request.method === 'DELETE') return handleDeleteEvent(request, env, eventIdMatch[1])
     }
 
-    const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance|rsvp|rsvp\/me|host)$/)
+    const eventMatch = pathname.match(/^\/events\/([^\/]+)\/(attend|attendance|rsvp|rsvp\/me|rsvp\/guest|host)$/)
     if (eventMatch) {
       const [, eventId, suffix] = eventMatch
       if (suffix === 'attendance' && request.method === 'GET')   return handleAttendanceGet(env, eventId)
@@ -178,6 +185,8 @@ async function route(request, env) {
       if (suffix === 'rsvp'       && request.method === 'POST')   return handleRsvp(request, env, eventId)
       if (suffix === 'rsvp'       && request.method === 'DELETE') return handleUnrsvp(request, env, eventId)
       if (suffix === 'rsvp/me'    && request.method === 'GET')    return handleRsvpMe(request, env, eventId)
+      if (suffix === 'rsvp/guest' && request.method === 'POST')   return handleGuestAdd(request, env, eventId)
+      if (suffix === 'rsvp/guest' && request.method === 'DELETE') return handleGuestRemove(request, env, eventId)
       if (suffix === 'host'       && request.method === 'GET')    return handleEventHostView(request, env, eventId)
     }
 
@@ -1470,9 +1479,9 @@ function fmtScreeningWhen(event) {
   return event.time ? `${event.date} at ${fmtTime(event.time)}` : event.date
 }
 
-function rsvpEmailBody(event, address, notes, cancelUrl) {
+function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   const lines = [
-    `You're confirmed for ${event.title} on ${fmtScreeningWhen(event)}.`,
+    opts.intro || `You're confirmed for ${event.title} on ${fmtScreeningWhen(event)}.`,
     `Film: ${event.film || '(see host)'}`,
     `Hosted by: ${event.hostName || 'a member'}`,
     '',
@@ -1487,23 +1496,42 @@ function rsvpEmailBody(event, address, notes, cancelUrl) {
   if (notes) {
     lines.push('', 'Notes from the host:', notes)
   }
-  lines.push(
-    '',
+  lines.push('', ...(opts.cancelLines || [
     "Can't make it? Use the one-click link below to cancel — it opens a spot",
     'for the next person on the waitlist:',
-    cancelUrl,
-  )
+  ]), cancelUrl)
   return lines.join('\n')
 }
 
 async function sendRsvpEmail(env, member, event, origin) {
+  if (!member.email) return // name-only guests have nothing to send to
   const token = await signRsvpCancelToken(env, event.id, member.id)
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
   await sendEmail(env, member.email, subject, rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl))
 }
 
+// Guest variant: same details, but the intro names who added them and the
+// cancel link is framed as an opt-out — a guest never asked us to store
+// their email, so the exit (and the retention promise) leads.
+async function sendGuestRsvpEmail(env, guest, event, origin) {
+  if (!guest.email) return
+  const token = await signRsvpCancelToken(env, event.id, guest.memberId)
+  const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
+  const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
+  const body = rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl, {
+    intro: `${event.hostName || 'A club member'} added you to the guest list for ${event.title} on ${fmtScreeningWhen(event)}.`,
+    cancelLines: [
+      "Didn't expect this, or can't make it? One click removes you from the",
+      'list — and we keep no other record of your email past 30 days after',
+      'the screening:',
+    ],
+  })
+  await sendEmail(env, guest.email, subject, body)
+}
+
 async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
+  if (!member.email) return // name-only guests have nothing to send to
   const token = await signRsvpCancelToken(env, event.id, member.id)
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const lines = [
@@ -1531,6 +1559,7 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
 }
 
 async function sendScreeningCancelledEmail(env, member, event) {
+  if (!member.email) return // name-only guests have nothing to send to
   const subject = `Cancelled: ${event.title} on ${fmtScreeningWhen(event)}`
   const text = [
     `Sorry — ${event.hostName || 'the host'} cancelled the screening "${event.title}"`,
@@ -1787,9 +1816,11 @@ async function handleUpdateEvent(request, env, eventId) {
   const v = validScreeningInput(merged)
   if (v.error) return json(env, { error: v.error }, 400)
 
-  // Capacity-decrease guard (capacity is optional on meetups).
+  // Capacity-decrease guard (capacity is optional on meetups). Only when the
+  // PATCH actually touches capacity — a force-added guest can leave confirmed
+  // above capacity, and unrelated edits (title, diary link) must still work.
   const rsvp = await readRsvp(env, eventId)
-  if (v.value.capacity != null && v.value.capacity < rsvp.confirmed.length) {
+  if (body.capacity !== undefined && v.value.capacity != null && v.value.capacity < rsvp.confirmed.length) {
     return json(env, { error: `cannot reduce capacity below the ${rsvp.confirmed.length} already-confirmed RSVPs` }, 400)
   }
 
@@ -1902,6 +1933,13 @@ async function handleRsvp(request, env, eventId) {
     const position = rsvp.waitlist.findIndex(r => r.memberId === member.id) + 1
     return json(env, { ok: true, status: 'waitlisted', position })
   }
+  // One email, one spot: the host may already have added this person as a
+  // guest (host-added entries carry a guest: id, so the memberId checks
+  // above never catch them).
+  const sameEmail = r => r.email && r.email.toLowerCase() === member.email.toLowerCase()
+  if (rsvp.confirmed.some(sameEmail) || rsvp.waitlist.some(sameEmail)) {
+    return json(env, { error: 'you are already on the guest list for this screening — use the link in your confirmation email to cancel' }, 409)
+  }
 
   const entry = { memberId: member.id, name: member.name, email: member.email, at: Date.now() }
   // No capacity (uncapped meetup) → everyone confirms, nobody waitlists.
@@ -1931,9 +1969,12 @@ async function cancelRsvp(env, eventId, memberId, origin) {
   const cIdx = rsvp.confirmed.findIndex(r => r.memberId === memberId)
   if (cIdx !== -1) {
     rsvp.confirmed.splice(cIdx, 1)
-    // Promote the head of waitlist (if any) into the freed slot.
+    // Promote the head of waitlist into the freed slot — but only if there
+    // really is one: a force-confirmed guest can push confirmed past
+    // capacity, and a cancel there must not promote into a still-full room.
+    const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
     let promoted = null
-    if (rsvp.waitlist.length) {
+    if (rsvp.waitlist.length && rsvp.confirmed.length < capacity) {
       promoted = rsvp.waitlist.shift()
       rsvp.confirmed.push(promoted)
     }
@@ -1951,6 +1992,102 @@ async function cancelRsvp(env, eventId, memberId, origin) {
     return { ok: true, status: 'cancelled', promoted: false }
   }
   return { ok: true, status: 'not-rsvped', promoted: false }
+}
+
+// --- Manual guest RSVPs (host or admin) ---
+//
+// Hosts can put non-members on their own guest list; the admin dashboard can
+// do it for any hosted event (via the join worker, so capacity/waitlist/email
+// logic and the attend:{id} mirror all hold — never a raw KV write). Guest
+// entries carry a synthetic 'guest:xxxxxxxx' memberId so every
+// findIndex-by-memberId path (cancel tokens, removal, /rsvp/me) works
+// unchanged and can never collide with a real member id.
+
+function isGuestId(id) {
+  return typeof id === 'string' && id.startsWith('guest:')
+}
+
+// 'admin' | 'host' | { code, error }. Admin-token equality first (same gate
+// as handleAdminScrub); the env.ADMIN_TOKEN && guard is load-bearing — with
+// the var unset, an accept-phrased comparison would grant admin to anyone
+// sending no Authorization header at all.
+async function authorizeGuestManager(request, env, event) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (env.ADMIN_TOKEN && auth === env.ADMIN_TOKEN) return 'admin'
+  const claims = await authorize(request, env)
+  if (!claims) return { code: 401, error: 'unauthorized' }
+  if (!event.hostId || event.hostId !== claims.id) {
+    return { code: 403, error: 'only the host can manage the guest list' }
+  }
+  return 'host'
+}
+
+// POST /events/:id/rsvp/guest — body { name, email?, force? }
+async function handleGuestAdd(request, env, eventId) {
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId) return json(env, { error: 'not a hosted screening' }, 409)
+  if (event.date && event.date < centralToday()) {
+    return json(env, { error: 'this screening has already happened' }, 409)
+  }
+  const who = await authorizeGuestManager(request, env, event)
+  if (typeof who !== 'string') return json(env, { error: who.error }, who.code)
+
+  const body = await request.json().catch(() => ({}))
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!isValidName(name)) return json(env, { error: 'guest name required' }, 400)
+  const email = typeof body.email === 'string' ? body.email.trim() : ''
+  if (email && !isValidEmail(email)) return json(env, { error: 'invalid email' }, 400)
+
+  const rsvp = await readRsvp(env, eventId)
+  // Email dedupe across members and guests both lists; name-only guests are
+  // never deduped — two guests named Sam can both come.
+  if (email) {
+    const sameEmail = r => r.email && r.email.toLowerCase() === email.toLowerCase()
+    if (rsvp.confirmed.some(sameEmail) || rsvp.waitlist.some(sameEmail)) {
+      return json(env, { error: 'that email already has an RSVP for this screening' }, 409)
+    }
+  }
+
+  const entry = { memberId: `guest:${randomToken(8)}`, name, at: Date.now(), addedBy: who === 'admin' ? 'admin' : event.hostId }
+  if (email) entry.email = email
+
+  const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
+  if (rsvp.confirmed.length < capacity || body.force === true) {
+    rsvp.confirmed.push(entry)
+    await writeRsvp(env, eventId, rsvp)
+    try { await sendGuestRsvpEmail(env, entry, event, new URL(request.url).origin) }
+    catch (e) { console.error('guest rsvp email failed:', e?.message || e) }
+    return json(env, { ok: true, status: 'confirmed', id: entry.memberId })
+  }
+  rsvp.waitlist.push(entry)
+  await writeRsvp(env, eventId, rsvp)
+  return json(env, { ok: true, status: 'waitlisted', position: rsvp.waitlist.length, id: entry.memberId })
+}
+
+// DELETE /events/:id/rsvp/guest — body { id }. Guests only: members keep
+// their own agency (self-cancel button or email link); a host silently
+// removing a member would leave that member confused with no notification.
+async function handleGuestRemove(request, env, eventId) {
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!event.hostId) return json(env, { error: 'not a hosted screening' }, 409)
+  // Past screenings are read-only until the scrub deletes them: removal
+  // routes through cancelRsvp, whose waitlist promotion would email someone
+  // an address for a screening that already happened.
+  if (event.date && event.date < centralToday()) {
+    return json(env, { error: 'this screening has already happened' }, 409)
+  }
+  const who = await authorizeGuestManager(request, env, event)
+  if (typeof who !== 'string') return json(env, { error: who.error }, who.code)
+
+  const body = await request.json().catch(() => ({}))
+  if (!isGuestId(body.id)) {
+    return json(env, { error: 'only guest entries can be removed here' }, 400)
+  }
+  const r = await cancelRsvp(env, eventId, body.id, new URL(request.url).origin)
+  if (!r.ok) return json(env, { error: r.error }, r.code || 500)
+  return json(env, r)
 }
 
 // --- Post-event privacy scrub ---
@@ -2099,6 +2236,12 @@ async function handleEventHostView(request, env, eventId) {
     notes: event.notes || null,
     confirmed: rsvp.confirmed.map(r => r.name),
     waitlist:  rsvp.waitlist.map(r => r.name),
+    // Guest entries only, id + name — the id is what the remove button
+    // sends back; member ids and emails stay unexposed.
+    guests: [
+      ...rsvp.confirmed.filter(r => isGuestId(r.memberId)).map(r => ({ id: r.memberId, name: r.name, list: 'confirmed' })),
+      ...rsvp.waitlist.filter(r => isGuestId(r.memberId)).map(r => ({ id: r.memberId, name: r.name, list: 'waitlist' })),
+    ],
   })
 }
 

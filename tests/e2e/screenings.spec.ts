@@ -44,6 +44,11 @@ test.describe('member-hosted screenings', () => {
     await expect(card).toContainText(/0 \/ 4 RSVPed/)
     await expect(card).toContainText(/7:30 pm/)
 
+    // The host panel's guest-list component (host-guests, a separate dhtml
+    // child component) mounts with its add form — smoke for the custom-tag
+    // instantiation; behavior is covered by the worker suite.
+    await expect(card.locator('.host-guests input[name="guestName"]')).toBeVisible()
+
     // The full rendered events page must contain ZERO trace of the address.
     const html = await page.content()
     expect(html).not.toContain(SECRET_ADDRESS)

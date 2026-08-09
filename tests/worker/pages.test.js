@@ -36,6 +36,22 @@ describe('branded static pages', () => {
   }
 })
 
+describe('GET /privacy/version', () => {
+  it('returns the same revision date the served policy page carries', async () => {
+    // Self-syncing: extract the date from the rendered /privacy page rather
+    // than hardcoding it, so a policy bump can never desync this test (or
+    // pass while the endpoint serves a stale constant).
+    const page = await (await get('/privacy')).text()
+    const fromPage = page.match(/Last updated: (\d{4}-\d{2}-\d{2})/)
+    expect(fromPage).toBeTruthy()
+
+    const res = await get('/privacy/version')
+    expect(res.status).toBe(200)
+    const { updated } = await res.json()
+    expect(updated).toBe(fromPage[1])
+  })
+})
+
 describe('branded JS-built pages', () => {
   for (const path of ['/unsubscribe?token=bad', '/rsvp/cancel?token=bad']) {
     it(`${path} uses the shared shell, not the old off-brand styles`, async () => {

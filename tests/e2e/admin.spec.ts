@@ -128,6 +128,30 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  test('Config tab: theater list edit round-trips to config:theaters', async ({ page }) => {
+    // Seed podcast config so the tab render skips the cross-origin
+    // episodes.json fetch (deterministic offline).
+    await seedKv(page, 'config:podcast', JSON.stringify({ featured_id: '', episodes: [] }))
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="config"]').click()
+
+    // No override yet: defaults prefilled, badge says so.
+    const rows = page.locator('#cfg-theaters-list input[data-theater]')
+    await expect(rows).toHaveCount(7)
+    await expect(page.locator('#cfg-theaters h3')).toContainText(/defaults/)
+
+    await page.locator('button[data-action="cfg-theater-add"]').click()
+    await rows.last().fill('E2E Added Cinema')
+    await page.locator('button[data-action="cfg-theaters-save"]').click()
+
+    await expect.poll(async () => {
+      const raw = await getKv(page, 'config:theaters')
+      return raw ? JSON.parse(raw) : null
+    }).toContain('E2E Added Cinema')
+    await expect(page.locator('#cfg-theaters h3')).toContainText(/KV override/)
+  })
+
   test('active tab survives a reload; a stale stored tab falls back to members', async ({ page }) => {
     await page.goto(`${ADMIN_ORIGIN}/`)
     await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')

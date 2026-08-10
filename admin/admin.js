@@ -14,6 +14,7 @@ import {
   buildWatchedSectionHtml, buildWatchedSectionText,
   buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
+  moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
 } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
@@ -87,6 +88,7 @@ const TABS = {
   events: renderEvents,
   feedback: renderFeedback,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
+  config: renderConfig,
 }
 
 let currentTab = 'members'
@@ -176,16 +178,24 @@ const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpa
   </td></tr>
 </table>`
 
+const NEWSLETTER_SUBJECT_PLACEHOLDER = 'This month at Jackson Film Club'
+
 // handle → display name for the "latest watches" section; refreshed on every
 // Newsletter tab render so inserts use the same member list the tab shows.
 let nlHandleNames = {}
 let nlPosterResults = []
 
 async function renderNewsletter() {
-  const [membersRes, historyRes] = await Promise.all([
+  const [membersRes, historyRes, tmplRes] = await Promise.all([
     loadKv('member:'),
     loadKv('newsletter:sent:'),
+    loadKv('config:newsletter_template'),
   ])
+
+  // Operator-saved template (Config tab) beats the hardcoded literals.
+  const tmpl = tryParse(tmplRes.values['config:newsletter_template']) || {}
+  const prefillSubject = typeof tmpl.subject === 'string' ? tmpl.subject : ''
+  const prefillHtml = typeof tmpl.html === 'string' && tmpl.html ? tmpl.html : NEWSLETTER_TEMPLATE_HTML
 
   const members = membersRes.keys.map(k => tryParse(membersRes.values[k.name])).filter(Boolean)
   const optedIn = members.filter(m => m.newsletter === true)
@@ -204,10 +214,10 @@ async function renderNewsletter() {
       <p class="section-hint">Sends through the Worker (<code>/admin/newsletter/send</code>) for the
         <strong>${escapeHtml(env())}</strong> env. Every email automatically gets a one-click unsubscribe
         link, <code>List-Unsubscribe</code> headers, and the CAN-SPAM postal footer.</p>
-      <label>Subject<input id="nl-subject" type="text" placeholder="This month at Jackson Film Club"></label>
+      <label>Subject<input id="nl-subject" type="text" value="${attr(prefillSubject)}" placeholder="${attr(NEWSLETTER_SUBJECT_PLACEHOLDER)}"></label>
       <div class="nl-body">
         <div class="nl-fields">
-          <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>">${escapeHtml(NEWSLETTER_TEMPLATE_HTML)}</textarea></label>
+          <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>">${escapeHtml(prefillHtml)}</textarea></label>
           <label>Plain-text body <span class="muted">— fallback</span><textarea id="nl-text" rows="6" placeholder="…"></textarea></label>
         </div>
         <div class="nl-preview-wrap">
@@ -498,6 +508,239 @@ async function renderRate() {
       `}).join('')}
     </tbody></table>
   `
+}
+
+// --- Config tab (MEMBERS_KV: config:* operator overrides) ---
+//
+// Purpose-built editors for the config keys the join Worker and public SPA
+// consume. The mental model surfaced everywhere in this tab: a missing key
+// means "use the hardcoded defaults" — deleting a key is the reset, and the
+// site/Worker fall back automatically. Each section badges its current
+// source (KV override vs defaults) from whether the key exists.
+
+// Mirrors THEATERS in worker/src/index.js and ui/views.html (the hardcoded
+// fallback when config:theaters is absent). Shown as the starting point /
+// reset target here — keep in lockstep if the hardcoded lists change.
+const DEFAULT_THEATERS = [
+  'Patton House & Gallery',
+  'The Capri Theater',
+  'Legacy Parkway Theaters',
+  'Cinemark XD in Pearl',
+  'Malco Renaissance in Ridgeland',
+  'Malco Grandview & IMAX in Madison',
+  'B&B Theaters at Northpark in Ridgeland',
+]
+
+// config:copy fields — placeholders are the current hardcoded site copy
+// (ui/views.html), shown so the operator sees exactly what an override
+// replaces. Empty input = fall back to that default.
+const COPY_FIELDS = [
+  { key: 'heroLabel', label: 'Hero label', multiline: false,
+    def: 'A community cinema · Jackson MS' },
+  // No heroHeadline entry: the site h1 carries inline markup the config
+  // pipeline deliberately does not override (see ui/views.html home-view).
+  { key: 'heroLede', label: 'Hero lede', multiline: true,
+    def: 'A community space for analytical conversations about cinema, founded in Jackson, Mississippi in 2018. Bring a chair. Stay for the argument.' },
+  { key: 'joinKicker', label: 'Join kicker', multiline: false,
+    def: 'Free · Sign up with email · Jackson MS' },
+  { key: 'joinHeading', label: 'Join heading', multiline: false,
+    def: 'Get in the room.' },
+  { key: 'joinBody', label: 'Join body', multiline: true,
+    def: 'No more than one dispatch a week — screenings, hosts, and what the club is watching. Membership is public, but pick any display name you like; your email address is always private, and Letterboxd is optional.' },
+  { key: 'podcastLede', label: 'Podcast lede', multiline: true,
+    def: 'The audio series launched in 2021 to extend JXN Film Club discussions to a broader audience.' },
+  { key: 'sectionProgram', label: 'Section heading — Program', multiline: false, def: 'The Program' },
+  { key: 'sectionWatches', label: 'Section heading — Watches', multiline: false, def: 'Recent Watches from Members' },
+  { key: 'sectionTakes', label: 'Section heading — Takes', multiline: false, def: 'Hot Takes' },
+  { key: 'sectionPodcast', label: 'Section heading — Podcast', multiline: false, def: 'The Podcast' },
+]
+
+const EPISODES_JSON_URL = 'https://jxnfilm.club/data/episodes.json'
+
+// Working state for the tab. Rebuilt on every render (loadKv is the source
+// of truth); mutated in place by the add/remove/move actions between saves.
+let cfgTheaters = []
+let cfgTheatersKv = false
+let cfgPodcast = { episodes: [] }
+let cfgPodcastKv = false
+let cfgPodcastSeedFailed = false
+
+const cfgBadge = (fromKv) => fromKv
+  ? '<span class="pill on">KV override</span>'
+  : '<span class="pill off">defaults — no KV key</span>'
+
+async function renderConfig() {
+  const { keys, values } = await loadKv('config:')
+  const has = (k) => keys.some(x => x.name === k)
+
+  cfgTheatersKv = has('config:theaters')
+  cfgTheaters = cfgTheatersKv
+    ? normalizeStringList(tryParse(values['config:theaters']))
+    : [...DEFAULT_THEATERS]
+
+  cfgPodcastKv = has('config:podcast')
+  cfgPodcastSeedFailed = false
+  if (cfgPodcastKv) {
+    cfgPodcast = tryParse(values['config:podcast']) || { episodes: [] }
+    if (!Array.isArray(cfgPodcast.episodes)) cfgPodcast.episodes = []
+  } else {
+    // No override yet — start from the live site data so "save" begins an
+    // override at the current published state, not from scratch. Bounded
+    // fetch: a slow/unreachable jxnfilm.club must not hang the tab.
+    try {
+      cfgPodcast = await (await fetch(EPISODES_JSON_URL, { signal: AbortSignal.timeout(3000) })).json()
+      if (!cfgPodcast || !Array.isArray(cfgPodcast.episodes)) cfgPodcast = { episodes: [] }
+      if (!cfgPodcast.episodes.length) cfgPodcastSeedFailed = true
+    } catch {
+      cfgPodcast = { featured_id: '', episodes: [] }
+      cfgPodcastSeedFailed = true
+    }
+  }
+
+  const copy = (has('config:copy') && tryParse(values['config:copy'])) || {}
+  const nl = (has('config:newsletter_template') && tryParse(values['config:newsletter_template'])) || null
+
+  content().innerHTML = `
+    <h2>Config <span class="muted">— editing <strong>${escapeHtml(env())}</strong></span></h2>
+    <p class="section-hint">Operator overrides stored under <code>config:*</code> in <code>MEMBERS_KV</code>,
+      consumed by the join Worker and the public site. A section saved here overrides the hardcoded
+      defaults; <b>deleting the key (reset) restores them automatically</b> — nothing stored means
+      "use the defaults". All reads/writes follow the env toggle above.</p>
+
+    <section class="cfg-section" id="cfg-theaters">
+      <h3>Theaters ${cfgBadge(cfgTheatersKv)}</h3>
+      <p class="section-hint"><code>config:theaters</code> — the venue allowlist/dropdown for theater
+        meetups. Row order is dropdown order. Save writes the full list; reset deletes the key so the
+        Worker and site fall back to their hardcoded list (shown here when no override exists).</p>
+      <div id="cfg-theaters-list">${renderTheaterRows()}</div>
+      <div class="toolbar">
+        <button data-action="cfg-theater-add">+ add theater</button>
+        <button class="primary" data-action="cfg-theaters-save">save list</button>
+        <button class="danger" data-action="cfg-theaters-reset">reset to defaults</button>
+      </div>
+    </section>
+
+    <section class="cfg-section" id="cfg-podcast">
+      <h3>Podcast ${cfgBadge(cfgPodcastKv)}</h3>
+      <p class="section-hint"><code>config:podcast</code> — same shape as <code>data/episodes.json</code>
+        (<code>{ featured_id, episodes }</code>). ${cfgPodcastKv
+          ? 'Editing the KV override.'
+          : 'No override yet — prefilled from the live site\'s <code>data/episodes.json</code>; saving creates the override.'}
+        The featured episode drives the homepage Spotify embed. Fields this editor doesn't know about
+        are preserved on save.</p>
+      ${cfgPodcastSeedFailed ? '<p class="cfg-warn">⚠ Could not load the live <code>data/episodes.json</code> seed — this list started <b>empty</b>. Saving now would publish an empty episode list; reload the tab to retry the seed first.</p>' : ''}
+      <label class="cfg-label">Featured episode — Spotify episode ID <span class="muted">(the 22-char ID from open.spotify.com/episode/…; or use a "featured" radio below)</span>
+        <input id="cfg-featured" type="text" value="${attr(cfgPodcast.featured_id || '')}" placeholder="e.g. 2lTN7uSNEil7AoTEDzbEZs" style="max-width:340px">
+      </label>
+      <div id="cfg-episodes-list">${renderEpisodeRows()}</div>
+      <div class="toolbar">
+        <button data-action="cfg-ep-add">+ add episode</button>
+        <button class="primary" data-action="cfg-podcast-save">save podcast</button>
+        <button class="danger" data-action="cfg-podcast-reset">reset to defaults</button>
+      </div>
+    </section>
+
+    <section class="cfg-section" id="cfg-nl-template">
+      <h3>Newsletter template ${cfgBadge(!!nl)}</h3>
+      <p class="section-hint"><code>config:newsletter_template</code> — the subject + HTML the
+        Newsletter compose tab prefills. Reset deletes the key; compose then falls back to the
+        built-in branded template.</p>
+      <label class="cfg-label">Subject
+        <input id="cfg-nl-subject" type="text" value="${attr(nl?.subject || '')}" placeholder="${attr(NEWSLETTER_SUBJECT_PLACEHOLDER)}">
+      </label>
+      <label class="cfg-label">HTML body
+        <textarea id="cfg-nl-html" rows="12">${escapeHtml(nl?.html || NEWSLETTER_TEMPLATE_HTML)}</textarea>
+      </label>
+      <div class="toolbar">
+        <button class="primary" data-action="cfg-nl-save">save template</button>
+        <button class="danger" data-action="cfg-nl-reset">reset to defaults</button>
+      </div>
+    </section>
+
+    <section class="cfg-section" id="cfg-copy">
+      <h3>Homepage copy ${cfgBadge(has('config:copy'))}</h3>
+      <p class="section-hint"><code>config:copy</code> — per-field overrides for the homepage prose.
+        Placeholders show the current site defaults, i.e. what an override replaces. Only non-empty
+        fields are stored — leave a field empty to keep its default. Saving with every field empty
+        deletes the key entirely.</p>
+      <div class="cfg-copy-grid">
+        ${COPY_FIELDS.map(f => `
+          <label class="cfg-label">${escapeHtml(f.label)} <code class="muted">${escapeHtml(f.key)}</code>
+            ${f.multiline
+              ? `<textarea data-copy-field="${attr(f.key)}" rows="3" placeholder="${attr(f.def)}">${escapeHtml(copy[f.key] || '')}</textarea>`
+              : `<input type="text" data-copy-field="${attr(f.key)}" value="${attr(copy[f.key] || '')}" placeholder="${attr(f.def)}">`}
+          </label>`).join('')}
+      </div>
+      <div class="toolbar">
+        <button class="primary" data-action="cfg-copy-save">save copy overrides</button>
+        <button class="danger" data-action="cfg-copy-reset">reset to defaults</button>
+      </div>
+    </section>
+  `
+
+  // Featured-episode radios live inside the re-renderable episodes list, so
+  // delegate from the section element (survives list re-renders; dies with
+  // the tab's innerHTML, so no listener accumulation).
+  $('#cfg-podcast').addEventListener('change', (e) => {
+    const radio = e.target.closest('input[name="cfg-featured-pick"]')
+    if (!radio) return
+    syncPodcastInputs()
+    const ep = cfgPodcast.episodes[Number(radio.dataset.idx)]
+    let id = ep && typeof ep.id === 'string' ? ep.id.trim() : ''
+    if (!id) {
+      // Episodes from data/episodes.json carry no Spotify ID (their anchor
+      // URLs can't be converted) — capture it once and keep it on the row.
+      id = (prompt('Spotify episode ID for this episode (from open.spotify.com/episode/…):') || '').trim()
+      if (!id) { $('#cfg-episodes-list').innerHTML = renderEpisodeRows(); return }
+      ep.id = id
+    }
+    cfgPodcast.featured_id = id
+    $('#cfg-featured').value = id
+    $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
+  })
+}
+
+function renderTheaterRows() {
+  if (!cfgTheaters.length) return '<p class="empty">No theaters — add one below.</p>'
+  return cfgTheaters.map((v, i) => `
+    <div class="cfg-row">
+      <input type="text" data-theater value="${attr(v)}" placeholder="Theater name">
+      <button data-action="cfg-theater-up" data-idx="${i}" title="move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button data-action="cfg-theater-down" data-idx="${i}" title="move down" ${i === cfgTheaters.length - 1 ? 'disabled' : ''}>↓</button>
+      <button class="danger" data-action="cfg-theater-rm" data-idx="${i}">remove</button>
+    </div>`).join('')
+}
+
+function renderEpisodeRows() {
+  if (!cfgPodcast.episodes.length) return '<p class="empty">No episodes — add one below.</p>'
+  const featured = String(cfgPodcast.featured_id || '')
+  return cfgPodcast.episodes.map((ep, i) => `
+    <div class="cfg-episode" data-idx="${i}">
+      <label class="cfg-feat" title="Feature this episode on the homepage embed">
+        <input type="radio" name="cfg-featured-pick" data-idx="${i}"
+          ${ep.id && featured && ep.id === featured ? 'checked' : ''}> featured
+      </label>
+      <input type="text" data-ep-field="title" value="${attr(ep.title || '')}" placeholder="Episode title">
+      <input type="date" data-ep-field="date" value="${attr(ep.date || '')}">
+      <input type="url" data-ep-field="url" value="${attr(ep.url || '')}" placeholder="https://podcasters.spotify.com/…">
+      <button class="danger" data-action="cfg-ep-rm" data-idx="${i}">delete</button>
+    </div>`).join('')
+}
+
+// DOM → working state, called before any mutation or save so in-progress
+// typing is never lost by a list re-render.
+function readTheaterInputs() {
+  cfgTheaters = [...document.querySelectorAll('#cfg-theaters-list input[data-theater]')].map(i => i.value)
+}
+
+function syncPodcastInputs() {
+  const feat = $('#cfg-featured')
+  if (feat) cfgPodcast.featured_id = feat.value
+  document.querySelectorAll('#cfg-episodes-list .cfg-episode').forEach(row => {
+    const ep = cfgPodcast.episodes[Number(row.dataset.idx)]
+    if (!ep) return
+    row.querySelectorAll('[data-ep-field]').forEach(inp => { ep[inp.dataset.epField] = inp.value })
+  })
 }
 
 // --- Events tab (ATTENDANCE_KV: event:{id} canonical + events:all aggregate) ---
@@ -962,6 +1205,109 @@ document.addEventListener('click', async (e) => {
       aggregate[eventId] = list
       await putKv('attendance:all', JSON.stringify(aggregate), 'ATTENDANCE_KV')
       toast(`Removed ${name} from ${eventId}`)
+      await switchTab(currentTab)
+    }
+    // --- Config tab actions ---
+    else if (a === 'cfg-theater-add') {
+      readTheaterInputs()
+      cfgTheaters.push('')
+      $('#cfg-theaters-list').innerHTML = renderTheaterRows()
+      const inputs = document.querySelectorAll('#cfg-theaters-list input[data-theater]')
+      inputs[inputs.length - 1]?.focus()
+    }
+    else if (a === 'cfg-theater-rm') {
+      readTheaterInputs()
+      cfgTheaters.splice(Number(btn.dataset.idx), 1)
+      $('#cfg-theaters-list').innerHTML = renderTheaterRows()
+    }
+    else if (a === 'cfg-theater-up' || a === 'cfg-theater-down') {
+      readTheaterInputs()
+      cfgTheaters = moveItem(cfgTheaters, Number(btn.dataset.idx), a === 'cfg-theater-up' ? -1 : 1)
+      $('#cfg-theaters-list').innerHTML = renderTheaterRows()
+    }
+    else if (a === 'cfg-theaters-save') {
+      readTheaterInputs()
+      const list = normalizeStringList(cfgTheaters)
+      if (!list.length) { toast('Add at least one theater — or use reset to fall back to the defaults', true); return }
+      await putKv('config:theaters', JSON.stringify(list))
+      toast(`Saved ${list.length} theater(s) to config:theaters (${env()})`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-theaters-reset') {
+      if (!confirm(`Delete config:theaters on ${env()}?\n\nThe Worker and site fall back to the hardcoded theater list.`)) return
+      await delKv('config:theaters').catch(() => {})
+      toast('config:theaters deleted — defaults are back in effect')
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-ep-add') {
+      syncPodcastInputs()
+      cfgPodcast.episodes.unshift({ title: '', date: '', url: '' })
+      $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
+      document.querySelector('#cfg-episodes-list input[data-ep-field="title"]')?.focus()
+    }
+    else if (a === 'cfg-ep-rm') {
+      syncPodcastInputs()
+      const idx = Number(btn.dataset.idx)
+      const ep = cfgPodcast.episodes[idx]
+      if (ep && (ep.title || ep.url) && !confirm(`Delete episode "${ep.title || ep.url}" from the list?`)) return
+      cfgPodcast.episodes.splice(idx, 1)
+      $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
+    }
+    else if (a === 'cfg-podcast-save') {
+      syncPodcastInputs()
+      const out = sanitizePodcastConfig(cfgPodcast)
+      // An empty override WINS over data/episodes.json and blanks the
+      // homepage podcast section — never let that happen silently.
+      if (!out.episodes.length && !confirm(`Save an EMPTY episode list to ${env()}?\n\nThe homepage podcast section will show no episodes. If you meant to fall back to data/episodes.json, cancel and use reset instead.`)) return
+      await putKv('config:podcast', JSON.stringify(out))
+      toast(`Saved config:podcast (${out.episodes.length} episode(s)) on ${env()}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-podcast-reset') {
+      if (!confirm(`Delete config:podcast on ${env()}?\n\nThe site falls back to data/episodes.json.`)) return
+      await delKv('config:podcast').catch(() => {})
+      toast('config:podcast deleted — data/episodes.json is back in effect')
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-nl-save') {
+      const subject = $('#cfg-nl-subject').value.trim()
+      const html = $('#cfg-nl-html').value
+      if (!subject && !html.trim()) {
+        // Storing nothing means "use defaults" — treat an all-empty save
+        // as the reset it is.
+        await delKv('config:newsletter_template').catch(() => {})
+        toast('Empty template — config:newsletter_template deleted, compose uses the built-in default')
+      } else {
+        await putKv('config:newsletter_template', JSON.stringify({ subject, html }))
+        toast(`Saved config:newsletter_template on ${env()}`)
+      }
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-nl-reset') {
+      if (!confirm(`Delete config:newsletter_template on ${env()}?\n\nThe Newsletter compose tab falls back to the built-in template.`)) return
+      await delKv('config:newsletter_template').catch(() => {})
+      toast('config:newsletter_template deleted — built-in template is back')
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-copy-save') {
+      const fields = {}
+      document.querySelectorAll('#cfg-copy [data-copy-field]').forEach(inp => {
+        fields[inp.dataset.copyField] = inp.value
+      })
+      const blob = buildCopyOverrides(fields, COPY_FIELDS.map(f => f.key))
+      if (blob) {
+        await putKv('config:copy', JSON.stringify(blob))
+        toast(`Saved ${Object.keys(blob).length} copy override(s) on ${env()}`)
+      } else {
+        await delKv('config:copy').catch(() => {})
+        toast('All fields empty — config:copy deleted, site uses its defaults')
+      }
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-copy-reset') {
+      if (!confirm(`Delete config:copy on ${env()}?\n\nEvery homepage copy field falls back to the hardcoded site text.`)) return
+      await delKv('config:copy').catch(() => {})
+      toast('config:copy deleted — site defaults are back in effect')
       await switchTab(currentTab)
     }
   } catch (err) {

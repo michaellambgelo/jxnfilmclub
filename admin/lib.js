@@ -456,6 +456,66 @@ export function socialFileName(kind, sizeKey, event) {
   return parts.filter(Boolean).join('-') + '.png'
 }
 
+// --- Config tab helpers (operator config stored under config:* in MEMBERS_KV) ---
+
+// Move arr[idx] by delta (-1 up / +1 down). Always returns a NEW array;
+// out-of-bounds moves return an unchanged clone.
+export function moveItem(arr, idx, delta) {
+  const next = [...(Array.isArray(arr) ? arr : [])]
+  const to = idx + delta
+  if (idx < 0 || idx >= next.length || to < 0 || to >= next.length) return next
+  const [item] = next.splice(idx, 1)
+  next.splice(to, 0, item)
+  return next
+}
+
+// Trim entries and drop empties, preserving order. Always a new array of
+// strings — this is what config:theaters stores.
+export function normalizeStringList(list) {
+  return (Array.isArray(list) ? list : [])
+    .map(s => String(s ?? '').trim())
+    .filter(Boolean)
+}
+
+// Prune a copy-override form into the stored config:copy blob: keep only
+// allowed keys whose trimmed value is non-empty (empty = fall back to the
+// hardcoded site default). Returns null when nothing survives — the caller
+// deletes the key instead of storing {}.
+export function buildCopyOverrides(fields, allowedKeys) {
+  const out = {}
+  for (const k of (allowedKeys || [])) {
+    const v = fields ? fields[k] : undefined
+    const t = typeof v === 'string' ? v.trim() : ''
+    if (t) out[k] = t
+  }
+  return Object.keys(out).length ? out : null
+}
+
+// Normalize a config:podcast blob for saving. Same shape as
+// data/episodes.json ({ featured_id, episodes: [...] }). Unknown fields are
+// preserved at both levels (top-level and per-episode) so future site fields
+// survive an admin round-trip; the editable string fields are trimmed, and
+// episodes left with neither title nor url are dropped.
+export function sanitizePodcastConfig(data) {
+  const src = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {}
+  const out = { ...src }
+  const featured = typeof src.featured_id === 'string' ? src.featured_id.trim() : ''
+  if (featured) out.featured_id = featured
+  else delete out.featured_id
+  out.episodes = (Array.isArray(src.episodes) ? src.episodes : [])
+    .filter(ep => ep && typeof ep === 'object')
+    .map(ep => {
+      const e = { ...ep }
+      for (const k of ['id', 'title', 'date', 'url']) {
+        if (typeof e[k] === 'string') e[k] = e[k].trim()
+        if (e[k] === '' || e[k] == null) delete e[k]
+      }
+      return e
+    })
+    .filter(e => e.title || e.url)
+  return out
+}
+
 export function buildEventsSectionText(events) {
   const lines = events.map(e => {
     const name = e.film || e.title || ''

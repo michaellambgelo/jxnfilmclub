@@ -1,4 +1,4 @@
-import { test, expect, WORKER_ORIGIN, signInAs } from './fixtures'
+import { test, expect, WORKER_ORIGIN, signInAs, seedKv } from './fixtures'
 
 // Member-hosted screenings: SPA wiring + privacy of the host's address.
 // The worker unit tests (tests/worker/screenings.test.js) cover the RSVP /
@@ -74,6 +74,20 @@ test.describe('member-hosted screenings', () => {
     )
     const raw = JSON.parse((await kvRes.json()).value)
     expect(raw.address).toBe(SECRET_ADDRESS)
+  })
+
+  test('config:theaters override replaces the host-form theater dropdown', async ({ page }) => {
+    await seedKv(page, 'config:theaters', JSON.stringify(['E2E Test Cinema', 'The Capri Theater']))
+    await signInAs(page, 'cfg-venues@example.com', { name: 'Config Tester' })
+
+    await page.goto('/host')
+    await page.getByRole('button', { name: /a theater/i }).click()
+    const venue = page.locator('select[name="venue"]')
+    await expect(venue).toBeVisible()
+
+    // KV list replaces (not merges with) the hardcoded literal.
+    await expect(venue.locator('option', { hasText: 'E2E Test Cinema' })).toHaveCount(1)
+    await expect(venue.locator('option', { hasText: 'Malco Renaissance in Ridgeland' })).toHaveCount(0)
   })
 
   test('member creates a theater meetup via the toggle; venue listed publicly', async ({ page }) => {

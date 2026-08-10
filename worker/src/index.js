@@ -170,6 +170,10 @@ async function route(request, env) {
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
+    // Operator-editable config (admin portal writes config:* keys in
+    // MEMBERS_KV). Public projection only — config:newsletter_template is
+    // admin-only and deliberately absent here.
+    if (request.method === 'GET' && pathname === '/config')  return handleConfigGet(env)
     // Poster search for the /host form — members only (keeps the TMDB key
     // server-side and the endpoint un-scrapeable).
     if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
@@ -1755,9 +1759,50 @@ const MAX_ADDRESS = 500
 const MAX_NOTES = 2000
 const MAX_CAPACITY = 1000
 
-// Strict venue allowlist for theater meetups (kind: 'meetup'). Mirrored in
-// ui/views.html (events-new-view THEATERS) — keep both in lockstep. Venue
-// additions go through venues@jxnfilm.club review.
+// Read one operator-editable config value from MEMBERS_KV (written by the
+// admin portal's generic KV editor as `config:{key}`). Returns the parsed
+// JSON value, or null when the key is missing or its content isn't valid
+// JSON — config reads must never take a public endpoint to 500.
+async function readConfig(env, key) {
+  try {
+    return await env.MEMBERS_KV.get('config:' + key, { type: 'json' })
+  } catch {
+    return null
+  }
+}
+
+// Shape-validate a config:theaters value: a non-empty array of non-empty
+// strings yields the trimmed list, anything else null. Shared by the
+// validation path (theaterAllowlist) and the public /config projection so
+// the SPA never renders entries the worker would reject.
+function validTheaterList(value) {
+  if (Array.isArray(value) && value.length && value.every(t => typeof t === 'string' && t.trim())) {
+    return value.map(t => t.trim())
+  }
+  return null
+}
+
+// GET /config — public projection of the operator-editable config. Each field
+// is the parsed KV value or null; theaters is additionally shape-validated
+// (null unless it would actually be enforced). config:newsletter_template is
+// admin-only and intentionally excluded.
+async function handleConfigGet(env) {
+  const [theaters, podcast, copy] = await Promise.all([
+    readConfig(env, 'theaters'),
+    readConfig(env, 'podcast'),
+    readConfig(env, 'copy'),
+  ])
+  return json(env, { theaters: validTheaterList(theaters), podcast, copy })
+}
+
+// Venue allowlist for theater meetups (kind: 'meetup'). Precedence: the KV
+// key `config:theaters` (a JSON array of non-empty strings, edited via the
+// admin portal) overrides when valid; the THEATERS literal below is the
+// availability fallback when the key is missing, unparseable, empty, or
+// contains non-string/blank entries. The frontend mirrors the same
+// precedence via GET /config (ui/views.html events-new-view falls back to
+// its own THEATERS copy) — keep both literals in lockstep. Venue additions
+// go through venues@jxnfilm.club review.
 const THEATERS = [
   'Patton House & Gallery',
   'The Capri Theater',
@@ -1768,6 +1813,13 @@ const THEATERS = [
   'B&B Theaters at Northpark in Ridgeland',
 ]
 
+// Resolve the live meetup venue allowlist per the precedence above: KV
+// config:theaters when it is a non-empty array of non-empty strings
+// (entries trimmed), else the THEATERS literal.
+async function theaterAllowlist(env) {
+  return validTheaterList(await readConfig(env, 'theaters')) || THEATERS
+}
+
 function slugifyForId(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 }
@@ -1777,7 +1829,7 @@ function slugifyForId(s) {
 //   'meetup' — public theater from the THEATERS allowlist, optional capacity
 //              (no cap → RSVPs always confirm), optional showtime; any
 //              submitted address is ignored, never stored.
-function validScreeningInput(body) {
+function validScreeningInput(body, theaters = THEATERS) {
   const out = {}
   out.kind = body.kind === 'meetup' ? 'meetup' : 'house'
   if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > MAX_EVENT_FIELD) {
@@ -1802,7 +1854,7 @@ function validScreeningInput(body) {
     out.time = body.time
   }
   if (out.kind === 'meetup') {
-    if (typeof body.venue !== 'string' || !THEATERS.includes(body.venue.trim())) {
+    if (typeof body.venue !== 'string' || !theaters.includes(body.venue.trim())) {
       return { error: 'venue must be one of the listed theaters' }
     }
     out.venue = body.venue.trim()
@@ -1943,7 +1995,7 @@ async function handleCreateEvent(request, env) {
   const member = JSON.parse(memberRaw)
 
   const body = await request.json().catch(() => ({}))
-  const v = validScreeningInput(body)
+  const v = validScreeningInput(body, await theaterAllowlist(env))
   if (v.error) return json(env, { error: v.error }, 400)
 
   const today = centralToday()
@@ -1991,7 +2043,7 @@ async function handleUpdateEvent(request, env, eventId) {
   // Merge incoming + existing, validate against the same constraints. On a
   // house screening, address and capacity must remain present.
   const merged = { ...event, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)), kind: existingKind }
-  const v = validScreeningInput(merged)
+  const v = validScreeningInput(merged, await theaterAllowlist(env))
   if (v.error) return json(env, { error: v.error }, 400)
 
   // Capacity-decrease guard (capacity is optional on meetups). Only when the

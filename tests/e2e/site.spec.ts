@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, seedKv } from './fixtures'
 
 test.describe('members view', () => {
   test('renders members from data/members.json', async ({ page }) => {
@@ -52,6 +52,16 @@ test.describe('members view', () => {
     ])
     expect(popup.url()).toBe('https://letterboxd.com/michaellamb/')
     await popup.close()
+  })
+})
+
+test.describe('config-driven homepage copy', () => {
+  test('config:copy overrides render on the homepage; missing fields keep defaults', async ({ page }) => {
+    await seedKv(page, 'config:copy', JSON.stringify({ heroLede: 'E2E override lede — config wins.' }))
+    await page.goto('/')
+    await expect(page.locator('.nshero-lede')).toHaveText('E2E override lede — config wins.')
+    // A field absent from the override falls back to the hardcoded default.
+    await expect(page.getByRole('heading', { name: 'Get in the room.' })).toBeVisible()
   })
 })
 

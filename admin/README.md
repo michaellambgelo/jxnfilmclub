@@ -87,7 +87,34 @@ which remains what actually gets sent. Scripts never execute in the preview
 | **Revoked** | `revoked:{jti}` tombstones | read-only (auto-expire) |
 | **Rate limits** | All `rate:*` counters; lockouts (≥5) are highlighted | delete a counter to unblock a user |
 | **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
+| **Config** | Purpose-built editors for the operator overrides under `config:*` in `MEMBERS_KV` (see [Config tab](#config-tab)) | save/delete `config:theaters`, `config:podcast`, `config:newsletter_template`, `config:copy` |
 | **Content Gen** | Social media content built from live KV data: per-platform copy (Instagram / Facebook / Discord / Bluesky / X, with character counters against each platform's limit) and canvas-rendered PNG cards (IG post/story, FB, Bluesky/X sizes) in the Night Shift brand. Post types: event announcement + countdown (dynamic tonight/tomorrow/N-days lead from the event date), post-event recap (`attend:{id}` count), season lineup (next ≤4 upcoming events, poster wall + date list), monthly wrap (screenings + summed attendance for a selected past month), new podcast episode (typographic card; episodes fetched from `jxnfilm.club/data/episodes.json`, which GitHub Pages serves with `ACAO:*`), milestone (big-numeral card: member count from `members:all`, screenings held, or total attendance), member-watches roundup (`GET /api/watched` poster collage, windowed to the last 7 days — undated entries dropped). Public-safe by construction: events pass through `socialEventView` (no address/notes/capacity) and watches through `buildRoundupData` (film titles/posters only — zero member names or handles). Poster images load via the same-origin `GET /api/img` proxy (https-only host allowlist) so the canvas stays untainted and PNG export works. | read-only against KV — output is copy-to-clipboard text + downloaded PNGs |
+
+## Config tab
+
+Edits the operator config the join Worker and public SPA read from
+`MEMBERS_KV` under `config:*`. The governing mental model, surfaced in every
+section: **a missing key means "use the hardcoded defaults"**. Saving a
+section creates/overwrites the override; each section's "reset to defaults"
+deletes the key (after a confirm), and the site/Worker fall back
+automatically — there is no "empty override" state to get stuck in. Every
+section badges its current source: `KV override` when the key exists,
+`defaults — no KV key` otherwise.
+
+Like every other tab, all reads and writes follow the env toggle
+(production/staging); the tab header names the env being edited.
+
+| Section | Key | Edits |
+|---------|-----|-------|
+| **Theaters** | `config:theaters` | The venue allowlist/dropdown for theater meetups, as a JSON array of names — row order is dropdown order. Per-row edit, add, remove, move up/down. When no override exists the editor prefills the hardcoded list (mirrored from `worker/src/index.js` / `ui/views.html`) as the starting point. Saving an all-empty list is refused — use reset instead. |
+| **Podcast** | `config:podcast` | Episode list + featured episode, same shape as `data/episodes.json` (`{ featured_id, episodes: [{ title, date, url }] }`). No override yet → prefilled from the live site's `data/episodes.json`. Unknown fields (top-level and per-episode) survive a save untouched. `featured_id` is the **Spotify episode ID** driving the homepage embed — it is *not* derivable from the Anchor episode URLs, so the ID is a text input; the per-episode "featured" radio uses an episode's stored `id` field, prompting once for the Spotify ID if the row doesn't have one yet (it is then kept on the episode). |
+| **Newsletter template** | `config:newsletter_template` | `{ subject, html }` — what the Newsletter compose tab prefills instead of its built-in branded template. Saving with both fields empty deletes the key (same as reset). |
+| **Homepage copy** | `config:copy` | Per-field overrides for the homepage prose (hero headline/lede/label, join kicker/heading/body, podcast lede, section headings). Each input's **placeholder shows the current site default** — what an override replaces. Only non-empty fields are stored; leave a field empty to keep its default. Saving with every field empty deletes the key. |
+
+Related consumers inside the dashboard itself: the Newsletter compose tab
+prefills subject/body from `config:newsletter_template` when it exists, and
+Content Gen's episode picker prefers `config:podcast` over the site's
+`data/episodes.json`.
 
 ## What it does NOT do
 

@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, getConfig } from 'app'
 </script>
 
 
@@ -16,10 +16,7 @@
     <div class="nshero-copy">
       <p class="ns-label">{ heroLabel }</p>
       <h1 class="nshero-title">We watch <em>discussion-worthy</em> films, together.</h1>
-      <p class="nshero-lede">
-        A community space for analytical conversations about cinema,
-        founded in Jackson, Mississippi in 2018. Bring a chair. Stay for the argument.
-      </p>
+      <p class="nshero-lede">{ heroLede }</p>
       <p :if="hero" class="nshero-meta">
         <span class="-red">{ hero.dateLabel }</span>
         <span :if="hero.venue">· { hero.venue }</span>
@@ -45,7 +42,7 @@
   <!-- THE PROGRAM — recent & upcoming screenings -->
   <section class="program">
     <header class="ns-sechead">
-      <h2>The Program</h2>
+      <h2>{ sectionProgram }</h2>
       <span class="ns-label">recent & upcoming</span>
     </header>
     <div :each="e in program" key="{ e.id }" class="program-row">
@@ -71,7 +68,7 @@
   <section class="lastfour">
     <div class="lastfour-films">
       <p class="ns-label">Letterboxd</p>
-      <h2>Recent Watches from Members</h2>
+      <h2>{ sectionWatches }</h2>
       <div class="lastfour-grid">
         <a :each="f in lastFour" key="{ f.link }" class="lf-card" href="{ f.link }" target="_blank" rel="noopener">
           <figure class="ns-poster">
@@ -105,7 +102,7 @@
        indexes and crashes nuedom's diff. Structure stays constant; the empty
        section is hidden via CSS (.takes:not(:has(.take-card))). -->
   <section class="takes">
-    <h2>Hot Takes</h2>
+    <h2>{ sectionTakes }</h2>
     <div class="takes-grid">
       <a :each="t in takes" key="{ t.link }" class="take-card" href="{ t.link }" target="_blank" rel="noopener">
         <span class="ns-tape">{ t.title }</span>
@@ -121,12 +118,10 @@
   <!-- PODCAST -->
   <section class="podcast">
     <header class="ns-sechead">
-      <h2>The Podcast</h2>
+      <h2>{ sectionPodcast }</h2>
       <a href="https://open.spotify.com/show/6iL1D2abg8G8JQqvJa3XBp" target="_blank" rel="noopener" class="podcast-follow">Follow on Spotify →</a>
     </header>
-    <p class="podcast-lede">
-      The audio series launched in 2021 to extend JXN Film Club discussions to a broader audience.
-    </p>
+    <p class="podcast-lede">{ podcastLede }</p>
 
     <div class="podcast-embed" id="spotify-embed"></div>
 
@@ -140,19 +135,34 @@
 
   <!-- JOIN -->
   <section class="join-cta halftone">
-    <p class="join-kicker">Free · Sign up with email · Jackson MS</p>
-    <h2>Get in the room.</h2>
-    <p class="join-lede">
-      No more than one dispatch a week — screenings, hosts, and what the club is watching.
-      Membership is public, but pick any display name you like; your email address
-      is always private, and Letterboxd is optional.
-    </p>
+    <p class="join-kicker">{ joinKicker }</p>
+    <h2>{ joinHeading }</h2>
+    <p class="join-lede">{ joinBody }</p>
     <a href="https://join.jxnfilm.club/" class="ns-btn -ink join-btn">Join Jackson Film Club</a>
   </section>
 
   <script>
+    // Operator-editable copy defaults. The Worker GET /config may carry a
+    // copy object whose string fields override these per-field; any missing
+    // field, or the whole config being unreachable, falls back to the
+    // literals here so an outage changes nothing.
+    const COPY = {
+      heroLede: 'A community space for analytical conversations about cinema, founded in Jackson, Mississippi in 2018. Bring a chair. Stay for the argument.',
+      heroLabel: 'A community cinema · Jackson MS',
+      joinKicker: 'Free · Sign up with email · Jackson MS',
+      joinHeading: 'Get in the room.',
+      joinBody: 'No more than one dispatch a week — screenings, hosts, and what the club is watching. Membership is public, but pick any display name you like; your email address is always private, and Letterboxd is optional.',
+      podcastLede: 'The audio series launched in 2021 to extend JXN Film Club discussions to a broader audience.',
+      sectionProgram: 'The Program',
+      sectionWatches: 'Recent Watches from Members',
+      sectionTakes: 'Hot Takes',
+      sectionPodcast: 'The Podcast',
+    }
+
     this.mounted = async function() {
-      this.update({ episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null, heroLabel: 'A community cinema · Jackson MS' })
+      const seed = { episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null }
+      Object.keys(COPY).forEach(function(k) { seed[k] = COPY[k] })
+      this.update(seed)
 
       const results = await Promise.all([
         getEvents({ limit: 1000, sort: 'date-desc' }).catch(function() { return { items: [] } }),
@@ -161,12 +171,17 @@
         fetch('/data/attendance.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/episodes.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/takes.json').then(function(r) { return r.ok ? r.json() : [] }).catch(function() { return [] }),
+        getConfig().catch(function() { return null }),
       ])
       const events = results[0].items || []
       const members = results[1].items || []
       const watched = results[2] || {}
       const attendance = results[3] || {}
-      const pod = results[4] || {}
+      const cfg = results[6]
+      // Config podcast wins when it is a well-formed episodes payload; the
+      // static /data/episodes.json snapshot covers everything else.
+      const pod = cfg && cfg.podcast && Array.isArray(cfg.podcast.episodes) ? cfg.podcast : (results[4] || {})
+      const cc = (cfg && cfg.copy) || {}
 
       // ----- hero + program: upcoming first, then most recent past -----
       // Screening dates are Central-time calendar days; bucketing off UTC
@@ -204,7 +219,7 @@
         }).toUpperCase(),
       } : null
       const heroLabel = hero && hero.upcoming
-        ? 'Next screening' : 'A community cinema · Jackson MS'
+        ? 'Next screening' : ((typeof cc.heroLabel == 'string' && cc.heroLabel) || COPY.heroLabel)
 
       // ----- the last four: each linked member's most recent diary entry -----
       const lastFour = members
@@ -254,7 +269,12 @@
         }
       })
 
-      this.update({ hero: hero, heroLabel: heroLabel, program: rows, lastFour: lastFour, leaders: leaders, takes: takes, episodes: episodes })
+      // Per-field copy override: a non-empty config string wins, everything
+      // else keeps the fallback literal. Rendered as text interpolation only.
+      const final = { hero: hero, program: rows, lastFour: lastFour, leaders: leaders, takes: takes, episodes: episodes }
+      Object.keys(COPY).forEach(function(k) { final[k] = (typeof cc[k] == 'string' && cc[k]) || COPY[k] })
+      final.heroLabel = heroLabel
+      this.update(final)
 
       // Spotify embed is injected here because Nue's DHTML renderer strips
       // static <iframe> tags.
@@ -1038,9 +1058,12 @@
       } catch { return null }
     }
 
-    // Strict venue allowlist for theater meetups. Mirrored in
-    // worker/src/index.js (THEATERS) — keep both in lockstep. Venue additions
-    // go through venues@jxnfilm.club review.
+    // Strict venue allowlist for theater meetups. Precedence: the Worker
+    // GET /config theaters list (admin-editable) wins when it is a non-empty
+    // array; this literal is the availability fallback when the Worker or KV
+    // is unreachable, so KEEP it. The literal mirrors worker/src/index.js
+    // (THEATERS) — keep both in lockstep. Venue additions go through
+    // venues@jxnfilm.club review.
     const THEATERS = [
       'Patton House & Gallery',
       'The Capri Theater',
@@ -1053,12 +1076,16 @@
 
     this.mounted = function() {
       // kind starts empty: the form stays [hidden] until a card is picked.
+      const self = this
       const session = getSession()
       this.update({ session: session, busy: false, error: '', kind: '', THEATERS: THEATERS, suggestions: [], posterUrl: '', posterOptions: [] })
+      // Live theater list from the Worker config, when present and non-empty.
+      getConfig().then(function(cfg) {
+        if (cfg && Array.isArray(cfg.theaters) && cfg.theaters.length) self.update({ THEATERS: cfg.theaters })
+      }).catch(function() {})
       // Remembered device with a lapsed token: silently refresh so the host
       // form works without a bounce through /signin.
       if (!session && globalThis.jxnfcEnsureSession) {
-        const self = this
         globalThis.jxnfcEnsureSession().then(function(s) {
           if (s) self.update({ session: s })
         })

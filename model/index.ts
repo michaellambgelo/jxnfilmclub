@@ -71,6 +71,29 @@ export async function getAvatars(): Promise<Record<string, string>> {
   return {}
 }
 
+// Operator-editable site config from the Worker: GET /config returns
+// { theaters, podcast, copy } where any key may be null. Views keep their
+// hardcoded fallbacks, so a Worker/KV outage changes nothing — this returns
+// null on any failure and callers fall back per-field. The result is cached
+// module-level so every view shares one fetch per page load.
+let config_promise: Promise<any> | null = null
+
+export async function getConfig(): Promise<any> {
+  if (!config_promise) config_promise = fetchConfig()
+  return config_promise
+}
+
+async function fetchConfig(): Promise<any> {
+  const origin = resolveWorkerOrigin()
+  if (!origin) return null
+  try {
+    const res = await fetch(`${origin}/config`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : null
+  } catch { return null }
+}
+
 export async function getMembers(opts = {}) {
   return getList('members', opts)
 }

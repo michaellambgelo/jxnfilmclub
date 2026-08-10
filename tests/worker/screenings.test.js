@@ -688,6 +688,63 @@ describe('theater meetups (kind: meetup)', () => {
   })
 })
 
+describe('meetup venue allowlist — KV config:theaters overrides the literal', () => {
+  it('accepts a venue present only in KV; the list REPLACES the literal (not a merge)', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    await env.MEMBERS_KV.put('config:theaters', JSON.stringify(['Duling Hall']))
+    captureEmails()
+    const ok = await createMeetup(token, { venue: 'Duling Hall' })
+    expect(ok.status).toBe(200)
+    expect((await ok.json()).event.venue).toBe('Duling Hall')
+    // A literal theater not in the valid KV list is no longer accepted.
+    const literal = await createMeetup(token, { venue: 'The Capri Theater' })
+    expect(literal.status).toBe(400)
+  })
+
+  it('rejects a venue in neither the KV list nor the literal', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    await env.MEMBERS_KV.put('config:theaters', JSON.stringify(['Duling Hall']))
+    const res = await createMeetup(token, { venue: 'Some Random Bar' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/listed theaters/)
+  })
+
+  it('KV entries are trimmed when comparing, matching the venue-trim behavior', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    await env.MEMBERS_KV.put('config:theaters', JSON.stringify(['  Duling Hall  ']))
+    captureEmails()
+    const res = await createMeetup(token, { venue: ' Duling Hall ' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).event.venue).toBe('Duling Hall')
+  })
+
+  it('invalid config:theaters content falls back to the literal list', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    captureEmails()
+    for (const bad of ['not json {', '[]', '[1,2]', '["  "]', '{"a":1}']) {
+      await env.MEMBERS_KV.put('config:theaters', bad)
+      // A literal theater is still accepted (createMeetup defaults to The
+      // Capri Theater), and a non-literal venue is still rejected.
+      const ok = await createMeetup(token)
+      expect(ok.status).toBe(200)
+      const nope = await createMeetup(token, { venue: 'Duling Hall' })
+      expect(nope.status).toBe(400)
+    }
+  })
+
+  it('PATCH revalidates against the KV allowlist too', async () => {
+    const { token } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createMeetup(token)).json()  // literal venue
+    await env.MEMBERS_KV.put('config:theaters', JSON.stringify(['Duling Hall', 'The Capri Theater']))
+    const res = await req(`/events/${created.id}`, { method: 'PATCH', token, body: { venue: 'Duling Hall' } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).event.venue).toBe('Duling Hall')
+    const bad = await req(`/events/${created.id}`, { method: 'PATCH', token, body: { venue: 'Some Random Bar' } })
+    expect(bad.status).toBe(400)
+  })
+})
+
 describe('POST/DELETE /events/:id/rsvp/guest — manual guest RSVPs', () => {
   const ADMIN = 'test-admin-token'  // tests/worker/vitest.config.ts
 

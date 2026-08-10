@@ -144,16 +144,30 @@ async function loadRoundup() {
   cg.roundup = buildRoundupData(map, { limit: cg.limit })
 }
 
-// Episodes live in the repo, not KV — the built site serves data/episodes.json
-// with ACAO:*, so both admin origins fetch it directly. Newest first.
+// Episodes source, KV first: the operator override `config:podcast` in
+// MEMBERS_KV (edited on the Config tab, same { featured_id, episodes }
+// shape) wins when present; otherwise the built site's data/episodes.json
+// (served with ACAO:*, so both admin origins fetch it directly). Cached per
+// env — production and staging can hold different overrides.
 async function loadEpisodes() {
-  if (cg.episodes) return
+  const envName = ctx.env()
+  if (cg.episodes && cg.episodesEnv === envName) return
   try {
-    const res = await fetch(EPISODES_URL)
+    const raw = await ctx.api('GET', `/api/kv?${qs({ env: envName, binding: 'MEMBERS_KV', prefix: 'config:podcast' })}`)
+    const cfgPod = tryParse(raw.values['config:podcast'])
+    if (cfgPod && Array.isArray(cfgPod.episodes)) {
+      cg.episodes = cfgPod.episodes
+      cg.episodesEnv = envName
+      return
+    }
+  } catch { /* KV unavailable — fall through to the URL fetch */ }
+  try {
+    const res = await fetch(EPISODES_URL, { signal: AbortSignal.timeout(3000) })
     cg.episodes = (await res.json()).episodes || []
   } catch {
     cg.episodes = []
   }
+  cg.episodesEnv = envName
 }
 
 // members:all length — only needed for the milestone card.

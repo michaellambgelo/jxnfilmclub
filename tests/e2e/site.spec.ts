@@ -21,7 +21,26 @@ test.describe('members view', () => {
   test('sort select updates ?sort=', async ({ page }) => {
     await page.goto('/members')
     await page.getByRole('combobox').selectOption('name')
-    await expect.poll(() => page.url()).toContain('sort=name')
+    await expect.poll(() => page.url()).toContain('sort=name-asc')
+  })
+
+  test('direction toggle flips ?sort= and its label', async ({ page }) => {
+    await page.goto('/members')
+    const toggle = page.locator('.dir-toggle')
+    await expect(toggle).toHaveText('Newest first')
+    await toggle.click()
+    await expect.poll(() => page.url()).toContain('sort=joined-asc')
+    await expect(toggle).toHaveText('Oldest first')
+  })
+
+  test('deep link ?sort=handle-desc restores key, direction, and filter', async ({ page }) => {
+    await page.goto('/members?sort=handle-desc')
+    await expect(page.getByRole('combobox')).toHaveValue('handle')
+    await expect(page.locator('.dir-toggle')).toHaveText('Z → A')
+    // The handle sort filters to Letterboxd members, so no muted
+    // no-Letterboxd labels may remain in the grid.
+    await expect(page.getByRole('heading', { name: 'Michael Lamb' })).toBeVisible()
+    await expect(page.locator('.handle.-none')).toHaveCount(0)
   })
 
   test('@handle link opens Letterboxd in a new tab (bypasses autolink)', async ({ page, context }) => {

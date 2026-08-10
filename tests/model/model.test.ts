@@ -44,6 +44,29 @@ describe('getMembers', () => {
     expect(res.total).toBe(1)
     expect(res.items[0].handle).toBe('cara')
   })
+
+  it('sort=handle drops members without a Letterboxd handle', async () => {
+    const res = await getMembers({ sort: 'handle' })
+    const withHandle = members.filter((m: any) => m.handle)
+    expect(res.total).toBe(withHandle.length)
+    expect(res.items.every((i: any) => i.handle)).toBe(true)
+  })
+
+  it('sort=handle-desc filters the same set and reverses the order', async () => {
+    const asc = await getMembers({ sort: 'handle-asc' })
+    const desc = await getMembers({ sort: 'handle-desc' })
+    expect(desc.total).toBe(members.filter((m: any) => m.handle).length)
+    expect(desc.items.map((i: any) => i.handle)).toEqual(
+      asc.items.map((i: any) => i.handle).reverse(),
+    )
+  })
+
+  it('sort=name-desc sorts members Z to A', async () => {
+    const res = await getMembers({ sort: 'name-desc' })
+    const names = res.items.map((i: any) => i.name)
+    const sortedDesc = [...names].sort((a, b) => String(b).localeCompare(String(a)))
+    expect(names).toEqual(sortedDesc)
+  })
 })
 
 describe('getEvents', () => {

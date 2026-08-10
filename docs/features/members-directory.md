@@ -41,10 +41,26 @@ flowchart TD
     D -->|Type query| E[Filter by name or handle<br/>Updates ?query= param]
 
     C --> F{Sort dropdown}
-    F -->|Join date| G[Sort by joined date]
-    F -->|Name| H[Sort alphabetically by name]
-    F -->|Letterboxd handle| I[Sort by handle]
+    F -->|Join date| G[Sort by joined date<br/>defaults to newest first]
+    F -->|Name| H[Sort alphabetically by name<br/>defaults to A-Z]
+    F -->|Letterboxd handle| I[Sort by handle<br/>only members with a handle]
+
+    C --> J{Direction toggle}
+    J -->|Click| K[Flip asc/desc<br/>label is contextual:<br/>A-Z / Z-A or Oldest / Newest first]
 ```
+
+The sort `<select>` carries the sort *key*; the button beside it toggles the
+*direction* by rewriting `?sort=` with an `-asc` / `-desc` suffix (the generic
+suffix protocol in `model/index.ts`'s `sortBy()`). Its label is contextual —
+"A → Z" / "Z → A" for the alphabetical sorts, "Newest first" / "Oldest first"
+for join date. Picking a new key resets to that key's natural direction
+(dates newest-first, text A→Z). The default view is `joined-desc` (newest
+members first); bare legacy values like `?sort=name` still work and mean
+ascending.
+
+Sorting by Letterboxd handle also **filters the grid to members with a
+handle** — handle-less members used to sort into a "no Letterboxd" block at
+the front, which read as broken. The result count reflects the filtered set.
 
 ## Avatar Widget
 
@@ -63,7 +79,7 @@ Everyone else gets the deterministic letter avatar with a colored background:
 | Param | Effect | Example |
 |-------|--------|---------|
 | `query` | Filters by name or handle | `?query=michael` |
-| `sort` | Sort field | `?sort=name` or `?sort=handle` |
+| `sort` | Sort key, optionally suffixed `-asc`/`-desc` | `?sort=name-asc`, `?sort=handle-desc`; bare `?sort=name` = ascending. Default `joined-desc`. `handle*` also filters to Letterboxd members |
 
 ## Key Files
 

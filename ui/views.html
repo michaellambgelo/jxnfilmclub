@@ -289,12 +289,14 @@
 
     <label>
       <b>Sort by:</b>
-      <select :onchange="state.sort = $event.target.value">
-        <option value="joined" :selected="(state.sort || 'joined') === 'joined'">Join date</option>
-        <option value="name" :selected="state.sort === 'name'">Name</option>
-        <option value="handle" :selected="state.sort === 'handle'">Letterboxd handle</option>
+      <select :onchange="setSortKey($event.target.value)">
+        <option value="joined" :selected="sortKey() === 'joined'">Join date</option>
+        <option value="name" :selected="sortKey() === 'name'">Name</option>
+        <option value="handle" :selected="sortKey() === 'handle'">Letterboxd handle</option>
       </select>
     </label>
+
+    <button type="button" class="dir-toggle" :onclick="toggleDir()">{ dirLabel() }</button>
   </header>
 
   <p class="result-count">{ total || 0 } members</p>
@@ -320,10 +322,34 @@
       return handle ? (map[handle] || '') : ''
     }
 
+    // Sort state is the single ?sort= token: a key alone or key-asc / key-desc.
+    // Default is joined-desc so the newest members lead the grid.
+    sortKey() {
+      return String(state.sort || 'joined-desc').split('-')[0]
+    }
+
+    sortDir() {
+      return String(state.sort || 'joined-desc').endsWith('-desc') ? 'desc' : 'asc'
+    }
+
+    setSortKey(key) {
+      // Each key starts in its natural direction: dates newest first, text A to Z.
+      state.sort = key == 'joined' ? 'joined-desc' : key + '-asc'
+    }
+
+    toggleDir() {
+      state.sort = this.sortKey() + '-' + (this.sortDir() == 'asc' ? 'desc' : 'asc')
+    }
+
+    dirLabel() {
+      if (this.sortKey() == 'joined') return this.sortDir() == 'asc' ? 'Oldest first' : 'Newest first'
+      return this.sortDir() == 'asc' ? 'A → Z' : 'Z → A'
+    }
+
     async reload() {
       const { items, total } = await getMembers({
         search: state.query,
-        sort: state.sort,
+        sort: state.sort || 'joined-desc',
         limit: 1000,
       })
       this.update({ items, total })

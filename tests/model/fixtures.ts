@@ -4,6 +4,7 @@ export const members = [
   { handle: 'cara', name: 'Cara Cinema', joined: '2026-02-15', pronouns: 'they/them' },
   { handle: 'dan', name: 'Dan Director', joined: '2025-12-01', pronouns: '' },
   { handle: 'eli', name: 'Eli Editor', joined: '2026-04-01', pronouns: '' },
+  { name: 'Fran Filmless', joined: '2026-05-01', pronouns: '' },
 ]
 
 export const events = [

@@ -83,6 +83,12 @@ async function getList(type: string, opts: any) {
   const { start = 0, limit = 30, sort, search, venue } = opts || {}
 
   let items = await fetchList(type)
+
+  // Sorting by Letterboxd handle implies a Letterboxd-members-only view.
+  if (type === 'members' && String(sort || '').startsWith('handle')) {
+    items = items.filter((m: any) => m.handle)
+  }
+
   const defaultSort = type === 'events' ? 'date' : 'joined'
   sortBy(sort || defaultSort, items)
 

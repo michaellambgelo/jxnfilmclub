@@ -371,6 +371,24 @@ article > header {
   flex-wrap: wrap;
 }
 
+/* Sort-direction toggle beside the sort select. */
+article > header .dir-toggle {
+  font-family: inherit;
+  font-size: 88%;
+  color: var(--ink-3);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: .3em .8em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+article > header .dir-toggle:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
 @media (max-width: 640px) {
   article > header {
     flex-direction: column;

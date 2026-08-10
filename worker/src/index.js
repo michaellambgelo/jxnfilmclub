@@ -2609,7 +2609,7 @@ async function sendEmail(env, to, subject, text) {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
     },
     body: JSON.stringify({
-      from: 'Jackson Film Club <noreply@join.jxnfilm.club>',
+      from: env.NEWSLETTER_FROM || 'Jackson Film Club <noreply@join.jxnfilm.club>',
       to: [to],
       subject,
       text,

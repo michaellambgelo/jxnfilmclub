@@ -2071,6 +2071,12 @@ async function handleDeleteEvent(request, env, eventId) {
   if (!event.hostId || event.hostId !== claims.id) {
     return json(env, { error: 'only the host can cancel this screening' }, 403)
   }
+  // A screening that already happened can't be cancelled: deletion would
+  // email cancellation notices for an event that's over. The post-event
+  // scrub cron owns past-event teardown (and admins write KV directly).
+  if (event.date && event.date < centralToday()) {
+    return json(env, { error: 'this screening has already happened' }, 409)
+  }
 
   const rsvp = await readRsvp(env, eventId)
   for (const c of rsvp.confirmed) {

@@ -422,6 +422,27 @@ describe('DELETE /events/:id — host cancels screening', () => {
     expect(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`)).toBeNull()
     expect(await env.ATTENDANCE_KV.get(`attend:${created.id}`)).toBeNull()
   })
+
+  it('past screening → 409; nothing deleted, nobody emailed', async () => {
+    const { token: hostTok, member: host } = await getTokenFor('host@example.com')
+    // Seed directly: the create API rightly rejects past dates. A confirmed
+    // RSVP proves the cancellation-email loop never runs.
+    await env.ATTENDANCE_KV.put('event:past-del', JSON.stringify({
+      id: 'past-del', title: 'Past', date: '2000-01-01', hostId: host.id,
+    }))
+    await env.ATTENDANCE_KV.put('rsvp:past-del', JSON.stringify({
+      confirmed: [{ memberId: 'm-1', name: 'Rita', email: 'rita@example.com', at: 1 }],
+      waitlist: [],
+    }))
+
+    const sent = captureEmails()
+    const res = await req('/events/past-del', { method: 'DELETE', token: hostTok })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/already happened/)
+    expect(sent).toHaveLength(0)
+    expect(await env.ATTENDANCE_KV.get('event:past-del')).not.toBeNull()
+    expect(await env.ATTENDANCE_KV.get('rsvp:past-del')).not.toBeNull()
+  })
 })
 
 describe('/attend on a hosted screening → 409', () => {

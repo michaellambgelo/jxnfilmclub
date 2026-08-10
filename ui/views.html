@@ -600,7 +600,7 @@
       <host-guests :event="event" :session="session" :guests="hostView.guests" :attendees="attendees"/>
 
       <div class="host-actions">
-        <button type="button" class="attend-btn attend-btn-remove" :onclick="cancelScreening">Cancel screening</button>
+        <button :if="isFuture()" type="button" class="attend-btn attend-btn-remove" :onclick="cancelScreening">Cancel screening</button>
       </div>
       <p :if="hostError" class="rsvp-err">{ hostError }</p>
     </div>
@@ -817,20 +817,21 @@
      the page (same idiom as diary linking and cancel screening). -->
 <div :is="host-guests" class="host-guests">
   <p class="host-guests-title"><strong>Guest list</strong></p>
-  <p class="host-guests-hint">Add someone who is not a member. Email is optional — with one we send the address and a cancel link; without one they get no emails.</p>
+  <p :if="isFuture()" class="host-guests-hint">Add someone who is not a member. Email is optional — with one we send the address and a cancel link; without one they get no emails.</p>
+  <p :if="!isFuture()" class="host-guests-hint">Guest list closed (past date).</p>
   <div :if="guests && guests.length" class="host-guest-rows">
     <div :each="g in guests" key="{ g.id }" class="host-guest-row">
       <span>{ g.name }{ g.list === 'waitlist' ? ' (waitlist)' : '' }</span>
-      <button type="button" class="attend-btn attend-btn-remove" data-id="{ g.id }"
+      <button :if="isFuture()" type="button" class="attend-btn attend-btn-remove" data-id="{ g.id }"
         :disabled="busy" :onclick="removeGuest">Remove</button>
     </div>
   </div>
-  <div class="host-guest-add">
+  <div :if="isFuture()" class="host-guest-add">
     <input type="text" name="guestName" placeholder="Guest name" :disabled="busy">
     <input type="email" name="guestEmail" placeholder="Email (optional)" :disabled="busy">
     <button type="button" class="attend-btn" :disabled="busy" :onclick="addGuest">{ busy ? 'Adding' : 'Add guest' }</button>
   </div>
-  <label class="host-guest-force" :hidden="!isFull()">
+  <label class="host-guest-force" :hidden="!isFull() || !isFuture()">
     <input type="checkbox" name="guestForce" :disabled="busy">
     Screening is full — confirm over capacity instead of waitlisting
   </label>
@@ -856,6 +857,13 @@
       return !!(this.event.capacity && (this.attendees || []).length >= this.event.capacity)
     }
 
+    // Same date idiom as event-card: dates stay YYYY-MM-DD strings, compared
+    // lexically against a Central-time today so upcoming does not flip early.
+    this.isFuture = function() {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+      return (this.event.date || '') >= today
+    }
+
     this.callGuest = async function(method, body) {
       const res = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp/guest', {
         method: method,
@@ -868,7 +876,7 @@
     }
 
     this.addGuest = async function() {
-      if (!this.session) return
+      if (!this.session || !this.isFuture()) return
       const nameInput = this.root.querySelector('input[name="guestName"]')
       const emailInput = this.root.querySelector('input[name="guestEmail"]')
       const forceInput = this.root.querySelector('input[name="guestForce"]')
@@ -891,7 +899,7 @@
     }
 
     this.removeGuest = async function(e) {
-      if (!this.session) return
+      if (!this.session || !this.isFuture()) return
       const id = e.currentTarget.dataset.id
       if (!id) return
       this.update({ busy: true, err: '' })

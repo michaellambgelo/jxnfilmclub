@@ -140,6 +140,47 @@ test.describe('member-hosted screenings', () => {
     expect(ours.address).toBeUndefined()
   })
 
+  test('past screening: RSVP + guest controls are closed, guest list stays readable', async ({ page }) => {
+    const host = await signInAs(page, 'past-host@example.com', { name: 'Past Host' })
+
+    // Seed a past-dated hosted screening directly via the test KV hook — the
+    // create API rightly rejects past dates. Canonical row (with address) +
+    // the public events:all projection (never carries it) + one guest RSVP.
+    const PAST_TITLE = 'E2E Past Screening'
+    const event = {
+      id: 'past-e2e', title: PAST_TITLE, film: 'Crash', date: '2000-01-01',
+      time: '19:30', capacity: 4, kind: 'house', hostId: host.id,
+      hostName: host.name, venue: `${host.name}'s house`,
+      address: '742 Evergreen Terrace',
+    }
+    const { address, ...projection } = event
+    const seed = (key: string, value: unknown) =>
+      page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+        data: { ns: 'ATTENDANCE_KV', key, value: JSON.stringify(value) },
+      })
+    await seed(`event:${event.id}`, event)
+    await seed('events:all', [projection])
+    await seed(`rsvp:${event.id}`, {
+      confirmed: [{ memberId: 'guest:abcd1234', name: 'Gwen Guest', at: 1, addedBy: host.id }],
+      waitlist: [],
+    })
+
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: PAST_TITLE })
+    await expect(card).toBeVisible()
+
+    // Member block: closed hint instead of RSVP controls.
+    await expect(card).toContainText('RSVPs closed (past date)')
+
+    // Host panel still mounts (the host view is served for past events), but
+    // the guest list is read-only: closed hint, rows visible, no mutations.
+    await expect(card).toContainText('Guest list closed (past date)')
+    await expect(card.locator('.host-guest-row', { hasText: 'Gwen Guest' })).toBeVisible()
+    await expect(card.locator('.host-guests input[name="guestName"]')).toHaveCount(0)
+    await expect(card.locator('.host-guest-row button')).toHaveCount(0)
+    await expect(card.getByRole('button', { name: /cancel screening/i })).toHaveCount(0)
+  })
+
   test('/host prompts non-members to log in instead of showing the form', async ({ page }) => {
     // Fresh context (fixtures wipe KV before each test) so no session.
     await page.goto('/host')

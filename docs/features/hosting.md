@@ -101,6 +101,13 @@ Semantics:
 - **Host view**: `GET /events/:id/host` adds `guests: [{ id, name, list }]`
   (guest entries only — member ids and emails stay unexposed) so the SPA can
   render remove buttons.
+- **Past screenings are read-only.** The worker 409s both guest verbs once
+  `event.date < centralToday()`, and `DELETE /events/:id` gets the same 409
+  (cancelling would email cancellation notices for an event that's over —
+  the post-event scrub owns teardown; admins still delete via raw KV). The
+  SPA mirrors this: on a past screening the host panel shows the guest list
+  read-only with a "Guest list closed (past date)" hint — no add form, no
+  remove buttons, no Cancel screening button.
 - **Privacy**: guest emails live in `rsvp:{id}` and inherit the 30-day scrub
   wholesale; `purgeRsvps` (account deletion) correctly never matches guests.
   The policy (`worker/src/privacy.html`) names the guest flow explicitly.

@@ -128,6 +128,22 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  test('active tab survives a reload; a stale stored tab falls back to members', async ({ page }) => {
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')
+
+    await page.locator('#tabs button[data-tab="feedback"]').click()
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'feedback')
+
+    await page.reload()
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'feedback')
+
+    // A tab name that no longer exists must not wedge boot.
+    await page.evaluate(() => { localStorage.jxnfc_admin_tab = 'gone-tab' })
+    await page.reload()
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')
+  })
+
   test('revoke device deletes the refresh token', async ({ page }) => {
     acceptDialogs(page)
     const key = 'refresh:id-dev@e2e.test:secret123abc'

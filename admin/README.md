@@ -43,6 +43,10 @@ The env toggle in the header picks between `production` (default — red
 topbar) and `staging` for the next KV call. The switch also re-loads the
 current tab so you don't accidentally act on the wrong namespace.
 
+The active tab is remembered per browser (`localStorage.jxnfc_admin_tab`),
+so a refresh reopens where you left off; unknown stored names fall back to
+Members.
+
 ### Sending newsletters
 
 Recipient toggles are plain KV writes. **Sending** goes through the join

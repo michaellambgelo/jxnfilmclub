@@ -93,6 +93,7 @@ let currentTab = 'members'
 
 async function switchTab(tab) {
   currentTab = tab
+  localStorage.jxnfc_admin_tab = tab
   document.querySelectorAll('#tabs button').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab)
   })
@@ -988,4 +989,6 @@ api('GET', '/api/whoami').then(({ wrangler, email }) => {
   $('#whoami').textContent = HOSTED ? '(whoami failed)' : '(wrangler check failed)'
 })
 
-switchTab('members')
+// Reopen on the tab from the last visit; unknown/stale names fall back to
+// members (guards against tabs being renamed or removed).
+switchTab(TABS[localStorage.jxnfc_admin_tab] ? localStorage.jxnfc_admin_tab : 'members')

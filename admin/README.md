@@ -75,7 +75,8 @@ local mode — without one they return a 501 pointing at the hosted portal,
 where the secrets are already set.
 
 The compose box prefills a branded, email-safe HTML template (the Worker
-appends the unsubscribe/postal footer — don't add one). The preview pane is
+appends the unsubscribe footer — plus a postal line only if
+`NEWSLETTER_POSTAL_ADDRESS` is configured — so don't add one). The preview pane is
 **editable**: type directly into it or use the formatting toolbar (bold,
 italic, headings, list, link), and edits sync back into the HTML textarea,
 which remains what actually gets sent. Scripts never execute in the preview

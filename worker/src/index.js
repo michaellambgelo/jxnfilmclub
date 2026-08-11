@@ -3020,10 +3020,11 @@ async function handleNewsletterSend(request, env) {
     return json(env, { error: 'subject and html or text required' }, 400)
   }
 
+  // Postal address is OPTIONAL: the footer prints it only when the var is
+  // set. (Removed from the committed config 2026-08-11 — it was a home
+  // address. Re-add NEWSLETTER_POSTAL_ADDRESS, e.g. a PO Box, to restore the
+  // strict CAN-SPAM footer line.)
   const postal = env.NEWSLETTER_POSTAL_ADDRESS || ''
-  if (!postal) {
-    return json(env, { error: 'NEWSLETTER_POSTAL_ADDRESS is not configured (required by CAN-SPAM)' }, 500)
-  }
   const from = env.NEWSLETTER_FROM || 'Jackson Film Club <noreply@join.jxnfilm.club>'
   const origin = new URL(request.url).origin
   const opts = { from, subject, bodyHtml, bodyText, postal, origin }
@@ -3120,18 +3121,20 @@ async function sendBatch(env, messages) {
 }
 
 function appendFooterText(body, unsubUrl, postal) {
-  return [
+  const lines = [
     body, '', '—',
     'You received this because you opted in to Jackson Film Club announcements.',
     `Unsubscribe: ${unsubUrl}`,
-    postal,
-  ].join('\n')
+  ]
+  if (postal) lines.push(postal)
+  return lines.join('\n')
 }
 
 function appendFooterHtml(body, unsubUrl, postal) {
   return `${body}<hr><p style="font-size:12px;color:#888">` +
     'You received this because you opted in to Jackson Film Club announcements.<br>' +
-    `<a href="${unsubUrl}">Unsubscribe</a><br>${escapeHtml(postal)}</p>`
+    `<a href="${unsubUrl}">Unsubscribe</a>` +
+    (postal ? `<br>${escapeHtml(postal)}` : '') + '</p>'
 }
 
 function escapeHtml(s) {

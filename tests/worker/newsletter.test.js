@@ -1,5 +1,8 @@
-import { SELF, env } from 'cloudflare:test'
+import { SELF, env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+// Direct module import so a test can pass a MODIFIED env (SELF's isolate
+// ignores mutations of the imported env object).
+import worker from '../../worker/src/index.js'
 
 function mockFetch(handler) {
   globalThis.fetch = vi.fn(handler)
@@ -115,12 +118,39 @@ describe('POST /admin/newsletter/send', () => {
     const unsubUrl = msg.headers['List-Unsubscribe'].match(/<([^>]+\/unsubscribe[^>]+)>/)[1]
     expect(unsubUrl).toContain('/unsubscribe?token=')
 
-    // CAN-SPAM: unsubscribe link + postal address present in the body.
+    // Unsubscribe link + (when configured) postal address in the body.
     // The HTML footer must carry the link as a real anchor, not a bare URL.
     expect(msg.html).toMatch(/<a href="[^"]*\/unsubscribe\?token=[^"]*">Unsubscribe<\/a>/)
     expect(msg.html).toContain('Jackson Film Club, PO Box 1')
     expect(msg.text).toContain('Unsubscribe:')
     expect(msg.text).toContain('Jackson Film Club, PO Box 1')
+  })
+
+  it('sends without a postal address configured — the footer just omits the line', async () => {
+    // The var is optional since 2026-08-11 (a home address was removed from
+    // the committed config): sending must NOT 500, and no address line or
+    // dangling separator may appear in either footer.
+    await seedMember('nopostal@example.com', { newsletter: true })
+    const calls = []
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(new Request('https://join.jxnfilm.club/admin/newsletter/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-admin-token' },
+      body: JSON.stringify({ subject: 'June picks', html: '<p>Hi</p>', text: 'Hi' }),
+    }), { ...env, NEWSLETTER_POSTAL_ADDRESS: '' }, ctx)
+    await waitOnExecutionContext(ctx)
+
+    expect(res.status).toBe(200)
+    const batchCall = calls.find(c => c.url === 'https://api.resend.com/emails/batch')
+    const msg = JSON.parse(batchCall.init.body)[0]
+    expect(msg.html).not.toContain('PO Box')
+    expect(msg.html).toMatch(/Unsubscribe<\/a><\/p>/)
+    expect(msg.text).not.toContain('PO Box')
+    expect(msg.text.trimEnd().endsWith(msg.text.match(/Unsubscribe: \S+/)[0])).toBe(true)
   })
 
   it('400s when subject or body is missing', async () => {

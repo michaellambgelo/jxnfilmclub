@@ -1288,6 +1288,12 @@ document.addEventListener('click', async (e) => {
       const html = $('#nl-html').value
       const text = $('#nl-text').value
       if (!subject || (!html && !text)) { toast('Subject and a body are required', true); return }
+      // The poster insert seeds bracketed placeholder copy — block a real
+      // send that still contains it.
+      if ((html + text).includes('[Write your review or announcement here')) {
+        toast('The body still contains the poster placeholder text — replace it before sending', true)
+        return
+      }
       const count = document.querySelectorAll('#nl-table .pill.on').length
       if (!confirm(`Send "${subject}" to ${count} opted-in member(s) on ${env()}?\n\nThis emails real people.`)) return
       const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined })

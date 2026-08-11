@@ -312,9 +312,21 @@ describe('buildPosterBlockHtml / buildPosterBlockText', () => {
     expect(html).toContain('https://x.example/&quot;onmouseover=&quot;a')
   })
 
-  it('text fallback is "caption: link", degrading when parts are missing', () => {
-    expect(buildPosterBlockText(block)).toBe('Halloween (1978): https://jxnfilm.club/events')
-    expect(buildPosterBlockText({ ...block, link: '' })).toBe('Halloween (1978)')
-    expect(buildPosterBlockText({ link: 'https://x.example', title: '', year: '' })).toBe('https://x.example')
+  it('assumes body copy follows: centered poster, left-aligned body seed', () => {
+    const html = buildPosterBlockHtml(block)
+    // The card td itself is NOT centered — only the inner poster table is —
+    // so review paragraphs typed after the seed inherit left alignment.
+    expect(html).not.toMatch(/<td align="center" style="padding:28px/)
+    expect(html).toContain('About Halloween (1978)')
+    expect(html).toContain('[Write your review or announcement here')
+    // No caption → generic headline placeholder.
+    expect(buildPosterBlockHtml({ ...block, title: '', year: '' })).toContain('Your headline here')
+  })
+
+  it('text fallback is "caption: link" plus the body placeholder', () => {
+    expect(buildPosterBlockText(block)).toBe(
+      'Halloween (1978): https://jxnfilm.club/events\n[Write your review or announcement here — replace this placeholder before sending.]')
+    expect(buildPosterBlockText({ ...block, link: '' })).toContain('Halloween (1978)\n[Write')
+    expect(buildPosterBlockText({ link: 'https://x.example', title: '', year: '' })).toContain('https://x.example\n[Write')
   })
 })

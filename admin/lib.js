@@ -132,10 +132,14 @@ export function buildVoiceCtaText({ text }) {
   return `Your voice on the podcast — this round's prompt: "${text}"\nMembers can record or upload up to three minutes: https://jxnfilm.club/speak`
 }
 
-// Email-safe standalone poster block for the newsletter composer: one
-// centered TMDB poster in the same white-card shell as the sections below,
-// optionally wrapped in a link the admin supplies (event page, Letterboxd,
-// tickets — anything).
+// Email-safe poster block for the newsletter composer, built on the
+// assumption that a review or announcement FOLLOWS the poster (learned from
+// the 2026-08-11 digest, where the review had to be hand-fought into a
+// centered standalone card): the poster + caption are centered inside the
+// card, then a left-aligned body area is seeded with bracketed placeholder
+// copy the admin overwrites in the editable preview. The outer td is NOT
+// centered, so typed paragraphs inherit normal left alignment and the
+// compose template's body styles — no per-paragraph overrides needed.
 export function buildPosterBlockHtml({ poster, link, title, year }) {
   const caption = `${title || ''}${year ? ` (${year})` : ''}`
   const img = `<img src="${attr(poster)}" width="220" alt="${attr(caption ? caption + ' poster' : 'poster')}" style="display:block;border:0;border-radius:4px;max-width:100%">`
@@ -147,12 +151,17 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
         ? `<a href="${attr(link)}" style="color:#d7321f;text-decoration:none">${escapeHtml(caption)}</a>`
         : escapeHtml(caption)}</p>`
     : ''
+  const headline = caption ? `About ${escapeHtml(caption)}` : 'Your headline here'
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
   <tr><td align="center">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
       <tr>
-        <td align="center" style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
-          ${inner}${captionHtml}
+        <td style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+            ${inner}${captionHtml}
+          </td></tr></table>
+          <h2 style="margin:20px 0 12px;font-size:20px;color:#100f0e">${headline}</h2>
+          <p style="margin:0 0 16px;font-size:16px;line-height:1.6">[Write your review or announcement here — replace this placeholder in the preview before sending.]</p>
         </td>
       </tr>
     </table>
@@ -162,7 +171,8 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
 
 export function buildPosterBlockText({ link, title, year }) {
   const caption = `${title || ''}${year ? ` (${year})` : ''}`.trim()
-  return link ? (caption ? `${caption}: ${link}` : link) : caption
+  const header = link ? (caption ? `${caption}: ${link}` : link) : caption
+  return `${header}\n[Write your review or announcement here — replace this placeholder before sending.]`
 }
 
 // '19:30' -> '7:30 pm'. Port of the worker's fmtTime; empty-safe.

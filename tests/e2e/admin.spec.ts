@@ -166,6 +166,11 @@ test.describe('admin dashboard', () => {
     await page.evaluate(() => { localStorage.jxnfc_admin_tab = 'gone-tab' })
     await page.reload()
     await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')
+
+    // Pre-collapse auth tab names land on the merged Auth tab.
+    await page.evaluate(() => { localStorage.jxnfc_admin_tab = 'sessions' })
+    await page.reload()
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'auth')
   })
 
   test('revoke device deletes the refresh token', async ({ page }) => {
@@ -174,7 +179,7 @@ test.describe('admin dashboard', () => {
     await seedKv(page, key, JSON.stringify({ email: 'dev@e2e.test' }))
 
     await page.goto(`${ADMIN_ORIGIN}/`)
-    await page.locator('#tabs button[data-tab="sessions"]').click()
+    await page.locator('#tabs button[data-tab="auth"]').click()
     const row = page.locator('tr', { hasText: 'dev@e2e.test' })
     await row.getByRole('button', { name: 'revoke' }).click()
 

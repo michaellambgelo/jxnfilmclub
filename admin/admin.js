@@ -81,15 +81,17 @@ function showModal(title, body) {
 const TABS = {
   members: renderMembers,
   newsletter: renderNewsletter,
-  pending: renderPending,
-  sessions: renderSessions,
-  revoked: renderRevoked,
-  rate: renderRate,
+  auth: renderAuth,
   events: renderEvents,
   feedback: renderFeedback,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
   config: renderConfig,
 }
+
+// Tab names that existed before Pending/Sessions/Revoked/Rate limits were
+// collapsed into Auth — remembered-tab restores from before the collapse
+// land on the merged tab instead of falling back to Members.
+const LEGACY_AUTH_TABS = ['pending', 'sessions', 'revoked', 'rate']
 
 let currentTab = 'members'
 
@@ -338,9 +340,13 @@ function wireNewsletterPreview(htmlField, preview, toolbar) {
   syncToPreview()
 }
 
-async function renderPending() {
+// --- Auth tab: pending signups + sessions/devices + revocations + rate
+// limits, one section each. Every section builder returns HTML (with its
+// own empty state) so the combined tab always shows all four groups.
+
+async function pendingSection() {
   const { keys, values } = await loadKv('pending:')
-  if (!keys.length) return content().innerHTML = '<p class="empty">No pending signups.</p>'
+  if (!keys.length) return '<h2>Pending signups <span class="muted">(0)</span></h2><p class="empty">No pending signups.</p>'
 
   const rows = keys.map(k => ({
     keyName: k.name,
@@ -349,7 +355,7 @@ async function renderPending() {
     p: tryParse(values[k.name]),
   }))
 
-  content().innerHTML = `
+  return `
     <h2>Pending signups <span class="muted">(${rows.length})</span></h2>
     <p class="section-hint">These are signups that haven't completed OTP verification. Cleared automatically after the 10-min TTL — only delete here if a user got stuck.</p>
     <table><thead><tr><th>Email</th><th>Name</th><th>Handle</th><th>Code</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
@@ -369,7 +375,7 @@ async function renderPending() {
   `
 }
 
-async function renderSessions() {
+async function sessionsSection() {
   const [{ keys, values }, { keys: refreshKeys, values: refreshValues }] =
     await Promise.all([loadKv('session:'), loadKv('refresh:')])
 
@@ -427,7 +433,7 @@ async function renderSessions() {
     </tbody></table>
   ` : '<p class="empty">No remembered devices.</p>'
 
-  content().innerHTML = `
+  return `
     <h2>Session snapshots <span class="muted">(${rows.length})</span></h2>
     <p class="section-hint">Cached member snapshots, 1h TTL. Evicting one forces the next <code>/member/me</code> to re-read <code>member:{email}</code>. Does not revoke the bearer token — for that use the Worker's <code>/session/revoke</code> route (requires the token).</p>
     ${snapshotsTable}
@@ -437,11 +443,11 @@ async function renderSessions() {
   `
 }
 
-async function renderRevoked() {
+async function revokedSection() {
   const { keys } = await loadKv('revoked:')
-  if (!keys.length) return content().innerHTML = '<p class="empty">No revoked sessions.</p>'
+  if (!keys.length) return '<h2>Revoked tokens <span class="muted">(0)</span></h2><p class="empty">No revoked sessions.</p>'
 
-  content().innerHTML = `
+  return `
     <h2>Revoked tokens <span class="muted">(${keys.length})</span></h2>
     <p class="section-hint">Tokens explicitly revoked via <code>POST /session/revoke</code>. Auto-expire when the underlying JWT exp passes. Read-only.</p>
     <table><thead><tr><th>JTI</th><th>Expires in</th></tr></thead><tbody>
@@ -485,11 +491,11 @@ async function renderFeedback() {
   `
 }
 
-async function renderRate() {
+async function rateSection() {
   const { keys, values } = await loadKv('rate:')
-  if (!keys.length) return content().innerHTML = '<p class="empty">No active rate-limit counters.</p>'
+  if (!keys.length) return '<h2>Rate limits <span class="muted">(0)</span></h2><p class="empty">No active rate-limit counters.</p>'
 
-  content().innerHTML = `
+  return `
     <h2>Rate limits <span class="muted">(${keys.length})</span></h2>
     <p class="section-hint">Live counters and throttles. Delete a specific entry to unblock a user. <code>otp_verify_fail</code> counters with value ≥ 5 are the lockouts.</p>
     <table><thead><tr><th>Key</th><th>Value</th><th>Expires in</th><th>Actions</th></tr></thead><tbody>
@@ -508,6 +514,16 @@ async function renderRate() {
       `}).join('')}
     </tbody></table>
   `
+}
+
+// The four sections are independent KV reads — load them in parallel, in
+// auth-lifecycle order: signup → live sessions/devices → revocations →
+// throttles.
+async function renderAuth() {
+  const sections = await Promise.all([
+    pendingSection(), sessionsSection(), revokedSection(), rateSection(),
+  ])
+  content().innerHTML = sections.join('\n')
 }
 
 // --- Config tab (MEMBERS_KV: config:* operator overrides) ---
@@ -1335,6 +1351,7 @@ api('GET', '/api/whoami').then(({ wrangler, email }) => {
   $('#whoami').textContent = HOSTED ? '(whoami failed)' : '(wrangler check failed)'
 })
 
-// Reopen on the tab from the last visit; unknown/stale names fall back to
-// members (guards against tabs being renamed or removed).
-switchTab(TABS[localStorage.jxnfc_admin_tab] ? localStorage.jxnfc_admin_tab : 'members')
+// Reopen on the tab from the last visit; pre-collapse auth tab names map to
+// the merged Auth tab, other unknown/stale names fall back to members.
+const storedTab = localStorage.jxnfc_admin_tab
+switchTab(TABS[storedTab] ? storedTab : LEGACY_AUTH_TABS.includes(storedTab) ? 'auth' : 'members')

@@ -193,6 +193,9 @@ test.describe('member-hosted screenings', () => {
     await expect(card.locator('.host-guests input[name="guestName"]')).toHaveCount(0)
     await expect(card.locator('.host-guest-row button')).toHaveCount(0)
     await expect(card.getByRole('button', { name: /cancel screening/i })).toHaveCount(0)
+    // The over-capacity checkbox is [hidden] on past events; its display:flex
+    // class must not beat the UA hidden rule (regression: it did).
+    await expect(card.locator('.host-guest-force')).toBeHidden()
   })
 
   test('/host prompts non-members to log in instead of showing the form', async ({ page }) => {

@@ -67,7 +67,7 @@ export function starsOf(rating) {
 function watchedVerdictHtml(e) {
   const stars = starsOf(e.rating)
   if (!stars && !e.liked) return ''
-  const heart = e.liked ? `${stars ? ' ' : ''}<span style="color:#d7321f">&hearts;</span>` : ''
+  const heart = e.liked ? `${stars ? ' ' : ''}<span style="color:#d7321f;font-size:1.3em">&hearts;</span>` : ''
   return ` <span style="color:#6b675f;white-space:nowrap">${stars}${heart}</span>`
 }
 

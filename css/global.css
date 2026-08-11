@@ -367,8 +367,14 @@ main > nav {
   display: inline;
   font: inherit;
   font-style: normal;
+  /* The heart glyph draws much smaller than the star at equal font-size
+   * (fallback-font metrics) — scale it to visually match the stars.
+   * line-height 0 keeps the bump from stretching the caption line box. */
+  font-size: 1.4em;
+  line-height: 0;
+  vertical-align: -0.06em;
   color: var(--brand);
-  margin-left: 0.3em;
+  margin-left: 0.25em;
 }
 
 .take-card footer .lb-verdict {

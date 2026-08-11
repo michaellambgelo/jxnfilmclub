@@ -82,6 +82,11 @@ def refresh_member(handle: str) -> tuple[list[dict], list[dict]]:
             'link':  entry.link,
             'watched_date': entry.get('letterboxd_watcheddate'),
         }
+        rating = entry.get('letterboxd_memberrating')
+        if rating:
+            film['rating'] = rating
+        if (entry.get('letterboxd_memberlike') or '').lower() == 'yes':
+            film['liked'] = True
         poster = extract_poster(entry.get('summary', ''))
         if poster:
             film['poster'] = poster
@@ -103,6 +108,8 @@ def refresh_member(handle: str) -> tuple[list[dict], list[dict]]:
         rating = entry.get('letterboxd_memberrating')
         if rating:
             take['rating'] = rating
+        if (entry.get('letterboxd_memberlike') or '').lower() == 'yes':
+            take['liked'] = True
         poster = extract_poster(entry.get('summary', ''))
         if poster:
             take['poster'] = poster

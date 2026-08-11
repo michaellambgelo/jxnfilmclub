@@ -353,3 +353,24 @@ main > nav {
 .policy-toast-close:hover {
   color: var(--ink);
 }
+
+/* Letterboxd verdict — member star rating + like heart on film cards
+ * (home Last Four + Hot Takes, /watched grid). Both fields optional.
+ * The .lb-like override matters inside .ns-poster figcaptions, where a
+ * bare b would otherwise pick up the block/italic display-font rule. */
+.lb-verdict {
+  white-space: nowrap;
+  letter-spacing: 0.1em;
+}
+
+.lb-verdict .lb-like {
+  display: inline;
+  font: inherit;
+  font-style: normal;
+  color: var(--brand);
+  margin-left: 0.3em;
+}
+
+.take-card footer .lb-verdict {
+  margin-left: 0.6em;
+}

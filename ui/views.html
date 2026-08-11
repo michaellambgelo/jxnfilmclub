@@ -76,6 +76,7 @@
             <figcaption>
               <b>{ f.title }</b>
               <span :if="f.year">{ f.year }</span>
+              <span :if="f.rating || f.liked" class="lb-verdict">{ starsOf(f.rating) }<b :if="f.liked" class="lb-like">♥</b></span>
             </figcaption>
           </figure>
           <span class="lf-who">{ f.who }</span>
@@ -108,7 +109,7 @@
         <span class="ns-tape">{ t.title }</span>
         <img :if="t.poster" class="take-poster" src="{ t.poster }" alt="{ t.title }">
         <p>“{ t.review }”</p>
-        <footer>{ t.who }</footer>
+        <footer>{ t.who }<span :if="t.rating || t.liked" class="lb-verdict">{ starsOf(t.rating) }<b :if="t.liked" class="lb-like">♥</b></span></footer>
       </a>
     </div>
   </section>
@@ -157,6 +158,14 @@
       sectionWatches: 'Recent Watches from Members',
       sectionTakes: 'Hot Takes',
       sectionPodcast: 'The Podcast',
+    }
+
+    // Letterboxd half-star strings: 4.5 renders as four stars and a half mark.
+    this.starsOf = function(r) {
+      const n = Number(r) || 0
+      let s = ''
+      for (let i = 0; i < Math.floor(n); i++) s += '★'
+      return n - Math.floor(n) >= 0.5 ? s + '½' : s
     }
 
     this.mounted = async function() {
@@ -226,7 +235,7 @@
         .filter(function(m) { return m.handle && watched[m.handle] && watched[m.handle].length })
         .map(function(m) {
           const f = watched[m.handle][0]
-          return { title: f.title, year: f.year, poster: f.poster, link: f.link, who: m.name, when: f.watched_date }
+          return { title: f.title, year: f.year, poster: f.poster, link: f.link, who: m.name, when: f.watched_date, rating: f.rating, liked: f.liked }
         })
         .sort(function(a, b) { return (b.when || '').localeCompare(a.when || '') })
         .slice(0, 4)
@@ -255,7 +264,7 @@
       }
       const takes = handles.slice(0, 3).map(function(h) {
         const t = grouped[h][Math.floor(Math.random() * grouped[h].length)]
-        return { title: t.title, review: t.review, link: t.link, poster: t.poster, who: byHandle[h] }
+        return { title: t.title, review: t.review, link: t.link, poster: t.poster, who: byHandle[h], rating: t.rating, liked: t.liked }
       })
 
       // ----- podcast -----
@@ -408,6 +417,7 @@
         <div class="film-info">
           <h3>{ film.title }</h3>
           <span :if="film.year">{ film.year }</span>
+          <span :if="film.rating || film.liked" class="lb-verdict">{ starsOf(film.rating) }<b :if="film.liked" class="lb-like">♥</b></span>
         </div>
       </a>
     </div>
@@ -419,6 +429,13 @@
     avatarFor(handle) {
       const map = this.avatars || {}
       return handle ? (map[handle] || '') : ''
+    }
+
+    starsOf(r) {
+      const n = Number(r) || 0
+      let s = ''
+      for (let i = 0; i < Math.floor(n); i++) s += '★'
+      return n - Math.floor(n) >= 0.5 ? s + '½' : s
     }
 
     async mounted() {

@@ -63,6 +63,16 @@ test.describe('config-driven homepage copy', () => {
     // A field absent from the override falls back to the hardcoded default.
     await expect(page.getByRole('heading', { name: 'Get in the room.' })).toBeVisible()
   })
+
+  test('speak CTA section shows the voice prompt and links /speak', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.speak-cta-prompt')).toContainText("Tell us what you're watching")
+    await expect(page.locator('.speak-cta-btn')).toHaveAttribute('href', '/speak')
+
+    await seedKv(page, 'config:voice_prompt', JSON.stringify({ id: 'e2e', text: 'Best opening scene ever?' }))
+    await page.goto('/')
+    await expect(page.locator('.speak-cta-prompt')).toContainText('Best opening scene ever?')
+  })
 })
 
 test.describe('site footer', () => {

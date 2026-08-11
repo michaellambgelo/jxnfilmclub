@@ -33,7 +33,7 @@
           <span :if="hero.year">{ hero.year }</span>
         </figcaption>
       </figure>
-      <span class="ns-stamp nshero-stamp">{ hero.upcoming ? 'Now screening' : 'Last screening' }</span>
+      <span class="ns-stamp nshero-stamp">{ hero.upcoming ? 'Next screening' : 'Last screening' }</span>
     </div>
   </section>
 
@@ -134,6 +134,17 @@
     </div>
   </section>
 
+  <!-- SPEAK — voice-clip CTA for the podcast. Structure stays constant
+       (no :if on the section) per the nuedom sibling-diff rule; the prompt
+       text always has the generic fallback so there is no empty state. -->
+  <section class="speak-cta">
+    <p class="ns-label">Your voice on the show</p>
+    <h2 class="speak-cta-heading">Say it in three minutes or less.</h2>
+    <p class="speak-cta-prompt">This round: <em>“{ voicePromptText }”</em></p>
+    <p class="speak-cta-note">Members can record or upload a short clip — the best ones get aired on the podcast.</p>
+    <a href="/speak" class="ns-btn speak-cta-btn">Record a clip</a>
+  </section>
+
   <!-- JOIN -->
   <section class="join-cta halftone">
     <p class="join-kicker">{ joinKicker }</p>
@@ -169,7 +180,7 @@
     }
 
     this.mounted = async function() {
-      const seed = { episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null }
+      const seed = { episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null, voicePromptText: "Tell us what you're watching" }
       Object.keys(COPY).forEach(function(k) { seed[k] = COPY[k] })
       this.update(seed)
 
@@ -283,6 +294,8 @@
       const final = { hero: hero, program: rows, lastFour: lastFour, leaders: leaders, takes: takes, episodes: episodes }
       Object.keys(COPY).forEach(function(k) { final[k] = (typeof cc[k] == 'string' && cc[k]) || COPY[k] })
       final.heroLabel = heroLabel
+      const vp = cfg && cfg.voice_prompt
+      if (vp && typeof vp.text == 'string' && vp.text) final.voicePromptText = vp.text
       this.update(final)
 
       // Spotify embed is injected here because Nue's DHTML renderer strips

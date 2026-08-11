@@ -53,6 +53,24 @@ export function fmtExpiry(unixSec) {
   return `${Math.floor(rem / 86_400_000)}d`
 }
 
+// Letterboxd half-star string: '4.5' renders as four stars and a half mark;
+// missing/invalid ratings render as ''.
+export function starsOf(rating) {
+  const n = Number(rating) || 0
+  let s = ''
+  for (let i = 0; i < Math.floor(n); i++) s += '★'
+  return n - Math.floor(n) >= 0.5 ? s + '½' : s
+}
+
+// Star rating + like heart as an email-safe inline suffix for a title line.
+// Mirrors the site's .lb-verdict (muted stars, brand-red heart).
+function watchedVerdictHtml(e) {
+  const stars = starsOf(e.rating)
+  if (!stars && !e.liked) return ''
+  const heart = e.liked ? `${stars ? ' ' : ''}<span style="color:#d7321f">&hearts;</span>` : ''
+  return ` <span style="color:#6b675f;white-space:nowrap">${stars}${heart}</span>`
+}
+
 // Email-safe "latest from members" section. Mirrors the compose template's
 // structure (bg band + centered 600px white card, Georgia, brand red) so the
 // inserted block reads as a continuation of the card above it.
@@ -61,7 +79,7 @@ export function buildWatchedSectionHtml(entries) {
         <tr>
           <td width="56" style="padding:8px 12px 8px 0;vertical-align:top">${e.poster ? `<img src="${attr(e.poster)}" width="48" height="72" alt="" style="display:block;border:0;border-radius:3px">` : ''}</td>
           <td style="padding:8px 0;vertical-align:top">
-            <p style="margin:0;font-size:16px;line-height:1.4"><a href="${attr(e.link)}" style="color:#d7321f;text-decoration:none"><strong>${escapeHtml(e.title)}</strong></a>${e.year ? ` <span style="color:#6b675f">(${escapeHtml(e.year)})</span>` : ''}</p>
+            <p style="margin:0;font-size:16px;line-height:1.4"><a href="${attr(e.link)}" style="color:#d7321f;text-decoration:none"><strong>${escapeHtml(e.title)}</strong></a>${e.year ? ` <span style="color:#6b675f">(${escapeHtml(e.year)})</span>` : ''}${watchedVerdictHtml(e)}</p>
             <p style="margin:2px 0 0;font-size:14px;color:#6b675f">${escapeHtml(e.name || '@' + e.handle)}${e.watched_date ? ' — ' + escapeHtml(fmtJoined(e.watched_date)) : ''}</p>
           </td>
         </tr>`).join('')
@@ -82,8 +100,11 @@ export function buildWatchedSectionHtml(entries) {
 }
 
 export function buildWatchedSectionText(entries) {
-  const lines = entries.map(e =>
-    `- ${e.title}${e.year ? ` (${e.year})` : ''} — ${e.name || '@' + e.handle}${e.watched_date ? ', ' + e.watched_date : ''}\n  ${e.link}`)
+  const lines = entries.map(e => {
+    const stars = starsOf(e.rating)
+    const verdict = `${stars ? ' ' + stars : ''}${e.liked ? ' ♥' : ''}`
+    return `- ${e.title}${e.year ? ` (${e.year})` : ''}${verdict} — ${e.name || '@' + e.handle}${e.watched_date ? ', ' + e.watched_date : ''}\n  ${e.link}`
+  })
   return `Latest from members on Letterboxd:\n${lines.join('\n')}\n\nSee all member activity: https://jxnfilm.club/watched`
 }
 

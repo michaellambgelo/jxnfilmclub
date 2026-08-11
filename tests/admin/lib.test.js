@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
-  buildWatchedSectionHtml, buildWatchedSectionText,
+  buildWatchedSectionHtml, buildWatchedSectionText, starsOf,
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
 } from '../../admin/lib.js'
@@ -135,6 +135,20 @@ describe('buildWatchedSectionHtml', () => {
     expect(html).toContain('&lt;script&gt;')
     expect(html).toContain('https://x.example/&quot;&gt;')
   })
+
+  it('renders the star/heart verdict only when rating or liked is present', () => {
+    const rated = buildWatchedSectionHtml([{ ...entry, rating: '4.5', liked: true }])
+    expect(rated).toContain('★★★★½')
+    expect(rated).toContain('&hearts;')
+
+    const likedOnly = buildWatchedSectionHtml([{ ...entry, liked: true }])
+    expect(likedOnly).toContain('&hearts;')
+    expect(likedOnly).not.toContain('★')
+
+    const plain = buildWatchedSectionHtml([entry])
+    expect(plain).not.toContain('★')
+    expect(plain).not.toContain('&hearts;')
+  })
 })
 
 describe('buildWatchedSectionText', () => {
@@ -146,6 +160,26 @@ describe('buildWatchedSectionText', () => {
     expect(text).toContain('- The Third Man (1949) — Mo, 2026-07-20\n  https://l/1')
     expect(text).toContain('- Film — @someuser\n  https://l/2')
     expect(text).toContain('See all member activity: https://jxnfilm.club/watched')
+  })
+
+  it('appends the verdict after the year when present', () => {
+    const text = buildWatchedSectionText([
+      { title: 'Pillion', year: '2025', rating: '4.5', liked: true, name: 'Mo', watched_date: '2026-08-10', link: 'https://l/3', handle: 'mo' },
+      { title: 'Film', rating: '3.0', handle: 'someuser', link: 'https://l/4' },
+    ])
+    expect(text).toContain('- Pillion (2025) ★★★★½ ♥ — Mo, 2026-08-10')
+    expect(text).toContain('- Film ★★★ — @someuser')
+  })
+})
+
+describe('starsOf', () => {
+  it('maps ratings to Letterboxd half-star strings', () => {
+    expect(starsOf('5.0')).toBe('★★★★★')
+    expect(starsOf('4.5')).toBe('★★★★½')
+    expect(starsOf('3.0')).toBe('★★★')
+    expect(starsOf('0.5')).toBe('½')
+    expect(starsOf(undefined)).toBe('')
+    expect(starsOf('junk')).toBe('')
   })
 })
 

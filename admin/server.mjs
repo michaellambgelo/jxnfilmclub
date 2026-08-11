@@ -40,6 +40,18 @@ const WORKER_ORIGINS = E2E_ORIGIN
       staging: 'https://join-staging.jxnfilm.club',
     }
 
+// Voice-clip R2 buckets per env (see worker/wrangler.toml). Keys under
+// voice/ only; both buckets carry a 60-day lifecycle deletion rule.
+const VOICE_BUCKETS = { production: 'jxnfilm-voice', staging: 'jxnfilm-voice-staging' }
+
+// wrangler r2 object get gives us bytes but no content type — infer it from
+// the key's extension so <audio> gets a plausible type locally. (Hosted mode
+// serves the R2 object's stored httpMetadata instead.)
+const AUDIO_TYPES = {
+  webm: 'audio/webm', ogg: 'audio/ogg', oga: 'audio/ogg', mp3: 'audio/mpeg',
+  m4a: 'audio/mp4', mp4: 'audio/mp4', wav: 'audio/wav', aac: 'audio/aac', flac: 'audio/flac',
+}
+
 class HttpError extends Error {
   constructor(status, msg) { super(msg); this.status = status }
 }
@@ -73,6 +85,30 @@ function runWrangler(args, stdinBody) {
     })
     if (stdinBody !== undefined) child.stdin.end(stdinBody)
     else child.stdin.end()
+  })
+}
+
+// Binary-safe variant of runWrangler for R2 object bytes — the string
+// accumulation above would corrupt audio through UTF-8 decoding.
+function runWranglerBinary(args) {
+  return new Promise((res, rej) => {
+    const child = spawn('npx', ['wrangler', ...args], {
+      cwd: WORKER_DIR,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const chunks = []
+    let stderr = ''
+    child.stdout.on('data', d => chunks.push(d))
+    child.stderr.on('data', d => { stderr += d })
+    child.on('error', rej)
+    child.on('close', code => {
+      if (code !== 0) {
+        rej(new HttpError(502, `wrangler ${args.join(' ')}\n${stderr.trim() || `exit ${code}`}`))
+      } else {
+        res(Buffer.concat(chunks))
+      }
+    })
+    child.stdin.end()
   })
 }
 
@@ -355,6 +391,79 @@ async function handle(req, res) {
     const text = await workerRes.text()
     let data
     try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+    return json(res, workerRes.status, data)
+  }
+  // GET /api/voice?env=&key=<r2Key>[&download=1]  → member voice-clip audio.
+  // E2E mode proxies the join worker's /__test/r2 shim (shared simulated R2);
+  // locally it shells to `wrangler r2 object get`. A missing object is the
+  // EXPECTED post-lifecycle state (the bucket's 60-day rule deletes on a
+  // daily cadence while the KV TTL is exact) → 404 { error: 'expired' },
+  // matching the hosted admin worker — never a 5xx.
+  if (method === 'GET' && url.pathname === '/api/voice') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const key = q.key || ''
+    if (!key.startsWith('voice/')) throw new HttpError(400, 'invalid key')
+    const filename = (key.split('/').pop() || 'clip').replace(/[^\w.-]/g, '_')
+    const dispo = q.download ? { 'Content-Disposition': `attachment; filename="${filename}"` } : {}
+    if (E2E_ORIGIN) {
+      const shim = await fetch(`${E2E_ORIGIN}/__test/r2?${new URLSearchParams({ key })}`)
+      if (shim.status === 404) return json(res, 404, { error: 'expired' })
+      if (!shim.ok) throw new HttpError(502, `e2e r2 shim → ${shim.status}`)
+      const buf = Buffer.from(await shim.arrayBuffer())
+      res.writeHead(200, {
+        'Content-Type': shim.headers.get('content-type') || 'application/octet-stream',
+        'Content-Length': buf.length,
+        ...dispo,
+      })
+      return res.end(buf)
+    }
+    // `--remote` is REQUIRED here too: wrangler v4 defaults r2 object ops to
+    // the local simulator (same trap as the KV commands above).
+    let buf
+    try {
+      buf = await runWranglerBinary(['r2', 'object', 'get', `${VOICE_BUCKETS[q.env]}/${key}`, '--pipe', '--remote'])
+    } catch (e) {
+      if (e.status === 502 && /not exist|not found|404/i.test(e.message)) {
+        return json(res, 404, { error: 'expired' })
+      }
+      throw e
+    }
+    const ext = (key.split('.').pop() || '').toLowerCase()
+    res.writeHead(200, {
+      'Content-Type': AUDIO_TYPES[ext] || 'application/octet-stream',
+      'Content-Length': buf.length,
+      ...dispo,
+    })
+    return res.end(buf)
+  }
+  // POST /api/voice/status?env=  body = JSON { key, status } — and —
+  // DELETE /api/voice?env=      body = JSON { key }
+  // Voice moderation MUST go through the join Worker: it rewrites the KV row
+  // with its remaining TTL (and deletes the R2 object on delete). A raw
+  // /api/kv PUT would drop the TTL and make the row persistent. In E2E mode
+  // WORKER_ORIGINS collapses onto the local dev worker and playwright's
+  // ADMIN_TOKEN=e2e-admin-token applies; locally these need a real token in
+  // the environment — without one they're hosted-portal-only.
+  if ((method === 'POST' && url.pathname === '/api/voice/status') ||
+      (method === 'DELETE' && url.pathname === '/api/voice')) {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(501, `voice moderation proxies the join Worker and needs its ${name} — export it before \`npm run admin\`, or use the hosted portal (admin.jxnfilm.club) where the secret is already set`)
+    }
+    const adminPath = url.pathname === '/api/voice/status' ? '/admin/voice/status' : '/admin/voice'
+    const body = await readBody(req)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}${adminPath}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body,
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
   // GET /api/img?url=  → proxied image bytes for Content Gen canvas

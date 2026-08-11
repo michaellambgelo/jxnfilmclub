@@ -49,6 +49,7 @@ export default defineWorkersProject({
           compatibilityDate: '2026-04-14',
           compatibilityFlags: ['nodejs_compat'],
           kvNamespaces: ['MEMBERS_KV', 'ATTENDANCE_KV'],
+          r2Buckets: ['VOICE'],
           bindings: {
             SITE_ORIGIN: 'https://jxnfilm.club',
             GITHUB_OWNER: 'testowner',

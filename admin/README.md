@@ -69,6 +69,11 @@ npm run admin
 If the token for the selected env isn't set, the Send buttons return a clear
 error instead of failing silently. Always "Send test" to yourself first.
 
+The Voice tab's approve/reject/delete actions proxy the join Worker the same
+way and read the same `ADMIN_TOKEN` / `ADMIN_TOKEN_STAGING` variables in
+local mode — without one they return a 501 pointing at the hosted portal,
+where the secrets are already set.
+
 The compose box prefills a branded, email-safe HTML template (the Worker
 appends the unsubscribe/postal footer — don't add one). The preview pane is
 **editable**: type directly into it or use the formatting toolbar (bold,
@@ -84,7 +89,8 @@ which remains what actually gets sent. Scripts never execute in the preview
 | **Newsletter** | Compose/send a newsletter, opted-in recipients (with per-member opt-in/out toggles), and send history (`newsletter:sent:{ts}`) | toggle a member's `newsletter` flag (evicts their session), insert an "Upcoming events" section (all events with `date` >= Central today from `event:` KV rows, soonest first; the formatter whitelists public-projection fields only — a house host's private address/notes never reach the newsletter), insert a "Latest from members on Letterboxd" section (live diary entries via `GET /api/watched`, count configurable, appended to both HTML and text bodies), insert a linked TMDB poster (search via `GET /api/tmdb/search`, pick a thumbnail, optional link URL wraps the poster; a caption line lands in the plain-text body), send a test to one address, send to all opted-in members |
 | **Auth** | The auth lifecycle in one view, four sections: `pending:{email}` signups with their OTP code; `session:{id}` cached snapshots + `refresh:{id}:{secret}` remembered devices; `revoked:{jti}` tombstones (read-only, auto-expire); all `rate:*` counters with lockouts (≥5) highlighted | delete a stuck pending signup; evict a snapshot (does NOT revoke the JWT — use the Worker's `/session/revoke` for that); revoke a remembered device (deletes the 30-day refresh record, forcing that browser back through the email-code flow); delete a rate counter to unblock a user |
 | **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees |
-| **Config** | Purpose-built editors for the operator overrides under `config:*` in `MEMBERS_KV` (see [Config tab](#config-tab)) | save/delete `config:theaters`, `config:podcast`, `config:newsletter_template`, `config:copy` |
+| **Voice** | Member-submitted podcast voice clips (≤3 min): `voice:{promptId}:{memberId}` metadata rows from `MEMBERS_KV`, grouped by prompt (current prompt first), with an inline audio player + download streaming the R2 object through `GET /api/voice` (buckets `jxnfilm-voice` / `-staging`). Each clip shows submitter, submitted-at, duration, size, status pill, and a **prominent days-remaining countdown** from the row's `expiresAt` — everything auto-deletes 60 days after submission (see [the 60-day reality](#compiling-a-podcast-segment)). A clip whose audio has already aged out renders an inline "audio gone" note instead of a broken player (`/api/voice` 404s with `{ error: "expired" }` — an expected state, since the R2 lifecycle deletes on a daily cadence while the KV TTL is exact). | approve / reject / delete — all proxied through the join Worker's `/admin/voice*` routes (never raw KV writes: a `/api/kv` PUT would rewrite the row without its TTL and make it persistent) |
+| **Config** | Purpose-built editors for the operator overrides under `config:*` in `MEMBERS_KV` (see [Config tab](#config-tab)) | save/delete `config:theaters`, `config:podcast`, `config:newsletter_template`, `config:copy`, `config:voice_prompt` |
 | **Content Gen** | Social media content built from live KV data: per-platform copy (Instagram / Facebook / Discord / Bluesky / X, with character counters against each platform's limit) and canvas-rendered PNG cards (IG post/story, FB, Bluesky/X sizes) in the Night Shift brand. Post types: event announcement + countdown (dynamic tonight/tomorrow/N-days lead from the event date), post-event recap (`attend:{id}` count), season lineup (next ≤4 upcoming events, poster wall + date list), monthly wrap (screenings + summed attendance for a selected past month), new podcast episode (typographic card; episodes fetched from `jxnfilm.club/data/episodes.json`, which GitHub Pages serves with `ACAO:*`), milestone (big-numeral card: member count from `members:all`, screenings held, or total attendance), member-watches roundup (`GET /api/watched` poster collage, windowed to the last 7 days — undated entries dropped). Public-safe by construction: events pass through `socialEventView` (no address/notes/capacity) and watches through `buildRoundupData` (film titles/posters only — zero member names or handles). Poster images load via the same-origin `GET /api/img` proxy (https-only host allowlist) so the canvas stays untainted and PNG export works. | read-only against KV — output is copy-to-clipboard text + downloaded PNGs |
 
 ## Config tab
@@ -107,11 +113,39 @@ Like every other tab, all reads and writes follow the env toggle
 | **Podcast** | `config:podcast` | Episode list + featured episode, same shape as `data/episodes.json` (`{ featured_id, episodes: [{ title, date, url }] }`). No override yet → prefilled from the live site's `data/episodes.json`. Unknown fields (top-level and per-episode) survive a save untouched. `featured_id` is the **Spotify episode ID** driving the homepage embed — it is *not* derivable from the Anchor episode URLs, so the ID is a text input; the per-episode "featured" radio uses an episode's stored `id` field, prompting once for the Spotify ID if the row doesn't have one yet (it is then kept on the episode). |
 | **Newsletter template** | `config:newsletter_template` | `{ subject, html }` — what the Newsletter compose tab prefills instead of its built-in branded template. Saving with both fields empty deletes the key (same as reset). |
 | **Homepage copy** | `config:copy` | Per-field overrides for the homepage prose (hero headline/lede/label, join kicker/heading/body, podcast lede, section headings). Each input's **placeholder shows the current site default** — what an override replaces. Only non-empty fields are stored; leave a field empty to keep its default. Saving with every field empty deletes the key. |
+| **Voice prompt** | `config:voice_prompt` | `{ id, text, deadline? }` — the question members answer when recording a podcast voice clip. The id is a slug that keys the submissions (`voice:{id}:…`), so changing it starts a fresh collection; the optional deadline (YYYY-MM-DD) is display-only. Reset deletes the key and the site falls back to the generic default prompt (id `general`, "Tell us what you're watching"). |
 
 Related consumers inside the dashboard itself: the Newsletter compose tab
 prefills subject/body from `config:newsletter_template` when it exists, and
 Content Gen's episode picker prefers `config:podcast` over the site's
 `data/episodes.json`.
+
+## Compiling a podcast segment
+
+Approved voice clips are stitched into one broadcast-ready file locally:
+
+```bash
+node scripts/compile_voices.mjs <promptId> [--env production|staging] [--out DIR]
+```
+
+The script (node + wrangler + ffmpeg, no other deps) lists the
+`voice:{promptId}:*` rows from remote `MEMBERS_KV`, keeps only
+`status: "approved"` in submission order, pulls each clip from R2, runs a
+two-pass EBU R128 loudness normalization (`I=-16:TP=-1.5:LRA=11`) with a hard
+3-minute cap per clip, and concatenates them with 0.5 s gaps into
+`out/<promptId>-segment.wav` (48 kHz mono), printing a manifest of who's in
+the segment and in what order. If ffmpeg is missing it says so up front
+(`brew install ffmpeg`).
+
+**The 60-day reality**: both voice buckets carry a bucket-wide lifecycle rule
+that deletes objects 60 days after upload, and the KV rows carry a matching
+TTL. That includes **approved** clips — approval is a moderation state, not a
+retention extension. If production slips, an approved clip an operator meant
+to use silently vanishes at day 60. The Voice tab surfaces a per-clip
+days-remaining countdown for exactly this reason: **run the compile script
+(or download the clips) well before the countdown runs out.** The R2 sweep is
+a daily cadence while the KV TTL is exact, so a metadata row can briefly
+outlive its audio (the tab shows "audio gone" for those) and vice versa.
 
 ## What it does NOT do
 

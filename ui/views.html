@@ -1230,3 +1230,452 @@
     }
   </script>
 </article>
+
+
+
+<!-- Voice notes for the podcast at /speak. Deliberately unlinked from the
+     nav and homepage: the route travels by newsletter. The prompt renders
+     for everyone; recording is members-only (same session gate + silent
+     refresh as the /host form). The parent owns the prompt, the existing
+     clip (GET /voice/mine) and the replace/delete flow; all MediaRecorder
+     logic lives in the child speak-recorder so each component script stays
+     clear of the 10k serialization cliff (docs/CLAUDE.md, dhtml gotchas).
+     The child stays mounted inside a :hidden wrapper instead of an :if —
+     toggling nodes that shift later siblings crashes the nuedom diff, and
+     a remount would orphan a live mic stream. Interpolations inside hidden
+     blocks still evaluate, hence the mine-guards in every expression. -->
+<article :is="speak-view" class="auth speak">
+  <h1>Speak on the podcast</h1>
+
+  <section class="speak-prompt">
+    <p class="speak-kicker">Current prompt</p>
+    <p class="speak-prompt-text">{ prompt ? prompt.text : '' }</p>
+    <p :if="prompt && prompt.deadline" class="speak-deadline">Submit by { deadlineLabel || prompt.deadline }</p>
+  </section>
+
+  <p :if="!session" class="lede">
+    Record a voice clip of up to three minutes and it may be aired on the
+    Jackson Film Club podcast. You need to <a href="/signin">log in</a> as
+    a member to submit one.
+  </p>
+
+  <div :hidden="!session || !mineLoaded || !mine || replacing" class="speak-clip">
+    <p class="speak-status { mine ? '-' + mine.status : '' }">{ mine ? statusLabel(mine.status) : '' }</p>
+    <p class="speak-clip-meta">Submitted { mine ? fmtDate(mine.at) : '' }{ mine && mine.duration ? ' · ' + fmtClock(mine.duration) : '' }{ mine ? ' · ' + fmtSize(mine.size) : '' }</p>
+    <p class="hint">One clip per member — replacing overwrites this one. Unused clips auto-delete after 60 days.</p>
+    <div class="actions">
+      <button type="button" :onclick="startReplace" :disabled="busy">Replace it</button>
+      <button type="button" class="-ghost -danger" :onclick="deleteClip" :disabled="busy">{ busy ? 'Working…' : 'Delete it' }</button>
+    </div>
+  </div>
+
+  <div :hidden="!session || !mineLoaded || (mine && !replacing)">
+    <speak-recorder :session="session"/>
+    <button :hidden="!mine || !replacing" type="button" class="plain" :onclick="cancelReplace" :disabled="busy">Keep my current clip</button>
+  </div>
+
+  <p :hidden="!session || mineLoaded" class="hint">Checking for an earlier submission…</p>
+  <p :if="err" class="rsvp-err">{ err }</p>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    function getSession() {
+      try {
+        const raw = localStorage.jxnfc_session
+        const s = raw ? JSON.parse(raw) : null
+        return s?.token && s.exp > Date.now() ? s : null
+      } catch { return null }
+    }
+
+    // Fallback prompt: used when the worker config has no well-formed
+    // voice_prompt or the config fetch fails entirely.
+    const DEFAULT_PROMPT = { id: 'general', text: "Tell us what you're watching" }
+
+    this.fmtDeadline = function(d) {
+      if (typeof d != 'string' || !d) return ''
+      const m = /^[0-9]{4}-[0-9]{2}-[0-9]{2}/.exec(d)
+      if (!m) return d
+      return new Date(m[0] + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    }
+
+    this.fmtDate = function(at) {
+      const d = new Date(at)
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+
+    this.fmtClock = function(s) {
+      const n = Math.max(0, Math.round(Number(s) || 0))
+      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
+    }
+
+    this.fmtSize = function(b) {
+      const n = Number(b) || 0
+      return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
+    }
+
+    this.statusLabel = function(s) {
+      return s === 'approved' ? 'Approved for air' : s === 'rejected' ? 'Not selected this time' : 'Pending review'
+    }
+
+    this.mounted = function() {
+      const self = this
+      const session = getSession()
+      this.update({ session: session, prompt: DEFAULT_PROMPT, deadlineLabel: '', mine: null, mineLoaded: false, replacing: false, busy: false, err: '' })
+      if (session) this.loadMine(session)
+      // Config prompt + silent session refresh land in ONE update so the
+      // child recorder is not detached twice while idle at load time.
+      const needRefresh = !session && globalThis.jxnfcEnsureSession
+      Promise.all([
+        getConfig().catch(function() { return null }),
+        needRefresh ? globalThis.jxnfcEnsureSession().catch(function() { return null }) : Promise.resolve(null),
+      ]).then(function(rs) {
+        const next = {}
+        const vp = rs[0] && rs[0].voice_prompt
+        if (vp && typeof vp.id == 'string' && vp.id && typeof vp.text == 'string' && vp.text) {
+          next.prompt = { id: vp.id, text: vp.text, deadline: vp.deadline }
+          next.deadlineLabel = self.fmtDeadline(vp.deadline)
+        }
+        if (rs[1]) next.session = rs[1]
+        if (Object.keys(next).length) self.update(next)
+        if (rs[1]) self.loadMine(rs[1])
+      })
+    }
+
+    // Session is passed in rather than read off this: a stale handler
+    // context may carry pre-update state (docs/CLAUDE.md, dhtml gotchas).
+    this.loadMine = async function(sess) {
+      const self = this
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice/mine', {
+          headers: { Authorization: 'Bearer ' + sess.token },
+        })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const data = await res.json()
+        self.update({ mine: (data && data.clip) || null, mineLoaded: true })
+      } catch (e) {
+        self.update({ mineLoaded: true, mine: null, err: 'Could not check for an earlier submission — recording still works.' })
+      }
+    }
+
+    this.startReplace = function() {
+      this.update({ replacing: true, err: '' })
+    }
+
+    this.cancelReplace = function() {
+      if (globalThis.jxnfcSpeakDiscard) globalThis.jxnfcSpeakDiscard()
+      this.update({ replacing: false, err: '' })
+    }
+
+    this.deleteClip = async function() {
+      const self = this
+      if (!confirm("Delete your submitted clip? This cannot be undone.")) return
+      self.update({ busy: true, err: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice', {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + this.session.token },
+        })
+        if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status)
+        self.update({ busy: false, mine: null, replacing: false })
+      } catch (e) {
+        self.update({ busy: false, err: 'Could not delete the clip. Try again in a minute.' })
+      }
+    }
+  </script>
+</article>
+
+
+<!-- The recorder: record or upload, preview, consent, submit. Split out of
+     speak-view for the 10k script cap. Recorder plumbing (MediaRecorder,
+     stream, timer, staged blob) lives at MODULE scope, never on this-dot
+     fields: nuedom hands handlers a fresh context after update(), so
+     instance fields written in one handler are invisible to closures made
+     in another. Safe — the view is single-instance per page. Successful
+     submits reload the route (house mutation idiom) so the parent refetches
+     /voice/mine. -->
+<div :is="speak-recorder" class="speak-recorder">
+
+  <div :hidden="!canRecord || preview" class="speak-record">
+    <button type="button" class="speak-rec-btn { recording ? '-recording' : '' }" :onclick="toggleRecord" :disabled="busy || starting">{ recording ? 'Stop' : (starting ? 'Starting…' : 'Record') }</button>
+    <span class="speak-timer { recording ? (elapsed >= 150 ? '-live -warn' : '-live') : '' }">{ fmtTime(elapsed) } / 3:00</span>
+    <p class="hint">Up to three minutes — recording stops itself at 3:00.</p>
+  </div>
+  <p :hidden="canRecord" class="hint">In-browser recording is not supported here, so upload an audio file instead.</p>
+
+  <div :hidden="preview || recording" class="speak-upload">
+    <label class="speak-upload-label">Or upload an audio file <span class="hint">— up to 8 MB</span>
+      <input type="file" accept="audio/*" :onchange="fileChange" :disabled="busy">
+    </label>
+  </div>
+
+  <div :hidden="!preview" class="speak-preview">
+    <p class="speak-kicker">Preview</p>
+    <div class="speak-player"></div>
+    <p class="speak-clip-meta">{ clipLabel }</p>
+    <label class="speak-consent">
+      <input type="checkbox" :onchange="consentChange" :checked="consent" :disabled="busy">
+      I agree this clip may be aired on the Jackson Film Club podcast,
+      credited to my display name. Submissions auto-delete after 60 days
+      if unused.
+    </label>
+    <div class="actions">
+      <button type="button" :onclick="submit" :disabled="busy || !consent">{ busy ? 'Sending…' : 'Submit clip' }</button>
+      <button type="button" class="-ghost" :onclick="discardClip" :disabled="busy">{ canRecord ? 'Start over' : 'Choose another file' }</button>
+    </div>
+  </div>
+
+  <p :if="err" class="rsvp-err">{ err }</p>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    const MAX_SECONDS = 180
+    const MAX_BYTES = 8 * 1024 * 1024
+    const RESET = { recording: false, preview: false, consent: false, elapsed: 0, err: '', clipLabel: '', starting: false }
+
+    let recorder = null
+    let stream = null
+    let chunks = []
+    let timerId = null
+    let startedAt = 0
+    let discard = false
+    // Re-entrancy + staleness guards around getUserMedia: starting blocks a
+    // second click while the permission prompt is up, and a generation
+    // counter lets a resolve that lands after cleanup or a newer attempt
+    // stop its stream immediately instead of re-arming a live mic.
+    let starting = false
+    let recGen = 0
+    let clipBlob = null
+    let clipType = ''
+    let clipUrl = ''
+    let clipSeconds = 0
+    let audioEl = null
+
+    function stopTracks() {
+      if (!stream) return
+      const tracks = stream.getTracks()
+      for (let i = 0; i < tracks.length; i++) tracks[i].stop()
+      stream = null
+    }
+
+    function stopTimer() {
+      if (timerId) { clearInterval(timerId); timerId = null }
+    }
+
+    function dropClip() {
+      if (audioEl) {
+        try { audioEl.pause() } catch (e) {}
+        if (audioEl.parentNode) audioEl.parentNode.removeChild(audioEl)
+        audioEl = null
+      }
+      if (clipUrl) URL.revokeObjectURL(clipUrl)
+      clipBlob = null; clipType = ''; clipUrl = ''; clipSeconds = 0
+    }
+
+    // Idempotent full teardown. nuedom has no unmounted hook, so a route
+    // listener stops the mic when the member navigates away.
+    function cleanupAll() {
+      recGen = recGen + 1
+      starting = false
+      stopTimer()
+      if (recorder && recorder.state !== 'inactive') {
+        discard = true
+        try { recorder.stop() } catch (e) {}
+      }
+      recorder = null
+      stopTracks()
+      dropClip()
+      chunks = []
+    }
+
+    state.on('type', function(p) { if (p.type !== 'speak') cleanupAll() })
+
+    function canRec() {
+      return typeof MediaRecorder != 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    }
+
+    function fmtT(s) {
+      const n = Math.max(0, Math.round(Number(s) || 0))
+      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
+    }
+
+    function friendly(status) {
+      if (status === 400) return 'The consent box must be checked first.'
+      if (status === 401) return 'Your session expired. Log in again, then resubmit.'
+      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+      return 'Something went wrong (HTTP ' + status + '). Try again in a minute.'
+    }
+
+    this.fmtTime = function(s) { return fmtT(s) }
+
+    this.mounted = function() {
+      const self = this
+      // The parent cancel button discards any staged take via this bridge
+      // (same globalThis idiom as jxnfcEnsureSession).
+      globalThis.jxnfcSpeakDiscard = function() { cleanupAll(); self.update(RESET) }
+      // A staged blob at module scope survives a parent-triggered remount:
+      // restore the preview instead of losing an unsubmitted take.
+      this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, elapsed: clipSeconds, consent: false, err: '', clipLabel: clipBlob ? 'Staged clip · ' + fmtT(clipSeconds) : '' })
+      if (clipBlob) this.attachPreview()
+    }
+
+    this.attachPreview = function() {
+      const self = this
+      const el = this.root ? this.root.querySelector('.speak-player') : null
+      if (!el || !clipUrl) return
+      if (!audioEl) {
+        audioEl = document.createElement('audio')
+        audioEl.controls = true
+        audioEl.src = clipUrl
+        audioEl.addEventListener('loadedmetadata', function() {
+          if (!clipSeconds && isFinite(audioEl.duration) && audioEl.duration > 0) {
+            clipSeconds = Math.round(audioEl.duration)
+            self.update({ elapsed: clipSeconds })
+            self.attachPreview()
+          }
+        })
+      }
+      if (audioEl.parentNode !== el) {
+        el.innerHTML = ''
+        el.appendChild(audioEl)
+      }
+    }
+
+    this.toggleRecord = function() {
+      if (this.recording) this.stopRecording()
+      else this.startRecording()
+    }
+
+    this.startRecording = function() {
+      const self = this
+      if (!canRec()) return
+      if (starting || (recorder && recorder.state === 'recording')) return
+      starting = true
+      recGen = recGen + 1
+      const gen = recGen
+      self.update({ err: '', starting: true })
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(s) {
+        if (gen !== recGen) {
+          const stale = s.getTracks()
+          for (let i = 0; i < stale.length; i++) stale[i].stop()
+          return
+        }
+        starting = false
+        stream = s
+        chunks = []
+        discard = false
+        recorder = new MediaRecorder(s)
+        recorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data) }
+        recorder.onstop = function() {
+          stopTimer()
+          stopTracks()
+          if (discard) { discard = false; chunks = []; recorder = null; return }
+          // Wall clock, not tick counts: background tabs throttle timers.
+          const secs = Math.min(MAX_SECONDS, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
+          dropClip()
+          clipBlob = new Blob(chunks, { type: (recorder && recorder.mimeType) || 'audio/webm' })
+          clipType = clipBlob.type || 'audio/webm'
+          clipSeconds = secs
+          clipUrl = URL.createObjectURL(clipBlob)
+          chunks = []
+          recorder = null
+          self.update({ recording: false, preview: true, elapsed: secs, clipLabel: 'New recording · ' + fmtT(secs) })
+          self.attachPreview()
+        }
+        startedAt = Date.now()
+        recorder.start()
+        self.update({ recording: true, preview: false, elapsed: 0, starting: false })
+        timerId = setInterval(function() {
+          const secs = Math.round((Date.now() - startedAt) / 1000)
+          self.update({ elapsed: Math.min(MAX_SECONDS, secs) })
+          if (secs >= MAX_SECONDS) self.stopRecording()
+        }, 250)
+      }).catch(function() {
+        starting = false
+        if (gen !== recGen) return
+        self.update({ starting: false, err: 'Microphone access was blocked. Allow the mic in your browser settings, or upload an audio file below instead.' })
+      })
+    }
+
+    this.stopRecording = function() {
+      stopTimer()
+      if (recorder && recorder.state !== 'inactive') recorder.stop()
+    }
+
+    this.fileChange = function(e) {
+      const self = this
+      const f = e.target.files && e.target.files[0]
+      e.target.value = ''
+      if (!f) return
+      if (f.size > MAX_BYTES) {
+        self.update({ err: 'That file is over 8 MB. Export a smaller format (mp3 or m4a) and try again.' })
+        return
+      }
+      dropClip()
+      clipBlob = f
+      clipType = f.type || 'application/octet-stream'
+      clipSeconds = 0
+      clipUrl = URL.createObjectURL(f)
+      self.update({ err: '', preview: true, recording: false, elapsed: 0, clipLabel: 'Upload · ' + f.name })
+      self.attachPreview()
+    }
+
+    this.consentChange = function(e) {
+      this.update({ consent: !!e.target.checked })
+      this.attachPreview()
+    }
+
+    this.discardClip = function() {
+      dropClip()
+      this.update(RESET)
+    }
+
+    this.submit = async function() {
+      const self = this
+      if (!clipBlob) { self.update({ err: 'Record or choose an audio file first.' }); return }
+      if (!this.consent) return
+      self.update({ busy: true, err: '' })
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + this.session.token,
+            'Content-Type': clipType || 'application/octet-stream',
+            'X-Voice-Duration': String(clipSeconds || 0),
+            'X-Voice-Consent': 'yes',
+          },
+          body: clipBlob,
+        })
+        if (!res.ok) throw new Error(friendly(res.status))
+        // Fresh route render: the parent refetches /voice/mine and shows
+        // the submitted state (house mutation idiom).
+        dropClip()
+        location.reload()
+      } catch (e) {
+        self.update({ busy: false, err: e.message })
+        self.attachPreview()
+      }
+    }
+  </script>
+</div>

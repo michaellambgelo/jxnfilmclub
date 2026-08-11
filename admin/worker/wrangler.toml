@@ -39,6 +39,15 @@ id = "66834b9613a34d3eba014791e3b5000f"
 binding = "ATTENDANCE_KV_STAGING"
 id = "f6f23b3e546646d28a3a80f71ef35715"
 
+# Voice clip buckets (both envs — same production/staging switcher as KV).
+[[r2_buckets]]
+binding = "VOICE"
+bucket_name = "jxnfilm-voice"
+
+[[r2_buckets]]
+binding = "VOICE_STAGING"
+bucket_name = "jxnfilm-voice-staging"
+
 # Admin proxies (newsletter send, member unlink, watched) go through service
 # bindings — a plain fetch() to join.jxnfilm.club from a Worker on the same
 # zone would NOT route through the join Worker (it 522s at the DNS origin).

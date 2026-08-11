@@ -15,6 +15,7 @@ import {
   buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
+  fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
 } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
@@ -84,6 +85,7 @@ const TABS = {
   auth: renderAuth,
   events: renderEvents,
   feedback: renderFeedback,
+  voice: renderVoice,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
   config: renderConfig,
 }
@@ -491,6 +493,106 @@ async function renderFeedback() {
   `
 }
 
+// --- Voice tab (MEMBERS_KV: voice:{promptId}:{memberId} rows + R2 audio) ---
+//
+// Member-submitted podcast voice clips. The KV row is metadata; the audio
+// lives in R2 (jxnfilm-voice / -staging) behind GET /api/voice. Both sides
+// age out ~60 days after submission: the KV key via its TTL (exact), the R2
+// object via a bucket-wide lifecycle rule (daily cadence) — so a row can
+// briefly outlive its object and vice versa. Reads here are raw KV; every
+// MUTATION goes through the join Worker (approve/reject/delete), because a
+// raw /api/kv PUT would rewrite the row without its TTL and make it
+// persistent.
+
+// Mirrors the join Worker's fallback when config:voice_prompt is absent.
+const DEFAULT_VOICE_PROMPT = { id: 'general', text: "Tell us what you're watching" }
+
+function voiceExpiryPill(expiresAt) {
+  const days = voiceDaysLeft(expiresAt)
+  if (days == null) return '<span class="pill off">no expiry?</span>'
+  if (days === 0) return '<span class="pill danger" title="The 60-day window has passed — the R2 audio is likely already deleted">expired</span>'
+  const urgent = days <= 7
+  return `<span class="pill ${urgent ? 'warn' : 'off'}" title="Auto-deletes ${days} day(s) from now (60-day retention) — download or compile before then">${days}d left</span>`
+}
+
+function voiceStatusPill(status) {
+  if (status === 'approved') return '<span class="pill on">approved</span>'
+  if (status === 'rejected') return '<span class="pill danger">rejected</span>'
+  return '<span class="pill warn">pending</span>'
+}
+
+function voiceClipCard(c) {
+  const src = `/api/voice?${qs({ env: env(), key: c.r2Key })}`
+  return `
+    <div class="voice-clip">
+      <div class="voice-meta">
+        <strong>${escapeHtml(c.name || c.memberId)}</strong>
+        ${c.handle ? `<code>@${escapeHtml(c.handle)}</code>` : ''}
+        <span class="muted" title="${attr(c.at)}">${fmtAge(Date.parse(c.at) || 0)}</span>
+        <span class="muted">${fmtDuration(c.duration)} · ${fmtBytes(c.size)}</span>
+        ${voiceStatusPill(c.status)}
+        ${voiceExpiryPill(c.expiresAt)}
+        ${c.consent ? '' : '<span class="pill danger" title="The row has no consent flag — do not publish">⚠ no consent</span>'}
+      </div>
+      <div class="voice-player">
+        <audio controls preload="metadata" src="${attr(src)}"></audio>
+        <span class="voice-expired-note muted" hidden>audio gone — the R2 object hit the 60-day lifecycle (or upload failed); only this metadata row remains</span>
+      </div>
+      <div class="toolbar">
+        <a class="voice-dl" href="${attr(src + '&download=1')}">download</a>
+        ${c.status !== 'approved' ? `<button class="primary" data-action="voice-status" data-key="${attr(c.keyName)}" data-status="approved">approve</button>` : ''}
+        ${c.status !== 'rejected' ? `<button data-action="voice-status" data-key="${attr(c.keyName)}" data-status="rejected">reject</button>` : ''}
+        <button class="danger" data-action="voice-delete" data-key="${attr(c.keyName)}">delete</button>
+      </div>
+    </div>`
+}
+
+async function renderVoice() {
+  const [voiceRes, promptRes] = await Promise.all([
+    loadKv('voice:'),
+    loadKv('config:voice_prompt'),
+  ])
+  const prompt = tryParse(promptRes.values['config:voice_prompt']) || DEFAULT_VOICE_PROMPT
+
+  const rows = voiceRes.keys
+    .map(k => ({ keyName: k.name, ...(tryParse(voiceRes.values[k.name]) || {}) }))
+    .filter(r => r.promptId && r.r2Key)
+  const groups = groupVoiceClips(rows, prompt.id)
+
+  content().innerHTML = `
+    <h2>Voice clips <span class="muted">(${rows.length})</span></h2>
+    <p class="section-hint">Member voice submissions for the podcast (≤3 min each; audio in R2, metadata in
+      <code>voice:*</code>). <b>Everything — approved clips included — auto-deletes 60 days after
+      submission</b> (R2 bucket lifecycle + KV TTL), so compile or download before the countdown runs
+      out. Approve/reject/delete go through the join Worker to keep the KV TTLs intact. Compile the
+      approved set with <code>node scripts/compile_voices.mjs &lt;promptId&gt;</code>.</p>
+    <p class="section-hint">Current prompt: <code>${escapeHtml(prompt.id)}</code> —
+      “${escapeHtml(prompt.text)}”${prompt.deadline ? ` (deadline ${escapeHtml(prompt.deadline)})` : ''}
+      · edit in the Config tab.</p>
+    ${groups.length ? groups.map(g => `
+      <section class="voice-group">
+        <h3><code>${escapeHtml(g.promptId)}</code>
+          ${g.promptId === prompt.id ? '<span class="pill on">current prompt</span>' : ''}
+          <span class="muted">(${g.clips.length})</span></h3>
+        ${g.promptText ? `<p class="section-hint">“${escapeHtml(g.promptText)}”</p>` : ''}
+        ${g.clips.map(voiceClipCard).join('')}
+      </section>`).join('') : '<p class="empty">No voice clips yet.</p>'}
+  `
+
+  // Audio error events don't bubble — attach per element. A 404 body of
+  // { error: 'expired' } is the EXPECTED post-lifecycle state, so it renders
+  // as a note, never a broken player. preload="metadata" makes the 404
+  // surface on render rather than on first play.
+  document.querySelectorAll('#content .voice-clip audio').forEach(a => {
+    a.addEventListener('error', () => {
+      const wrap = a.closest('.voice-player')
+      a.hidden = true
+      wrap.querySelector('.voice-expired-note').hidden = false
+      wrap.closest('.voice-clip').querySelector('.voice-dl')?.remove()
+    }, { once: true })
+  })
+}
+
 async function rateSection() {
   const { keys, values } = await loadKv('rate:')
   if (!keys.length) return '<h2>Rate limits <span class="muted">(0)</span></h2><p class="empty">No active rate-limit counters.</p>'
@@ -615,6 +717,7 @@ async function renderConfig() {
 
   const copy = (has('config:copy') && tryParse(values['config:copy'])) || {}
   const nl = (has('config:newsletter_template') && tryParse(values['config:newsletter_template'])) || null
+  const vp = (has('config:voice_prompt') && tryParse(values['config:voice_prompt'])) || null
 
   content().innerHTML = `
     <h2>Config <span class="muted">— editing <strong>${escapeHtml(env())}</strong></span></h2>
@@ -690,6 +793,28 @@ async function renderConfig() {
       <div class="toolbar">
         <button class="primary" data-action="cfg-copy-save">save copy overrides</button>
         <button class="danger" data-action="cfg-copy-reset">reset to defaults</button>
+      </div>
+    </section>
+
+    <section class="cfg-section" id="cfg-voice-prompt">
+      <h3>Voice prompt ${cfgBadge(!!vp)}</h3>
+      <p class="section-hint"><code>config:voice_prompt</code> — the question members answer when they
+        record a podcast voice clip. Submissions are keyed by the prompt id, so changing the id starts
+        a fresh collection (the Voice tab groups by it). Reset deletes the key; the site falls back to
+        the generic default prompt (<code>${escapeHtml(DEFAULT_VOICE_PROMPT.id)}</code> —
+        “${escapeHtml(DEFAULT_VOICE_PROMPT.text)}”).</p>
+      <label class="cfg-label">Prompt id <span class="muted">— slug; groups the submissions and names the compiled segment</span>
+        <input id="cfg-vp-id" type="text" value="${attr(vp?.id || '')}" placeholder="${attr(DEFAULT_VOICE_PROMPT.id)}" style="max-width:260px">
+      </label>
+      <label class="cfg-label">Prompt text
+        <textarea id="cfg-vp-text" rows="2" placeholder="${attr(DEFAULT_VOICE_PROMPT.text)}">${escapeHtml(vp?.text || '')}</textarea>
+      </label>
+      <label class="cfg-label">Deadline <span class="muted">— optional YYYY-MM-DD shown to members; submissions stay open regardless</span>
+        <input id="cfg-vp-deadline" type="date" value="${attr(vp?.deadline || '')}" style="max-width:200px">
+      </label>
+      <div class="toolbar">
+        <button class="primary" data-action="cfg-vp-save">save prompt</button>
+        <button class="danger" data-action="cfg-vp-reset">reset to defaults</button>
       </div>
     </section>
   `
@@ -1223,6 +1348,21 @@ document.addEventListener('click', async (e) => {
       toast(`Removed ${name} from ${eventId}`)
       await switchTab(currentTab)
     }
+    // --- Voice tab actions (mutations via the join Worker — never raw KV,
+    // --- a /api/kv PUT would drop the row's TTL and make it persistent) ---
+    else if (a === 'voice-status') {
+      const { key, status } = btn.dataset
+      await api('POST', `/api/voice/status?${qs({ env: env() })}`, JSON.stringify({ key, status }))
+      toast(`Marked ${status}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'voice-delete') {
+      const key = btn.dataset.key
+      if (!confirm(`Delete this voice clip?\n${key}\n\nRemoves the R2 audio and the KV row via the join Worker. This is permanent.`)) return
+      await api('DELETE', `/api/voice?${qs({ env: env() })}`, JSON.stringify({ key }))
+      toast('Voice clip deleted')
+      await switchTab(currentTab)
+    }
     // --- Config tab actions ---
     else if (a === 'cfg-theater-add') {
       readTheaterInputs()
@@ -1324,6 +1464,23 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Delete config:copy on ${env()}?\n\nEvery homepage copy field falls back to the hardcoded site text.`)) return
       await delKv('config:copy').catch(() => {})
       toast('config:copy deleted — site defaults are back in effect')
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-vp-save') {
+      const out = sanitizeVoicePrompt({
+        id: $('#cfg-vp-id').value,
+        text: $('#cfg-vp-text').value,
+        deadline: $('#cfg-vp-deadline').value,
+      })
+      if (!out) { toast('Prompt needs an id (slug) and text — or use reset for the generic default', true); return }
+      await putKv('config:voice_prompt', JSON.stringify(out))
+      toast(`Saved config:voice_prompt (${out.id}) on ${env()}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-vp-reset') {
+      if (!confirm(`Delete config:voice_prompt on ${env()}?\n\nThe site falls back to the generic default prompt ("${DEFAULT_VOICE_PROMPT.text}", id "${DEFAULT_VOICE_PROMPT.id}").`)) return
+      await delKv('config:voice_prompt').catch(() => {})
+      toast('config:voice_prompt deleted — generic default prompt is back')
       await switchTab(currentTab)
     }
   } catch (err) {

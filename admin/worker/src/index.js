@@ -152,6 +152,59 @@ async function kvValues(kv, names) {
   return values
 }
 
+// --- Voice clips (R2: jxnfilm-voice / jxnfilm-voice-staging) ---
+
+function voiceBucketFor(env, envName) {
+  if (!VALID_ENVS.has(envName)) throw new HttpError(400, `invalid env: ${envName}`)
+  return envName === 'staging' ? env.VOICE_STAGING : env.VOICE
+}
+
+// GET /api/voice?env=&key=<r2Key>[&download=1] — stream a member voice clip
+// out of R2 with its stored content type. A missing object is an EXPECTED
+// state, not an error: the bucket's 60-day lifecycle deletes on a daily
+// cadence while the KV row's TTL is exact, so the metadata row can briefly
+// outlive the object (and vice versa). That case is a 404 { error:
+// 'expired' } the UI renders as an inline note — never a 500.
+async function handleVoiceObject(env, q) {
+  const bucket = voiceBucketFor(env, q.env)
+  const key = q.key || ''
+  if (!key.startsWith('voice/')) throw new HttpError(400, 'invalid key')
+  const obj = await bucket.get(key)
+  if (!obj) return json(404, { error: 'expired' })
+  const headers = new Headers()
+  obj.writeHttpMetadata(headers)
+  if (!headers.get('Content-Type')) headers.set('Content-Type', 'application/octet-stream')
+  headers.set('Content-Length', String(obj.size))
+  headers.set('Cache-Control', 'no-store')
+  if (q.download) {
+    const name = (key.split('/').pop() || 'clip').replace(/[^\w.-]/g, '_')
+    headers.set('Content-Disposition', `attachment; filename="${name}"`)
+  }
+  return new Response(obj.body, { headers })
+}
+
+// GET /api/voice/list?env= — proxy the join Worker's admin-gated voice list
+// (GET /admin/voice) over the service binding, mirroring the TMDB proxy
+// shape. The Voice tab reads KV directly via /api/kv; this exists as the
+// join-Worker-eye view of the same rows.
+async function handleVoiceListProxy(env, q) {
+  if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+  const staging = q.env === 'staging'
+  const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
+  const token = staging ? (env.ADMIN_TOKEN_STAGING || env.ADMIN_TOKEN) : env.ADMIN_TOKEN
+  if (!token) {
+    const name = staging ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+    throw new HttpError(400, `set the ${name} secret on the admin worker before listing voice clips`)
+  }
+  const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+  const workerRes = await service.fetch(`${origin}/admin/voice`,
+    { headers: { Authorization: `Bearer ${token}` } })
+  const text = await workerRes.text()
+  let data
+  try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+  return json(workerRes.status, data)
+}
+
 // --- Admin proxies to the join Worker (service bindings — see wrangler.toml) ---
 
 // Generic bearer-authenticated proxy to the join Worker's /admin/* routes.
@@ -271,6 +324,25 @@ async function handle(request, env, access) {
   // GET /api/img?url=  → proxied image bytes (Content Gen canvas source)
   if (method === 'GET' && url.pathname === '/api/img') {
     return handleImgProxy(q)
+  }
+  // GET /api/voice?env=&key=<r2Key>[&download=1]  → the clip audio from R2
+  if (method === 'GET' && url.pathname === '/api/voice') {
+    return handleVoiceObject(env, q)
+  }
+  // GET /api/voice/list?env=  → the join Worker's voice-row listing
+  if (method === 'GET' && url.pathname === '/api/voice/list') {
+    return handleVoiceListProxy(env, q)
+  }
+  // POST /api/voice/status?env=  body = JSON { key, status } — approve or
+  // reject a clip via the join Worker, which rewrites the KV row WITH its
+  // remaining TTL (a raw /api/kv PUT would make the row persistent).
+  if (method === 'POST' && url.pathname === '/api/voice/status') {
+    return proxyJoinAdmin(request, env, q, '/admin/voice/status')
+  }
+  // DELETE /api/voice?env=  body = JSON { key } — delete the R2 object and
+  // the KV row via the join Worker.
+  if (method === 'DELETE' && url.pathname === '/api/voice') {
+    return proxyJoinAdmin(request, env, q, '/admin/voice', 'DELETE')
   }
   // GET /api/kv?env=&binding=&prefix=  → { keys, values }
   if (method === 'GET' && url.pathname === '/api/kv') {

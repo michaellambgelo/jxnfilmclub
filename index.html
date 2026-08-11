@@ -128,6 +128,7 @@
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :
         type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
+        type === 'speak'   ? 'speak-view' :       // member voice clips for the podcast; newsletter-linked, no nav entry
         type === 'feedback' ? 'feedback-view' :   // beta feedback form (anonymous ok)
                              'home-view'
       this.mount(view, 'article')

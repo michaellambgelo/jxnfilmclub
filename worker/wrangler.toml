@@ -22,6 +22,14 @@ id = "1a7b67fcd1944f5dbfa22656f9fac4e4"
 binding = "ATTENDANCE_KV"
 id = "6d5a467495fb47fcb9514e0a85bb3b20"
 
+# Member voice clips (podcast submissions). A bucket-wide 60-day lifecycle
+# rule is the retention promise — no scrub code involved. Bucket must exist
+# before deploy: npx wrangler r2 bucket create jxnfilm-voice (+ lifecycle add
+# jxnfilm-voice expire-60d --expire-days 60).
+[[r2_buckets]]
+binding = "VOICE"
+bucket_name = "jxnfilm-voice"
+
 [vars]
 ENVIRONMENT = "production"
 GITHUB_OWNER = "michaellambgelo"
@@ -60,6 +68,10 @@ id = "66834b9613a34d3eba014791e3b5000f"
 [[env.staging.kv_namespaces]]
 binding = "ATTENDANCE_KV"
 id = "f6f23b3e546646d28a3a80f71ef35715"
+
+[[env.staging.r2_buckets]]
+binding = "VOICE"
+bucket_name = "jxnfilm-voice-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"                 # staging writes KV only; no repository_dispatch (prod JSON stays clean)

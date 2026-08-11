@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 // GET /config — public projection of the operator-editable config:* keys in
 // MEMBERS_KV (written by the admin portal's generic KV editor). Contract:
-// each of { theaters, podcast, copy } is the parsed KV value or null when the
-// key is missing or unparseable; config:newsletter_template is admin-only and
-// never appears; bad KV content must never 500 the endpoint.
+// each of { theaters, podcast, copy, voice_prompt } is the parsed KV value or
+// null when the key is missing or unparseable; config:newsletter_template is
+// admin-only and never appears; bad KV content must never 500 the endpoint.
 
 function getConfig() {
   return SELF.fetch('https://join.jxnfilm.club/config')
@@ -23,20 +23,24 @@ describe('GET /config', () => {
     const res = await getConfig()
     expect(res.status).toBe(200)
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://jxnfilm.club')
-    expect(await res.json()).toEqual({ theaters: null, podcast: null, copy: null })
+    expect(await res.json()).toEqual({ theaters: null, podcast: null, copy: null, voice_prompt: null })
   })
 
   it('seeded keys round-trip verbatim', async () => {
     const theaters = ['Duling Hall', 'The Capri Theater']
     const copy = { hero_title: 'Welcome to the club', events_blurb: 'See you there' }
+    const voicePrompt = { id: 'aug-2026', text: 'Best theater snack?', deadline: '2026-08-31' }
     await env.MEMBERS_KV.put('config:theaters', JSON.stringify(theaters))
     await env.MEMBERS_KV.put('config:podcast', JSON.stringify(PODCAST))
     await env.MEMBERS_KV.put('config:copy', JSON.stringify(copy))
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify(voicePrompt))
 
     const data = await (await getConfig()).json()
     expect(data.theaters).toEqual(theaters)
     expect(data.podcast).toEqual(PODCAST)
     expect(data.copy).toEqual(copy)
+    // Raw, not defaulted — the SPA applies the standing default itself.
+    expect(data.voice_prompt).toEqual(voicePrompt)
   })
 
   it('invalid JSON in one key → null for that key, others unaffected, no 500', async () => {
@@ -70,7 +74,7 @@ describe('GET /config', () => {
       subject: 'Monthly digest', html: '<h1>Secret draft</h1>',
     }))
     const data = await (await getConfig()).json()
-    expect(Object.keys(data).sort()).toEqual(['copy', 'podcast', 'theaters'])
+    expect(Object.keys(data).sort()).toEqual(['copy', 'podcast', 'theaters', 'voice_prompt'])
     expect(JSON.stringify(data)).not.toContain('Secret draft')
   })
 })

@@ -49,6 +49,7 @@ export default defineWorkersProject({
             'MEMBERS_KV_STAGING',
             'ATTENDANCE_KV_STAGING',
           ],
+          r2Buckets: ['VOICE', 'VOICE_STAGING'],
           bindings: {
             ACCESS_TEAM_DOMAIN: 'testteam.cloudflareaccess.com',
             ACCESS_AUD: 'test-aud-tag',

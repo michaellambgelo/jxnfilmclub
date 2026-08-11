@@ -24,6 +24,17 @@ const FEEDBACK_THROTTLE = 60
 const FEEDBACK_CATEGORIES = ['bug', 'idea', 'other']
 const MAX_FEEDBACK = 2000
 
+// Member voice clips (podcast submissions from /speak). Bytes live in the
+// VOICE R2 bucket; a bucket-wide 60-day lifecycle rule (configured at the
+// account level) is the deletion mechanism — the Worker writes NO scrub code.
+// KV metadata rows mirror that retention with a matching TTL, and every
+// status rewrite carries the row's absolute expiry so the TTL never resets
+// (same discipline as the feedback: rows).
+const VOICE_TTL = 60 * 86400
+const VOICE_MAX_BYTES = 8 * 1024 * 1024
+const VOICE_THROTTLE = 60
+const VOICE_STATUSES = ['approved', 'rejected']
+
 // Screening dates are calendar days in the club's home timezone (Jackson, MS).
 // Gating "today" off UTC instead would roll over 5-6 hours early each evening
 // Central time, blocking same-day event creation and cancelling/scrubbing
@@ -35,7 +46,10 @@ function centralToday() {
 const cors = (env) => ({
   'Access-Control-Allow-Origin': env.SITE_ORIGIN,
   'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  // X-Voice-* are the POST /voice metadata headers — the raw body is audio
+  // bytes, so consent/duration can't ride in a JSON body and must be
+  // preflight-allowed for the cross-origin SPA.
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Voice-Consent,X-Voice-Duration',
 })
 
 function originOk(request, env) {
@@ -155,10 +169,18 @@ async function route(request, env) {
 
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
+    // Member voice clips (podcast submissions from /speak).
+    if (request.method === 'POST'   && pathname === '/voice')      return handleVoiceSubmit(request, env)
+    if (request.method === 'DELETE' && pathname === '/voice')      return handleVoiceDelete(request, env)
+    if (request.method === 'GET'    && pathname === '/voice/mine') return handleVoiceMine(request, env)
+
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
+    if (request.method === 'GET'    && pathname === '/admin/voice')         return handleAdminVoiceList(request, env)
+    if (request.method === 'POST'   && pathname === '/admin/voice/status')  return handleAdminVoiceStatus(request, env)
+    if (request.method === 'DELETE' && pathname === '/admin/voice')         return handleAdminVoiceDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
     if (request.method === 'POST' && pathname === '/session/refresh') return handleSessionRefresh(request, env)
@@ -204,6 +226,11 @@ async function route(request, env) {
     }
 
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
+    // R2 read-back for e2e: the admin agent's local server proxies to this in
+    // e2e mode so Playwright can verify uploaded clip bytes without R2 creds.
+    if (env.E2E_MODE === 'true' && pathname === '/__test/r2' && request.method === 'GET') {
+      return handleTestR2(request, env)
+    }
 
     // Browsers get a branded 404; API callers (no text/html Accept) keep the
     // plain-text response.
@@ -648,6 +675,11 @@ async function handleMemberDelete(request, env) {
   // behind in rsvp:* records, and claim success.
   await purgeRsvps(env, member, new URL(request.url).origin)
 
+  // Voice clips are deleted outright (R2 bytes + KV rows) — a voice recording
+  // can't be identity-stripped, it IS the identity. Same unguarded stance as
+  // purgeRsvps: a failure here must block the deletion, not be swallowed.
+  await purgeVoiceClips(env, member)
+
   // KV cascade. Order doesn't matter for correctness — each delete is
   // independent — but doing the canonical row first means a mid-flight
   // crash leaves nothing reachable rather than a dangling reverse index.
@@ -776,6 +808,279 @@ async function stripFeedbackIdentity(env, memberId) {
       await env.MEMBERS_KV.put(k.name, JSON.stringify(rec), { expiration: rec.expiresAt })
     }
   }
+}
+
+// --- Member voice clips (podcast submissions) ---
+//
+// Members record ≤3-minute clips on /speak answering the current prompt.
+// Audio bytes go to the VOICE R2 bucket at voice/{promptId}/{memberId}.{ext};
+// metadata rows live at voice:{promptId}:{memberId} in MEMBERS_KV. Retention
+// is the account-level 60-day R2 lifecycle rule — the KV TTL mirrors it, and
+// a KV row whose R2 object has already been lifecycle-deleted is EXPECTED
+// (the two clocks aren't synchronized), so no handler 500s on an R2 miss.
+
+// Current prompt: config:voice_prompt when it carries non-empty id + text,
+// else the standing default. The deadline is display-only metadata.
+async function voicePrompt(env) {
+  const v = await readConfig(env, 'voice_prompt')
+  if (v && typeof v.id === 'string' && v.id && typeof v.text === 'string' && v.text) {
+    const out = { id: v.id, text: v.text }
+    if (typeof v.deadline === 'string' && v.deadline) out.deadline = v.deadline
+    return out
+  }
+  return { id: 'general', text: "Tell us what you're watching" }
+}
+
+// Content-type allowlist → file extension. Prefix-matched, NOT exact:
+// browsers report 'audio/webm;codecs=opus' and friends. Returns null for
+// anything outside the allowlist.
+const VOICE_TYPES = [
+  ['audio/webm', 'webm'],
+  ['audio/ogg', 'ogg'],
+  ['audio/mp4', 'm4a'],
+  ['audio/x-m4a', 'm4a'],
+  ['audio/m4a', 'm4a'],
+  ['audio/aac', 'm4a'],
+  ['audio/mpeg', 'mp3'],
+  ['audio/wav', 'wav'],
+]
+
+function voiceExt(contentType) {
+  const ct = String(contentType || '').toLowerCase().trim()
+  for (const [prefix, ext] of VOICE_TYPES) {
+    if (ct.startsWith(prefix)) return ext
+  }
+  return null
+}
+
+// What the member-facing endpoints return: the row minus storage internals.
+function voiceClipProjection(row) {
+  if (!row) return null
+  const out = {
+    promptId: row.promptId,
+    promptText: row.promptText,
+    contentType: row.contentType,
+    size: row.size,
+    consent: row.consent,
+    at: row.at,
+    expiresAt: row.expiresAt,
+    status: row.status,
+  }
+  if (row.duration != null) out.duration = row.duration
+  return out
+}
+
+// POST /voice — authenticated. Raw body = audio bytes; metadata rides in
+// headers (Content-Type, X-Voice-Duration, X-Voice-Consent). One clip per
+// member per current prompt: a resubmission replaces the old clip — new R2
+// object, new 60-day clock (the lifecycle rule counts from upload, so the
+// fresh expirationTtl mirrors it). Consent is not optional — a voice clip is
+// identity — so no X-Voice-Consent: yes means no stored bytes, full stop.
+async function handleVoiceSubmit(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+
+  if (request.headers.get('X-Voice-Consent') !== 'yes') {
+    return json(env, { error: 'consent is required — set X-Voice-Consent: yes' }, 400)
+  }
+  const contentType = request.headers.get('Content-Type') || ''
+  const ext = voiceExt(contentType)
+  if (!ext) return json(env, { error: 'unsupported audio type' }, 415)
+  // Cheap reject on the declared length before buffering the body…
+  const declared = Number(request.headers.get('Content-Length') || 0)
+  if (declared > VOICE_MAX_BYTES) {
+    return json(env, { error: 'audio too large (8MB max)' }, 413)
+  }
+  const bytes = await request.arrayBuffer()
+  // …and verify the bytes actually read, since Content-Length is just a claim.
+  if (bytes.byteLength > VOICE_MAX_BYTES) {
+    return json(env, { error: 'audio too large (8MB max)' }, 413)
+  }
+  if (!bytes.byteLength) return json(env, { error: 'empty audio' }, 400)
+
+  const prompt = await voicePrompt(env)
+  const kvKey = `voice:${prompt.id}:${member.id}`
+  const r2Key = `voice/${prompt.id}/${member.id}.${ext}`
+
+  // Replace flow: if a previous clip for this prompt lives at a different R2
+  // key (extension changed with the content type), delete the orphan so the
+  // bucket never holds two clips for one member+prompt.
+  let previous = null
+  const previousRaw = await env.MEMBERS_KV.get(kvKey)
+  if (previousRaw) {
+    try { previous = JSON.parse(previousRaw) } catch { previous = null }
+  }
+
+  // Throttle after validation — a rejected submission shouldn't consume the
+  // slot (same discipline as /feedback) — and only for FIRST submissions:
+  // replacing your own clip is bounded by one-clip-per-member-per-prompt, and
+  // the Replace button legitimately arrives seconds after the first submit.
+  if (!previous && !(await throttle(env, `rate:voice_submit:${claims.email}`, VOICE_THROTTLE))) {
+    return json(env, { error: 'please wait a moment before submitting again' }, 429)
+  }
+
+  await env.VOICE.put(r2Key, bytes, { httpMetadata: { contentType } })
+  if (previous && previous.r2Key && previous.r2Key !== r2Key) {
+    await env.VOICE.delete(previous.r2Key)
+  }
+
+  const durationHeader = request.headers.get('X-Voice-Duration')
+  const duration = durationHeader != null ? Number(durationHeader) : null
+
+  const row = {
+    memberId: member.id,
+    name: member.name,
+    promptId: prompt.id,
+    promptText: prompt.text,
+    r2Key,
+    contentType,
+    size: bytes.byteLength,
+    consent: true,
+    at: new Date().toISOString(),
+    expiresAt: Math.floor(Date.now() / 1000) + VOICE_TTL,
+    status: 'pending',
+  }
+  if (member.handle) row.handle = member.handle
+  if (Number.isFinite(duration) && duration > 0) row.duration = duration
+  await env.MEMBERS_KV.put(kvKey, JSON.stringify(row), { expirationTtl: VOICE_TTL })
+
+  // Contract: the response IS the safe projection (no wrapper object).
+  return json(env, voiceClipProjection(row))
+}
+
+// GET /voice/mine — authenticated. The current prompt plus the caller's clip
+// for it (full row — nothing in it is secret to its owner), or null.
+async function handleVoiceMine(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const prompt = await voicePrompt(env)
+  const raw = await env.MEMBERS_KV.get(`voice:${prompt.id}:${claims.id}`)
+  let clip = null
+  if (raw) {
+    try { clip = JSON.parse(raw) } catch { clip = null }
+  }
+  return json(env, { prompt, clip })
+}
+
+// DELETE /voice — authenticated. Removes the caller's clip for the current
+// prompt: R2 object + KV row. Idempotent — 200 even when nothing existed
+// (R2 delete on a missing key is a no-op, matching the lifecycle-rule race).
+async function handleVoiceDelete(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const prompt = await voicePrompt(env)
+  const kvKey = `voice:${prompt.id}:${claims.id}`
+  const raw = await env.MEMBERS_KV.get(kvKey)
+  if (raw) {
+    try {
+      const row = JSON.parse(raw)
+      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+    } catch { /* unparseable row still gets deleted below */ }
+    await env.MEMBERS_KV.delete(kvKey)
+  }
+  return json(env, { ok: true })
+}
+
+// GET /admin/voice — bearer-auth with ADMIN_TOKEN (same gate as
+// /admin/member/unlink). Every voice: row with its KV key, across prompts —
+// the key is what /admin/voice/status and DELETE /admin/voice take back.
+async function handleAdminVoiceList(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const clips = []
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'voice:', cursor })
+    for (const k of page.keys) {
+      const raw = await env.MEMBERS_KV.get(k.name)
+      if (!raw) continue
+      try { clips.push({ key: k.name, ...JSON.parse(raw) }) } catch { /* skip corrupt row */ }
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+  return json(env, { clips })
+}
+
+// POST /admin/voice/status — { key, status: 'approved' | 'rejected' }.
+// Rewrites the row with its ORIGINAL absolute expiry (feedback: pattern) so
+// moderation never resets the 60-day retention clock. A row already inside
+// KV's 60s expiration floor can't be rewritten — it's deleted instead, which
+// is where it was headed anyway.
+async function handleAdminVoiceStatus(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  if (typeof body.key !== 'string' || !body.key.startsWith('voice:')) {
+    return json(env, { error: 'invalid key' }, 400)
+  }
+  if (!VOICE_STATUSES.includes(body.status)) {
+    return json(env, { error: `status must be one of: ${VOICE_STATUSES.join(', ')}` }, 400)
+  }
+  const raw = await env.MEMBERS_KV.get(body.key)
+  if (!raw) return json(env, { error: 'clip not found' }, 404)
+  let row
+  try { row = JSON.parse(raw) } catch { return json(env, { error: 'clip not found' }, 404) }
+
+  const remaining = (row.expiresAt || 0) - Math.floor(Date.now() / 1000)
+  if (remaining < 60) {
+    await env.MEMBERS_KV.delete(body.key)
+    return json(env, { error: 'clip has expired' }, 404)
+  }
+  row.status = body.status
+  await env.MEMBERS_KV.put(body.key, JSON.stringify(row), { expiration: row.expiresAt })
+  return json(env, { ok: true, key: body.key, status: row.status })
+}
+
+// DELETE /admin/voice — { key }. Removes the KV row and its R2 object.
+// Idempotent: 200 even if either side was already gone.
+async function handleAdminVoiceDelete(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  if (typeof body.key !== 'string' || !body.key.startsWith('voice:')) {
+    return json(env, { error: 'invalid key' }, 400)
+  }
+  const raw = await env.MEMBERS_KV.get(body.key)
+  if (raw) {
+    try {
+      const row = JSON.parse(raw)
+      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+    } catch { /* unparseable row still gets deleted below */ }
+    await env.MEMBERS_KV.delete(body.key)
+  }
+  return json(env, { ok: true })
+}
+
+// Account-deletion sweep for voice clips. A voice clip can't be
+// identity-stripped the way feedback text can — the voice IS the identity —
+// so the member's rows and R2 objects are deleted outright. Like purgeRsvps,
+// deliberately unguarded: a throw 500s the delete so the user can retry,
+// rather than claiming success while their voice lingers in the bucket.
+async function purgeVoiceClips(env, member) {
+  if (!member?.id) return
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'voice:', cursor })
+    for (const k of page.keys) {
+      const raw = await env.MEMBERS_KV.get(k.name)
+      if (!raw) continue
+      let row
+      try { row = JSON.parse(raw) } catch { continue }
+      if (row.memberId !== member.id) continue
+      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+      await env.MEMBERS_KV.delete(k.name)
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
 }
 
 // POST /session/revoke — authenticated.
@@ -1790,12 +2095,15 @@ function validTheaterList(value) {
 // (null unless it would actually be enforced). config:newsletter_template is
 // admin-only and intentionally excluded.
 async function handleConfigGet(env) {
-  const [theaters, podcast, copy] = await Promise.all([
+  const [theaters, podcast, copy, voice_prompt] = await Promise.all([
     readConfig(env, 'theaters'),
     readConfig(env, 'podcast'),
     readConfig(env, 'copy'),
+    readConfig(env, 'voice_prompt'),
   ])
-  return json(env, { theaters: validTheaterList(theaters), podcast, copy })
+  // voice_prompt is deliberately raw (parsed KV value or null): the SPA
+  // applies the same default voicePrompt() falls back to.
+  return json(env, { theaters: validTheaterList(theaters), podcast, copy, voice_prompt })
 }
 
 // Venue allowlist for theater meetups (kind: 'meetup'). Precedence: the KV
@@ -2575,6 +2883,21 @@ async function handleTestKv(request, env) {
 // existing try/catch surfaces it as the right JSON shape.
 class HttpErrorLite extends Error {
   constructor(status, msg) { super(msg); this.status = status }
+}
+
+// GET /__test/r2?key=… — E2E-only R2 read-back: the object's bytes with its
+// stored content-type, or 404. The admin agent's local server proxies to
+// this in e2e mode so Playwright can verify uploaded voice clips.
+async function handleTestR2(request, env) {
+  const key = new URL(request.url).searchParams.get('key')
+  const obj = key ? await env.VOICE.get(key) : null
+  if (!obj) return new Response('Not Found', { status: 404 })
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+      ...cors(env),
+    },
+  })
 }
 
 // --- Email ---

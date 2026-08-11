@@ -537,6 +537,79 @@ export function sanitizePodcastConfig(data) {
   return out
 }
 
+// --- Voice tab helpers (voice:{promptId}:{memberId} rows in MEMBERS_KV) ---
+
+// Seconds → 'm:ss'. Invalid/missing durations render as an em-dash.
+export function fmtDuration(sec) {
+  const n = Number(sec)
+  if (!isFinite(n) || n < 0 || sec == null || sec === '') return '—'
+  const whole = Math.round(n)
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
+}
+
+// Bytes → human size. Whole KB below 1 MB, one decimal above.
+export function fmtBytes(n) {
+  const b = Number(n)
+  if (!isFinite(b) || b < 0 || n == null || n === '') return '—'
+  if (b < 1024) return `${Math.round(b)} B`
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Whole days until an expiry (unix seconds), rounded up — companion to
+// fmtExpiry for the Voice tab's prominent countdown. 0 = already expired;
+// anything still in the future is at least 1. null for missing/invalid.
+export function voiceDaysLeft(unixSec, now = Date.now()) {
+  const n = Number(unixSec)
+  if (!isFinite(n) || n <= 0 || unixSec == null) return null
+  return Math.max(0, Math.ceil((n * 1000 - now) / 86_400_000))
+}
+
+// Group parsed voice rows ({ keyName, ...value }) by promptId. The current
+// prompt's group sorts first, then groups by most-recent submission; clips
+// within a group are newest-first. promptText is taken from the first row
+// that carries one.
+export function groupVoiceClips(rows, currentPromptId) {
+  const groups = new Map()
+  for (const r of rows || []) {
+    if (!r || !r.promptId) continue
+    if (!groups.has(r.promptId)) {
+      groups.set(r.promptId, { promptId: r.promptId, promptText: '', clips: [] })
+    }
+    const g = groups.get(r.promptId)
+    if (!g.promptText && r.promptText) g.promptText = r.promptText
+    g.clips.push(r)
+  }
+  for (const g of groups.values()) {
+    g.clips.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+  }
+  const newest = (g) => String(g.clips[0]?.at || '')
+  return [...groups.values()].sort((a, b) => {
+    const cur = (a.promptId === currentPromptId ? 1 : 0) - (b.promptId === currentPromptId ? 1 : 0)
+    return cur !== 0 ? -cur : newest(b).localeCompare(newest(a))
+  })
+}
+
+// Normalize the config:voice_prompt form into its stored shape
+// ({ id, text, deadline? }) — id is slugified, text trimmed, deadline must
+// be a bare YYYY-MM-DD when present. Returns null when the result would be
+// unusable (no id/text survives, or a malformed deadline) so the caller can
+// refuse the save instead of storing junk.
+export function sanitizeVoicePrompt(fields) {
+  const src = fields || {}
+  const id = String(src.id ?? '').toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const text = String(src.text ?? '').trim()
+  if (!id || !text) return null
+  const out = { id, text }
+  const deadline = String(src.deadline ?? '').trim()
+  if (deadline) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return null
+    out.deadline = deadline
+  }
+  return out
+}
+
 export function buildEventsSectionText(events) {
   const lines = events.map(e => {
     const name = e.film || e.title || ''

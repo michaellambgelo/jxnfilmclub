@@ -52,6 +52,10 @@ afterEach(async () => {
     const { keys } = await kv.list()
     for (const k of keys) await kv.delete(k.name)
   }
+  for (const bucket of [env.VOICE, env.VOICE_STAGING]) {
+    const { objects } = await bucket.list()
+    for (const o of objects) await bucket.delete(o.key)
+  }
 })
 
 function call(path, { method = 'GET', body, token, envOverrides } = {}) {
@@ -101,7 +105,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -464,6 +468,174 @@ describe('routing fallthrough', () => {
     })
     expect(res.status).toBe(405)
     expect((await res.json()).error).toBe('method not allowed')
+  })
+})
+
+// --- /api/voice: R2-backed voice-clip streaming ---
+
+describe('/api/voice', () => {
+  const KEY = 'voice/summer-2026/mem_1a2b.webm'
+  const BYTES = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x42])
+  const voiceUrl = (params) => `/api/voice?${new URLSearchParams(params)}`
+
+  it('streams the object with its stored content type', async () => {
+    await env.VOICE.put(KEY, BYTES, { httpMetadata: { contentType: 'audio/webm' } })
+    const res = await call(voiceUrl({ env: 'production', key: KEY }), { token: await signToken() })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('audio/webm')
+    expect(res.headers.get('Content-Disposition')).toBeNull()
+    expect(res.headers.get('Content-Length')).toBe(String(BYTES.length))
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(BYTES)
+  })
+
+  it('download=1 adds an attachment disposition with a sanitized filename', async () => {
+    await env.VOICE.put(KEY, BYTES, { httpMetadata: { contentType: 'audio/webm' } })
+    const res = await call(voiceUrl({ env: 'production', key: KEY, download: '1' }), { token: await signToken() })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="mem_1a2b.webm"')
+    await res.arrayBuffer()  // drain the R2 stream (keeps isolated storage poppable)
+  })
+
+  it('env=staging reads VOICE_STAGING, not VOICE', async () => {
+    await env.VOICE_STAGING.put(KEY, BYTES, { httpMetadata: { contentType: 'audio/ogg' } })
+    const staging = await call(voiceUrl({ env: 'staging', key: KEY }), { token: await signToken() })
+    expect(staging.status).toBe(200)
+    expect(staging.headers.get('Content-Type')).toBe('audio/ogg')
+    await staging.arrayBuffer()  // drain the R2 stream
+
+    const prod = await call(voiceUrl({ env: 'production', key: KEY }), { token: await signToken() })
+    expect(prod.status).toBe(404)
+  })
+
+  it('404s a missing object with { error: "expired" } — never a 500', async () => {
+    const res = await call(voiceUrl({ env: 'production', key: 'voice/gone/clip.webm' }), { token: await signToken() })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'expired' })
+  })
+
+  it('400s an invalid env and keys outside the voice/ prefix', async () => {
+    const badEnv = await call(voiceUrl({ env: 'prod', key: KEY }), { token: await signToken() })
+    expect(badEnv.status).toBe(400)
+    expect((await badEnv.json()).error).toBe('invalid env: prod')
+
+    for (const badKey of ['member:a@b.com', 'voicemail/x.webm', '']) {
+      const res = await call(voiceUrl({ env: 'production', key: badKey }), { token: await signToken() })
+      expect(res.status, `key=${badKey}`).toBe(400)
+      expect((await res.json()).error).toBe('invalid key')
+    }
+  })
+
+  it('falls back to application/octet-stream when no content type was stored', async () => {
+    await env.VOICE.put(KEY, BYTES)
+    const res = await call(voiceUrl({ env: 'production', key: KEY }), { token: await signToken() })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/octet-stream')
+    await res.arrayBuffer()  // drain the R2 stream
+  })
+})
+
+// --- Voice moderation proxies: status / delete / list via the join worker ---
+
+describe('/api/voice/status', () => {
+  it('production POSTs /admin/voice/status on JOIN_WORKER with ADMIN_TOKEN', async () => {
+    const { service, calls } = stubService({ ok: true, status: 'approved' })
+    const res = await call('/api/voice/status?env=production', {
+      method: 'POST', body: JSON.stringify({ key: 'voice:summer-2026:mem_1', status: 'approved' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ ok: true, status: 'approved' })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/voice/status')
+    expect(calls[0].init.method).toBe('POST')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe('{"key":"voice:summer-2026:mem_1","status":"approved"}')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with ADMIN_TOKEN_STAGING against join-staging', async () => {
+    const { service, calls } = stubService({ ok: true, status: 'rejected' })
+    const res = await call('/api/voice/status?env=staging', {
+      method: 'POST', body: JSON.stringify({ key: 'voice:x:y', status: 'rejected' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/voice/status')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('relays join worker errors and 400s when the token secret is missing', async () => {
+    const { service } = stubService({ error: 'row not found' }, 404)
+    const notFound = await call('/api/voice/status?env=production', {
+      method: 'POST', body: '{"key":"voice:x:y","status":"approved"}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(notFound.status).toBe(404)
+    expect((await notFound.json()).error).toBe('row not found')
+
+    const missing = await call('/api/voice/status?env=production', {
+      method: 'POST', body: '{}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service, ADMIN_TOKEN: '' },
+    })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('ADMIN_TOKEN')
+  })
+})
+
+describe('DELETE /api/voice', () => {
+  it('proxies DELETE /admin/voice with the key body and the admin token', async () => {
+    const { service, calls } = stubService({ ok: true, deleted: true })
+    const res = await call('/api/voice?env=production', {
+      method: 'DELETE', body: JSON.stringify({ key: 'voice:summer-2026:mem_1' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ ok: true, deleted: true })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/voice')
+    expect(calls[0].init.method).toBe('DELETE')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe('{"key":"voice:summer-2026:mem_1"}')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with the staging token', async () => {
+    const { service, calls } = stubService({ ok: true })
+    const res = await call('/api/voice?env=staging', {
+      method: 'DELETE', body: '{"key":"voice:x:y"}',
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/voice')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+})
+
+describe('/api/voice/list', () => {
+  it('GETs /admin/voice on JOIN_WORKER with the admin token', async () => {
+    const { service, calls } = stubService({ clips: [{ memberId: 'mem_1' }] })
+    const res = await call('/api/voice/list?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ clips: [{ memberId: 'mem_1' }] })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/voice')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+  })
+
+  it('staging targets join-staging with the staging token; 400s without a secret', async () => {
+    const { service, calls } = stubService({ clips: [] })
+    const res = await call('/api/voice/list?env=staging', {
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/voice')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+
+    const missing = await call('/api/voice/list?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service, ADMIN_TOKEN: '' },
+    })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('ADMIN_TOKEN')
+  })
+
+  it('400s an invalid env', async () => {
+    const res = await call('/api/voice/list?env=nope', { token: await signToken() })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid env: nope')
   })
 })
 

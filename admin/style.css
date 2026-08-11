@@ -232,6 +232,23 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem }
 .pill.on { background: #e6f4ea; color: #1a7f37 }
 .pill.off { background: #f0f0f0; color: var(--muted) }
+.pill.warn { background: #fff3e0; color: #b45309 }
+.pill.danger { background: #fde8e8; color: #b91c1c }
+
+/* --- Voice tab --- */
+.voice-group { margin-bottom: 1.5rem }
+.voice-group > h3 { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem }
+.voice-clip {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.8rem;
+}
+.voice-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem }
+.voice-player { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.5rem }
+.voice-player audio { width: 100%; max-width: 480px; height: 36px }
+.voice-clip .toolbar { margin-bottom: 0 }
+.voice-clip .voice-dl { font-size: 0.85rem; align-self: center }
 
 /* --- Content Gen tab --- */
 .cg-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem }

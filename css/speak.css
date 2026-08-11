@@ -1,0 +1,184 @@
+/* /speak — voice clips for the podcast ("Night Shift" idiom).
+   Inherits the .auth column + button/input/err treatment from auth.css;
+   this file only adds the prompt card, recorder, and clip-status skin.
+   Included automatically via site.yaml include: [ css/ ]. */
+
+/* ---------- prompt ---------- */
+
+.speak .speak-prompt {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-8);
+  box-shadow: var(--shadow-card);
+}
+
+.speak .speak-kicker {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-stamp);
+  color: var(--ink-4);
+  margin: 0 0 var(--space-2);
+}
+
+.speak .speak-prompt-text {
+  font-family: var(--font-display);
+  font-size: var(--fs-26);
+  font-weight: 700;
+  line-height: var(--lh-snug);
+  color: var(--ink-strong);
+  margin: 0;
+}
+
+.speak .speak-deadline {
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--brand-tint-fg);
+  margin: var(--space-3) 0 0;
+}
+
+/* ---------- existing clip status ---------- */
+
+.speak .speak-clip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.speak .speak-status {
+  display: inline-block;
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  padding: 0.25rem 0.6rem;
+  margin: 0 0 var(--space-3);
+  background: var(--brand-tint);
+  color: var(--brand-tint-fg);
+}
+
+.speak .speak-status.-approved {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.speak .speak-status.-rejected {
+  background: var(--surface-2);
+  color: var(--ink-4);
+}
+
+.speak .speak-clip-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--ink-3);
+  margin: 0 0 var(--space-2);
+}
+
+/* ---------- recorder ---------- */
+
+.speak .speak-record {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.speak .speak-record .hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.speak button.speak-rec-btn {
+  min-width: 8rem;
+}
+
+.speak button.speak-rec-btn.-recording {
+  background: var(--ink-strong);
+  color: var(--bg);
+}
+
+.speak .speak-timer {
+  font-family: var(--font-mono);
+  font-size: var(--fs-18);
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.speak .speak-timer.-live {
+  color: var(--brand);
+}
+
+/* ---------- upload ---------- */
+
+.speak .speak-upload {
+  margin: var(--space-4) 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-3);
+}
+
+.speak .speak-upload input[type="file"] {
+  border: 1px dashed var(--line-2);
+  padding: var(--space-3);
+  background: var(--surface);
+  color: var(--ink-3);
+  width: 100%;
+  cursor: pointer;
+}
+
+.speak .speak-upload input[type="file"]::file-selector-button {
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  padding: 0.4rem 0.8rem;
+  margin-right: var(--space-3);
+  cursor: pointer;
+}
+
+/* ---------- preview + consent ---------- */
+
+.speak .speak-preview {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: var(--space-5) var(--space-6);
+  margin: var(--space-6) 0;
+}
+
+.speak .speak-player audio {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.speak .speak-consent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+  margin: var(--space-4) 0;
+}
+
+.speak .speak-consent input[type="checkbox"] {
+  width: auto;
+  margin-top: 0.25rem;
+}
+
+/* Final 30 seconds before the 3:00 auto-stop. */
+.speak .speak-timer.-warn {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

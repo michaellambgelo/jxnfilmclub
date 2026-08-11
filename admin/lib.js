@@ -108,6 +108,30 @@ export function buildWatchedSectionText(entries) {
   return `Latest from members on Letterboxd:\n${lines.join('\n')}\n\nSee all member activity: https://jxnfilm.club/watched`
 }
 
+// Email-safe voice-clip CTA for the newsletter: invites members to record a
+// clip for the podcast at jxnfilm.club/speak, quoting the current prompt
+// (the caller resolves config:voice_prompt vs the generic default).
+export function buildVoiceCtaHtml({ text }) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td align="center" style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <h2 style="margin:0 0 8px;font-size:20px;color:#100f0e">Your voice on the podcast</h2>
+          <p style="margin:0 0 6px;font-size:16px;line-height:1.5">This round&rsquo;s prompt: <em style="color:#d7321f">&ldquo;${escapeHtml(text)}&rdquo;</em></p>
+          <p style="margin:0 0 14px;font-size:14px;color:#6b675f">Members can record or upload up to three minutes &mdash; the best clips get aired on the show.</p>
+          <a href="https://jxnfilm.club/speak" style="display:inline-block;background:#d7321f;color:#ffffff;text-decoration:none;padding:10px 22px;font-size:15px">Record a clip</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+}
+
+export function buildVoiceCtaText({ text }) {
+  return `Your voice on the podcast — this round's prompt: "${text}"\nMembers can record or upload up to three minutes: https://jxnfilm.club/speak`
+}
+
 // Email-safe standalone poster block for the newsletter composer: one
 // centered TMDB poster in the same white-card shell as the sections below,
 // optionally wrapped in a link the admin supplies (event page, Letterboxd,

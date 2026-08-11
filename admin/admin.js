@@ -12,6 +12,7 @@ const HOSTED = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText,
+  buildVoiceCtaHtml, buildVoiceCtaText,
   buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
@@ -239,20 +240,25 @@ async function renderNewsletter() {
           <iframe id="nl-preview" sandbox="allow-same-origin" title="HTML preview — editable"></iframe>
         </div>
       </div>
-      <div class="toolbar">
-        <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
-        <input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert" style="width:64px">
-        <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
-        <input id="nl-test-email" type="email" placeholder="you@example.com">
-        <button data-action="nl-test">Send test</button>
-        <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
-      </div>
+      <!-- Compose controls, in insertion order: poster block, upcoming
+           events, member watches, voice CTA — then the send row last. -->
       <div class="toolbar nl-poster-bar">
         <input id="nl-poster-q" type="text" placeholder="film title…" title="Search TMDB for a poster">
         <button data-action="nl-poster-search">Find poster</button>
         <input id="nl-poster-link" type="url" placeholder="link URL — where the poster points (optional)">
       </div>
       <div id="nl-poster-results" class="nl-poster-results" hidden></div>
+      <div class="toolbar">
+        <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
+        <input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert" style="width:64px">
+        <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
+        <button data-action="nl-insert-voice" title="Append a record-a-clip CTA for the podcast, quoting the current voice prompt">Insert voice CTA</button>
+      </div>
+      <div class="toolbar nl-send-bar">
+        <input id="nl-test-email" type="email" placeholder="you@example.com">
+        <button data-action="nl-test">Send test</button>
+        <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
+      </div>
     </section>
 
     <section class="nl-recipients">
@@ -1219,6 +1225,19 @@ document.addEventListener('click', async (e) => {
       htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
       textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildWatchedSectionText(top)
       toast(`Inserted ${top.length} ${top.length === 1 ? 'entry' : 'entries'} — edit or trim in the preview`)
+    }
+    else if (a === 'nl-insert-voice') {
+      // Current prompt from KV (env-aware); the generic default when unset —
+      // same resolution the site and Voice tab use.
+      const { values } = await loadKv('config:voice_prompt')
+      const vp = tryParse(values['config:voice_prompt'])
+      const text = (vp && typeof vp.text === 'string' && vp.text.trim()) || DEFAULT_VOICE_PROMPT.text
+      const htmlField = $('#nl-html')
+      const textField = $('#nl-text')
+      htmlField.value = htmlField.value.trimEnd() + '\n' + buildVoiceCtaHtml({ text })
+      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
+      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildVoiceCtaText({ text })
+      toast('Inserted the voice-clip CTA — edit in the preview')
     }
     else if (a === 'nl-poster-search') {
       const query = $('#nl-poster-q').value.trim()

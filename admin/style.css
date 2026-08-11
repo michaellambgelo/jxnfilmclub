@@ -216,7 +216,8 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   background: #fff;
 }
 .nl-compose .toolbar input[type="email"] { max-width: 260px }
-.nl-poster-bar { margin-top: 0.5rem }
+/* The send row is the consequential one — set it off from the inserts. */
+.nl-send-bar { border-top: 1px solid var(--border); padding-top: 0.8rem }
 .nl-poster-bar input[type="text"] { max-width: 220px }
 .nl-poster-bar input[type="url"] { max-width: 340px }
 .nl-poster-results { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem }

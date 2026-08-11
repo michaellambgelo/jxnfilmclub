@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   qs, escapeHtml, attr, tryParse, fmtAge, fmtJoined, fmtExpiry,
   buildWatchedSectionHtml, buildWatchedSectionText, starsOf,
+  buildVoiceCtaHtml, buildVoiceCtaText,
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
 } from '../../admin/lib.js'
@@ -169,6 +170,20 @@ describe('buildWatchedSectionText', () => {
     ])
     expect(text).toContain('- Pillion (2025) ★★★★½ ♥ — Mo, 2026-08-10')
     expect(text).toContain('- Film ★★★ — @someuser')
+  })
+})
+
+describe('buildVoiceCta', () => {
+  it('quotes the prompt, links /speak, escapes hostile text', () => {
+    const html = buildVoiceCtaHtml({ text: 'Best <b>snack</b>?' })
+    expect(html).toContain('href="https://jxnfilm.club/speak"')
+    expect(html).toContain('Best &lt;b&gt;snack&lt;/b&gt;?')
+    expect(html).not.toContain('<b>snack</b>')
+    expect(html).toContain('Your voice on the podcast')
+
+    const text = buildVoiceCtaText({ text: 'Best snack?' })
+    expect(text).toContain('"Best snack?"')
+    expect(text).toContain('https://jxnfilm.club/speak')
   })
 })
 

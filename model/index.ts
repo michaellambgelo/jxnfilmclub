@@ -141,7 +141,9 @@ export function buildWatchedPage(
     const films = map[m.handle]
     if (!films || !films.length) continue
     const bucket = takesByHandle[m.handle] || {}
-    const enriched = films.map((f: any) => {
+    // The map carries more history than the page name promises (the strip
+    // below clusters over the full depth) — sections stay Last FOUR.
+    const enriched = films.slice(0, 4).map((f: any) => {
       const out: any = { ...f, stars: starsFor(f && f.rating) }
       const take = (f && f.link && bucket['L:' + f.link])
         || (f && f.title && bucket['T:' + String(f.title).toLowerCase() + '|' + (f.year || '')])

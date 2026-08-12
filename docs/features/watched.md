@@ -54,7 +54,7 @@ flowchart LR
     B --> C[Read data/members.json]
     C --> D{For each member<br/>with handle}
     D --> E[Fetch letterboxd.com/{handle}/rss/]
-    E --> F[Extract last 4 entries:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
+    E --> F[Extract last 12 entries:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
     F --> G[Write data/watched.json]
     G --> H{Data changed?}
     H -->|Yes| I[Commit + push]
@@ -113,6 +113,15 @@ Per-film shape (both parsers, optional fields omitted when absent):
 `rewatch: true` comes from `<letterboxd:rewatch>Yes</letterboxd:rewatch>`
 (the Worker's `parseLetterboxdRss` and the Python scraper's
 `letterboxd_rewatch` feedparser key both read it).
+
+**Feed depth is 12 per member** (`WATCHED_FEED_DEPTH` in the Worker,
+`FILMS_PER_MEMBER` in the Python scraper), not 4: member sections and the
+host panel's diary quick-picks slice to the last four, but the weekly club
+strip clusters over the full depth. An active member can push a film out of
+their last four within a day, which used to silently drop their name from a
+shared-watch cluster ("watched it together, only one name shown"). Dates in
+the window math are bare `YYYY-MM-DD` diary dates (Letterboxd RSS carries no
+times); the 7-day cutoff is computed in America/Chicago.
 
 ## Key Files
 

@@ -828,7 +828,10 @@
         if (this.session.handle) {
           try {
             const watched = await getWatched()
-            this.update({ diary: (watched && watched[this.session.handle]) || [] })
+            const mine = (watched && watched[this.session.handle]) || []
+            // The watched map now carries extra depth for the club strip;
+            // quick-picks keep offering just the last four.
+            this.update({ diary: mine.slice(0, 4) })
           } catch (e) {}
         }
       }

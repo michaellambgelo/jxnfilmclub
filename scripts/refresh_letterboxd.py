@@ -72,10 +72,22 @@ def extract_review(entry) -> str | None:
     return truncate(text) if text else None
 
 
+# Mirror of the Worker's WATCHED_FEED_DEPTH: sections render the last four,
+# but the weekly strip clusters over everything in its window, so the
+# snapshot must carry the same depth or a fallback page-load would drop
+# names from shared-watch clusters.
+FILMS_PER_MEMBER = 12
+
+
 def refresh_member(handle: str) -> tuple[list[dict], list[dict]]:
     feed = feedparser.parse(f'https://letterboxd.com/{handle}/rss/')
     films = []
-    for entry in feed.entries[:4]:
+    for entry in feed.entries:
+        if len(films) >= FILMS_PER_MEMBER:
+            break
+        # Skip list updates — the Worker parser does the same.
+        if 'letterboxd-list' in (entry.get('id') or ''):
+            continue
         film: dict[str, Any] = {
             'title': entry.get('letterboxd_filmtitle', entry.title),
             'year':  entry.get('letterboxd_filmyear'),

@@ -66,7 +66,7 @@ describe('GET /watched — live Last Four via the Worker', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(Object.keys(data)).toEqual(['qa'])
-    expect(data.qa).toHaveLength(4) // list item skipped, capped at 4 (Five dropped)
+    expect(data.qa).toHaveLength(5) // list item skipped; depth 12 keeps all five films
     expect(data.qa[0]).toEqual({
       title: 'Film One & a Half',
       year: '2026',
@@ -84,7 +84,21 @@ describe('GET /watched — live Last Four via the Worker', () => {
     // rewatch No → no field; absent tag (Film Three) → no field either.
     expect(data.qa[1].rewatch).toBeUndefined()
     expect(data.qa[2].rewatch).toBeUndefined()
-    expect(data.qa.map(f => f.title)).toEqual(['Film One & a Half', 'Film Two', 'Film Three', 'Film Four'])
+    expect(data.qa.map(f => f.title)).toEqual(['Film One & a Half', 'Film Two', 'Film Three', 'Film Four', 'Film Five'])
+  })
+
+  it('caps each feed at 12 films so the club strip sees a full active week', async () => {
+    await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
+    const items = []
+    for (let i = 1; i <= 15; i++) {
+      items.push(rssItem({ guid: `letterboxd-watch-${i}`, title: `Film ${i}`,
+        link: `https://letterboxd.com/qa/film/f${i}/`, film: `Film ${i}` }))
+    }
+    mockFetch(async () => new Response(rssFeed(items), { status: 200 }))
+    const data = await (await req('/watched')).json()
+    expect(data.qa).toHaveLength(12)
+    expect(data.qa[0].title).toBe('Film 1')
+    expect(data.qa[11].title).toBe('Film 12')
   })
 
   it('caches the aggregate: a second request makes no Letterboxd fetches', async () => {

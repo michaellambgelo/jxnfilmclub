@@ -1690,8 +1690,17 @@ async function buildWatched(env, prevRec) {
   return rec.map
 }
 
-// Minimal RSS extraction matching scripts/refresh_letterboxd.py: last four
+// Minimal RSS extraction matching scripts/refresh_letterboxd.py: recent
 // non-list items -> { title, year?, link, watched_date?, rating?, liked?, rewatch?, poster? }.
+//
+// Depth is WATCHED_FEED_DEPTH, not 4: the /watched member sections show the
+// last four, but the weekly club strip clusters over everything in its
+// window — an active member can push a film out of their last four within a
+// day (8 diary entries in a week is real data), which silently dropped their
+// name from a shared-watch cluster. 12 covers a heavy week with headroom;
+// bump the constant if a member ever out-logs it.
+const WATCHED_FEED_DEPTH = 12
+
 function parseLetterboxdRss(xml) {
   const films = []
   for (const item of String(xml).split('<item>').slice(1)) {
@@ -1712,7 +1721,7 @@ function parseLetterboxdRss(xml) {
     const poster = /<img\s[^>]*src="([^"]+)"/.exec(item)
     if (poster) film.poster = poster[1]
     films.push(film)
-    if (films.length >= 4) break
+    if (films.length >= WATCHED_FEED_DEPTH) break
   }
   return films
 }

@@ -116,6 +116,23 @@ describe('buildWatchedPage strip', () => {
     expect(page.strip[0].watchers).toHaveLength(1)
     expect(page.strip[0].byline).toBe('Watched by Jo')
   })
+
+  it('clusters from the full feed depth while sections stay capped at four', () => {
+    // Alex logged 6 films this week; Deep Water is his 6th-most-recent
+    // entry. It must still cluster with Sam even though it fell out of his
+    // last four (the real-world miss this depth exists for).
+    const alexFilms = [1, 2, 3, 4, 5].map(i =>
+      film({ title: 'Filler ' + i, link: 'https://letterboxd.com/alex/film/f' + i + '/', watched_date: '2026-08-1' + i }))
+    alexFilms.push(film({ title: 'Deep Water', watched_date: '2026-08-07', link: 'https://letterboxd.com/alex/film/deep-water/' }))
+    const page = buildWatchedPage(members, {
+      alex: alexFilms,
+      sam: [film({ title: 'Deep Water', watched_date: '2026-08-07', link: 'https://letterboxd.com/sam/film/deep-water/' })],
+    }, [], { today: TODAY })
+    const alexSection = page.sections.find((s: any) => s.handle === 'alex')
+    expect(alexSection.films).toHaveLength(4)
+    const dw = page.strip.find((c: any) => c.title === 'Deep Water')
+    expect(dw.watchers.map((w: any) => w.name).sort()).toEqual(['Alex', 'Sam'])
+  })
 })
 
 describe('filterFilms', () => {

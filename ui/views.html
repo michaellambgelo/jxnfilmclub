@@ -1052,7 +1052,7 @@
         <option value="">Choose a theater…</option>
         <option :each="v in THEATERS" key="{ v }" value="{ v }">{ v }</option>
       </select>
-      <span class="hint">Want a venue added? Email venues@jxnfilm.club</span></label>
+      <span class="hint">Don't see your theater? Request it with the Feedback button.</span></label>
     <label>Showtime <span class="hint">— optional</span>
       <input type="time" name="time"></label>
     <label>Capacity <span class="hint">{ kind === 'meetup' ? '— optional; leave blank for no cap' : '' }</span>
@@ -1092,8 +1092,8 @@
     // GET /config theaters list (admin-editable) wins when it is a non-empty
     // array; this literal is the availability fallback when the Worker or KV
     // is unreachable, so KEEP it. The literal mirrors worker/src/index.js
-    // (THEATERS) — keep both in lockstep. Venue additions go through
-    // venues@jxnfilm.club review.
+    // (THEATERS) — keep both in lockstep. Venue suggestions arrive via the
+    // feedback form; admins add them by editing config:theaters.
     const THEATERS = [
       'Patton House & Gallery',
       'The Capri Theater',

@@ -25,8 +25,8 @@ test.describe('member-hosted screenings', () => {
     const SCREENING_TITLE = 'E2E Test Screening'
     const SECRET_ADDRESS = '742 Evergreen Terrace, Springfield, MS 39201'
     // exact/name-attr locators: substring getByLabel is ambiguous here — the
-    // theater select's hint contains "jxnfilm" (matches 'Film') and the house
-    // option card's copy contains "address".
+    // house option card's copy contains "address", and hint text near the
+    // theater select has collided with label substrings before.
     await page.getByLabel('Title').fill(SCREENING_TITLE)
     await page.locator('input[name="film"]').fill('Crash')
     await page.getByLabel('Date').fill('2099-06-15')

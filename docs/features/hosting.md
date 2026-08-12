@@ -119,8 +119,9 @@ Tests: `tests/worker/screenings.test.js` (guest suite),
 
 Meetup venues are validated server-side against `THEATERS` in
 `worker/src/index.js`, mirrored in the form's `<select>` in `ui/views.html`
-(**keep both copies in lockstep** — drift fails loudly with a 400). Additions
-go through **venues@jxnfilm.club** review; the form invites suggestions. The
+(**keep both copies in lockstep** — drift fails loudly with a 400). Venue
+suggestions arrive via the **feedback form** (the form's hint points at the
+Feedback button); admins add them by editing `config:theaters`. The
 list (7 venues): Patton House & Gallery · The Capri Theater · Legacy Parkway
 Theaters · Cinemark XD in Pearl · Malco Renaissance in Ridgeland · Malco
 Grandview & IMAX in Madison · B&B Theaters at Northpark in Ridgeland.

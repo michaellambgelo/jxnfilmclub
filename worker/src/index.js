@@ -2112,8 +2112,8 @@ async function handleConfigGet(env) {
 // availability fallback when the key is missing, unparseable, empty, or
 // contains non-string/blank entries. The frontend mirrors the same
 // precedence via GET /config (ui/views.html events-new-view falls back to
-// its own THEATERS copy) — keep both literals in lockstep. Venue additions
-// go through venues@jxnfilm.club review.
+// its own THEATERS copy) — keep both literals in lockstep. Venue suggestions
+// arrive via the feedback form; admins add them by editing config:theaters.
 const THEATERS = [
   'Patton House & Gallery',
   'The Capri Theater',

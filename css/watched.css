@@ -33,9 +33,11 @@
 
 .film-grid {
   display: grid;
-  /* Capped track width: with 1fr, a section filtered down to one film
-     stretched that single poster across the whole row. */
-  grid-template-columns: repeat(auto-fit, minmax(140px, 260px));
+  /* 1fr max on purpose: a definite max (260px) makes auto-fit derive the
+     column count from the MAX track size, which wrapped 4 films into 3
+     columns. With 1fr the count comes from the 140px min; the card
+     max-width below stops a lone film from stretching across the row. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 1rem;
 }
 
@@ -266,6 +268,7 @@
 
 .film-card {
   position: relative;
+  max-width: 260px;
 }
 
 .film-rewatch {

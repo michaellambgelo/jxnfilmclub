@@ -409,9 +409,9 @@
 
 <!-- Last Four Watched -->
 <article :is="watched-view">
-  <h1>Last Four Watched</h1>
-
-  <!-- Club-wide weekly strip. CSS hides the section while it has no cards,
+  <!-- Club-wide weekly strip leads the page on its own; the Last Four
+       Watched title sits below it, heading the per-member sections it
+       actually describes. CSS hides the section while it has no cards,
        so the section itself never toggles after mount. -->
   <section class="watched-strip">
     <h2 class="ws-title">This week in the club</h2>
@@ -429,6 +429,8 @@
       </div>
     </div>
   </section>
+
+  <h1>Last Four Watched</h1>
 
   <header class="watched-filters">
     <button type="button" class="watched-filter { hasFilter('liked') ? '-on' : '' }" data-tok="liked" :onclick="toggleFilter">Liked</button>

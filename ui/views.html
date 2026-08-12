@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, getConfig } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms } from 'app'
 </script>
 
 
@@ -411,59 +411,165 @@
 <article :is="watched-view">
   <h1>Last Four Watched</h1>
 
-  <section :each="member in members" key="{ member.handle }" class="watched-member">
-    <header class="watched-member-header">
-      <avatar :name="member.name" :src="avatarFor(member.handle)"/>
-      <div>
-        <h2>{ member.name }</h2>
-        <a :if="member.handle" href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
+  <!-- Club-wide weekly strip. CSS hides the section while it has no cards,
+       so the section itself never toggles after mount. -->
+  <section class="watched-strip">
+    <h2 class="ws-title">This week in the club</h2>
+    <div class="ws-grid">
+      <div :each="c in strip" key="{ c.key }" class="ws-card">
+        <a class="ws-film" href="{ c.link }" target="_blank" rel="noopener">
+          <img :if="c.poster" src="{ c.poster }" alt="{ c.title }" class="ws-poster">
+          <div :if="!c.poster" class="ws-poster ws-poster-placeholder"><span>{ c.title }</span></div>
+        </a>
+        <div class="ws-info">
+          <h3 class="ws-name">{ c.title } <span :if="c.year" class="ws-year">{ c.year }</span></h3>
+          <p class="ws-byline">Watched by <button :each="w in c.watchers" key="{ w.handle }" type="button" class="ws-watcher" data-handle="{ w.handle }">{ w.name }</button></p>
+          <p class="ws-when"><timeago :ts="c.watched_date"/></p>
+        </div>
       </div>
-    </header>
-
-    <div class="film-grid">
-      <a :each="film in member.films" key="{ film.link }" class="film-card"
-        href="{ film.link }" target="_blank" rel="noopener">
-        <img :if="film.poster" src="{ film.poster }" alt="{ film.title }" class="film-poster">
-        <div :if="!film.poster" class="film-poster film-poster-placeholder">
-          <span>{ film.title }</span>
-        </div>
-        <div class="film-info">
-          <h3>{ film.title }</h3>
-          <span :if="film.year">{ film.year }</span>
-          <span :if="film.rating || film.liked" class="lb-verdict">{ starsOf(film.rating) }<b :if="film.liked" class="lb-like">♥</b></span>
-        </div>
-      </a>
     </div>
   </section>
 
-  <p :if="members && !members.length" class="empty-state">No watched films to show yet.</p>
+  <header class="watched-filters">
+    <button type="button" class="watched-filter { hasFilter('liked') ? '-on' : '' }" data-tok="liked" :onclick="toggleFilter">Liked</button>
+    <button type="button" class="watched-filter { hasFilter('rated4') ? '-on' : '' }" data-tok="rated4" :onclick="toggleFilter">Rated 4+</button>
+    <button type="button" class="watched-filter { hasFilter('week') ? '-on' : '' }" data-tok="week" :onclick="toggleFilter">This week</button>
+  </header>
+
+  <p class="watched-nudge" :hidden="!handleless">{ handleless === 1 ? '1 member has not' : handleless + ' members have not' } linked Letterboxd yet — <a href="/edit">link yours</a>.</p>
+
+  <watched-member :each="m in sections" key="{ m.handle }" :member="m" :avatars="avatars"/>
+
+  <p :if="sections && !sections.length" class="empty-state">{ tokens().length ? 'No current films match the filter' : 'No watched films to show yet.' }</p>
 
   <script>
-    avatarFor(handle) {
-      const map = this.avatars || {}
-      return handle ? (map[handle] || '') : ''
+    // Unfiltered sections live at module scope, not on this — nuedom hands
+    // handlers a fresh context after every update, so instance fields set in
+    // mounted are invisible to closures like the state.on handler below.
+    let allSections = []
+    let watcherScrollBound = false
+
+    state.on('filter', () => this.update({ sections: this.applied(allSections) }))
+
+    this.tokens = function() {
+      return String(state.filter || '').split(',').filter(Boolean)
     }
 
-    starsOf(r) {
-      const n = Number(r) || 0
-      let s = ''
-      for (let i = 0; i < Math.floor(n); i++) s += '★'
-      return n - Math.floor(n) >= 0.5 ? s + '½' : s
+    this.hasFilter = function(tok) {
+      return this.tokens().indexOf(tok) >= 0
     }
 
-    async mounted() {
-      const [{ items }, watched, avatars] = await Promise.all([
+    this.toggleFilter = function(e) {
+      const tok = e.currentTarget.dataset.tok
+      const list = this.tokens()
+      const at = list.indexOf(tok)
+      if (at >= 0) list.splice(at, 1)
+      else list.push(tok)
+      state.filter = list.join(',') || null
+      // Clearing the last token makes nuestate replaceState with ./ which
+      // drops the /watched path segment — repair the URL in place.
+      if (!list.length) history.replaceState(true, 0, '/watched')
+    }
+
+    // Filters prune films inside each member section; a section with no
+    // matches drops entirely while a filter is on. The weekly strip stays
+    // week-scoped and unfiltered by design.
+    this.applied = function(sections) {
+      const toks = this.tokens()
+      if (!toks.length) return sections
+      const out = []
+      for (const s of sections) {
+        const films = filterFilms(s.films, toks)
+        if (films.length) out.push({ ...s, films: films })
+      }
+      return out
+    }
+
+    this.mounted = async function() {
+      // Watcher-name clicks scroll to that member. Bound by delegation on
+      // document with a module-scope once guard: an :onclick inside the
+      // nested :each (watchers inside strip cards) never fires, and nuedom
+      // replaces the component root on update, which orphans root-bound
+      // listeners. The .ws-watcher class only exists on this page.
+      if (!watcherScrollBound) {
+        watcherScrollBound = true
+        document.addEventListener('click', function(e) {
+          const btn = e.target.closest('.ws-watcher')
+          if (!btn) return
+          const el = document.getElementById('member-' + btn.dataset.handle)
+          // Instant scroll on purpose: smooth behavior silently no-ops on
+          // this page (verified in Chrome), instant always lands.
+          if (el) el.scrollIntoView()
+        })
+      }
+      const results = await Promise.all([
         getMembers({ limit: 1000 }),
-        getWatched().catch(() => ({})),
-        getAvatars().catch(() => ({})),
+        getWatched().catch(function() { return {} }),
+        getAvatars().catch(function() { return {} }),
+        getTakes().catch(function() { return [] }),
       ])
-      const members = items
-        .filter(m => m.handle && watched[m.handle]?.length)
-        .map(m => ({ ...m, films: watched[m.handle] }))
-      this.update({ members, avatars })
+      const page = buildWatchedPage(results[0].items || [], results[1], results[3])
+      allSections = page.sections
+      // One update only: keyed children mount once with final props, and the
+      // deep-link scroll below lands after the sections exist.
+      this.update({
+        sections: this.applied(page.sections),
+        strip: page.strip,
+        handleless: page.handleless,
+        avatars: results[2],
+      })
+      // The router strips URL hashes, so /watched#handle scrolls manually on
+      // load only. In-page links go through scrollToMember instead — autolink
+      // swallows bare hash anchors and resets query state.
+      const h = (location.hash || '').slice(1)
+      if (h) {
+        setTimeout(function() {
+          const el = document.getElementById('member-' + h)
+          if (el) el.scrollIntoView()
+        }, 0)
+      }
     }
   </script>
 </article>
+
+
+<!-- One member section on /watched: header plus their last-four film grid.
+     Mounts via :each after the parent data update, so props are final. -->
+<section :is="watched-member" id="member-{ member.handle }" class="watched-member">
+  <header class="watched-member-header">
+    <avatar :name="member.name" :src="avatarFor(member.handle)"/>
+    <div>
+      <h2>{ member.name }</h2>
+      <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
+      <span :if="member.latest" class="watched-latest">logged <timeago :ts="member.latest"/></span>
+    </div>
+  </header>
+
+  <div class="film-grid">
+    <a :each="film in member.films" key="{ film.link }" class="film-card"
+      href="{ film.link }" target="_blank" rel="noopener">
+      <img :if="film.poster" src="{ film.poster }" alt="{ film.title }" class="film-poster">
+      <div :if="!film.poster" class="film-poster film-poster-placeholder">
+        <span>{ film.title }</span>
+      </div>
+      <span :if="film.rewatch" class="film-rewatch">Rewatch</span>
+      <div class="film-info">
+        <h3>{ film.title }</h3>
+        <span :if="film.year">{ film.year }</span>
+        <span :if="film.rating || film.liked" class="lb-verdict">{ film.stars }<b :if="film.liked" class="lb-like">♥</b></span>
+        <span :if="film.watched_date" class="film-when"><timeago :ts="film.watched_date"/></span>
+      </div>
+      <p :if="film.take" class="film-take">{ film.take }</p>
+    </a>
+  </div>
+
+  <script>
+    this.avatarFor = function(handle) {
+      const map = this.avatars || {}
+      return handle ? (map[handle] || '') : ''
+    }
+  </script>
+</section>
 
 
 <!-- Events list -->

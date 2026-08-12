@@ -33,7 +33,9 @@
 
 .film-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  /* Capped track width: with 1fr, a section filtered down to one film
+     stretched that single poster across the whole row. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 260px));
   gap: 1rem;
 }
 
@@ -88,20 +90,229 @@
   color: var(--ink-5);
 }
 
+/* Inline spans lose their template whitespace in the compiled output. */
+.film-info .lb-verdict {
+  margin-left: 0.4em;
+}
+
 .empty-state {
   text-align: center;
   color: var(--ink-5);
   padding: 3rem 0;
 }
 
+/* ------- this week in the club (club-wide strip) ------- */
+
+/* The section is always in the DOM; it only shows once cards exist. */
+.watched-strip:not(:has(.ws-card)) {
+  display: none;
+}
+
+.watched-strip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.5em 2em;
+  margin-bottom: 1.5rem;
+}
+
+.ws-title {
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin: 0 0 1.25rem;
+}
+
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.ws-card {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.ws-film {
+  flex: 0 0 64px;
+  text-decoration: none;
+}
+
+.ws-poster {
+  display: block;
+  width: 64px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+
+.ws-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.4em;
+  font-size: 62%;
+  color: var(--ink-5);
+}
+
+.ws-info {
+  min-width: 0;
+}
+
+.ws-name {
+  font-size: 83%;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.ws-year {
+  font-weight: 400;
+  color: var(--ink-5);
+  margin-left: 0.35em; /* the compiler collapses the template whitespace */
+}
+
+.ws-byline {
+  font-size: 75%;
+  color: var(--ink-4);
+  margin: 0.25em 0 0;
+}
+
+.ws-watcher {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.ws-watcher:hover {
+  text-decoration: underline;
+}
+
+/* Comma-separate the watcher buttons without JS-joined markup. */
+.ws-watcher + .ws-watcher::before {
+  content: ', ';
+  color: var(--ink-4);
+}
+
+.ws-when {
+  font-size: 75%;
+  color: var(--ink-5);
+  margin: 0.15em 0 0;
+}
+
+/* ------- filters ------- */
+
+.watched-filters {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+/* Neutralize the global article > header > :nth-child(2) auto-margin
+   (built for the members search/sort header). */
+.watched-filters > :nth-child(2) {
+  margin: 0;
+}
+
+.watched-filter {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 0.35em 0.9em;
+  font-size: 83%;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.watched-filter:hover {
+  border-color: var(--brand);
+}
+
+.watched-filter.-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.watched-nudge {
+  font-size: 83%;
+  color: var(--ink-5);
+  margin: 0 0 1.5rem;
+}
+
+.watched-nudge a {
+  color: var(--brand);
+}
+
+/* ------- member section extras ------- */
+
+.watched-latest {
+  display: block;
+  font-size: 75%;
+  color: var(--ink-5);
+}
+
+.film-card {
+  position: relative;
+}
+
+.film-rewatch {
+  position: absolute;
+  top: 0.5em;
+  left: 0.5em;
+  font-family: var(--font-label);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--ink-2);
+  border-radius: var(--radius-sm);
+  padding: 0.2em 0.5em;
+}
+
+.film-when {
+  display: block;
+}
+
+.film-take {
+  font-size: 75%;
+  font-style: italic;
+  color: var(--ink-4);
+  margin: 0.4em 0.15em 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 @media (max-width: 750px) {
   .watched-member {
     padding: 1em 1.25em 1.5em;
+  }
+
+  .watched-strip {
+    padding: 1em 1.25em;
   }
 }
 
 @media (max-width: 380px) {
   .film-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ws-grid {
+    grid-template-columns: 1fr;
   }
 }

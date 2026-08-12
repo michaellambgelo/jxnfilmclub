@@ -14,7 +14,7 @@ async function seedMembers(members) {
   await env.MEMBERS_KV.put('members:all', JSON.stringify(members))
 }
 
-function rssItem({ guid, title, link, film, year, date, poster, rating, liked }) {
+function rssItem({ guid, title, link, film, year, date, poster, rating, liked, rewatch }) {
   return `<item>
     <title>${title}</title>
     <link>${link}</link>
@@ -24,6 +24,7 @@ function rssItem({ guid, title, link, film, year, date, poster, rating, liked })
     ${date ? `<letterboxd:watchedDate>${date}</letterboxd:watchedDate>` : ''}
     ${rating ? `<letterboxd:memberRating>${rating}</letterboxd:memberRating>` : ''}
     ${liked !== undefined ? `<letterboxd:memberLike>${liked}</letterboxd:memberLike>` : ''}
+    ${rewatch !== undefined ? `<letterboxd:rewatch>${rewatch}</letterboxd:rewatch>` : ''}
     <description><![CDATA[${poster ? `<p><img src="${poster}"/></p>` : ''}<p>Watched.</p>]]></description>
   </item>`
 }
@@ -36,9 +37,9 @@ const QA_FEED = rssFeed([
   rssItem({ guid: 'letterboxd-list-1', title: 'A list', link: 'https://letterboxd.com/qa/list/x/' }),
   rssItem({ guid: 'letterboxd-review-1', title: 'Film One, 2026', link: 'https://letterboxd.com/qa/film/film-one/',
     film: 'Film One &amp; a Half', year: '2026', date: '2026-07-26', poster: 'https://a.ltrbxd.com/one.jpg',
-    rating: '4.5', liked: 'Yes' }),
+    rating: '4.5', liked: 'Yes', rewatch: 'Yes' }),
   rssItem({ guid: 'letterboxd-watch-2', title: 'Film Two', link: 'https://letterboxd.com/qa/film/film-two/',
-    film: 'Film Two', year: '2025', date: '2026-07-25', liked: 'No' }),
+    film: 'Film Two', year: '2025', date: '2026-07-25', liked: 'No', rewatch: 'No' }),
   rssItem({ guid: 'letterboxd-watch-3', title: 'Film Three', link: 'https://letterboxd.com/qa/film/film-three/', film: 'Film Three' }),
   rssItem({ guid: 'letterboxd-watch-4', title: 'Film Four', link: 'https://letterboxd.com/qa/film/film-four/', film: 'Film Four' }),
   rssItem({ guid: 'letterboxd-watch-5', title: 'Film Five', link: 'https://letterboxd.com/qa/film/film-five/', film: 'Film Five' }),
@@ -73,12 +74,16 @@ describe('GET /watched — live Last Four via the Worker', () => {
       watched_date: '2026-07-26',
       rating: '4.5',
       liked: true,
+      rewatch: true,
       poster: 'https://a.ltrbxd.com/one.jpg',
     })
     expect(data.qa[1].poster).toBeUndefined()
     // memberLike No → no liked field; absent memberRating → no rating field.
     expect(data.qa[1].liked).toBeUndefined()
     expect(data.qa[1].rating).toBeUndefined()
+    // rewatch No → no field; absent tag (Film Three) → no field either.
+    expect(data.qa[1].rewatch).toBeUndefined()
+    expect(data.qa[2].rewatch).toBeUndefined()
     expect(data.qa.map(f => f.title)).toEqual(['Film One & a Half', 'Film Two', 'Film Three', 'Film Four'])
   })
 

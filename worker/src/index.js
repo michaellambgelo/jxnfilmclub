@@ -1691,7 +1691,7 @@ async function buildWatched(env, prevRec) {
 }
 
 // Minimal RSS extraction matching scripts/refresh_letterboxd.py: last four
-// non-list items -> { title, year?, link, watched_date?, rating?, liked?, poster? }.
+// non-list items -> { title, year?, link, watched_date?, rating?, liked?, rewatch?, poster? }.
 function parseLetterboxdRss(xml) {
   const films = []
   for (const item of String(xml).split('<item>').slice(1)) {
@@ -1708,6 +1708,7 @@ function parseLetterboxdRss(xml) {
     const rating = rssTag(item, 'letterboxd:memberRating')
     if (rating) film.rating = rating
     if (rssTag(item, 'letterboxd:memberLike') === 'Yes') film.liked = true
+    if (rssTag(item, 'letterboxd:rewatch') === 'Yes') film.rewatch = true
     const poster = /<img\s[^>]*src="([^"]+)"/.exec(item)
     if (poster) film.poster = poster[1]
     films.push(film)

@@ -116,6 +116,17 @@
 
   <div class="ns-halftone-strip halftone"></div>
 
+  <!-- SPEAK — voice-clip CTA for the podcast. Structure stays constant
+       (no :if on the section) per the nuedom sibling-diff rule; the prompt
+       text always has the generic fallback so there is no empty state. -->
+  <section class="speak-cta">
+    <p class="ns-label">Your voice on the show</p>
+    <h2 class="speak-cta-heading">Say it in three minutes or less.</h2>
+    <p class="speak-cta-prompt">This round: <em>“{ voicePromptText }”</em></p>
+    <p class="speak-cta-note">Members can record or upload a short clip — the best ones get aired on the podcast.</p>
+    <a href="/speak" class="ns-btn speak-cta-btn">Record a clip</a>
+  </section>
+
   <!-- PODCAST -->
   <section class="podcast">
     <header class="ns-sechead">
@@ -132,17 +143,6 @@
       <a href="{ ep.url }" target="_blank" rel="noopener" class="episode-title">{ ep.title }</a>
       <span class="episode-date">{ ep.when }</span>
     </div>
-  </section>
-
-  <!-- SPEAK — voice-clip CTA for the podcast. Structure stays constant
-       (no :if on the section) per the nuedom sibling-diff rule; the prompt
-       text always has the generic fallback so there is no empty state. -->
-  <section class="speak-cta">
-    <p class="ns-label">Your voice on the show</p>
-    <h2 class="speak-cta-heading">Say it in three minutes or less.</h2>
-    <p class="speak-cta-prompt">This round: <em>“{ voicePromptText }”</em></p>
-    <p class="speak-cta-note">Members can record or upload a short clip — the best ones get aired on the podcast.</p>
-    <a href="/speak" class="ns-btn speak-cta-btn">Record a clip</a>
   </section>
 
   <!-- JOIN -->

@@ -71,6 +71,146 @@ export async function getAvatars(): Promise<Record<string, string>> {
   return {}
 }
 
+// Hot takes: member review snippets scraped to data/takes.json by the 6h
+// refresh-letterboxd cron. Static-only — there is no live Worker endpoint,
+// matching how the home page consumes the same file.
+export async function getTakes(): Promise<any[]> {
+  try {
+    const url = is_browser ? '/data/takes.json' : `file:${process.cwd()}/data/takes.json`
+    const res = await fetch(url)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+
+// Central-time day cutoff as a bare YYYY-MM-DD string, `days` calendar days
+// back inclusive of today. Same math as admin/lib.js buildRoundupData: parse
+// and reformat in one local frame so the day never shifts. Dates stay
+// strings end to end — compared lexically, never as Date objects.
+export function centralDayCutoff(days = 7, today?: string): string {
+  const ref = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(today || ''))
+    ? String(today)
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+  const cut = new Date(ref + 'T00:00:00')
+  cut.setDate(cut.getDate() - (days - 1))
+  return cut.toLocaleDateString('en-CA')
+}
+
+function starsFor(rating: any): string {
+  const n = Number(rating) || 0
+  let s = ''
+  for (let i = 0; i < Math.floor(n); i++) s += '★'
+  return n - Math.floor(n) >= 0.5 ? s + '½' : s
+}
+
+function takeSnippet(text: string, limit = 140): string {
+  if (text.length <= limit) return text
+  const cut = text.slice(0, limit)
+  const sp = cut.lastIndexOf(' ')
+  return (sp > 0 ? cut.slice(0, sp) : cut).replace(/[.,;:—-]+$/, '') + '…'
+}
+
+// Shape the /watched page from raw inputs: recency-ordered per-member
+// sections (films enriched with precomputed stars, an optional review
+// snippet, and the rewatch flag), the club-wide weekly strip (same film
+// watched by several members clusters into one card, names kept — unlike
+// the admin roundup, this stays on-site where activity is already
+// attributed), and the count of members who have not linked Letterboxd.
+export function buildWatchedPage(
+  members: any[], watchedMap: Record<string, any[]>, takes: any[], opts: any = {},
+) {
+  const map = watchedMap || {}
+  const list = members || []
+
+  // Review lookup scoped BY HANDLE, keyed by diary link with a title|year
+  // fallback. The handle scoping is load-bearing: a global title|year map
+  // would attach member A's review to member B's card of the same film.
+  const takesByHandle: Record<string, Record<string, string>> = {}
+  for (const t of (Array.isArray(takes) ? takes : [])) {
+    if (!t || !t.handle || !t.review) continue
+    const bucket = takesByHandle[t.handle] || (takesByHandle[t.handle] = {})
+    if (t.link) bucket['L:' + t.link] = t.review
+    if (t.title) bucket['T:' + String(t.title).toLowerCase() + '|' + (t.year || '')] = t.review
+  }
+
+  const sections: any[] = []
+  let handleless = 0
+  for (const m of list) {
+    if (!m) continue
+    if (!m.handle) { handleless++; continue }
+    const films = map[m.handle]
+    if (!films || !films.length) continue
+    const bucket = takesByHandle[m.handle] || {}
+    const enriched = films.map((f: any) => {
+      const out: any = { ...f, stars: starsFor(f && f.rating) }
+      const take = (f && f.link && bucket['L:' + f.link])
+        || (f && f.title && bucket['T:' + String(f.title).toLowerCase() + '|' + (f.year || '')])
+      if (take) out.take = takeSnippet(take)
+      return out
+    })
+    let latest = ''
+    for (const f of films) {
+      const d = f && f.watched_date ? String(f.watched_date) : ''
+      if (d > latest) latest = d
+    }
+    sections.push({ ...m, films: enriched, latest })
+  }
+  // Most recently active member first; members with only undated entries last.
+  sections.sort((a, b) => b.latest.localeCompare(a.latest))
+
+  // Weekly strip: windowed like the admin roundup, undated entries dropped
+  // (recency unverifiable), most recent first, clustered on title|year.
+  const cutoff = centralDayCutoff(opts.days || 7, opts.today)
+  const entries: any[] = []
+  for (const m of list) {
+    if (!m || !m.handle) continue
+    for (const f of (map[m.handle] || [])) {
+      if (f && f.title && f.watched_date && String(f.watched_date) >= cutoff) {
+        entries.push({ film: f, name: m.name, handle: m.handle })
+      }
+    }
+  }
+  entries.sort((a, b) => String(b.film.watched_date).localeCompare(String(a.film.watched_date)))
+  const byKey: Record<string, any> = {}
+  const strip: any[] = []
+  for (const e of entries) {
+    const key = String(e.film.title).toLowerCase() + '|' + (e.film.year || '')
+    let c = byKey[key]
+    if (!c) {
+      c = { key, title: e.film.title, watched_date: e.film.watched_date, watchers: [] }
+      if (e.film.year) c.year = e.film.year
+      if (e.film.link) c.link = e.film.link
+      if (e.film.poster) c.poster = e.film.poster
+      byKey[key] = c
+      strip.push(c)
+    }
+    if (!c.watchers.some((w: any) => w.handle === e.handle)) {
+      c.watchers.push({ name: e.name, handle: e.handle })
+    }
+  }
+  for (const c of strip) {
+    c.byline = 'Watched by ' + c.watchers.map((w: any) => w.name).join(', ')
+  }
+
+  return { sections, strip, handleless }
+}
+
+// AND-combine the /watched filter tokens over one member's films. Tokens are
+// deliberately non-numeric strings — nuestate translate() coerces anything
+// numeric-looking in the URL.
+export function filterFilms(films: any[], tokens: string[]): any[] {
+  const toks = tokens || []
+  const all = films || []
+  if (!toks.length) return all
+  return all.filter((f: any) => {
+    if (!f) return false
+    if (toks.indexOf('liked') >= 0 && !f.liked) return false
+    if (toks.indexOf('rated4') >= 0 && !(Number(f.rating) >= 4)) return false
+    if (toks.indexOf('week') >= 0 && !(f.watched_date && String(f.watched_date) >= centralDayCutoff(7))) return false
+    return true
+  })
+}
+
 // Operator-editable site config from the Worker: GET /config returns
 // { theaters, podcast, copy } where any key may be null. Views keep their
 // hardcoded fallbacks, so a Worker/KV outage changes nothing — this returns

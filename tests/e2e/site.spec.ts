@@ -55,6 +55,56 @@ test.describe('members view', () => {
   })
 })
 
+test.describe('watched view', () => {
+  // The E2E worker serves an empty watched map, so the page renders its
+  // shell: hidden strip, filter pills, nudge line, and the empty state.
+  // The data shaping itself is covered by tests/model/watched-helpers.test.ts.
+  test('renders shell: hidden strip, filters, nudge count, empty state', async ({ page, request }) => {
+    await page.goto('/watched')
+    await expect(page.locator('h1')).toHaveText('Last Four Watched')
+    await expect(page.locator('.empty-state')).toHaveText('No watched films to show yet.')
+    await expect(page.locator('.watched-strip')).toBeHidden()
+    await expect(page.locator('.watched-filter')).toHaveCount(3)
+
+    // Nudge count mirrors the handleless members in the seeded aggregate.
+    const members = await (await request.get('http://localhost:8083/data/members.json')).json()
+    const handleless = members.filter((m: { handle?: string }) => !m.handle).length
+    const nudge = page.locator('.watched-nudge')
+    if (handleless) {
+      await expect(nudge).toBeVisible()
+      await expect(nudge).toContainText('linked Letterboxd yet')
+      await expect(nudge).toContainText(String(handleless))
+    } else {
+      await expect(nudge).toBeHidden()
+    }
+  })
+
+  test('filter pills toggle ?filter= tokens on and off', async ({ page }) => {
+    await page.goto('/watched')
+    await expect(page.locator('.watched-filter')).toHaveCount(3)
+    await page.getByRole('button', { name: 'Liked' }).click()
+    await expect.poll(() => page.url()).toContain('filter=liked')
+    await page.getByRole('button', { name: 'This week' }).click()
+    await expect.poll(() => page.url()).toMatch(/filter=liked(%2C|,)week/)
+    await page.getByRole('button', { name: 'Liked' }).click()
+    await expect.poll(() => page.url()).toContain('filter=week')
+    await expect.poll(() => page.url()).not.toContain('liked')
+    // Clearing the last token must keep the /watched path — nuestate's
+    // empty-query replaceState('./') would otherwise drop it to /.
+    await page.getByRole('button', { name: 'This week' }).click()
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/watched')
+    await expect.poll(() => page.url()).not.toContain('filter=')
+  })
+
+  test('deep link ?filter= restores active pills and switches the empty copy', async ({ page }) => {
+    await page.goto('/watched?filter=liked,rated4')
+    await expect(page.locator('.watched-filter.-on')).toHaveCount(2)
+    await expect(page.getByRole('button', { name: 'This week' })).not.toHaveClass(/-on/)
+    // Zero sections with filters active blames the filter, not missing data.
+    await expect(page.locator('.empty-state')).toHaveText('No current films match the filter')
+  })
+})
+
 test.describe('config-driven homepage copy', () => {
   test('config:copy overrides render on the homepage; missing fields keep defaults', async ({ page }) => {
     await seedKv(page, 'config:copy', JSON.stringify({ heroLede: 'E2E override lede — config wins.' }))

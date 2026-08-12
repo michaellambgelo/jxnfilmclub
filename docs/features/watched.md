@@ -1,15 +1,50 @@
 # Last Four Watched
 
-A gallery page at `/watched` showing the most recent four films watched by each verified member, pulled from Letterboxd RSS feeds.
+A member-discovery page at `/watched` showing the most recent four films watched by each verified member, pulled from Letterboxd RSS feeds.
 
 ## Page Layout
 
-For each member with a linked Letterboxd handle and watched data:
-- Member header: avatar, display name, @handle link
-- Film grid: 4-column responsive grid (2 columns on mobile)
-- Each film card: poster image, title, year, link to Letterboxd film page
+Top to bottom:
 
-Members without a Letterboxd handle or without watched data are excluded.
+1. **"This week in the club" strip** — a club-wide view of the last 7 days
+   (Central time): every dated diary entry in the window, most recent first,
+   deduped on title|year so a film watched by several members becomes one
+   card with a combined byline ("Watched by Alex, Sam"). Watcher names are
+   buttons that scroll to that member's section. The section hides itself
+   via CSS (`:not(:has(.ws-card))`) when the week is empty.
+2. **Filter pills** — `Liked` / `Rated 4+` / `This week`, AND-combined,
+   persisted as comma-joined tokens in `?filter=` (e.g.
+   `/watched?filter=liked,week`). Filters prune films inside each member
+   section; a section with no matches drops while a filter is active. The
+   strip is not filtered. Tokens are deliberately non-numeric strings
+   (nuestate coerces numeric-looking query values).
+3. **Nudge line** — "N members have not linked Letterboxd yet", linking to
+   `/edit`, hidden when every member has a handle.
+4. **Per-member sections** (`watched-member` child component), ordered by
+   each member's most recent `watched_date` descending — most recently
+   active member first; members with only undated entries sort last.
+   - Member header: avatar, display name, @handle link, "logged &lt;timeago&gt;"
+   - Film grid: responsive grid (2 columns on mobile)
+   - Each film card: poster, title, year, star/heart verdict, watched date
+     (timeago), a `Rewatch` badge when the diary entry is a rewatch, and the
+     member's review snippet (~140 chars) when `data/takes.json` has one for
+     that entry.
+
+Members without a Letterboxd handle or without watched data get no section
+(the nudge line is the only trace of the former).
+
+**Deep links**: `/watched#<handle>` scrolls to that member's section on page
+load. Load-time only, by design — the SPA router (nuestate) drops URL hashes
+on every state change, and autolink both swallows and side-effects in-page
+hash anchors, so in-page navigation uses `:onclick` scroll handlers instead.
+Do not "fix" this by adding bare `#` anchors.
+
+**Data shaping** lives in `model/index.ts` (`buildWatchedPage`,
+`filterFilms`, `centralDayCutoff`, `getTakes`), unit-tested in
+`tests/model/watched-helpers.test.ts` — the dhtml components stay thin.
+Review matching is scoped by handle (link match, title|year fallback) so one
+member's review never lands on another's card. All `watched_date` values are
+bare `YYYY-MM-DD` strings compared lexically, never as Date objects.
 
 ## Data Pipeline
 
@@ -19,7 +54,7 @@ flowchart LR
     B --> C[Read data/members.json]
     C --> D{For each member<br/>with handle}
     D --> E[Fetch letterboxd.com/{handle}/rss/]
-    E --> F[Extract last 4 entries:<br/>title, year, link,<br/>watched_date, poster]
+    E --> F[Extract last 4 entries:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
     F --> G[Write data/watched.json]
     G --> H{Data changed?}
     H -->|Yes| I[Commit + push]
@@ -71,11 +106,21 @@ Poster URLs are extracted from the RSS entry's `<description>` HTML via regex:
 
 If no poster is found, the card renders a placeholder with the film title as text.
 
+## Film Shape
+
+Per-film shape (both parsers, optional fields omitted when absent):
+`{ title, link, year?, watched_date?, rating?, liked?, rewatch?, poster? }` —
+`rewatch: true` comes from `<letterboxd:rewatch>Yes</letterboxd:rewatch>`
+(the Worker's `parseLetterboxdRss` and the Python scraper's
+`letterboxd_rewatch` feedparser key both read it).
+
 ## Key Files
 
 | File | Role |
 |------|------|
-| `ui/views.html` | `watched-view` component |
+| `ui/views.html` | `watched-view` + `watched-member` components |
+| `model/index.ts` | `buildWatchedPage` / `filterFilms` / `centralDayCutoff` / `getTakes` |
+| `css/watched.css` | Page styles incl. strip (`.ws-*`), filters, badges |
 | `scripts/refresh_letterboxd.py` | RSS fetch + poster extraction |
 | `.github/workflows/refresh-letterboxd.yml` | Cron every 6 hours |
 | `data/watched.json` | Cached film data keyed by handle |

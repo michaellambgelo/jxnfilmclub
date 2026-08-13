@@ -571,7 +571,8 @@ async function renderVoice() {
       <code>voice:*</code>). <b>Everything — approved clips included — auto-deletes 60 days after
       submission</b> (R2 bucket lifecycle + KV TTL), so compile or download before the countdown runs
       out. Approve/reject/delete go through the join Worker to keep the KV TTLs intact. Compile the
-      approved set with <code>node scripts/compile_voices.mjs &lt;promptId&gt;</code>.</p>
+      approved set with <code>node scripts/compile_voices.mjs &lt;promptId&gt;</code>, or render branded
+      audiogram videos with <code>node scripts/make_audiogram.mjs --prompt &lt;promptId&gt;</code>.</p>
     <p class="section-hint">Current prompt: <code>${escapeHtml(prompt.id)}</code> —
       “${escapeHtml(prompt.text)}”${prompt.deadline ? ` (deadline ${escapeHtml(prompt.deadline)})` : ''}
       · edit in the Config tab.</p>

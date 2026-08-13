@@ -144,6 +144,13 @@ club's Spotify show and lists every episode from `data/episodes.json`
 `scripts/refresh_spotify.py` syncs it weekly (Mondays 12:00 UTC via
 `.github/workflows/refresh-spotify.yml`) from the Anchor RSS feed.
 
+Member voice clips submitted via `/speak` feed the show:
+`scripts/compile_voices.mjs` stitches a prompt round's approved clips
+into a broadcast-ready WAV, and `scripts/make_audiogram.mjs` renders
+branded audiogram MP4s (per clip and per segment, 16:9/1:1/9:16) for
+video-podcast import and social promos — see `admin/README.md`
+§"Compiling a podcast segment".
+
 ## Testing
 
 - **Unit + Workers** (`tests/model/`, `tests/worker/`): Vitest with

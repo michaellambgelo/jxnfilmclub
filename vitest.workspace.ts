@@ -3,4 +3,5 @@ export default [
   './tests/worker/vitest.config.ts',
   './tests/admin-worker/vitest.config.ts',
   './tests/admin/vitest.config.ts',
+  './tests/scripts/vitest.config.ts',
 ]

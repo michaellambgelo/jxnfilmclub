@@ -138,6 +138,40 @@ two-pass EBU R128 loudness normalization (`I=-16:TP=-1.5:LRA=11`) with a hard
 the segment and in what order. If ffmpeg is missing it says so up front
 (`brew install ffmpeg`).
 
+### Branded audiogram videos
+
+Any clip — or a whole prompt round — can also be rendered as a branded
+audiogram MP4 (animated waveform + Night Shift branding + member credit), so
+audio can travel with the club's visual identity into a video-podcast edit or
+an IG/story promo:
+
+```bash
+# one audio file → out/audiogram/<name>-<format>.mp4
+node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all] \
+    [--title T] [--name N] [--out DIR]
+
+# a prompt round → out/audiogram/<promptId>/{<memberId>-<fmt>.mp4,
+#                  segment-<fmt>.mp4, manifest.json}
+node scripts/make_audiogram.mjs --prompt <promptId> [--env production|staging] \
+    [--format ...] [--with-prompt] [--segment-only|--clips-only] [--out DIR]
+```
+
+Formats: `16x9` (1920×1080, video-podcast import), `1x1` (1080×1080 feed),
+`9x16` (1080×1920 story/reel); default `16x9`. The frame is the club wordmark
+plus the speaker's name; `--with-prompt` (prompt mode) or `--title` (file
+mode) additionally displays the prompt being answered. Prompt mode reuses the
+compile pipeline (approved-only, submission order, same loudnorm), renders one
+video per member clip credited with the member's name, plus a compiled segment
+video, and writes a `manifest.json`. A clip whose R2 object already aged out
+is **skipped with a warning**, not fatal.
+
+The branded frame is screenshotted by headless Chromium (the repo's existing
+Playwright — run `npx playwright install chromium` if the browser binaries
+are missing) from `scripts/assets/audiogram.html`, which links the real
+`css/tokens.css` + self-hosted fonts; Homebrew's ffmpeg has no `drawtext`
+(the formula dropped freetype), so the browser renders all type and ffmpeg
+only draws the waveform and encodes (H.264/AAC, faststart).
+
 **The 60-day reality**: both voice buckets carry a bucket-wide lifecycle rule
 that deletes objects 60 days after upload, and the KV rows carry a matching
 TTL. That includes **approved** clips — approval is a moderation state, not a

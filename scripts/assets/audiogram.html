@@ -1,0 +1,150 @@
+<!doctype html>
+<!-- Branded audiogram frame — screenshotted by scripts/make_audiogram.mjs
+     with omitBackground:true. The body stays TRANSPARENT; four opaque panels
+     surround the wave window and the "grill" inside it paints the bar-gap
+     rhythm of .speak-wave (css/speak.css) — the ffmpeg waveform shows through
+     the transparent slots when the PNG is composited on top.
+
+     {{FORMAT}} → body class (f-16x9 | f-1x1 | f-9x16)
+     {{WX}}/{{WY}}/{{WW}}/{{WH}} → wave-window rect, injected from FORMATS in
+     scripts/lib/audiogram.mjs so JS and CSS can never disagree.
+     {{TITLE}}/{{NAME}} → escaped text.
+
+     Colors and fonts come straight from /css/tokens.css (served by the CLI's
+     ephemeral http server, so the self-hosted /fonts URLs resolve). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/css/tokens.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; }
+  body {
+    position: relative;
+    overflow: hidden;
+    --wx: {{WX}}px; --wy: {{WY}}px; --ww: {{WW}}px; --wh: {{WH}}px;
+  }
+  body.f-16x9 { width: 1920px; height: 1080px; }
+  body.f-1x1  { width: 1080px; height: 1080px; }
+  body.f-9x16 { width: 1080px; height: 1920px; }
+
+  /* ---- opaque ink everywhere except the wave window ---- */
+  .panel { position: absolute; background: var(--bg); }
+  .panel.top    { left: 0; right: 0; top: 0; height: var(--wy); }
+  .panel.left   { left: 0; top: var(--wy); width: var(--wx); height: var(--wh); }
+  .panel.right  { left: calc(var(--wx) + var(--ww)); right: 0; top: var(--wy); height: var(--wh); }
+  .panel.bottom { left: 0; right: 0; top: calc(var(--wy) + var(--wh)); bottom: 0; }
+
+  /* The grill: .speak-wave's 3px bar / 4px gap rhythm scaled ×4 —
+     transparent 12px slots the waveform shows through, opaque 16px gaps. */
+  .grill {
+    position: absolute;
+    left: var(--wx); top: var(--wy); width: var(--ww); height: var(--wh);
+    background: repeating-linear-gradient(
+      to right, transparent 0 12px, var(--bg) 12px 28px);
+  }
+
+  /* ---- branding (copied from .logo in css/global.css, scaled for video) ---- */
+  .content { position: absolute; z-index: 1; left: var(--mx); right: var(--mx); }
+  body { --mx: 100px; }
+  body.f-16x9 { --mx: 120px; }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    color: var(--ink-strong);
+  }
+  .logo .logo-word {
+    font-family: var(--font-label);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 40px;
+  }
+
+  /* The prompt line — rendered only when the CLI opts in; empty otherwise. */
+  .title {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--lh-tight);
+    color: var(--ink-strong);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .credit {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 40px;
+    border-top: 2px solid var(--line-2);
+    padding-top: 28px;
+  }
+  .credit .name {
+    font-family: var(--font-label);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-size: 30px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .credit .name::before { content: "— "; color: var(--brand); }
+  .credit .site {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    color: var(--ink-4);
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+
+  /* ---- per-format placement ---- */
+  .logo-row { top: 90px; }
+  .head     { top: 260px; }
+  .title    { font-size: 84px; -webkit-line-clamp: 3; }
+  .credit-row { top: calc(var(--wy) + var(--wh) + 44px); }
+
+  body.f-1x1 .logo-row { top: 80px; }
+  body.f-1x1 .head     { top: 240px; }
+  body.f-1x1 .title    { font-size: 62px; }
+  body.f-1x1 .credit-row { top: calc(var(--wy) + var(--wh) + 40px); }
+  body.f-1x1 .logo .logo-word { font-size: 36px; }
+
+  body.f-9x16 .logo-row { top: 140px; }
+  body.f-9x16 .head     { top: 430px; }
+  body.f-9x16 .title    { font-size: 76px; -webkit-line-clamp: 5; }
+  body.f-9x16 .credit-row { top: calc(var(--wy) + var(--wh) + 56px); }
+</style>
+</head>
+<body class="{{FORMAT}}">
+  <div class="panel top"></div>
+  <div class="panel left"></div>
+  <div class="panel right"></div>
+  <div class="panel bottom"></div>
+  <div class="grill"></div>
+
+  <div class="content logo-row">
+    <span class="logo">
+      <span class="logo-word">JXN Film Club</span>
+    </span>
+  </div>
+
+  <div class="content head">
+    <div class="title">{{TITLE}}</div>
+  </div>
+
+  <div class="content credit-row">
+    <div class="credit">
+      <div class="name">{{NAME}}</div>
+      <div class="site">jxnfilm.club</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -9,6 +9,8 @@ worker/.dev.vars
 admin/worker/.wrangler/
 admin/worker/.dev.vars
 *.log
+# compile_voices / make_audiogram default output (WAVs + MP4s)
+out/
 bun.lock
 bun.lockb
 playwright-report/

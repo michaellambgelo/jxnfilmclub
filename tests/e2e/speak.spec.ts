@@ -60,9 +60,20 @@ test.describe('speak page', () => {
     await expect(submit).toBeEnabled()
     await submit.click()
 
-    // Success reloads the view; the submitted card shows its status.
-    await expect(page.locator('.speak-clip')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('.speak-status')).toHaveText('Submitted')
+    // Success reloads the view; the history row shows the submission,
+    // badged as this round's.
+    const row = page.locator('.speak-history .hrow').first()
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toContainText('Submitted')
+    await expect(row.locator('.hrow-badge')).toHaveText('This round')
+
+    // Listen streams the member's own bytes back into an inline player.
+    await row.getByRole('button', { name: 'Listen' }).click()
+    await expect(row.locator('.hrow-player audio')).toBeAttached()
+
+    // Navigating away stops playback and revokes the blob URL.
+    await page.locator('nav a[href="/events"]').first().click()
+    await expect.poll(() => page.evaluate(() => (globalThis as any).jxnfcVoicePlay ?? null)).toBeNull()
 
     // Admin: the clip appears in the Voice tab and can be approved.
     await page.goto(`${ADMIN_ORIGIN}/`)
@@ -91,8 +102,8 @@ test.describe('speak page', () => {
     await expect(page.locator('.speak-status-dd')).toHaveText('Draft')
     await page.locator('.speak-consent input[type="checkbox"]').check()
     await page.getByRole('button', { name: 'Submit clip' }).click()
-    await expect(page.locator('.speak-clip')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('.speak-status')).toHaveText('Submitted')
+    await expect(page.locator('.speak-history .hrow').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.speak-history .hrow').first()).toContainText('Submitted')
   })
 
   test('member can delete their own clip', async ({ page }) => {
@@ -104,11 +115,13 @@ test.describe('speak page', () => {
     })
     await page.locator('.speak-consent input[type="checkbox"]').check()
     await page.getByRole('button', { name: 'Submit clip' }).click()
-    await expect(page.locator('.speak-clip')).toBeVisible({ timeout: 10_000 })
+    const row = page.locator('.speak-history .hrow').first()
+    await expect(row).toBeVisible({ timeout: 10_000 })
 
-    await page.getByRole('button', { name: 'Delete it' }).click()
-    // Back to the fresh recorder state; the KV row is gone.
+    await row.getByRole('button', { name: 'Delete' }).click()
+    // Back to the fresh recorder state; the rail reflects it; KV row gone.
     await expect(page.locator('.speak-upload')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.speak-status-dd')).toHaveText('Deleted')
     const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent('voice:')}`)
     const { keys } = await res.json()
     expect((keys || []).filter((k: any) => String(k.name || k).includes('deleter'))).toHaveLength(0)

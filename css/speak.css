@@ -316,36 +316,84 @@
   margin: 0 0 var(--space-2);
 }
 
-/* ---------- existing clip status ---------- */
+/* ---------- submission history ---------- */
 
-.speak .speak-clip {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  padding: var(--space-5) var(--space-6);
-  margin-bottom: var(--space-6);
+.speak .speak-history-head {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: var(--fs-26);
+  color: var(--ink-strong);
+  margin: var(--space-8) 0 var(--space-4);
 }
 
-.speak .speak-status {
+.speak .hrow {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.speak .hrow-prompt {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: var(--fs-18);
+  color: var(--ink-strong);
+  margin: 0 0 var(--space-2);
+}
+
+.speak .hrow-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--ink-3);
+  margin: 0 0 var(--space-3);
+}
+
+.speak .hrow-badge {
   display: inline-block;
   font-family: var(--font-label);
-  font-size: var(--fs-13);
+  font-size: var(--fs-12);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
-  padding: 0.25rem 0.6rem;
-  margin: 0 0 var(--space-3);
   background: var(--brand-tint);
   color: var(--brand-tint-fg);
+  padding: 0.15rem 0.5rem;
+  margin-right: var(--space-3);
 }
 
-.speak .speak-status.-approved {
-  background: var(--ok-bg);
-  color: var(--ok-fg);
+.speak .hrow-player {
+  margin: 0 0 var(--space-2);
 }
 
-.speak .speak-status.-rejected {
-  background: var(--surface-2);
-  color: var(--ink-4);
+.speak .hrow-player audio {
+  width: 100%;
+}
+
+.speak .hrow-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.speak .hrow-btns button {
+  width: auto;
+  flex: none;
+}
+
+/* Imperatively-filled error line (the child never re-renders reactively
+   after its first update — see the speak-history component notes). */
+.speak .hrow-err {
+  color: var(--err-fg);
+  background: var(--err-bg);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.speak .hrow-err:empty {
+  display: none;
 }
 
 .speak .speak-clip-meta {

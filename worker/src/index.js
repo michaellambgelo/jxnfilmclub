@@ -170,9 +170,11 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
     // Member voice clips (podcast submissions from /speak).
-    if (request.method === 'POST'   && pathname === '/voice')      return handleVoiceSubmit(request, env)
-    if (request.method === 'DELETE' && pathname === '/voice')      return handleVoiceDelete(request, env)
-    if (request.method === 'GET'    && pathname === '/voice/mine') return handleVoiceMine(request, env)
+    if (request.method === 'POST'   && pathname === '/voice')         return handleVoiceSubmit(request, env)
+    if (request.method === 'DELETE' && pathname === '/voice')         return handleVoiceDelete(request, env)
+    if (request.method === 'GET'    && pathname === '/voice/mine')    return handleVoiceMine(request, env)
+    if (request.method === 'GET'    && pathname === '/voice/history') return handleVoiceHistory(request, env)
+    if (request.method === 'GET'    && pathname === '/voice/audio')   return handleVoiceAudio(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
@@ -965,14 +967,27 @@ async function handleVoiceMine(request, env) {
   return json(env, { prompt, clip })
 }
 
-// DELETE /voice — authenticated. Removes the caller's clip for the current
-// prompt: R2 object + KV row. Idempotent — 200 even when nothing existed
-// (R2 delete on a missing key is a no-op, matching the lifecycle-rule race).
+// Prompt ids are admin-set slugs. The pattern is a security boundary, not
+// cosmetics: promptId is interpolated into voice:{promptId}:{memberId}, and
+// a colon-bearing value could otherwise be crafted to address key shapes
+// the caller doesn't own.
+function validPromptId(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id)
+}
+
+// DELETE /voice — authenticated. Removes the caller's clip (R2 object + KV
+// row) for ?promptId=, defaulting to the current prompt so existing callers
+// are unchanged. Idempotent — 200 even when nothing existed (R2 delete on a
+// missing key is a no-op, matching the lifecycle-rule race).
 async function handleVoiceDelete(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
-  const prompt = await voicePrompt(env)
-  const kvKey = `voice:${prompt.id}:${claims.id}`
+  const requested = new URL(request.url).searchParams.get('promptId')
+  if (requested != null && !validPromptId(requested)) {
+    return json(env, { error: 'invalid promptId' }, 400)
+  }
+  const promptId = requested || (await voicePrompt(env)).id
+  const kvKey = `voice:${promptId}:${claims.id}`
   const raw = await env.MEMBERS_KV.get(kvKey)
   if (raw) {
     try {
@@ -982,6 +997,66 @@ async function handleVoiceDelete(request, env) {
     await env.MEMBERS_KV.delete(kvKey)
   }
   return json(env, { ok: true })
+}
+
+// GET /voice/history — authenticated. Every clip the caller has submitted,
+// across prompts: the current prompt's clip first, the rest newest-first.
+// currentPromptId rides along so the SPA can badge "this round" and offer
+// Replace on that row only, from one source of truth.
+async function handleVoiceHistory(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const prompt = await voicePrompt(env)
+  const suffix = `:${claims.id}`
+  const clips = []
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'voice:', cursor })
+    for (const k of page.keys) {
+      if (!k.name.endsWith(suffix)) continue
+      const raw = await env.MEMBERS_KV.get(k.name)
+      if (!raw) continue
+      try {
+        const row = JSON.parse(raw)
+        if (row.memberId === claims.id) clips.push(voiceClipProjection(row))
+      } catch { /* skip corrupt row */ }
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+  clips.sort((a, b) => {
+    if ((a.promptId === prompt.id) !== (b.promptId === prompt.id)) {
+      return a.promptId === prompt.id ? -1 : 1
+    }
+    return String(b.at).localeCompare(String(a.at))
+  })
+  return json(env, { currentPromptId: prompt.id, clips })
+}
+
+// GET /voice/audio?promptId= — authenticated. Streams the caller's OWN clip
+// bytes back from R2 (the key is built from their claims.id, so ownership is
+// structural). A KV row whose R2 object the lifecycle rule already deleted is
+// the documented race — that's a friendly 404, not a 500. The SPA fetches
+// with the bearer and plays via a blob URL; <audio src> can't carry a header.
+async function handleVoiceAudio(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const promptId = new URL(request.url).searchParams.get('promptId')
+  if (!validPromptId(promptId)) return json(env, { error: 'invalid promptId' }, 400)
+  const raw = await env.MEMBERS_KV.get(`voice:${promptId}:${claims.id}`)
+  if (!raw) return json(env, { error: 'clip not found' }, 404)
+  let row = null
+  try { row = JSON.parse(raw) } catch { row = null }
+  if (!row || !row.r2Key) return json(env, { error: 'clip not found' }, 404)
+  const obj = await env.VOICE.get(row.r2Key)
+  if (!obj) return json(env, { error: 'clip audio has expired' }, 404)
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': row.contentType || 'application/octet-stream',
+      'Content-Length': String(obj.size),
+      'Cache-Control': 'private, no-store',
+      ...cors(env),
+    },
+  })
 }
 
 // GET /admin/voice — bearer-auth with ADMIN_TOKEN (same gate as

@@ -266,6 +266,94 @@ describe('DELETE /voice', () => {
   it('requires a session', async () => {
     expect((await req('/voice', { method: 'DELETE' })).status).toBe(401)
   })
+
+  it('?promptId= deletes that prompt\'s clip and leaves the current one', async () => {
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'old-round', text: 'Old?' }))
+    const { token, member } = await getTokenFor('curator@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'new-round', text: 'New?' }))
+    await clearThrottle('curator@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+
+    const res = await req('/voice?promptId=old-round', { method: 'DELETE', token })
+    expect(res.status).toBe(200)
+    expect(await env.MEMBERS_KV.get(`voice:old-round:${member.id}`)).toBeNull()
+    expect(await env.VOICE.head(`voice/old-round/${member.id}.webm`)).toBeNull()
+    expect(await env.MEMBERS_KV.get(`voice:new-round:${member.id}`)).not.toBeNull()
+    expect(await env.VOICE.head(`voice/new-round/${member.id}.webm`)).not.toBeNull()
+  })
+
+  it('rejects a promptId outside the slug shape — it feeds the KV key', async () => {
+    const { token } = await getTokenFor('crafty@example.com')
+    const res = await req('/voice?promptId=general%3Aother-id', { method: 'DELETE', token })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('GET /voice/history', () => {
+  it("lists only the caller's clips, current prompt pinned first", async () => {
+    // Rival submits under the current prompt — must never surface for the caller.
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'round-1', text: 'One?' }))
+    const rival = await getTokenFor('rival@example.com')
+    expect((await postVoice(rival.token)).status).toBe(200)
+
+    // Caller submits under round-1, then round-2, then round-1 becomes
+    // current again — the round-1 row must be pinned first despite being older.
+    const { token, member } = await getTokenFor('historian@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'round-2', text: 'Two?' }))
+    await clearThrottle('historian@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'round-1', text: 'One?' }))
+
+    const data = await (await req('/voice/history', { token })).json()
+    expect(data.currentPromptId).toBe('round-1')
+    expect(data.clips.map(c => c.promptId)).toEqual(['round-1', 'round-2'])
+    // Projection only — no storage internals, and nothing of the rival's.
+    for (const c of data.clips) {
+      expect(c.r2Key).toBeUndefined()
+      expect(c.memberId).toBeUndefined()
+    }
+    expect(member.id).not.toBe(rival.member.id)
+  })
+
+  it('empty history is an empty list, and a session is required', async () => {
+    const { token } = await getTokenFor('lurker@example.com')
+    const data = await (await req('/voice/history', { token })).json()
+    expect(data).toEqual({ currentPromptId: 'general', clips: [] })
+    expect((await req('/voice/history')).status).toBe(401)
+  })
+})
+
+describe('GET /voice/audio', () => {
+  it("streams the caller's own bytes with the stored content type", async () => {
+    const { token } = await getTokenFor('listener@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const res = await req('/voice/audio?promptId=general', { token })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('audio/webm')
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(WEBM_BYTES)
+  })
+
+  it('404 when no clip exists for the prompt', async () => {
+    const { token } = await getTokenFor('empty@example.com')
+    expect((await req('/voice/audio?promptId=general', { token })).status).toBe(404)
+  })
+
+  it('404 (not 500) when the KV row outlives the lifecycle-deleted R2 object', async () => {
+    const { token, member } = await getTokenFor('expired@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.VOICE.delete(`voice/general/${member.id}.webm`)
+    expect((await req('/voice/audio?promptId=general', { token })).status).toBe(404)
+  })
+
+  it('validates promptId and auth', async () => {
+    const { token } = await getTokenFor('strict@example.com')
+    expect((await req('/voice/audio', { token })).status).toBe(400)
+    expect((await req('/voice/audio?promptId=a%3Ab', { token })).status).toBe(400)
+    expect((await req('/voice/audio?promptId=general')).status).toBe(401)
+  })
 })
 
 describe('admin moderation', () => {

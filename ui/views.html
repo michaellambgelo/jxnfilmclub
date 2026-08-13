@@ -1432,20 +1432,15 @@
     a member to submit one.
   </p>
 
-  <div :hidden="!session || !mineLoaded || !mine || replacing" class="speak-clip">
-    <p class="speak-status { mine ? '-' + mine.status : '' }">{ mine ? statusLabel(mine.status) : '' }</p>
-    <p class="speak-clip-meta">Submitted { mine ? fmtDate(mine.at) : '' }{ mine && mine.duration ? ' · ' + fmtClock(mine.duration) : '' }{ mine ? ' · ' + fmtSize(mine.size) : '' }</p>
-    <p class="hint">One clip per member — replacing overwrites this one. Unused clips auto-delete after 60 days.</p>
-    <div class="actions">
-      <button type="button" :onclick="startReplace" :disabled="busy">Replace it</button>
-      <button type="button" class="-ghost -danger" :onclick="deleteClip" :disabled="busy">{ busy ? 'Working…' : 'Delete it' }</button>
-    </div>
-  </div>
-
   <div :hidden="!session || !mineLoaded || (mine && !replacing)">
     <speak-recorder :session="session"/>
     <button :hidden="!mine || !replacing" type="button" class="plain" :onclick="cancelReplace" :disabled="busy">Keep my current clip</button>
   </div>
+
+  <!-- Unified submission history: every clip the member has on file, the
+       current round's first, each with its own controls. Lives in a child
+       component (10k cap); row actions arrive via the delegation bridge. -->
+  <speak-history :session="session"/>
 
   <p :hidden="!session || mineLoaded" class="hint">Checking for an earlier submission…</p>
   <p :if="err" class="rsvp-err">{ err }</p>
@@ -1481,21 +1476,6 @@
       const m = /^[0-9]{4}-[0-9]{2}-[0-9]{2}/.exec(d)
       if (!m) return d
       return new Date(m[0] + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-    }
-
-    this.fmtDate = function(at) {
-      const d = new Date(at)
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
-
-    this.fmtClock = function(s) {
-      const n = Math.max(0, Math.round(Number(s) || 0))
-      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
-    }
-
-    this.fmtSize = function(b) {
-      const n = Number(b) || 0
-      return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
     }
 
     this.statusLabel = function(s) {
@@ -1541,6 +1521,10 @@
       const self = this
       const session = getSession()
       globalThis.jxnfcSpeakStagedNow = false
+      // User-action-only bridges for the history rows (a bridge fired from
+      // a child's mounted would remount-recurse; these fire on clicks only).
+      globalThis.jxnfcSpeakStartReplace = function() { self.update({ replacing: true, err: '' }) }
+      globalThis.jxnfcSpeakClipDeleted = function() { self.update({ mine: null, replacing: false, deleted: true }) }
       this.update({ session: session, prompt: DEFAULT_PROMPT, deadlineLabel: '', mine: null, mineLoaded: false, replacing: false, busy: false, err: '', deleted: false })
       if (session) this.loadMine(session)
       // Config prompt + silent session refresh land in ONE update so the
@@ -1578,29 +1562,9 @@
       }
     }
 
-    this.startReplace = function() {
-      this.update({ replacing: true, err: '' })
-    }
-
     this.cancelReplace = function() {
       if (globalThis.jxnfcSpeakDiscard) globalThis.jxnfcSpeakDiscard()
       this.update({ replacing: false, err: '' })
-    }
-
-    this.deleteClip = async function() {
-      const self = this
-      if (!confirm("Delete your submitted clip? This cannot be undone.")) return
-      self.update({ busy: true, err: '' })
-      try {
-        const res = await fetch(WORKER_ORIGIN + '/voice', {
-          method: 'DELETE',
-          headers: { Authorization: 'Bearer ' + this.session.token },
-        })
-        if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status)
-        self.update({ busy: false, mine: null, replacing: false, deleted: true })
-      } catch (e) {
-        self.update({ busy: false, err: 'Could not delete the clip. Try again in a minute.' })
-      }
     }
   </script>
 </article>
@@ -1905,3 +1869,220 @@
 </div>
 
 
+<!-- Submission history + self-management: every clip the member has on
+     file, current round pinned first, with Listen / Replace / Delete per
+     row. Split out of speak-view for the 10k script cap. Row buttons use
+     document-level delegation with a globalThis once-guard — :onclick
+     inside :each never fires (see watched-view), and a module-scope guard
+     would rebind on every remount since parent updates re-eval this
+     script. Handlers read module-scope rows, never this-dot state (stale
+     handler contexts, docs/CLAUDE.md). History is cached at globalThis so
+     load-time remounts cost one fetch, and playback state lives there too
+     so a remount can still revoke the old blob URL. -->
+<div :is="speak-history" class="speak-history">
+  <h2 :hidden="!items || !items.length" class="speak-history-head">Your submissions</h2>
+  <div :each="c in items" key="{ c.promptId }" class="hrow" data-prompt="{ c.promptId }">
+    <p class="hrow-prompt">“{ c.promptText }”</p>
+    <p class="hrow-meta"><span :if="c.current" class="hrow-badge">This round</span>{ labelOf(c.status) } · { fmtDate(c.at) }{ c.duration ? ' · ' + fmtClock(c.duration) : '' }{ expiresIn(c.expiresAt) }</p>
+    <div class="hrow-player" data-prompt="{ c.promptId }"></div>
+    <div class="hrow-btns">
+      <button type="button" class="-ghost hrow-act" data-act="listen" data-prompt="{ c.promptId }">Listen</button>
+      <button :if="c.current" type="button" class="hrow-act" data-act="replace" data-prompt="{ c.promptId }">Replace</button>
+      <button type="button" class="-ghost -danger hrow-act" data-act="delete" data-prompt="{ c.promptId }">Delete</button>
+    </div>
+  </div>
+  <p class="hrow-err"></p>
+
+  <script>
+    const WORKER_ORIGIN = resolveWorkerOrigin()
+
+    function resolveWorkerOrigin() {
+      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+      const override = new URLSearchParams(location.search).get('api')
+      if (override === 'local') return 'http://localhost:8787'
+      if (override === 'prod')  return 'https://join.jxnfilm.club'
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+      return 'https://join.jxnfilm.club'
+    }
+
+    // Refilled by every mounted() run — module scope resets on remount.
+    let rows = []
+    let sess = null
+    let working = false
+
+    // Page-lifetime listeners behind a global guard, NOT module-scope
+    // (module scope re-evals per remount and would stack duplicates).
+    // Click delegation dispatches to whichever mount is current; the route
+    // listener stops playback on navigation — an audio element removed
+    // from the DOM keeps playing, and the blob URL would leak. Safe to
+    // close over stopPlayback from first eval: it touches only globalThis
+    // and document.
+    if (!globalThis.jxnfcHistBound) {
+      globalThis.jxnfcHistBound = true
+      document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.hrow-act')
+        if (btn && !btn.disabled && globalThis.jxnfcHistClick) {
+          globalThis.jxnfcHistClick(btn.dataset.act, btn.dataset.prompt)
+        }
+      })
+      state.on('type', function(p) { if (p.type !== 'speak') stopPlayback() })
+    }
+
+    // Everything below queries document, never this.root: nuedom replaces
+    // the component root on update (see watched-view), so after the one
+    // reactive render in applyHist the instance root is an orphan. These
+    // classes exist only on this page, so document queries are safe.
+    function auth() { return { Authorization: 'Bearer ' + sess.token } }
+
+    function setErr(msg) {
+      const el = document.querySelector('.speak-history .hrow-err')
+      if (el) el.textContent = msg
+    }
+
+    function listenBtn(id) {
+      return document.querySelector('.hrow-act[data-act="listen"][data-prompt="' + id + '"]')
+    }
+
+    function stopPlayback() {
+      const p = globalThis.jxnfcVoicePlay
+      if (p) {
+        if (p.url) URL.revokeObjectURL(p.url)
+        const holder = document.querySelector('.hrow-player[data-prompt="' + p.promptId + '"]')
+        if (holder) holder.innerHTML = ''
+        const btn = listenBtn(p.promptId)
+        if (btn) btn.textContent = 'Listen'
+      }
+      globalThis.jxnfcVoicePlay = null
+    }
+
+    function attachPlayer() {
+      const p = globalThis.jxnfcVoicePlay
+      if (!p || !p.url) return
+      const holder = document.querySelector('.hrow-player[data-prompt="' + p.promptId + '"]')
+      if (!holder) return
+      holder.innerHTML = ''
+      const audio = document.createElement('audio')
+      audio.controls = true
+      audio.src = p.url
+      holder.appendChild(audio)
+      audio.play().catch(function() { /* autoplay may be blocked; controls remain */ })
+      const btn = listenBtn(p.promptId)
+      if (btn) btn.textContent = 'Stop'
+    }
+
+    this.labelOf = function(s) {
+      return s === 'approved' ? 'Published' : s === 'rejected' ? 'Not chosen for publication' : 'Submitted'
+    }
+
+    this.fmtDate = function(at) {
+      const d = new Date(at)
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+
+    this.fmtClock = function(s) {
+      const n = Math.max(0, Math.round(Number(s) || 0))
+      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
+    }
+
+    this.expiresIn = function(exp) {
+      const ms = Number(exp) * 1000 - Date.now()
+      if (!Number.isFinite(ms) || ms <= 0) return ''
+      return ' · auto-deletes in ' + Math.max(1, Math.ceil(ms / 86400000)) + 'd'
+    }
+
+    this.mounted = function() {
+      const self = this
+      sess = this.session || null
+      globalThis.jxnfcHistClick = function(act, id) {
+        if (act === 'listen') self.togglePlay(id)
+        else if (act === 'replace') self.replaceRow(id)
+        else if (act === 'delete') self.removeRow(id)
+      }
+      this.update({ items: [] })
+      if (!sess) return
+      const cache = globalThis.jxnfcVoiceHistCache
+      if (cache && Date.now() - cache.at < 10000) this.applyHist(cache.data)
+      else this.loadHist()
+    }
+
+    // The ONE reactive update this component makes: rendering the rows.
+    this.applyHist = function(data) {
+      rows = (data.clips || []).map(function(c) {
+        return Object.assign({}, c, { current: c.promptId === data.currentPromptId })
+      })
+      this.update({ items: rows })
+      attachPlayer()
+    }
+
+    this.loadHist = async function() {
+      const self = this
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice/history', { headers: auth() })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const data = await res.json()
+        globalThis.jxnfcVoiceHistCache = { at: Date.now(), data: data }
+        self.applyHist(data)
+      } catch (e) {
+        setErr('Could not load your submissions. Reload to retry.')
+      }
+    }
+
+    this.togglePlay = async function(id) {
+      if (working) return
+      const p = globalThis.jxnfcVoicePlay
+      if (p && p.promptId === id) { stopPlayback(); return }
+      working = true
+      setErr('')
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice/audio?promptId=' + encodeURIComponent(id), { headers: auth() })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const blob = await res.blob()
+        stopPlayback()
+        globalThis.jxnfcVoicePlay = { promptId: id, url: URL.createObjectURL(blob) }
+        attachPlayer()
+      } catch (e) {
+        setErr('Could not load that clip — it may have expired. Reload and try again.')
+      }
+      working = false
+    }
+
+    this.replaceRow = function(id) {
+      if (globalThis.jxnfcSpeakStartReplace) globalThis.jxnfcSpeakStartReplace()
+    }
+
+    this.removeRow = async function(id) {
+      if (working) return
+      const row = rows.find(function(c) { return c.promptId === id })
+      if (!row) return
+      if (!confirm('Delete this clip? This cannot be undone.')) return
+      working = true
+      setErr('')
+      try {
+        const res = await fetch(WORKER_ORIGIN + '/voice?promptId=' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: auth(),
+        })
+        if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status)
+        const p = globalThis.jxnfcVoicePlay
+        if (p && p.promptId === id) stopPlayback()
+        globalThis.jxnfcVoiceHistCache = null
+        rows = rows.filter(function(c) { return c.promptId !== id })
+        if (row.current && globalThis.jxnfcSpeakClipDeleted) {
+          // Parent updates mine/deleted and remounts us; the fresh mount
+          // refetches (cache just invalidated) and renders without the row.
+          globalThis.jxnfcSpeakClipDeleted()
+        } else {
+          const el = document.querySelector('.hrow[data-prompt="' + id + '"]')
+          if (el) el.remove()
+          if (!rows.length) {
+            const h = document.querySelector('.speak-history-head')
+            if (h) h.hidden = true
+          }
+        }
+      } catch (e) {
+        setErr('Could not delete the clip. Try again in a minute.')
+      }
+      working = false
+    }
+  </script>
+</div>

@@ -1,6 +1,38 @@
 [
   {
     "handle": "michaellamb",
+    "link": "https://letterboxd.com/michaellamb/film/the-strangers-chapter-2/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/1/0/7/6/8/910768-the-strangers-chapter-2-0-600-0-900-crop.jpg?v=f7088d6da1",
+    "rating": "1.0",
+    "review": "not sure why i watch these, but chapter 3 will probably be logged soon. it's available at Willie Morris library.",
+    "title": "The Strangers: Chapter 2",
+    "watched_date": "2026-08-12",
+    "year": "2025"
+  },
+  {
+    "handle": "badmov1eenjoyer",
+    "liked": true,
+    "link": "https://letterboxd.com/badmov1eenjoyer/film/you-were-never-really-here/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/3/2/4/3/7/332437-you-were-never-really-here-0-600-0-900-crop.jpg?v=56e5177879",
+    "rating": "4.5",
+    "review": "without a doubt Joaquin Phoenix\u2019s best performance. incredible score, soooooo heavy. Lynne Ramsay directed the FUCK out of this.",
+    "title": "You Were Never Really Here",
+    "watched_date": "2026-08-12",
+    "year": "2017"
+  },
+  {
+    "handle": "Crockett1848",
+    "liked": true,
+    "link": "https://letterboxd.com/crockett1848/film/the-matrix/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/5/1/8/51518-the-matrix-0-600-0-900-crop.jpg?v=fc7c366afe",
+    "rating": "4.5",
+    "review": "As good as the matrix is\u2014and it\u2019s very very good\u2014it\u2019s a cruel thing that its most noticeable cultural impact has been the origin of the redpill in the lexicon of the west. A movie so filled with ideas and so fully capable of expressing them deserves better. Upon rewatching I kept noticing, over and\u2026",
+    "title": "The Matrix",
+    "watched_date": "2026-08-12",
+    "year": "1999"
+  },
+  {
+    "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/clown-in-a-cornfield/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/6/3/6/6/3/7/636637-clown-in-a-cornfield-0-600-0-900-crop.jpg?v=49846f3c67",
@@ -40,17 +72,6 @@
     "title": "Hot Summer Nights",
     "watched_date": "2026-08-10",
     "year": "2017"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/across-the-universe/1/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/q8/nn/ii/wc/uMgjKSNZlcYtChVfdF2zhoFxilC-0-600-0-900-crop.jpg?v=c820683a9a",
-    "rating": "3.0",
-    "review": "why the CGI sequence for the \"New York City\" arrival? why not just use some actual cinematography?? anyone would make the sensible choice of ending their film with Evan Rachel Wood's face (this movie was directed sensibly) i'm still ultimately grateful i watched this with colleagues during my bible\u2026",
-    "title": "Across the Universe",
-    "watched_date": "2026-08-09",
-    "year": "2007"
   },
   {
     "handle": "jon_knowledge",
@@ -179,17 +200,6 @@
     "year": "2026"
   },
   {
-    "handle": "badmov1eenjoyer",
-    "liked": true,
-    "link": "https://letterboxd.com/badmov1eenjoyer/film/the-color-of-money/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/9/3/0/44930-the-color-of-money-0-600-0-900-crop.jpg?v=e9d86f8587",
-    "rating": "4.0",
-    "review": "Sources are saying this is the coolest movie ever made. Paul Newman\u2026.ungodly amounts of swag.",
-    "title": "The Color of Money",
-    "watched_date": "2026-07-29",
-    "year": "1986"
-  },
-  {
     "handle": "calissippi",
     "liked": true,
     "link": "https://letterboxd.com/calissippi/film/the-odyssey-2026/1/",
@@ -230,16 +240,6 @@
     "title": "Toy Story 5",
     "watched_date": "2026-06-21",
     "year": "2026"
-  },
-  {
-    "handle": "Crockett1848",
-    "link": "https://letterboxd.com/crockett1848/film/gosford-park/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/8/8/7/6/48876-gosford-park-0-600-0-900-crop.jpg?v=56085296ca",
-    "rating": "4.5",
-    "review": "It\u2019s KNIVES OUT with taste Altman directing a Julian Fellowes script gives you a pretty great idea and this movie plays just as perfect as that combination sounds like it would. The cast is just dizzying. Stephen Fry shows up at the end in one of my favorite surprise comedic roles ever. Also you\u2026",
-    "title": "Gosford Park",
-    "watched_date": "2026-06-05",
-    "year": "2001"
   },
   {
     "handle": "Skwatchinit",

@@ -845,35 +845,5 @@
   }
 }
 
-/* ------- speak CTA (voice clips for the podcast) ------- */
-
-.speak-cta {
-  text-align: center;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: var(--space-12) var(--space-8);
-  margin-bottom: var(--space-12);
-}
-
-.speak-cta-heading {
-  font-size: clamp(2rem, 4.5vw, 3.2rem);
-  margin: 12px 0 8px;
-  line-height: 1;
-}
-
-.speak-cta-prompt {
-  font-size: var(--fs-18);
-  color: var(--ink-2);
-  margin: 0 0 6px;
-}
-
-.speak-cta-prompt em {
-  color: var(--brand);
-  font-style: italic;
-}
-
-.speak-cta-note {
-  font-size: 92%;
-  color: var(--ink-4);
-  margin: 0 0 18px;
-}
+/* The speak CTA band styles are shared with /speak and live in speak.css
+   (.speak-band, Claude Design "Voice prompt CTA" handoff, variant 2a). */

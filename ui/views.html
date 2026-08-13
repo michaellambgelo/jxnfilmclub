@@ -116,15 +116,24 @@
 
   <div class="ns-halftone-strip halftone"></div>
 
-  <!-- SPEAK — voice-clip CTA for the podcast. Structure stays constant
-       (no :if on the section) per the nuedom sibling-diff rule; the prompt
-       text always has the generic fallback so there is no empty state. -->
-  <section class="speak-cta">
-    <p class="ns-label">Say it in 3 minutes or less.</p>
-    <h2 class="speak-cta-heading">Your voice on the JXN Film Club podcast</h2>
-    <p class="speak-cta-prompt">This round: <em>“{ voicePromptText }”</em></p>
-    <p class="speak-cta-note">Members can record or upload a short clip to beaired on the podcast.</p>
-    <a href="/speak" class="ns-btn speak-cta-btn">Record a clip</a>
+  <!-- SPEAK — voice-clip CTA band for the podcast (Claude Design 2a: the
+       prompt is the headline). Structure stays constant (no :if) per the
+       nuedom sibling-diff rule; the prompt text always has the generic
+       fallback so there is no empty state, and the session-dependent
+       button swaps label/href by interpolation only. Anonymous visitors
+       route to join; members route to /speak. -->
+  <section class="speak-band">
+    <div class="speak-band-grid">
+      <div class="speak-band-main">
+        <p class="speak-band-eyebrow"><span class="rule"></span>This round’s prompt</p>
+        <h2 class="speak-band-head"><span class="q">“</span><span class="speak-cta-prompt">{ voicePromptText }</span><span class="q">”</span></h2>
+        <p class="speak-band-lede">Members record straight from the browser — three minutes or less. Answers air on the JXN Film Club podcast.</p>
+      </div>
+      <div class="speak-band-rail">
+        <a href="{ session ? '/speak' : 'https://join.jxnfilm.club/' }" class="speak-band-btn speak-cta-btn">{ session ? 'Record a clip' : 'Join to record' }</a>
+        <p class="speak-band-note">{ voiceCutoff ? 'Cutoff ' + voiceCutoff + '.' : '' }</p>
+      </div>
+    </div>
   </section>
 
   <!-- PODCAST -->
@@ -179,10 +188,22 @@
       return n - Math.floor(n) >= 0.5 ? s + '½' : s
     }
 
+    // Session for the speak band button (label + href swap) only.
+    function homeSession() {
+      try {
+        const s = JSON.parse(localStorage.jxnfc_session || 'null')
+        return s && s.token && s.exp > Date.now() ? s : null
+      } catch (e) { return null }
+    }
+
     this.mounted = async function() {
-      const seed = { episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null, voicePromptText: "Tell us what you're watching" }
+      const self = this
+      const seed = { episodes: [], program: [], lastFour: [], leaders: [], takes: [], hero: null, voicePromptText: "Tell us what you're watching", voiceCutoff: '', session: homeSession() }
       Object.keys(COPY).forEach(function(k) { seed[k] = COPY[k] })
       this.update(seed)
+      if (!seed.session && globalThis.jxnfcEnsureSession) {
+        globalThis.jxnfcEnsureSession().then(function(s) { if (s) self.update({ session: s }) }).catch(function() {})
+      }
 
       const results = await Promise.all([
         getEvents({ limit: 1000, sort: 'date-desc' }).catch(function() { return { items: [] } }),
@@ -296,6 +317,9 @@
       final.heroLabel = heroLabel
       const vp = cfg && cfg.voice_prompt
       if (vp && typeof vp.text == 'string' && vp.text) final.voicePromptText = vp.text
+      if (vp && typeof vp.deadline == 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(vp.deadline)) {
+        final.voiceCutoff = new Date(vp.deadline.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+      }
       this.update(final)
 
       // Spotify embed is injected here because Nue's DHTML renderer strips
@@ -1368,14 +1392,39 @@
      toggling nodes that shift later siblings crashes the nuedom diff, and
      a remount would orphan a live mic stream. Interpolations inside hidden
      blocks still evaluate, hence the mine-guards in every expression. -->
-<article :is="speak-view" class="auth speak">
-  <h1>Speak on the podcast</h1>
+<article :is="speak-view" class="speak">
 
-  <section class="speak-prompt">
-    <p class="speak-kicker">Current prompt</p>
-    <p class="speak-prompt-text">{ prompt ? prompt.text : '' }</p>
-    <p :if="prompt && prompt.deadline" class="speak-deadline">Submit by { deadlineLabel || prompt.deadline }</p>
+  <!-- Header band (Claude Design 1a): prompt as the page headline, both
+       actions, and a detail rail (static waveform + Length/Cutoff/Status).
+       Status is a display mapping over the existing model — draft/deleted
+       exist only client-side, pending/approved/rejected come from the
+       worker. Buttons are real <button>s with handlers, not hash links,
+       so the SPA router never sees a navigation. -->
+  <section class="speak-band -page">
+    <div class="speak-band-grid">
+      <div class="speak-band-main">
+        <p class="speak-band-eyebrow"><span class="rule"></span>This round’s prompt</p>
+        <h1 class="speak-band-head"><span class="q">“</span><span class="speak-prompt-text">{ prompt ? prompt.text : '' }</span><span class="q">”</span></h1>
+        <p class="speak-band-lede">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
+        <div class="speak-band-actions">
+          <button type="button" class="speak-band-btn" :onclick="toRecorder">Record a clip</button>
+          <button type="button" class="speak-band-btn -quiet" :onclick="toUpload">Upload a file</button>
+        </div>
+        <p class="speak-band-reassure">Members only — you can re-record or pull your clip any time before the episode drops.</p>
+      </div>
+      <div class="speak-band-rail">
+        <div class="speak-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="speak-band-details">
+          <div class="drow"><span class="dt">Length</span><span class="dd">3 min or less</span></div>
+          <div class="drow"><span class="dt">Cutoff</span><span class="dd speak-deadline">{ deadlineLabel || (prompt && prompt.deadline) || '—' }</span></div>
+          <div class="drow"><span class="dt">Status</span><span class="dd speak-status-dd">{ railStatus() }</span></div>
+        </div>
+      </div>
+    </div>
   </section>
+
+  <!-- The recorder flow keeps the narrow .auth column treatment. -->
+  <div class="auth speak-flow">
 
   <p :if="!session" class="lede">
     Record a voice clip of up to three minutes and it may be aired on the
@@ -1400,6 +1449,8 @@
 
   <p :hidden="!session || mineLoaded" class="hint">Checking for an earlier submission…</p>
   <p :if="err" class="rsvp-err">{ err }</p>
+
+  </div>
 
   <script>
     const WORKER_ORIGIN = resolveWorkerOrigin()
@@ -1448,13 +1499,49 @@
     }
 
     this.statusLabel = function(s) {
-      return s === 'approved' ? 'Approved for air' : s === 'rejected' ? 'Not selected this time' : 'Pending review'
+      return s === 'approved' ? 'Published' : s === 'rejected' ? 'Not chosen for publication' : 'Submitted'
+    }
+
+    // Detail-rail status: an unsubmitted staged take beats the stored clip
+    // (mid-replace shows Draft), a pulled clip shows Deleted until a new
+    // take is staged, and everything else maps off the worker status.
+    // Staged lives at globalThis, written by the recorder child, which
+    // repaints the rail imperatively — the child must NEVER trigger a
+    // parent update(): every parent update re-evaluates the child script,
+    // wiping its module scope and with it any unsubmitted take.
+    this.railStatus = function() {
+      let base = '—'
+      if (this.session) {
+        if (!this.mineLoaded) base = '…'
+        else if (this.mine) base = this.statusLabel(this.mine.status)
+        else if (this.deleted) base = 'Deleted'
+      }
+      globalThis.jxnfcSpeakBase = base
+      return globalThis.jxnfcSpeakStagedNow ? 'Draft' : base
+    }
+
+    this.toRecorder = function() {
+      if (!this.session) { location.href = '/signin'; return }
+      const el = document.querySelector('.speak-flow')
+      if (el) el.scrollIntoView({ behavior: 'smooth' })
+    }
+
+    this.toUpload = function() {
+      if (!this.session) { location.href = '/signin'; return }
+      // The upload input has no box when an existing clip hides the
+      // recorder — land on the clip card (Replace button) instead.
+      const input = document.querySelector('.speak-upload input[type="file"]')
+      const visible = input && input.offsetParent
+      const el = visible ? input : document.querySelector('.speak-flow')
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (visible) input.focus({ preventScroll: true })
     }
 
     this.mounted = function() {
       const self = this
       const session = getSession()
-      this.update({ session: session, prompt: DEFAULT_PROMPT, deadlineLabel: '', mine: null, mineLoaded: false, replacing: false, busy: false, err: '' })
+      globalThis.jxnfcSpeakStagedNow = false
+      this.update({ session: session, prompt: DEFAULT_PROMPT, deadlineLabel: '', mine: null, mineLoaded: false, replacing: false, busy: false, err: '', deleted: false })
       if (session) this.loadMine(session)
       // Config prompt + silent session refresh land in ONE update so the
       // child recorder is not detached twice while idle at load time.
@@ -1510,7 +1597,7 @@
           headers: { Authorization: 'Bearer ' + this.session.token },
         })
         if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status)
-        self.update({ busy: false, mine: null, replacing: false })
+        self.update({ busy: false, mine: null, replacing: false, deleted: true })
       } catch (e) {
         self.update({ busy: false, err: 'Could not delete the clip. Try again in a minute.' })
       }
@@ -1637,6 +1724,15 @@
       return typeof MediaRecorder != 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     }
 
+    // Draft status in the band's rail: set a global + repaint the text
+    // directly. NEVER via parent update() — that re-evaluates this script
+    // and wipes the staged blob. jxnfcSpeakBase = parent's non-draft label.
+    function tellStaged(v) {
+      globalThis.jxnfcSpeakStagedNow = !!v
+      const el = document.querySelector('.speak-status-dd')
+      if (el) el.textContent = v ? 'Draft' : (globalThis.jxnfcSpeakBase || '—')
+    }
+
     function fmtT(s) {
       const n = Math.max(0, Math.round(Number(s) || 0))
       return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
@@ -1657,11 +1753,12 @@
       const self = this
       // The parent cancel button discards any staged take via this bridge
       // (same globalThis idiom as jxnfcEnsureSession).
-      globalThis.jxnfcSpeakDiscard = function() { cleanupAll(); self.update(RESET) }
-      // A staged blob at module scope survives a parent-triggered remount:
-      // restore the preview instead of losing an unsubmitted take.
+      globalThis.jxnfcSpeakDiscard = function() { cleanupAll(); self.update(RESET); tellStaged(false) }
+      // Module state does NOT survive parent-triggered remounts (script
+      // re-evals, clipBlob resets) — restore branch kept defensively.
       this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, elapsed: clipSeconds, consent: false, err: '', clipLabel: clipBlob ? 'Staged clip · ' + fmtT(clipSeconds) : '' })
       if (clipBlob) this.attachPreview()
+      tellStaged(!!clipBlob)
     }
 
     this.attachPreview = function() {
@@ -1726,6 +1823,7 @@
           recorder = null
           self.update({ recording: false, preview: true, elapsed: secs, clipLabel: 'New recording · ' + fmtT(secs) })
           self.attachPreview()
+          tellStaged(true)
         }
         startedAt = Date.now()
         recorder.start()
@@ -1763,6 +1861,7 @@
       clipUrl = URL.createObjectURL(f)
       self.update({ err: '', preview: true, recording: false, elapsed: 0, clipLabel: 'Upload · ' + f.name })
       self.attachPreview()
+      tellStaged(true)
     }
 
     this.consentChange = function(e) {
@@ -1773,6 +1872,7 @@
     this.discardClip = function() {
       dropClip()
       this.update(RESET)
+      tellStaged(false)
     }
 
     this.submit = async function() {
@@ -1803,3 +1903,5 @@
     }
   </script>
 </div>
+
+

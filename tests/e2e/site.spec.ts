@@ -1,4 +1,4 @@
-import { test, expect, seedKv } from './fixtures'
+import { test, expect, seedKv, signInAs } from './fixtures'
 
 test.describe('members view', () => {
   test('renders members from data/members.json', async ({ page }) => {
@@ -114,14 +114,23 @@ test.describe('config-driven homepage copy', () => {
     await expect(page.getByRole('heading', { name: 'Get in the room.' })).toBeVisible()
   })
 
-  test('speak CTA section shows the voice prompt and links /speak', async ({ page }) => {
+  test('speak CTA band shows the voice prompt; anonymous button routes to join', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('.speak-cta-prompt')).toContainText("Tell us what you're watching")
-    await expect(page.locator('.speak-cta-btn')).toHaveAttribute('href', '/speak')
+    // e2e runs signed out: the band button nudges toward membership.
+    await expect(page.locator('.speak-cta-btn')).toHaveAttribute('href', 'https://join.jxnfilm.club/')
+    await expect(page.locator('.speak-cta-btn')).toHaveText('Join to record')
 
     await seedKv(page, 'config:voice_prompt', JSON.stringify({ id: 'e2e', text: 'Best opening scene ever?' }))
     await page.goto('/')
     await expect(page.locator('.speak-cta-prompt')).toContainText('Best opening scene ever?')
+  })
+
+  test('speak CTA band routes signed-in members to /speak', async ({ page }) => {
+    await signInAs(page, 'bandmember@e2e.test', { name: 'E2E Band Member' })
+    await page.goto('/')
+    await expect(page.locator('.speak-cta-btn')).toHaveAttribute('href', '/speak')
+    await expect(page.locator('.speak-cta-btn')).toHaveText('Record a clip')
   })
 })
 

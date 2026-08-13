@@ -28,7 +28,8 @@ function tinyWav(): Buffer {
 test.describe('speak page', () => {
   test('signed-out: shows the default prompt and a log-in nudge', async ({ page }) => {
     await page.goto('/speak')
-    await expect(page.locator('h1')).toHaveText('Speak on the podcast')
+    // The band makes the prompt the page headline (Claude Design 1a).
+    await expect(page.locator('h1')).toContainText("Tell us what you're watching")
     await expect(page.locator('.speak-prompt-text')).toHaveText("Tell us what you're watching")
     await expect(page.locator('.speak .lede')).toContainText('log in')
   })
@@ -39,7 +40,7 @@ test.describe('speak page', () => {
     }))
     await page.goto('/speak')
     await expect(page.locator('.speak-prompt-text')).toHaveText('Best theater snack?')
-    await expect(page.locator('.speak-deadline')).toBeVisible()
+    await expect(page.locator('.speak-deadline')).toContainText('Dec 31, 2099')
   })
 
   test('member uploads a clip with consent; it round-trips; admin reviews it', async ({ page }) => {
@@ -59,9 +60,9 @@ test.describe('speak page', () => {
     await expect(submit).toBeEnabled()
     await submit.click()
 
-    // Success reloads the view; the submitted card shows pending status.
+    // Success reloads the view; the submitted card shows its status.
     await expect(page.locator('.speak-clip')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('.speak-status')).toHaveText('Pending review')
+    await expect(page.locator('.speak-status')).toHaveText('Submitted')
 
     // Admin: the clip appears in the Voice tab and can be approved.
     await page.goto(`${ADMIN_ORIGIN}/`)
@@ -86,10 +87,12 @@ test.describe('speak page', () => {
 
     await expect(page.locator('.speak-preview')).toBeVisible()
     await expect(page.locator('.speak-player audio')).toBeAttached()
+    // Staged-but-unsubmitted take surfaces as Draft in the band's rail.
+    await expect(page.locator('.speak-status-dd')).toHaveText('Draft')
     await page.locator('.speak-consent input[type="checkbox"]').check()
     await page.getByRole('button', { name: 'Submit clip' }).click()
     await expect(page.locator('.speak-clip')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('.speak-status')).toHaveText('Pending review')
+    await expect(page.locator('.speak-status')).toHaveText('Submitted')
   })
 
   test('member can delete their own clip', async ({ page }) => {

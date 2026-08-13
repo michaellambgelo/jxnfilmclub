@@ -128,15 +128,18 @@
 }
 
 /* Mic glyph as a mask so no inline <svg> passes through the dhtml
-   compiler (nothing else in ui/ ships inline SVG). */
+   compiler (nothing else in ui/ ships inline SVG). The glyph lives in
+   img/ rather than a data: URI — Nue's prod-only CSS minifier rewrites
+   the first colon inside any url() (`data:` -> `data;`), which 404s the
+   mask and leaves an invisible-but-space-taking box. */
 .speak-band-btn::before {
   content: "";
   width: 18px;
   height: 18px;
   flex: none;
   background: currentColor;
-  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/></svg>') no-repeat center / contain;
-  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/></svg>') no-repeat center / contain;
+  -webkit-mask: url(../img/mic.svg) no-repeat center / contain;
+  mask: url(../img/mic.svg) no-repeat center / contain;
 }
 
 .speak-band-btn.-quiet {

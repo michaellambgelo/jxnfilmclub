@@ -122,6 +122,21 @@ describe('access gate', () => {
     expect((await call('/', { token, envOverrides: { ACCESS_TEAM_DOMAIN: '' } })).status).toBe(403)
   })
 
+  it('denied navigations get the styled page, API calls keep JSON', async () => {
+    // The page must exceed 512 bytes or Chrome swaps in its own generic
+    // error page, hiding whether the worker or the Access edge denied.
+    const nav = await call('/')
+    expect(nav.status).toBe(403)
+    expect(nav.headers.get('Content-Type')).toContain('text/html')
+    const body = await nav.text()
+    expect(body).toContain('Access denied')
+    expect(body.length).toBeGreaterThan(512)
+
+    const api = await call('/api/whoami')
+    expect(api.status).toBe(403)
+    expect(await api.json()).toEqual({ error: 'forbidden' })
+  })
+
   it('serves the SPA shell with a valid token', async () => {
     const res = await call('/', { token: await signToken() })
     expect(res.status).toBe(200)

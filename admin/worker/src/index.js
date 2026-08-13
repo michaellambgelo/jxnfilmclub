@@ -86,23 +86,40 @@ async function fetchJwks(teamDomain, force = false) {
 }
 
 async function requireAccess(request, env) {
-  // Fail closed: no token, or the Worker not yet configured → no access.
+  // Fail closed, but never silently: every deny path logs its reason so
+  // Workers Logs can distinguish a transient JWKS failure from a genuinely
+  // bad token (an intermittent bare-403 mystery in Aug 2026 turned out to
+  // be the Access edge, provable only because the worker had zero 403s).
+  const deny = (reason) => {
+    console.warn(`access denied: ${reason}`)
+    return null
+  }
   const token = request.headers.get('Cf-Access-Jwt-Assertion')
-  if (!token || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null
+  if (!token) return deny('missing Cf-Access-Jwt-Assertion header')
+  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return deny('worker unconfigured (ACCESS_TEAM_DOMAIN/ACCESS_AUD unset)')
   let keys = await fetchJwks(env.ACCESS_TEAM_DOMAIN).catch(() => null)
-  if (!keys) return null
+  if (!keys) return deny('jwks fetch failed')
   // Unknown kid can mean Cloudflare rotated the signing certs mid-cache —
   // refetch once before rejecting.
   let kid
-  try { kid = decodeSegment(token.split('.')[0]).kid } catch { return null }
+  try { kid = decodeSegment(token.split('.')[0]).kid } catch { return deny('unparseable token header') }
   if (kid && !keys.some(k => k.kid === kid)) {
     keys = await fetchJwks(env.ACCESS_TEAM_DOMAIN, true).catch(() => null)
-    if (!keys) return null
+    if (!keys) return deny(`jwks refetch failed after unknown kid ${kid}`)
   }
-  return verifyAccessJwt(token, keys, {
+  const claims = await verifyAccessJwt(token, keys, {
     aud: env.ACCESS_AUD,
     issuer: `https://${env.ACCESS_TEAM_DOMAIN}`,
   })
+  if (claims) return claims
+  // Unverified-payload peek, for the log line only — never trusted.
+  let hint = ''
+  try {
+    const p = decodeSegment(token.split('.')[1])
+    const aud = Array.isArray(p.aud) ? p.aud[0] : p.aud
+    hint = ` (kid ${kid || '?'}, aud ${String(aud).slice(0, 8)}…, exp ${p.exp}, now ${Math.floor(Date.now() / 1000)})`
+  } catch { /* hint stays empty */ }
+  return deny(`jwt verification failed${hint}`)
 }
 
 // --- KV plumbing ---
@@ -400,11 +417,52 @@ async function handle(request, env, access) {
   return json(405, { error: 'method not allowed' })
 }
 
+// Styled denial page for navigations. Deliberately > 512 bytes: Chrome
+// replaces smaller error bodies with its own generic "HTTP ERROR 403" page,
+// which makes a worker-gate denial indistinguishable from an Access-edge
+// denial. Seeing THIS page = the worker rejected the JWT (reason in Workers
+// Logs); seeing Chrome's plain page = the request never reached the worker.
+const DENIED_HTML = `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access denied — JXN Film Club admin</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         background: #100f0e; color: #e8e3d8;
+         font: 16px/1.55 Georgia, "Times New Roman", serif; }
+  main { max-width: 34rem; padding: 2rem; border-left: 3px solid #d7321f; }
+  h1 { font-size: 1.4rem; margin: 0 0 .6rem; color: #f0ebe0; }
+  p { margin: .5rem 0; color: #c4bdae; }
+  a { color: #e8604f; }
+  .hint { font-size: .85rem; color: #8f897d; margin-top: 1.2rem; }
+</style>
+<main>
+  <h1>Access denied</h1>
+  <p>This request reached the admin Worker, but its Cloudflare Access token
+     did not verify. The reason is recorded in the Worker&rsquo;s logs.</p>
+  <p><a href="/">Reload</a> to re-authenticate — or, if that loops,
+     <a href="/cdn-cgi/access/logout">sign out of Access</a> and back in.</p>
+  <p class="hint">Seeing Chrome&rsquo;s plain &ldquo;HTTP ERROR 403&rdquo; page
+     instead of this one means the denial came from the Access edge before
+     the Worker ran.</p>
+</main>
+</html>`
+
 export default {
   async fetch(request, env) {
     try {
       const access = await requireAccess(request, env)
-      if (!access) return json(403, { error: 'forbidden' })
+      if (!access) {
+        // API calls keep the JSON contract; navigations get the page.
+        if (new URL(request.url).pathname.startsWith('/api/')) {
+          return json(403, { error: 'forbidden' })
+        }
+        return new Response(DENIED_HTML, {
+          status: 403,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+        })
+      }
       return await handle(request, env, access)
     } catch (e) {
       return json(e?.status || 500, { error: e?.message || String(e) })

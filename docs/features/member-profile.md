@@ -142,6 +142,15 @@ Implementation notes:
   duplicate.
 - The standalone "kept as historical record" option is still the
   default — anonymization is strictly opt-in.
+- **Host names are out of scope, by decision.** The scrub does not touch
+  `event.hostName`, so a member who hosted screenings keeps their name on
+  those events — in the public "Hosted by …" line and, through the host
+  overlay, in that screening's attendance list (see
+  [attendance.md § Hosts count as attendees](./attendance.md#hosts-count-as-attendees)).
+  Hosting is public attribution, not a passive record, so removing it is a
+  by-hand request to `privacy@jxnfilm.club`. `/privacy` states this
+  explicitly and the danger-zone checkbox repeats it — keep all three in
+  sync if this ever changes.
 
 ## Error States
 

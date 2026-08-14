@@ -720,6 +720,12 @@ async function handleMemberDelete(request, env) {
 // unique names — picking a creative-but-unique display name is on the user.
 const FORMER_MEMBER_LABEL = 'former member'
 
+// Deliberately name-only: `event.hostName` is NOT scrubbed, so a member who
+// hosted screenings keeps their name on those events (and, via withHost(), in
+// their attendance lists). Hosting is public attribution, not a passive
+// record. /privacy states this and routes removal to a by-hand request at
+// privacy@jxnfilm.club; the danger-zone checkbox in ui/auth.html repeats it.
+// Don't "fix" this without changing all three.
 async function anonymizeAttendance(env, memberName) {
   const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
   for (const k of list.keys) {

@@ -89,7 +89,7 @@ The host is *not* an `rsvp.confirmed` entry. Capacity counts guest slots, so a s
 - **Capacity math** — `guestCount()` in `event-card` (and `isFull()` in `host-guests`) filter `event.hostName` out before comparing against `capacity`, matching the Worker. The "N / M RSVPed" meter therefore still counts guests only.
 - **Host self-RSVP** — `POST /events/:id/rsvp` returns 409 for the host of that event; the card shows "You're hosting — you're already counted as attending" instead of an RSVP button.
 
-Consequence to know about: a host who deletes their account with `anonymize: true` has their name spliced out of `attend:*`, but `event.hostName` is untouched (their name still renders in the public "Hosted by …" line), so the overlay puts it back in the attendee list for events they hosted. Scrubbing `hostName` too would be a separate, larger decision — it changes what the event card says.
+Consequence, and it is deliberate: a host who deletes their account with `anonymize: true` has their name spliced out of `attend:*`, but `event.hostName` is untouched (their name still renders in the public "Hosted by …" line), so the overlay puts it back in the attendee list for events they hosted. Hosting is public attribution rather than a passive record, so it is **not** covered by the automatic scrub — `/privacy` says so in as many words and routes the removal to a by-hand request at `privacy@jxnfilm.club`, and the danger-zone checkbox repeats it. Three places to keep in sync if this ever changes: `worker/src/privacy.html`, the anonymize checkbox in `ui/auth.html`, and `anonymizeAttendance()` in `worker/src/index.js`.
 
 ## Persistence Cadence
 

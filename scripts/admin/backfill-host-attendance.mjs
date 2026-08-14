@@ -34,44 +34,55 @@ const ENV = (() => {
 
 // --remote: wrangler v4 defaults KV ops to LOCAL simulated storage. Every call
 // here must be explicit or the script silently "fixes" a local sandbox.
-function wrangler(args) {
-  const res = spawnSync('npx', ['wrangler', ...args, '--remote', ...(ENV ? ['--env', ENV] : [])], {
-    cwd: WORKER_DIR, encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'inherit'],
-  })
-  if (res.status !== 0) throw new Error(`wrangler ${args.join(' ')} failed (exit ${res.status})`)
-  return res.stdout
+//
+// Retried: the Cloudflare API answers a rapid burst of per-key reads with a
+// spurious 401, so a one-shot spawn per key is not reliable. Everything below
+// is also written to read the two aggregates rather than fan out per key,
+// which keeps a whole run to a handful of calls.
+function wrangler(args, { attempts = 3 } = {}) {
+  let last
+  for (let i = 1; i <= attempts; i++) {
+    const res = spawnSync('npx', ['wrangler', ...args, '--remote', ...(ENV ? ['--env', ENV] : [])], {
+      cwd: WORKER_DIR, encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    if (res.status === 0) return res.stdout
+    last = (res.stderr || '').trim()
+    // A missing key is an answer, not a failure.
+    if (/not found|404/i.test(last)) return ''
+    if (i < attempts) {
+      console.log(`  ! retry ${i}/${attempts - 1}: wrangler ${args.slice(0, 3).join(' ')}`)
+      spawnSync('sleep', [String(i)])
+    }
+  }
+  throw new Error(`wrangler ${args.join(' ')} failed after ${attempts} attempts:\n${last}`)
 }
-
-const kvList = (prefix) =>
-  JSON.parse(wrangler(['kv', 'key', 'list', '--binding', BINDING, '--prefix', prefix])).map(k => k.name)
 
 const kvGet = (key) => wrangler(['kv', 'key', 'get', '--binding', BINDING, key])
 
 function kvPut(key, value) {
-  spawnSync('npx', ['wrangler', 'kv', 'key', 'put', '--binding', BINDING, '--remote',
-    ...(ENV ? ['--env', ENV] : []), key, value],
-  { cwd: WORKER_DIR, encoding: 'utf8', stdio: ['ignore', 'inherit', 'inherit'] })
+  wrangler(['kv', 'key', 'put', '--binding', BINDING, key, value])
 }
 
 const parse = (raw) => { try { return JSON.parse(raw) } catch { return null } }
 
 console.log(`env=${ENV || 'production'} mode=${APPLY ? 'APPLY' : 'dry-run'}`)
 
-// Hosted events only — an admin-curated club event has no host to add.
+// events:all carries the public projection of every event, hostId/hostName
+// included — one read instead of a get per event:{id} row.
+const events = parse(kvGet('events:all')) || []
 const hosts = new Map()
-for (const key of kvList('event:')) {
-  const ev = parse(kvGet(key))
-  if (ev && ev.hostId && ev.hostName) hosts.set(ev.id || key.slice('event:'.length), ev.hostName)
+for (const ev of events) {
+  if (ev && ev.id && ev.hostId && ev.hostName) hosts.set(ev.id, ev.hostName)
 }
-console.log(`hosted screenings: ${hosts.size}`)
+console.log(`events: ${events.length}, hosted screenings: ${hosts.size}`)
 
-const allRaw = kvGet('attendance:all')
-const all = parse(allRaw) || {}
+const all = parse(kvGet('attendance:all')) || {}
 let changed = 0
 
 for (const [eventId, hostName] of hosts) {
   const key = `attend:${eventId}`
+  // Canonical per-event key wins; the aggregate covers rows that never got one.
   const current = parse(kvGet(key).trim() || 'null') || all[eventId] || []
   if (current.includes(hostName)) continue
 

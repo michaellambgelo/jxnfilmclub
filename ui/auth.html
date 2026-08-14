@@ -505,6 +505,12 @@
         const events = await fetch('/data/events.json').then(r => r.json())
         const ev = events.find(e => e.id === eventId)
         if (!ev) return
+        // Hosted screenings are excluded: their attendance is the RSVP list
+        // plus the host, and the worker rightly 409s DELETE /attend for them —
+        // cancelling is done from the event card. Without this guard a host,
+        // who now appears in their own screening's attendance, would be
+        // offered a button that can only fail.
+        if (ev.hostId) return
         const attendance = await fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
         const attendees = attendance[eventId] || []
         if (attendees.includes(session.name)) {

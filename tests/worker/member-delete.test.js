@@ -285,8 +285,9 @@ describe('POST /member/delete', () => {
       expect(sent.to).toEqual(['waiting@example.com'])
       expect(sent.subject).toMatch(/You're in for/)
 
-      // attend mirror reflects the new confirmed list.
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-up'))).toEqual(['Waiting'])
+      // attend mirror reflects the new confirmed list, behind the host (who
+      // attends their own screening without holding an RSVP slot).
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-up'))).toEqual(['Host', 'Waiting'])
     })
 
     it('scrubs past-event records directly: no emails, attend history untouched', async () => {

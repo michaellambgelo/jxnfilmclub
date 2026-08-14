@@ -742,19 +742,20 @@
 
     <div :if="event.hostId" class="event-rsvp">
       <div class="rsvp-meter">
-        { (attendees || []).length + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
+        { guestCount() + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
       <p :if="isMeetup()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
-      <div :if="session && isFuture() && myRsvp">
+      <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
+      <div :if="session && isFuture() && myRsvp && !isHost">
         <p :if="myRsvp.status === 'confirmed' && !isMeetup()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
         <p :if="myRsvp.status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
         <p :if="myRsvp.status === 'waitlisted' && !isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
         <p :if="myRsvp.status === 'waitlisted' && isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. You'll get an email if a spot opens.</p>
-        <button :if="myRsvp.status === 'none' && (!event.capacity || (attendees || []).length < event.capacity)"
+        <button :if="myRsvp.status === 'none' && (!event.capacity || guestCount() < event.capacity)"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
-        <button :if="myRsvp.status === 'none' && event.capacity && (attendees || []).length >= event.capacity"
+        <button :if="myRsvp.status === 'none' && event.capacity && guestCount() >= event.capacity"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Join waitlist' }</button>
         <button :if="myRsvp.status === 'confirmed' || myRsvp.status === 'waitlisted'"
           type="button" class="attend-btn attend-btn-remove" :disabled="busy" :onclick="cancelRsvp">{ busy ? 'Cancelling' : 'Cancel RSVP' }</button>
@@ -937,6 +938,15 @@
       return kind === 'meetup'
     }
 
+    // The host is in the attendee list — they are in the room — but never
+    // occupies an RSVP slot, so every capacity comparison runs off the
+    // host-less count. Mirrors the worker, where capacity gates
+    // rsvp.confirmed only.
+    this.guestCount = function() {
+      const host = this.event.hostName
+      return (this.attendees || []).filter(function(n) { return n !== host }).length
+    }
+
     this.canToggle = function() { return !!this.session }
     this.attended = function() {
       return this.session && this.session.name && (this.attendees || []).includes(this.session.name)
@@ -1064,8 +1074,14 @@
       this.update({ busy: false, err: '' })
     }
 
+    // Host-less count: the host rides in the attendees list but holds no RSVP
+    // slot, same rule as guestCount in event-card and the worker capacity gate.
+    // NOTE: no backticks or apostrophes in view script comments — they trip
+    // the dhtml compiler serialization (see the sibling note in event-card).
     this.isFull = function() {
-      return !!(this.event.capacity && (this.attendees || []).length >= this.event.capacity)
+      const host = this.event.hostName
+      const guests = (this.attendees || []).filter(function(n) { return n !== host }).length
+      return !!(this.event.capacity && guests >= this.event.capacity)
     }
 
     // Same date idiom as event-card: dates stay YYYY-MM-DD strings, compared

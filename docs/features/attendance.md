@@ -68,7 +68,7 @@ stateDiagram-v2
 | `attendance:all` | Aggregate `{ eventId: [names] }` — the bulk endpoint's O(1) read path |
 | `attendance:bootstrapped` | Marker; presence means the repo→KV seed has already run |
 
-**Reads:** `GET /events/attendance` is a single KV GET of `attendance:all`. `GET /events/:id/attendance` reads `attend:{id}` (falling back to the aggregate for events that don't have a per-event key yet). The hot path never fetches from GitHub raw.
+**Reads:** `GET /events/attendance` reads `attendance:all` plus `events:all` (for the host overlay below). `GET /events/:id/attendance` reads `attend:{id}` (falling back to the aggregate for events that don't have a per-event key yet) plus `event:{id}`. The hot path never fetches from GitHub raw — the bulk endpoint reads `events:all` raw rather than through `readEventsAll()` precisely so it can't trigger the events bootstrap.
 
 **Writes:** `POST`/`DELETE /events/:id/attend` writes through to both `attend:{id}` and `attendance:all`, so the next bulk read reflects the change without extra work.
 
@@ -77,6 +77,19 @@ stateDiagram-v2
 The UI hydrates from `GET /events/attendance`. If the Worker is unreachable it renders an "attendance data is temporarily unavailable" banner rather than falling back to a potentially-stale static JSON; that keeps the displayed answer consistent with whatever the next successful fetch returns. After a click, the UI trusts the Worker's POST/DELETE response and mutates its local attendance map in place — no reconcile round-trip.
 
 The attendee identifier is the member's **display name** (not Letterboxd handle), so members without Letterboxd can participate.
+
+### Hosts count as attendees
+
+A member-hosted screening's attendee list is its confirmed-RSVP list **plus the host** — they were in the room, so they show up in the attendee list, in `data/attendance.json`, and in the homepage attendance leaderboard.
+
+The host is *not* an `rsvp.confirmed` entry. Capacity counts guest slots, so a synthetic host RSVP would eat one of the host's own seats, mail them their own address, and trip the "cannot reduce capacity below confirmed" guard on PATCH. Instead:
+
+- **Write path** — `writeRsvp()` mirrors `[hostName, ...confirmedNames]` into `attend:{id}` (deduped) on every RSVP mutation, so the host is in KV, not just synthesized.
+- **Read path** — `withHost()` overlays the host name on both attendance reads. This is what backfills screenings created before the rule: they never get another RSVP write, so a read-time overlay is the only thing that reaches them — and since the snapshot workflow reads `GET /events/attendance`, `data/attendance.json` (and therefore the leaderboard) picks them up on the next cron tick. **No KV migration is required.**
+- **Capacity math** — `guestCount()` in `event-card` (and `isFull()` in `host-guests`) filter `event.hostName` out before comparing against `capacity`, matching the Worker. The "N / M RSVPed" meter therefore still counts guests only.
+- **Host self-RSVP** — `POST /events/:id/rsvp` returns 409 for the host of that event; the card shows "You're hosting — you're already counted as attending" instead of an RSVP button.
+
+Consequence to know about: a host who deletes their account with `anonymize: true` has their name spliced out of `attend:*`, but `event.hostName` is untouched (their name still renders in the public "Hosted by …" line), so the overlay puts it back in the attendee list for events they hosted. Scrubbing `hostName` too would be a separate, larger decision — it changes what the event card says.
 
 ## Persistence Cadence
 
@@ -123,6 +136,7 @@ Staging shares the prod ledger only for seeding (read-only). Staging clicks stay
 - **Creating a new KV namespace**: no import step required — the first read against the new namespace triggers `bootstrapAttendance`, which seeds `attendance:all` + every `attend:{id}` from the raw JSON and writes `attendance:bootstrapped`. This happens exactly once.
 - **Re-bootstrapping from the ledger** (e.g. after a bad manual edit): delete `attendance:bootstrapped` in the KV namespace; the next read re-seeds from `data/attendance.json`, preserving any live per-event entries that already exist.
 - **Forcing an immediate snapshot**: `gh workflow run snapshot-attendance.yml` (or the Actions tab "Run workflow" button).
+- **Making KV agree about hosts** (optional): the public endpoints overlay the host on read, but the local admin dashboard and `contentgen` read raw `attend:*` keys and so miss hosts on screenings written before the rule. `node scripts/admin/backfill-host-attendance.mjs` (dry run; `--apply` to write, `--env staging` for staging) prepends the host to every hosted screening's array. Idempotent and re-runnable.
 - **Rolling back**: `data/attendance.json` is the archival record. Reverting a commit rolls back the ledger; the next cron tick will rewrite the file from live KV state. If you want to revert BOTH KV and the ledger, wipe `attend:*` and `attendance:*` KV keys first (including `attendance:bootstrapped`), then revert the commit — the next read will re-bootstrap from the reverted JSON.
 - **Staging isolation check**: after clicking in staging, confirm no snapshot commit lands. Staging KV never drives the snapshot workflow (it only queries prod's Worker).
 
@@ -134,7 +148,7 @@ The snapshot workflow can be exercised locally with [`act`](https://github.com/n
 
 | File | Role |
 |------|------|
-| `worker/src/index.js` | `handleAttend()`, `handleUnattend()`, `handleAttendanceGet()`, `handleAttendanceMap()`, `readAttendees()`, `readAttendanceAll()`, `writeAttendees()`, `bootstrapAttendance()`, `fetchAttendanceBaseline()` |
+| `worker/src/index.js` | `handleAttend()`, `handleUnattend()`, `handleAttendanceGet()`, `handleAttendanceMap()`, `withHost()`, `readAttendees()`, `readAttendanceAll()`, `writeAttendees()`, `writeRsvp()`, `bootstrapAttendance()`, `fetchAttendanceBaseline()` |
 | `worker/wrangler.toml` | `ENVIRONMENT` + `GITHUB_BRANCH` vars |
 | `ui/views.html` | `events-view` loads + passes attendees to each `event-card`; `event-card` owns the attend/remove toggle |
 | `css/cards.css` | `.attendance-list`, `.attend-btn`, `.attendance-unavailable` styles |

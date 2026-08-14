@@ -270,9 +270,10 @@ describe('POST /events/:id/rsvp + waitlist', () => {
     expect(d2.position).toBe(1)
     expect(sent).toHaveLength(0)
 
-    // Confirmed list is mirrored to the public attend:{id}.
+    // Confirmed list is mirrored to the public attend:{id} — behind the host,
+    // who attends their own screening without holding an RSVP slot.
     const att = await (await req(`/events/${eventId}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-member1'])
+    expect(att.attendees).toEqual(['M-host', 'M-member1'])
   })
 
   it('re-RSVP is idempotent', async () => {
@@ -310,9 +311,9 @@ describe('DELETE /events/:id/rsvp — auto-promote waitlist', () => {
     expect(sent[0].to).toEqual(['second@example.com'])
     expect(sent[0].text).toContain('123 Main St')
 
-    // Public attendees array now shows the promoted member, not the canceller.
+    // Public attendees array now shows the host + promoted member, not the canceller.
     const att = await (await req(`/events/${eventId}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-second'])
+    expect(att.attendees).toEqual(['M-host', 'M-second'])
   })
 
   it('cancel of waitlisted does NOT promote (silent)', async () => {
@@ -553,7 +554,7 @@ describe('theater meetups (kind: meetup)', () => {
       expect((await r.json()).status).toBe('confirmed')
     }
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toHaveLength(3)
+    expect(att.attendees).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
   })
 
   it('with capacity set → waitlists past the cap like house screenings', async () => {
@@ -624,7 +625,7 @@ describe('theater meetups (kind: meetup)', () => {
     const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
     expect(raw.capacity).toBeUndefined()
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toHaveLength(3)
+    expect(att.attendees).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
   })
 
   it('host can PATCH a Letterboxd diary link; non-Letterboxd URLs rejected', async () => {
@@ -805,9 +806,9 @@ describe('POST/DELETE /events/:id/rsvp/guest — manual guest RSVPs', () => {
     expect(rsvp.confirmed[0].email).toBe('gwen@example.com')
     expect(rsvp.confirmed[0].addedBy).toBe(host.id)
 
-    // Public attend: mirror includes the guest name.
+    // Public attend: mirror includes the host and the guest name.
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual(['Gwen Guest'])
+    expect(att.attendees).toEqual(['M-host', 'Gwen Guest'])
   })
 
   it('admin add stamps addedBy: admin (never the operator email)', async () => {
@@ -1066,5 +1067,80 @@ describe('/rsvp/cancel?token=… — one-click cancel from email', () => {
     const ok = await req(`/rsvp/cancel?token=${cancelToken}`, { method: 'POST' })
     expect(ok.status).toBe(200)
     expect(promoSent.find(e => e.to[0] === 'next@example.com')).toBeTruthy()
+  })
+})
+
+// The host is in the room. They are mirrored into attend:{id} on every RSVP
+// write AND overlaid at read time, so screenings that predate this rule report
+// the host without a KV backfill. Capacity still counts guest slots only.
+describe('the host counts as an attendee', () => {
+  it('a brand-new screening with zero RSVPs already lists the host', async () => {
+    const { token, member } = await getTokenFor('solo-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual([member.name])
+    // Mirrored into KV, not only synthesized on read.
+    expect(JSON.parse(await env.ATTENDANCE_KV.get(`attend:${created.id}`))).toEqual([member.name])
+  })
+
+  it('the bulk map carries the host too (this is what the leaderboard snapshot reads)', async () => {
+    const { token, member } = await getTokenFor('bulk-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+
+    const { attendance } = await (await req('/events/attendance')).json()
+    expect(attendance[created.id]).toEqual([member.name])
+  })
+
+  it('overlays the host on legacy rows whose attend:{id} predates the rule', async () => {
+    const { token, member } = await getTokenFor('legacy-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+    // Simulate a pre-change mirror: confirmed names only, no host. Both the
+    // per-event key and the aggregate, the way the old writeAttendees left them.
+    await env.ATTENDANCE_KV.put(`attend:${created.id}`, JSON.stringify(['Old Guest']))
+    const all = JSON.parse(await env.ATTENDANCE_KV.get('attendance:all'))
+    all[created.id] = ['Old Guest']
+    await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(all))
+
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual([member.name, 'Old Guest'])
+    const { attendance } = await (await req('/events/attendance')).json()
+    expect(attendance[created.id]).toEqual([member.name, 'Old Guest'])
+  })
+
+  it('never double-lists the host, and leaves non-hosted club events alone', async () => {
+    const { token, member } = await getTokenFor('dedupe-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+    await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token, body: { name: 'Plus One' } })
+
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual([member.name, 'Plus One'])
+
+    // Admin-curated event (no hostId) keeps its exact stored list.
+    await env.ATTENDANCE_KV.put('attend:club-night', JSON.stringify(['Someone']))
+    const club = await (await req('/events/club-night/attendance')).json()
+    expect(club.attendees).toEqual(['Someone'])
+  })
+
+  it('rejects a host RSVPing to their own screening — no self-eaten capacity slot', async () => {
+    const { token } = await getTokenFor('no-self-rsvp@example.com')
+    captureEmails()
+    const created = await (await createScreening(token, { capacity: 1 })).json()
+
+    const sent = captureEmails()
+    const res = await req(`/events/${created.id}/rsvp`, { method: 'POST', token })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/hosting/i)
+    expect(sent).toHaveLength(0)
+
+    // The capacity-1 slot is still free for an actual guest.
+    const { token: guestTok } = await getTokenFor('real-guest@example.com')
+    captureEmails()
+    const r2 = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: guestTok })
+    expect((await r2.json()).status).toBe('confirmed')
   })
 })

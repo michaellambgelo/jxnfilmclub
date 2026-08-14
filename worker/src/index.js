@@ -1301,17 +1301,40 @@ async function readSession(env, claims) {
 // Reads never touch the repo on the hot path. The aggregate is refreshed
 // write-through on every mutation, mirroring the session:{id} overlay pattern.
 
+// The host of a screening attended it. writeRsvp() mirrors the host name into
+// attend:{id}, but this read-time overlay is what makes it true everywhere:
+// screenings created before this change never get a fresh RSVP write, and the
+// leaderboard reads the data/attendance.json snapshot taken off these
+// endpoints — so overlaying on read backfills both without a KV migration.
+// Idempotent: a host already in the array is left alone.
+function withHost(attendees, event) {
+  const hostName = event && event.hostId ? event.hostName : null
+  if (!hostName || attendees.includes(hostName)) return attendees
+  return [hostName, ...attendees]
+}
+
 // GET /events/:id/attendance — public; returns { attendees: [...names] }.
 async function handleAttendanceGet(env, eventId) {
   const attendees = await readAttendees(env, eventId)
-  return json(env, { attendees })
+  return json(env, { attendees: withHost(attendees, await readEvent(env, eventId)) })
 }
 
 // GET /events/attendance — public; bulk read { [eventId]: [...names] }.
-// Single KV GET in the steady state.
+// Two KV GETs in the steady state (attendance:all + events:all for the hosts).
+// Deliberately reads events:all raw rather than via readEventsAll(): the
+// attendance path must not trigger the events bootstrap (an extra origin
+// fetch). On a cold namespace the host overlay simply waits for the first
+// GET /events, which every page load already performs.
 async function handleAttendanceMap(env) {
   const all = await readAttendanceAll(env)
-  return json(env, { attendance: all })
+  const eventsRaw = await env.ATTENDANCE_KV.get('events:all')
+  const events = eventsRaw ? safeParseArray(eventsRaw) : []
+  const out = { ...all }
+  for (const e of events) {
+    if (!e || !e.hostId || !e.hostName) continue
+    out[e.id] = withHost(out[e.id] || [], e)
+  }
+  return json(env, { attendance: out })
 }
 
 // POST /events/:id/attend — authenticated.
@@ -1991,11 +2014,23 @@ async function readRsvp(env, eventId) {
   }
 }
 
-// Write the RSVP record AND mirror confirmed-names into attend:{id} so public
-// GET /events/:id/attendance keeps returning the same shape it always has.
-async function writeRsvp(env, eventId, rsvp) {
+// Write the RSVP record AND mirror the attendee names into attend:{id} so
+// public GET /events/:id/attendance keeps returning the same shape it always
+// has. The host is an attendee — they're in the room, and the leaderboard /
+// member attendance history read this mirror — but is deliberately NOT an
+// rsvp.confirmed entry: capacity counts guest slots, so a synthetic host RSVP
+// would eat one, mail the host their own address, and trip the "cannot reduce
+// capacity below confirmed" guard.
+//
+// `event` is optional: pass it when the caller already has the row (saves a
+// KV read), otherwise it's fetched.
+async function writeRsvp(env, eventId, rsvp, event) {
   await env.ATTENDANCE_KV.put(`rsvp:${eventId}`, JSON.stringify(rsvp))
-  await writeAttendees(env, eventId, rsvp.confirmed.map(r => r.name))
+  const ev = event || await readEvent(env, eventId)
+  const names = rsvp.confirmed.map(r => r.name)
+  const hostName = ev && ev.hostId ? ev.hostName : null
+  if (hostName && !names.includes(hostName)) names.unshift(hostName)
+  await writeAttendees(env, eventId, names)
 }
 
 async function removeRsvp(env, eventId) {
@@ -2411,7 +2446,7 @@ async function handleCreateEvent(request, env) {
     event.venue = `${member.name}'s house`
   }
   await writeEvent(env, event)
-  await writeRsvp(env, event.id, { confirmed: [], waitlist: [] })
+  await writeRsvp(env, event.id, { confirmed: [], waitlist: [] }, event)
   return json(env, { ok: true, id: event.id, event: publicEventProjection(event) })
 }
 
@@ -2490,7 +2525,7 @@ async function handleUpdateEvent(request, env, eventId) {
       confirmed: [...rsvp.confirmed, ...promoted],
       waitlist:  rsvp.waitlist.slice(slots),
     }
-    await writeRsvp(env, eventId, rsvpAfter)
+    await writeRsvp(env, eventId, rsvpAfter, updated)
     for (const p of promoted) {
       try { await sendRsvpEmail(env, { id: p.memberId, email: p.email, name: p.name }, updated, origin) }
       catch (e) { console.error('promotion email failed:', e?.message || e) }
@@ -2556,6 +2591,12 @@ async function handleRsvp(request, env, eventId) {
   if (event.date && event.date < today) {
     return json(env, { error: 'this screening has already happened' }, 409)
   }
+  // The host already counts as an attendee (see writeRsvp/withHost). Letting
+  // them RSVP would eat one of their own guest slots and mail them their own
+  // address.
+  if (event.hostId === member.id) {
+    return json(env, { error: "you're hosting — you're already counted as attending" }, 409)
+  }
 
   const rsvp = await readRsvp(env, eventId)
   if (rsvp.confirmed.some(r => r.memberId === member.id)) {
@@ -2580,13 +2621,13 @@ async function handleRsvp(request, env, eventId) {
 
   if (rsvp.confirmed.length < capacity) {
     rsvp.confirmed.push(entry)
-    await writeRsvp(env, eventId, rsvp)
+    await writeRsvp(env, eventId, rsvp, event)
     try { await sendRsvpEmail(env, member, event, origin) }
     catch (e) { console.error('rsvp email failed:', e?.message || e) }
     return json(env, { ok: true, status: 'confirmed' })
   }
   rsvp.waitlist.push(entry)
-  await writeRsvp(env, eventId, rsvp)
+  await writeRsvp(env, eventId, rsvp, event)
   return json(env, { ok: true, status: 'waitlisted', position: rsvp.waitlist.length })
 }
 
@@ -2610,7 +2651,7 @@ async function cancelRsvp(env, eventId, memberId, origin) {
       promoted = rsvp.waitlist.shift()
       rsvp.confirmed.push(promoted)
     }
-    await writeRsvp(env, eventId, rsvp)
+    await writeRsvp(env, eventId, rsvp, event)
     if (promoted) {
       try { await sendRsvpEmail(env, { id: promoted.memberId, email: promoted.email, name: promoted.name }, event, origin) }
       catch (e) { console.error('promotion email failed:', e?.message || e) }
@@ -2620,7 +2661,7 @@ async function cancelRsvp(env, eventId, memberId, origin) {
   const wIdx = rsvp.waitlist.findIndex(r => r.memberId === memberId)
   if (wIdx !== -1) {
     rsvp.waitlist.splice(wIdx, 1)
-    await writeRsvp(env, eventId, rsvp)
+    await writeRsvp(env, eventId, rsvp, event)
     return { ok: true, status: 'cancelled', promoted: false }
   }
   return { ok: true, status: 'not-rsvped', promoted: false }
@@ -2687,13 +2728,13 @@ async function handleGuestAdd(request, env, eventId) {
   const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
   if (rsvp.confirmed.length < capacity || body.force === true) {
     rsvp.confirmed.push(entry)
-    await writeRsvp(env, eventId, rsvp)
+    await writeRsvp(env, eventId, rsvp, event)
     try { await sendGuestRsvpEmail(env, entry, event, new URL(request.url).origin) }
     catch (e) { console.error('guest rsvp email failed:', e?.message || e) }
     return json(env, { ok: true, status: 'confirmed', id: entry.memberId })
   }
   rsvp.waitlist.push(entry)
-  await writeRsvp(env, eventId, rsvp)
+  await writeRsvp(env, eventId, rsvp, event)
   return json(env, { ok: true, status: 'waitlisted', position: rsvp.waitlist.length, id: entry.memberId })
 }
 

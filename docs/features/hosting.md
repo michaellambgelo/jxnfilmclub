@@ -16,6 +16,11 @@ Both kinds share the RSVP flow (`POST/DELETE /events/:id/rsvp`, confirmation
 emails with one-click cancel token, waitlist auto-promotion) and the host-only
 view (`GET /events/:id/host`).
 
+The host counts as an attendee of their own screening but never holds an RSVP
+slot: capacity is guest seats, `POST /events/:id/rsvp` 409s for the host, and
+the host name is mirrored/overlaid into the public attendee list. See
+[attendance.md § Hosts count as attendees](./attendance.md#hosts-count-as-attendees).
+
 ## Privacy model
 
 The public/private boundary is `publicEventProjection()` (`worker/src/index.js`)

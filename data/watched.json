@@ -487,6 +487,15 @@
   ],
   "badmov1eenjoyer": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/rocky/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/0/9/0/51090-rocky-0-600-0-900-crop.jpg?v=da48c9eb5a",
+      "rating": "4.0",
+      "title": "Rocky",
+      "watched_date": "2026-08-17",
+      "year": "1976"
+    },
+    {
       "link": "https://letterboxd.com/badmov1eenjoyer/film/moneyball/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/h1/fd/pz/pi/3oAa8mJJ97CH9AeGEY6vjAxqcvZ-0-600-0-900-crop.jpg?v=3ce471493f",
       "rating": "3.5",
@@ -581,14 +590,6 @@
       "rating": "4.5",
       "title": "The Invite",
       "watched_date": "2026-07-14",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/they-will-kill-you/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/7/5/5/2/8/1175528-they-will-kill-you-0-600-0-900-crop.jpg?v=ed2974424c",
-      "rating": "3.0",
-      "title": "They Will Kill You",
-      "watched_date": "2026-07-13",
       "year": "2026"
     }
   ],
@@ -1007,6 +1008,16 @@
   ],
   "jon_knowledge": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/jon_knowledge/film/stakeout/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/8/2/6/45826-stakeout-0-600-0-900-crop.jpg?v=706e1420cd",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "Stakeout",
+      "watched_date": "2026-08-17",
+      "year": "1987"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/crime-101/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/5/8/1/3/2/1058132-crime-101-0-600-0-900-crop.jpg?v=eaba4b3224",
       "rating": "4.5",
@@ -1098,15 +1109,6 @@
       "title": "Wheels on Meals",
       "watched_date": "2026-07-08",
       "year": "1984"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/jon_knowledge/film/the-way-of-the-dragon/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/1/3/5/47135-the-way-of-the-dragon-0-600-0-900-crop.jpg?v=6c403e2d29",
-      "rating": "5.0",
-      "title": "The Way of the Dragon",
-      "watched_date": "2026-07-05",
-      "year": "1972"
     }
   ],
   "michaellamb": [

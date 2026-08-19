@@ -595,6 +595,14 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/mortal-kombat-ii/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/3/6/5/7/1/836571-mortal-kombat-ii-0-600-0-900-crop.jpg?v=6fea3b13de",
+      "rating": "2.0",
+      "title": "Mortal Kombat II",
+      "watched_date": "2026-08-18",
+      "year": "2026"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/calissippi/film/the-end-of-oak-street/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/2/9/6/2/992962-the-end-of-oak-street-0-600-0-900-crop.jpg?v=b06dbfb4c9",
@@ -686,14 +694,6 @@
       "rating": "2.0",
       "title": "Masters of the Universe",
       "watched_date": "2026-07-25",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/tony-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/9/0/0/1/1209001-tony-2026-0-600-0-900-crop.jpg?v=63ce7b9234",
-      "rating": "3.5",
-      "title": "Tony",
-      "watched_date": "2026-07-21",
       "year": "2026"
     }
   ],

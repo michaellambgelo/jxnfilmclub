@@ -2,6 +2,27 @@
   {
     "handle": "jon_knowledge",
     "liked": true,
+    "link": "https://letterboxd.com/jon_knowledge/film/the-king-of-comedy/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/4g/y9/qr/q9/pbAqLKoLydP7jl6P0vmYwlDtRPD-0-600-0-900-crop.jpg?v=8eb030b5f7",
+    "rating": "5.0",
+    "review": "First off love the Last Waltz connection (music by Robbie Roberstson) Why didnt this get an Oscar?? Best written Scorcese film to date. Goated flick",
+    "title": "The King of Comedy",
+    "watched_date": "2026-08-18",
+    "year": "1982"
+  },
+  {
+    "handle": "heath_walt",
+    "link": "https://letterboxd.com/heath_walt/film/obsession-2025/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/3/4/4/7/2/1234472-obsession-2025-2-0-600-0-900-crop.jpg?v=cff6fc00b6",
+    "rating": "2.5",
+    "review": "I hate sounding like a contrarian on this app sometimes, but I do not get the hype. Certainly quite a ride, though. I felt like too much \u201cbe careful what you wish for\u201d and \u201cthis bitch is crazy\u201d came across. I know that the movie is really \u201cabout\u201d Inde Navarrette\u2019s character\u2019s loss of autonomy and\u2026",
+    "title": "Obsession",
+    "watched_date": "2026-08-18",
+    "year": "2025"
+  },
+  {
+    "handle": "jon_knowledge",
+    "liked": true,
     "link": "https://letterboxd.com/jon_knowledge/film/stakeout/1/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/8/2/6/45826-stakeout-0-600-0-900-crop.jpg?v=706e1420cd",
     "rating": "5.0",
@@ -158,16 +179,6 @@
     "year": "2026"
   },
   {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/abruptio/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/1/3/3/6/8/313368-abruptio-0-600-0-900-crop.jpg?v=12e5cd0377",
-    "rating": "3.0",
-    "review": "Why did I do this too myself",
-    "title": "Abruptio",
-    "watched_date": "2026-08-09",
-    "year": "2023"
-  },
-  {
     "handle": "calissippi",
     "link": "https://letterboxd.com/calissippi/film/altered-states/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/2/0/6/45206-altered-states-0-600-0-900-crop.jpg?v=78fc61ab1b",
@@ -218,17 +229,6 @@
     "title": "Cape Fear",
     "watched_date": "2026-08-03",
     "year": "1991"
-  },
-  {
-    "handle": "heath_walt",
-    "liked": true,
-    "link": "https://letterboxd.com/heath_walt/film/bloodsport/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/e4/j9/y0/49/E4d48dFICxN1tcGywt1p5zBHYJ-0-600-0-900-crop.jpg?v=c24e535879",
-    "rating": "3.0",
-    "review": "Watched w the boys",
-    "title": "Bloodsport",
-    "watched_date": "2026-08-01",
-    "year": "1988"
   },
   {
     "handle": "calissippi",

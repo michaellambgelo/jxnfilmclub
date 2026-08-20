@@ -5,7 +5,7 @@ import {
   buildVoiceCtaHtml, buildVoiceCtaText,
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
-  attendanceWithHosts, buildStatsContext, computeMemberStats, ordinal,
+  attendanceWithHosts, buildStatsContext, computeMemberStats, ordinal, WATCHED_FEED_DEPTH,
   appendHtmlChunk, appendTextChunk,
 } from '../../admin/lib.js'
 
@@ -420,6 +420,22 @@ describe('computeMemberStats', () => {
     expect(computeMemberStats({ id: 'id-ann', name: 'Ann Attendee' }, ctx).rsvps).toBe(2)
     // Bob is waitlisted on one upcoming event — a waitlist place still counts.
     expect(computeMemberStats({ id: 'id-bob', name: 'Bob Buff' }, ctx).rsvps).toBe(1)
+  })
+
+  // NOTE: this count is a capped RSS window, never a films-logged total. It is
+  // admin-only for newsletter sourcing; the member card does not show it.
+  it('flags a count sitting at the feed cap so it can render as 12+, not a total', () => {
+    const ctx = ctxFor({ watched: { atCap: new Array(WATCHED_FEED_DEPTH).fill(1), under: new Array(6).fill(1) } })
+    const capped = computeMemberStats({ id: 'x', name: 'X', handle: 'atCap' }, ctx)
+    expect(capped.logged).toBe(12)
+    expect(capped.atFilmCap).toBe(true)
+
+    const under = computeMemberStats({ id: 'y', name: 'Y', handle: 'under' }, ctx)
+    expect(under.logged).toBe(6)
+    expect(under.atFilmCap).toBe(false)
+
+    // Unlinked reads 0 and is not "at the cap".
+    expect(computeMemberStats({ id: 'z', name: 'Z' }, ctx).atFilmCap).toBe(false)
   })
 
   it('looks up watched films by exact handle case and reports 0 when unlinked', () => {

@@ -761,7 +761,14 @@ export function computeMemberStats(member, ctx) {
 
   // Exact-key lookup on the handle. watched keys carry Letterboxd display
   // case, and watched-view on the public site does not normalize either.
+  //
+  // This is NOT a films-logged total and must never be shown as one. The feed
+  // parser stops at WATCHED_FEED_DEPTH (12) per handle, so an active member
+  // reads exactly 12 no matter how much they log. It stays here because the
+  // admin uses it to source newsletter content, and atFilmCap lets the table
+  // render 12+ rather than lie. The member-facing card does not show it at all.
   const logged = (m.handle && ctx.watched[m.handle]) ? ctx.watched[m.handle].length : 0
+  const atFilmCap = logged >= WATCHED_FEED_DEPTH
 
   // A rename does not rewrite past attendance rows, so a zero is ambiguous.
   // Only suspicious when screenings have come and gone since they joined with
@@ -783,11 +790,16 @@ export function computeMemberStats(member, ctx) {
     rankLabel: rank ? ordinal(rank) : '',
     hosted: ctx.events.filter(e => e.hostId && e.hostId === m.id).length,
     logged,
+    atFilmCap,
     rsvps: ctx.rsvpByMember[m.id] || 0,
     clips: ctx.clipsByMember[m.id] || 0,
     renamed: attended === 0 && pastSinceJoin > 0,
   }
 }
+
+// Mirrors WATCHED_FEED_DEPTH in worker/src/index.js — the point at which the
+// RSS parser stops, and therefore the point at which a count becomes "or more".
+export const WATCHED_FEED_DEPTH = 12
 
 export function ordinal(n) {
   const tens = n % 100

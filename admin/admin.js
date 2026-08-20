@@ -1069,10 +1069,11 @@ function statsCardHtml(s) {
     `<div class="stat-tile"><b class="${muted ? 'stat-value muted-value' : 'stat-value'}">${escapeHtml(String(value))}</b>` +
     `<span class="stat-label">${escapeHtml(label)}</span></div>`
 
+  // Films logged is absent by design — see the note in lib.js. The handle
+  // stays, since knowing whether a member is linked is useful to an operator.
   const meta = [
     s.joined ? `Member since ${fmtJoined(s.joined)}` : '',
-    `${s.clips} voice ${s.clips === 1 ? 'clip' : 'clips'}`,
-    `Newsletter ${s.newsletter ? 'on' : 'off'}`,
+    `Newsletter <span class="pill ${s.newsletter ? 'on' : 'off'}">${s.newsletter ? 'on' : 'off'}</span>`,
     s.handle ? `<code>@${escapeHtml(s.handle)}</code>` : 'No Letterboxd linked',
   ].filter(Boolean)
 
@@ -1085,7 +1086,7 @@ function statsCardHtml(s) {
       <div class="stat-grid${s.hosted ? '' : ' -three'}">
         ${tile(s.attended, 'Attended')}
         ${s.hosted ? tile(s.hosted, 'Hosted') : ''}
-        ${tile(s.handle ? s.logged : '—', 'Films logged', !s.handle)}
+        ${tile(s.clips, `Voice ${s.clips === 1 ? 'clip' : 'clips'}`)}
         ${tile(s.rsvps, 'Upcoming RSVPs')}
       </div>
       ${s.rankLabel ? `<p class="stat-rank">★ ${escapeHtml(s.rankLabel)} most screenings attended</p>` : ''}
@@ -1099,13 +1100,14 @@ async function renderStats() {
   if (!rows.length) return content().innerHTML = '<p class="empty">No members in KV.</p>'
 
   const sorted = [...rows].sort(STATS_SORTS[statsSort])
-  const num = (v, muted) => muted ? '<span class="muted">—</span>' : escapeHtml(String(v))
-
   content().innerHTML = `
     <h2>Stats <span class="muted">(${rows.length})</span></h2>
     <p class="section-hint">Derived from KV — nothing here is stored. Mirrors what each
       member sees on <code>/edit</code>; hosts are credited for their own screenings the
       same way <code>/events/attendance</code> credits them. Read-only.</p>
+    <p class="section-hint"><b>Films*</b> is the recent Letterboxd diary window used to source
+      newsletter content, capped at 12 per member — <code>12+</code> means at the cap, not a
+      total. Members never see it.</p>
     <div class="search">
       <input id="filter" type="text" placeholder="filter by name / handle / id">
       <label class="env-label">sort
@@ -1118,7 +1120,7 @@ async function renderStats() {
     <table id="stats-table">
       <thead><tr>
         <th>Name</th><th>Attended</th><th>Rank</th><th>Hosted</th>
-        <th>Films</th><th>RSVPs</th><th>Clips</th><th>Actions</th>
+        <th title="Recent Letterboxd diary entries, capped at 12 per member — not a lifetime total">Films*</th><th>RSVPs</th><th>Clips</th><th>Actions</th>
       </tr></thead>
       <tbody>
         ${sorted.map(s => `
@@ -1127,7 +1129,8 @@ async function renderStats() {
             <td>${escapeHtml(String(s.attended))}</td>
             <td>${s.rankLabel ? escapeHtml(s.rankLabel) : '<span class="muted">—</span>'}</td>
             <td>${escapeHtml(String(s.hosted))}</td>
-            <td>${num(s.logged, !s.handle)}</td>
+            <td>${!s.handle ? '<span class="muted">—</span>'
+              : s.atFilmCap ? `${escapeHtml(String(s.logged))}+` : escapeHtml(String(s.logged))}</td>
             <td>${escapeHtml(String(s.rsvps))}</td>
             <td>${escapeHtml(String(s.clips))}</td>
             <td class="actions"><button data-action="member-stats" data-id="${attr(s.id)}">card</button></td>

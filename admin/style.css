@@ -309,3 +309,100 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   margin-bottom: 0.8rem;
 }
 @media (max-width: 900px) { .cfg-episode { grid-template-columns: 1fr } }
+
+/* --- Stats tab + the per-member card --------------------------------------
+   Deliberately plainer than the member-facing card on jxnfilm.club: this is
+   an operator tool, so the numbers sit on the admin's light surface and wear
+   the system font rather than the site's Oswald/Playfair pairing. */
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.9rem;
+  min-width: 22rem;
+}
+
+/* Fixed 4-up with minmax(0,1fr) so a long label wraps inside its own tile
+   instead of widening the track and orphaning the fourth onto a new row. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+}
+
+.stat-tile { display: flex; flex-direction: column }
+
+/* Proportional figures on purpose: tabular-nums gives every digit the width
+   of a zero, which reads loose at this size. The columns in #stats-table are
+   the place for tabular alignment, not a standalone value. */
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.stat-value.muted-value { color: var(--muted); font-size: 1.1rem; line-height: 1.8 }
+
+.stat-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-rank {
+  margin: 0.8rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--brand-dark);
+}
+
+.stat-meta { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.85rem }
+.stat-meta code { font-size: 0.95em }
+
+.stat-warn {
+  margin: 0.7rem 0 0;
+  padding: 0.5rem 0.6rem;
+  background: #fff6ec;
+  border-left: 3px solid var(--warn);
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+
+/* Inline marker in the Stats table for the same rename suspicion the card
+   spells out, so it is scannable down the column. */
+.stat-flag {
+  font-size: 0.7rem;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  padding: 0 0.3em;
+  cursor: help;
+}
+
+/* Rendered-markup modal body. The default #modal-body is a <pre> for raw
+   JSON; .rich drops the monospace/whitespace treatment for a real card. */
+dialog pre.rich {
+  background: none;
+  padding: 0;
+  font: inherit;
+  white-space: normal;
+}
+
+/* Columns of numbers DO want tabular figures — they have to line up down the
+   column, unlike the standalone values in .stat-value above. */
+#stats-table td:nth-child(n+2):nth-child(-n+7) { font-variant-numeric: tabular-nums }
+
+/* With no rank (an unranked member), the rank line is absent and the meta
+   row would lose the rule that separates it from the tiles. */
+.stat-grid + .stat-meta {
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}

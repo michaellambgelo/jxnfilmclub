@@ -654,3 +654,127 @@ export function buildEventsSectionText(events) {
   })
   return `Upcoming events:\n${lines.join('\n')}\n\nSee all events: https://jxnfilm.club/events`
 }
+
+// --- Member stats ---
+//
+// PARITY NOTE. These mirror computeAccountStats() in ui/auth.html, which is
+// what a member sees on /edit. The two cannot share code — that one lives in
+// Nue dhtml module scope, this one in the admin's plain-module SPA — so the
+// semantics are pinned by tests/admin/lib.test.js instead. Change one, change
+// both: rank ties, the upcoming-events window, the exact-key watched lookup
+// and the rename heuristic all have to agree or the admin will quietly
+// contradict the member's own page.
+//
+// The inputs are the raw KV shapes the admin already bulk-loads, so a whole
+// club costs the same handful of reads as one member.
+
+// Hosts are overlaid onto attendance at READ time by the join Worker
+// (handleAttendanceMap), because screenings created before that change never
+// got the host mirrored into attend:{id}. data/attendance.json - the snapshot
+// the member card reads - is taken off that endpoint, so it already has them.
+// Raw attendance:all does NOT. Without this the admin undercounts every host
+// against their own card.
+export function attendanceWithHosts(attendance, events) {
+  const out = { ...(attendance || {}) }
+  for (const e of events || []) {
+    if (!e || !e.hostId || !e.hostName) continue
+    const names = out[e.id] || []
+    out[e.id] = names.includes(e.hostName) ? names : [e.hostName, ...names]
+  }
+  return out
+}
+
+// Central-time today as YYYY-MM-DD. Event dates are bare date strings and are
+// compared lexically, never parsed into Dates - see fmtJoined above for the
+// same reasoning about day-rolling.
+export function clubToday(now) {
+  const d = now || new Date()
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(d)
+}
+
+// One pass over the raw reads, shared by every member. Returns the derived
+// lookups computeMemberStats needs, so a club of N costs one pass, not N.
+export function buildStatsContext({ attendance, events, rsvps, voiceKeys, watched }, now) {
+  const evs = events || []
+  const withHosts = attendanceWithHosts(attendance, evs)
+
+  const counts = {}
+  for (const id of Object.keys(withHosts)) {
+    for (const n of withHosts[id] || []) counts[n] = (counts[n] || 0) + 1
+  }
+
+  const today = clubToday(now)
+  const upcomingIds = new Set(evs.filter(e => (e.date || '') >= today).map(e => e.id))
+
+  // rsvps is { "rsvp:{eventId}": {confirmed:[],waitlist:[]} } straight off the
+  // prefix read. Flatten to memberId -> count of upcoming events they hold a
+  // seat or a waitlist place on, matching what /rsvp/me reports per event.
+  const rsvpByMember = {}
+  for (const key of Object.keys(rsvps || {})) {
+    const eventId = key.startsWith('rsvp:') ? key.slice(5) : key
+    if (!upcomingIds.has(eventId)) continue
+    const row = rsvps[key] || {}
+    for (const r of [...(row.confirmed || []), ...(row.waitlist || [])]) {
+      if (r && r.memberId) rsvpByMember[r.memberId] = (rsvpByMember[r.memberId] || 0) + 1
+    }
+  }
+
+  // voice:{promptId}:{memberId} - count the rows whose trailing segment is
+  // this member. Same 60-day-retention meaning as the member-facing count.
+  const clipsByMember = {}
+  for (const key of voiceKeys || []) {
+    const memberId = String(key).split(':').slice(2).join(':')
+    if (memberId) clipsByMember[memberId] = (clipsByMember[memberId] || 0) + 1
+  }
+
+  return { counts, events: evs, today, rsvpByMember, clipsByMember, watched: watched || {} }
+}
+
+export function computeMemberStats(member, ctx) {
+  const m = member || {}
+  const attended = ctx.counts[m.name] || 0
+
+  // Ties share the better position: two members on 4 are both 2nd, nobody 3rd.
+  const rank = attended > 0
+    ? Object.keys(ctx.counts).filter(n => ctx.counts[n] > attended).length + 1
+    : 0
+
+  // Exact-key lookup on the handle. watched keys carry Letterboxd display
+  // case, and watched-view on the public site does not normalize either.
+  const logged = (m.handle && ctx.watched[m.handle]) ? ctx.watched[m.handle].length : 0
+
+  // A rename does not rewrite past attendance rows, so a zero is ambiguous.
+  // Only suspicious when screenings have come and gone since they joined with
+  // none filed under the name they use now.
+  const joinedDay = String(m.joined || '').slice(0, 10)
+  const pastSinceJoin = ctx.events.filter(e => {
+    const d = e.date || ''
+    return d < ctx.today && (!joinedDay || d >= joinedDay)
+  }).length
+
+  return {
+    id: m.id || '',
+    name: m.name || '',
+    handle: m.handle || null,
+    joined: m.joined || null,
+    newsletter: !!m.newsletter,
+    attended,
+    rank,
+    rankLabel: rank ? ordinal(rank) : '',
+    hosted: ctx.events.filter(e => e.hostId && e.hostId === m.id).length,
+    logged,
+    rsvps: ctx.rsvpByMember[m.id] || 0,
+    clips: ctx.clipsByMember[m.id] || 0,
+    renamed: attended === 0 && pastSinceJoin > 0,
+  }
+}
+
+export function ordinal(n) {
+  const tens = n % 100
+  if (tens >= 11 && tens <= 13) return `${n}th`
+  const ones = n % 10
+  if (ones === 1) return `${n}st`
+  if (ones === 2) return `${n}nd`
+  if (ones === 3) return `${n}rd`
+  return `${n}th`
+}

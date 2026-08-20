@@ -5,6 +5,7 @@ import {
   buildVoiceCtaHtml, buildVoiceCtaText,
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
+  attendanceWithHosts, buildStatsContext, computeMemberStats, ordinal,
 } from '../../admin/lib.js'
 
 afterEach(() => {
@@ -328,5 +329,132 @@ describe('buildPosterBlockHtml / buildPosterBlockText', () => {
       'Halloween (1978): https://jxnfilm.club/events\n[Write your review or announcement here — replace this placeholder before sending.]')
     expect(buildPosterBlockText({ ...block, link: '' })).toContain('Halloween (1978)\n[Write')
     expect(buildPosterBlockText({ link: 'https://x.example', title: '', year: '' })).toContain('https://x.example\n[Write')
+  })
+})
+
+// --- Member stats -----------------------------------------------------------
+//
+// These pin the semantics that computeAccountStats() in ui/auth.html also
+// implements. The two cannot share code, so parity is a test obligation.
+
+const STATS_EVENTS = [
+  { id: 'e-past-1',  date: '2026-01-10' },
+  { id: 'e-past-2',  date: '2026-02-10' },
+  // Member-hosted screening in the past; the host never got mirrored into
+  // attend:{id}, which is exactly what the read-time overlay exists to fix.
+  { id: 'e-hosted',  date: '2026-03-10', hostId: 'id-hosty', hostName: 'Hosty McHost' },
+  { id: 'e-future',  date: '2099-01-01' },
+  { id: 'e-future2', date: '2099-06-01' },
+]
+
+const STATS_ATTENDANCE = {
+  'e-past-1': ['Ann Attendee', 'Bob Buff', 'Cara Cinema'],
+  'e-past-2': ['Ann Attendee', 'Bob Buff'],
+  'e-hosted': ['Ann Attendee'],
+}
+
+function ctxFor(overrides = {}) {
+  return buildStatsContext({
+    attendance: STATS_ATTENDANCE,
+    events: STATS_EVENTS,
+    rsvps: {
+      'rsvp:e-future': { confirmed: [{ memberId: 'id-ann' }], waitlist: [{ memberId: 'id-bob' }] },
+      'rsvp:e-future2': { confirmed: [{ memberId: 'id-ann' }], waitlist: [] },
+      // Past event — must not count toward "upcoming".
+      'rsvp:e-past-1': { confirmed: [{ memberId: 'id-ann' }], waitlist: [] },
+    },
+    voiceKeys: ['voice:general:id-ann', 'voice:muppets:id-ann', 'voice:general:id-bob'],
+    watched: { michaellamb: [1, 2, 3], MixedCase: [1] },
+    ...overrides,
+  }, new Date('2026-08-19T12:00:00Z'))
+}
+
+describe('attendanceWithHosts', () => {
+  it('overlays the host onto their own screening', () => {
+    const out = attendanceWithHosts(STATS_ATTENDANCE, STATS_EVENTS)
+    expect(out['e-hosted']).toEqual(['Hosty McHost', 'Ann Attendee'])
+  })
+
+  it('is idempotent — a host already present is not duplicated', () => {
+    const already = { 'e-hosted': ['Hosty McHost', 'Ann Attendee'] }
+    expect(attendanceWithHosts(already, STATS_EVENTS)['e-hosted'])
+      .toEqual(['Hosty McHost', 'Ann Attendee'])
+  })
+
+  it('leaves club screenings (no host) untouched and does not mutate the input', () => {
+    const input = { 'e-past-1': ['Ann Attendee'] }
+    const out = attendanceWithHosts(input, STATS_EVENTS)
+    expect(out['e-past-1']).toEqual(['Ann Attendee'])
+    expect(input['e-hosted']).toBeUndefined()
+  })
+})
+
+describe('computeMemberStats', () => {
+  it('counts attendance, and credits a host for their own screening', () => {
+    const ctx = ctxFor()
+    // Without the overlay this host would score 0 and contradict their card.
+    const hosty = computeMemberStats({ id: 'id-hosty', name: 'Hosty McHost' }, ctx)
+    expect(hosty.attended).toBe(1)
+    expect(hosty.hosted).toBe(1)
+  })
+
+  it('ranks ties to the better position, leaving the next place vacant', () => {
+    const ctx = ctxFor()
+    // Ann 3, Bob 2, Cara 1, Hosty 1 → Cara and Hosty tie for 3rd; no 4th.
+    expect(computeMemberStats({ id: 'id-ann', name: 'Ann Attendee' }, ctx).rankLabel).toBe('1st')
+    expect(computeMemberStats({ id: 'id-bob', name: 'Bob Buff' }, ctx).rankLabel).toBe('2nd')
+    expect(computeMemberStats({ id: 'id-cara', name: 'Cara Cinema' }, ctx).rankLabel).toBe('3rd')
+    expect(computeMemberStats({ id: 'id-hosty', name: 'Hosty McHost' }, ctx).rankLabel).toBe('3rd')
+  })
+
+  it('gives no rank to a member with no attendance', () => {
+    const s = computeMemberStats({ id: 'id-new', name: 'Nora New' }, ctxFor())
+    expect(s.rank).toBe(0)
+    expect(s.rankLabel).toBe('')
+  })
+
+  it('counts only upcoming RSVPs, confirmed and waitlisted alike', () => {
+    const ctx = ctxFor()
+    // Ann holds two upcoming seats plus one on a past event, which is excluded.
+    expect(computeMemberStats({ id: 'id-ann', name: 'Ann Attendee' }, ctx).rsvps).toBe(2)
+    // Bob is waitlisted on one upcoming event — a waitlist place still counts.
+    expect(computeMemberStats({ id: 'id-bob', name: 'Bob Buff' }, ctx).rsvps).toBe(1)
+  })
+
+  it('looks up watched films by exact handle case and reports 0 when unlinked', () => {
+    const ctx = ctxFor()
+    expect(computeMemberStats({ id: 'x', name: 'X', handle: 'michaellamb' }, ctx).logged).toBe(3)
+    expect(computeMemberStats({ id: 'x', name: 'X', handle: 'MixedCase' }, ctx).logged).toBe(1)
+    // Wrong case must not match — the public watched view does not normalize.
+    expect(computeMemberStats({ id: 'x', name: 'X', handle: 'mixedcase' }, ctx).logged).toBe(0)
+    expect(computeMemberStats({ id: 'x', name: 'X' }, ctx).logged).toBe(0)
+  })
+
+  it('counts voice clips by the trailing member id of voice:{prompt}:{id}', () => {
+    const ctx = ctxFor()
+    expect(computeMemberStats({ id: 'id-ann', name: 'Ann Attendee' }, ctx).clips).toBe(2)
+    expect(computeMemberStats({ id: 'id-bob', name: 'Bob Buff' }, ctx).clips).toBe(1)
+    expect(computeMemberStats({ id: 'id-cara', name: 'Cara Cinema' }, ctx).clips).toBe(0)
+  })
+
+  it('flags a likely rename: joined before past screenings, yet attended none', () => {
+    const ctx = ctxFor()
+    const renamed = computeMemberStats({ id: 'id-ghost', name: 'New Name', joined: '2026-01-01' }, ctx)
+    expect(renamed.renamed).toBe(true)
+
+    // Joined after every past screening — a zero is simply "not been yet".
+    const fresh = computeMemberStats({ id: 'id-fresh', name: 'Fresh', joined: '2026-08-01' }, ctx)
+    expect(fresh.renamed).toBe(false)
+
+    // Attendance on the board is never a rename, whenever they joined.
+    const present = computeMemberStats({ id: 'id-ann', name: 'Ann Attendee', joined: '2026-01-01' }, ctx)
+    expect(present.renamed).toBe(false)
+  })
+})
+
+describe('ordinal', () => {
+  it('handles the teens exception and the 1/2/3 suffixes', () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal))
+      .toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th'])
   })
 })

@@ -17,6 +17,7 @@ import {
   buildPosterBlockHtml, buildPosterBlockText,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
+  buildStatsContext, computeMemberStats,
 } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
@@ -74,7 +75,17 @@ async function withBusy(fn) {
 
 function showModal(title, body) {
   $('#modal-title').textContent = title
+  $('#modal-body').classList.remove('rich')
   $('#modal-body').textContent = body
+  $('#modal').showModal()
+}
+
+// Rendered-markup variant of showModal. Callers own escaping — every value
+// that reaches here goes through escapeHtml/attr first, same as the tables.
+function showModalHtml(title, html) {
+  $('#modal-title').textContent = title
+  $('#modal-body').classList.add('rich')
+  $('#modal-body').innerHTML = html
   $('#modal').showModal()
 }
 
@@ -89,6 +100,7 @@ const TABS = {
   voice: renderVoice,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
   config: renderConfig,
+  stats: renderStats,
 }
 
 // Tab names that existed before Pending/Sessions/Revoked/Rate limits were
@@ -144,6 +156,7 @@ async function renderMembers() {
             <td>${fmtJoined(m.joined)}</td>
             <td><code class="id">${escapeHtml(m.id)}</code></td>
             <td class="actions">
+              <button data-action="member-stats" data-id="${attr(m.id)}">stats</button>
               <button data-action="member-view" data-key="${attr(keyName)}">view</button>
               <button data-action="clear-rate" data-email="${attr(m.email)}">clear rate limits</button>
               ${(m.handle || agg[m.id]) ? `<button class="danger" data-action="unlink-lb" data-email="${attr(m.email)}" data-id="${attr(m.id)}" data-handle="${attr(m.handle || agg[m.id])}">${m.handle ? 'unlink LB' : 'repair LB'}</button>` : ''}
@@ -891,6 +904,139 @@ function syncPodcastInputs() {
   })
 }
 
+// --- Stats tab (derived; reads only, writes nothing) ---
+//
+// Every number here is computed from KV the admin already has, so the whole
+// club costs one pass over five bulk reads rather than a per-member fan-out.
+// The semantics mirror computeAccountStats() in ui/auth.html so the admin
+// never contradicts what a member sees on /edit — see the parity note in
+// lib.js and the fixtures in tests/admin/lib.test.js.
+
+let statsCache = null   // { rows, ctx } for the current env; cleared on refresh
+
+async function loadStats() {
+  // events:all, not the canonical event: rows — the aggregate is the projected
+  // shape with hosts private addresses stripped, and none of that belongs in
+  // the stats DOM.
+  const [members, attendanceAgg, eventsAgg, rsvpRaw, voiceRaw, watched] = await Promise.all([
+    loadKv('member:'),
+    loadKv('attendance:all', 'ATTENDANCE_KV'),
+    loadKv('events:all', 'ATTENDANCE_KV'),
+    loadKv('rsvp:', 'ATTENDANCE_KV'),
+    loadKv('voice:'),
+    api('GET', `/api/watched?${qs({ env: env() })}`),
+  ])
+
+  const rsvps = {}
+  for (const k of rsvpRaw.keys) {
+    const parsed = tryParse(rsvpRaw.values[k.name])
+    if (parsed) rsvps[k.name] = parsed
+  }
+
+  const ctx = buildStatsContext({
+    attendance: tryParse(attendanceAgg.values['attendance:all']) || {},
+    events: tryParse(eventsAgg.values['events:all']) || [],
+    rsvps,
+    voiceKeys: voiceRaw.keys.map(k => k.name),
+    watched: watched || {},
+  })
+
+  const rows = members.keys
+    .map(k => tryParse(members.values[k.name]))
+    .filter(Boolean)
+    .map(m => computeMemberStats(m, ctx))
+
+  statsCache = { rows, ctx }
+  return statsCache
+}
+
+const STATS_SORTS = {
+  attended: (a, b) => b.attended - a.attended || a.name.localeCompare(b.name),
+  hosted:   (a, b) => b.hosted - a.hosted || a.name.localeCompare(b.name),
+  logged:   (a, b) => b.logged - a.logged || a.name.localeCompare(b.name),
+  rsvps:    (a, b) => b.rsvps - a.rsvps || a.name.localeCompare(b.name),
+  clips:    (a, b) => b.clips - a.clips || a.name.localeCompare(b.name),
+  name:     (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+}
+let statsSort = 'attended'
+
+// The card a single member sees, rebuilt from admin-side data. Shared by the
+// Stats tab detail and the Members tab stats button.
+function statsCardHtml(s) {
+  const tile = (value, label, muted) =>
+    `<div class="stat-tile"><b class="${muted ? 'stat-value muted-value' : 'stat-value'}">${escapeHtml(String(value))}</b>` +
+    `<span class="stat-label">${escapeHtml(label)}</span></div>`
+
+  const meta = [
+    s.joined ? `Member since ${fmtJoined(s.joined)}` : '',
+    `${s.clips} voice ${s.clips === 1 ? 'clip' : 'clips'}`,
+    `Newsletter ${s.newsletter ? 'on' : 'off'}`,
+    s.handle ? `<code>@${escapeHtml(s.handle)}</code>` : 'No Letterboxd linked',
+  ].filter(Boolean)
+
+  return `
+    <div class="stat-card">
+      <div class="stat-grid">
+        ${tile(s.attended, 'Attended')}
+        ${tile(s.hosted, 'Hosted')}
+        ${tile(s.handle ? s.logged : '—', 'Films logged', !s.handle)}
+        ${tile(s.rsvps, 'Upcoming RSVPs')}
+      </div>
+      ${s.rankLabel ? `<p class="stat-rank">★ ${escapeHtml(s.rankLabel)} most screenings attended</p>` : ''}
+      <p class="stat-meta">${meta.join(' · ')}</p>
+      ${s.renamed ? `<p class="stat-warn">No attendance is filed under <b>${escapeHtml(s.name)}</b>, though screenings have happened since they joined. Attendance is keyed by display name and a rename does not rewrite past rows — the earlier ones are likely under the old name.</p>` : ''}
+    </div>`
+}
+
+async function renderStats() {
+  const { rows } = statsCache || await loadStats()
+  if (!rows.length) return content().innerHTML = '<p class="empty">No members in KV.</p>'
+
+  const sorted = [...rows].sort(STATS_SORTS[statsSort])
+  const num = (v, muted) => muted ? '<span class="muted">—</span>' : escapeHtml(String(v))
+
+  content().innerHTML = `
+    <h2>Stats <span class="muted">(${rows.length})</span></h2>
+    <p class="section-hint">Derived from KV — nothing here is stored. Mirrors what each
+      member sees on <code>/edit</code>; hosts are credited for their own screenings the
+      same way <code>/events/attendance</code> credits them. Read-only.</p>
+    <div class="search">
+      <input id="filter" type="text" placeholder="filter by name / handle / id">
+      <label class="env-label">sort
+        <select id="stats-sort">
+          ${Object.keys(STATS_SORTS).map(k =>
+            `<option value="${k}"${k === statsSort ? ' selected' : ''}>${k}</option>`).join('')}
+        </select>
+      </label>
+    </div>
+    <table id="stats-table">
+      <thead><tr>
+        <th>Name</th><th>Attended</th><th>Rank</th><th>Hosted</th>
+        <th>Films</th><th>RSVPs</th><th>Clips</th><th>Actions</th>
+      </tr></thead>
+      <tbody>
+        ${sorted.map(s => `
+          <tr data-search="${attr([s.name, s.handle, s.id].filter(Boolean).join(' ').toLowerCase())}">
+            <td>${escapeHtml(s.name)}${s.renamed ? ' <span class="stat-flag" title="No attendance filed under this name — possible rename">rename?</span>' : ''}</td>
+            <td>${escapeHtml(String(s.attended))}</td>
+            <td>${s.rankLabel ? escapeHtml(s.rankLabel) : '<span class="muted">—</span>'}</td>
+            <td>${escapeHtml(String(s.hosted))}</td>
+            <td>${num(s.logged, !s.handle)}</td>
+            <td>${escapeHtml(String(s.rsvps))}</td>
+            <td>${escapeHtml(String(s.clips))}</td>
+            <td class="actions"><button data-action="member-stats" data-id="${attr(s.id)}">card</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+  wireFilter($('#filter'), '#stats-table tbody tr')
+  $('#stats-sort').addEventListener('change', (e) => {
+    statsSort = e.target.value
+    withBusy(() => renderStats())
+  })
+}
+
 // --- Events tab (ATTENDANCE_KV: event:{id} canonical + events:all aggregate) ---
 //
 // Events are now KV-driven. The public site reads them via the Worker's
@@ -1125,6 +1271,21 @@ document.addEventListener('click', async (e) => {
       await delKv(key, currentTab === 'events' ? 'ATTENDANCE_KV' : 'MEMBERS_KV')
       toast(`Deleted ${key}`)
       await switchTab(currentTab)
+    }
+    else if (a === 'member-stats') {
+      // Reachable from Members as well as Stats, so the shared load may not
+      // have run yet. loadStats() fills the cache either way, and the button
+      // is disabled meanwhile because the fan-out is five KV reads.
+      const id = btn.dataset.id
+      btn.disabled = true
+      try {
+        const { rows } = statsCache || await loadStats()
+        const row = rows.find(r => r.id === id)
+        if (!row) { toast(`No stats for member id ${id}`, true); return }
+        showModalHtml(row.name || id, statsCardHtml(row))
+      } finally {
+        btn.disabled = false
+      }
     }
     else if (a === 'member-view') {
       const key = btn.dataset.key
@@ -1519,9 +1680,15 @@ document.addEventListener('click', async (e) => {
 document.body.dataset.env = env()
 $('#env').addEventListener('change', () => {
   document.body.dataset.env = env()
+  // Stats are derived from whichever namespace was read — never show
+  // production numbers under a staging header, or vice versa.
+  statsCache = null
   switchTab(currentTab)
 })
-$('#refresh').addEventListener('click', () => switchTab(currentTab))
+$('#refresh').addEventListener('click', () => {
+  statsCache = null
+  switchTab(currentTab)
+})
 document.querySelectorAll('#tabs button').forEach(b => {
   b.addEventListener('click', () => switchTab(b.dataset.tab))
 })

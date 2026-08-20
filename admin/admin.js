@@ -15,6 +15,7 @@ import {
   buildVoiceCtaHtml, buildVoiceCtaText,
   buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
+  appendHtmlChunk, appendTextChunk,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
   buildStatsContext, computeMemberStats,
@@ -203,7 +204,19 @@ const NEWSLETTER_SUBJECT_PLACEHOLDER = 'This month at Jackson Film Club'
 let nlHandleNames = {}
 let nlPosterResults = []
 
+// --- Compose undo ---
+// Inserts assign textarea .value programmatically, which never enters the
+// native undo stack; and syncToPreview replaces the whole preview document via
+// srcdoc on every input, wiping the iframe's stack too. So an insert is only
+// reversible if we snapshot it ourselves.
+let nlUndoStack = []       // [{ html, text, label }] — newest last
+let nlInsertClean = false  // the last body change was an insert, untouched since
+
 async function renderNewsletter() {
+  // content().innerHTML is rebuilt below, so any snapshot from a previous
+  // render points at a body that no longer exists — drop them.
+  nlUndoStack = []
+  nlInsertClean = false
   const [membersRes, historyRes, tmplRes] = await Promise.all([
     loadKv('member:'),
     loadKv('newsletter:sent:'),
@@ -253,22 +266,32 @@ async function renderNewsletter() {
           <iframe id="nl-preview" sandbox="allow-same-origin" title="HTML preview — editable"></iframe>
         </div>
       </div>
-      <!-- Compose controls, in insertion order: poster block, upcoming
-           events, member watches, voice CTA — then the send row last. -->
-      <div class="toolbar nl-poster-bar">
-        <input id="nl-poster-q" type="text" placeholder="film title…" title="Search TMDB for a poster">
-        <button data-action="nl-poster-search">Find poster</button>
-        <input id="nl-poster-link" type="url" placeholder="link URL — where the poster points (optional)">
-      </div>
-      <div id="nl-poster-results" class="nl-poster-results" hidden></div>
-      <div class="toolbar">
-        <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
-        <input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert" style="width:64px">
-        <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
-        <button data-action="nl-insert-voice" title="Append a record-a-clip CTA for the podcast, quoting the current voice prompt">Insert voice CTA</button>
+      <!-- Compose controls in two labeled groups — poster lookup, then the
+           content inserts (with Undo) — and the consequential send row last,
+           set off below the box. -->
+      <div class="nl-controls">
+        <div class="nl-group">
+          <h4>Poster</h4>
+          <div class="toolbar nl-poster-bar">
+            <label>Film title<input id="nl-poster-q" type="text" placeholder="film title…"></label>
+            <button data-action="nl-poster-search" title="Search TMDB for a poster">Find poster</button>
+            <label class="grow">Link URL <span class="muted">— optional</span><input id="nl-poster-link" type="url" placeholder="where the poster points"></label>
+          </div>
+          <div id="nl-poster-results" class="nl-poster-results" hidden></div>
+        </div>
+        <div class="nl-group">
+          <h4>Insert content</h4>
+          <div class="toolbar nl-insert-bar">
+            <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
+            <label class="nl-count">Entries<input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert"></label>
+            <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
+            <button data-action="nl-insert-voice" title="Append a record-a-clip CTA for the podcast, quoting the current voice prompt">Insert voice CTA</button>
+            <button id="nl-undo" class="nl-undo" data-action="nl-undo" disabled title="Nothing to undo">↶ Undo insert</button>
+          </div>
+        </div>
       </div>
       <div class="toolbar nl-send-bar">
-        <input id="nl-test-email" type="email" placeholder="you@example.com">
+        <label>Test address<input id="nl-test-email" type="email" placeholder="you@example.com"></label>
         <button data-action="nl-test">Send test</button>
         <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
       </div>
@@ -312,16 +335,80 @@ async function renderNewsletter() {
     </section>
   `
 
-  wireNewsletterPreview($('#nl-html'), $('#nl-preview'), $('#nl-fmt'))
+  wireNewsletterPreview($('#nl-html'), $('#nl-text'), $('#nl-preview'), $('#nl-fmt'))
   wireFilter($('#nl-filter'), '#nl-table tbody tr')
 }
+
+// Every insert routes through here: snapshot both bodies first, then append,
+// resync the preview, and refresh the Undo button. `label` names what the
+// Undo button offers to reverse.
+function nlInsert(htmlChunk, textChunk, label, message) {
+  const htmlField = $('#nl-html')
+  const textField = $('#nl-text')
+  nlUndoStack.push({ html: htmlField.value, text: textField.value, label })
+  if (nlUndoStack.length > 20) nlUndoStack.shift()
+  htmlField.value = appendHtmlChunk(htmlField.value, htmlChunk)
+  textField.value = appendTextChunk(textField.value, textChunk)
+  htmlField.dispatchEvent(new Event('input'))  // srcdoc-resyncs the preview
+  // AFTER the dispatch: dispatchEvent runs listeners synchronously, and the
+  // input listener clears this flag. Don't reorder these two lines.
+  nlInsertClean = true
+  nlSyncUndoButton()
+  toast(message)
+}
+
+// Pop one snapshot. Restoring both bodies wholesale (rather than excising the
+// inserted block) is deliberate: the preview reserializes the HTML through the
+// DOM parser on every edit, so the block isn't reliably findable afterwards.
+function nlUndoInsert() {
+  const snap = nlUndoStack.pop()
+  if (!snap) return
+  if (!nlInsertClean && !confirm(
+    `Undo the ${snap.label} insert?\n\nYou've edited the body since — those edits will be lost.`
+  )) { nlUndoStack.push(snap); return }
+  $('#nl-html').value = snap.html
+  $('#nl-text').value = snap.text
+  $('#nl-html').dispatchEvent(new Event('input'))
+  nlInsertClean = nlUndoStack.length > 0
+  nlSyncUndoButton()
+  toast(`Undid the ${snap.label} insert`)
+}
+
+function nlSyncUndoButton() {
+  const b = $('#nl-undo')
+  if (!b) return
+  const top = nlUndoStack[nlUndoStack.length - 1]
+  b.disabled = !top
+  b.textContent = top ? `↶ Undo ${top.label}` : '↶ Undo insert'
+  b.title = top ? `Reverse the ${top.label} insert (⌘Z)` : 'Nothing to undo'
+}
+
+// Cmd/Ctrl+Z reverses an insert only while it is still the most recent change
+// to a body — once the operator edits, native undo is what they want. Bound at
+// module scope, ONCE: wireNewsletterPreview re-runs on every Newsletter tab
+// visit, so binding it there would pop one snapshot per past visit.
+function nlBodyFocused(e) {
+  const t = e.target
+  return t === $('#nl-html') || t === $('#nl-text') ||
+    (t && t.ownerDocument && t.ownerDocument === $('#nl-preview')?.contentDocument)
+}
+
+function onUndoKey(e) {
+  if (!(e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey)) return
+  if (!$('#nl-html')) return          // compose UI isn't mounted (another tab)
+  if (!nlBodyFocused(e)) return       // caret is in subject / test email / poster query
+  if (!nlInsertClean || !nlUndoStack.length) return  // let native undo through
+  e.preventDefault()
+  nlUndoInsert()
+}
+document.addEventListener('keydown', onUndoKey)
 
 // Two-way compose editing: the textarea stays the source of truth (sends
 // read its value), the preview iframe doubles as a WYSIWYG surface over the
 // same HTML. sandbox=allow-same-origin lets this script drive the iframe
 // document while still refusing to execute anything in pasted HTML (no
 // allow-scripts).
-function wireNewsletterPreview(htmlField, preview, toolbar) {
+function wireNewsletterPreview(htmlField, textField, preview, toolbar) {
   // textarea → preview. Replaces the iframe document, so the editing
   // wiring re-attaches on every load below.
   const syncToPreview = () => { preview.srcdoc = htmlField.value }
@@ -330,12 +417,22 @@ function wireNewsletterPreview(htmlField, preview, toolbar) {
   // the source formatting, which is fine: the DOM is what gets emailed.
   const syncFromPreview = () => { htmlField.value = preview.contentDocument.body.innerHTML }
 
-  htmlField.addEventListener('input', syncToPreview)
+  // Any hand edit means the last insert is no longer the most recent change,
+  // so Cmd+Z should fall through to native undo from here on.
+  const clearClean = () => { nlInsertClean = false }
 
+  htmlField.addEventListener('input', syncToPreview)
+  htmlField.addEventListener('input', clearClean)
+  textField.addEventListener('input', clearClean)
+
+  // The preview is a separate document: srcdoc recreates it on every sync, so
+  // these re-attach per load — and its keydown never bubbles to the parent
+  // page, so onUndoKey has to be bound inside it too.
   preview.addEventListener('load', () => {
     const doc = preview.contentDocument
     doc.designMode = 'on'
-    doc.addEventListener('input', syncFromPreview)
+    doc.addEventListener('input', () => { clearClean(); syncFromPreview() })
+    doc.addEventListener('keydown', onUndoKey)
   })
 
   // mousedown would move focus out of the iframe and drop its text
@@ -355,6 +452,11 @@ function wireNewsletterPreview(htmlField, preview, toolbar) {
     } else {
       doc.execCommand(cmd, false, null)
     }
+    // execCommand firing an `input` on the iframe document is browser-
+    // dependent, and this path calls syncFromPreview() directly — so mark the
+    // body dirty here too, or Cmd+Z could discard the formatting as if the
+    // insert were still the most recent change.
+    clearClean()
     syncFromPreview()
   })
 
@@ -1363,12 +1465,8 @@ document.addEventListener('click', async (e) => {
         .sort((x, y) => String(x.date).localeCompare(String(y.date)))
       if (!upcoming.length) { toast('No upcoming events to insert', true); return }
 
-      const htmlField = $('#nl-html')
-      const textField = $('#nl-text')
-      htmlField.value = htmlField.value.trimEnd() + '\n' + buildEventsSectionHtml(upcoming)
-      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
-      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildEventsSectionText(upcoming)
-      toast(`Inserted ${upcoming.length} upcoming ${upcoming.length === 1 ? 'event' : 'events'} — edit or trim in the preview`)
+      nlInsert(buildEventsSectionHtml(upcoming), buildEventsSectionText(upcoming), 'upcoming events',
+        `Inserted ${upcoming.length} upcoming ${upcoming.length === 1 ? 'event' : 'events'} — edit or trim in the preview`)
     }
     else if (a === 'nl-insert-watched') {
       const limit = Math.max(1, Math.min(30, Number($('#nl-watched-count').value) || 8))
@@ -1385,12 +1483,8 @@ document.addEventListener('click', async (e) => {
       entries.sort((x, y) => String(y.watched_date || '').localeCompare(String(x.watched_date || '')))
       const top = entries.slice(0, limit)
 
-      const htmlField = $('#nl-html')
-      const textField = $('#nl-text')
-      htmlField.value = htmlField.value.trimEnd() + '\n' + buildWatchedSectionHtml(top)
-      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
-      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildWatchedSectionText(top)
-      toast(`Inserted ${top.length} ${top.length === 1 ? 'entry' : 'entries'} — edit or trim in the preview`)
+      nlInsert(buildWatchedSectionHtml(top), buildWatchedSectionText(top), 'member watches',
+        `Inserted ${top.length} ${top.length === 1 ? 'entry' : 'entries'} — edit or trim in the preview`)
     }
     else if (a === 'nl-insert-voice') {
       // Current prompt from KV (env-aware); the generic default when unset —
@@ -1398,12 +1492,11 @@ document.addEventListener('click', async (e) => {
       const { values } = await loadKv('config:voice_prompt')
       const vp = tryParse(values['config:voice_prompt'])
       const text = (vp && typeof vp.text === 'string' && vp.text.trim()) || DEFAULT_VOICE_PROMPT.text
-      const htmlField = $('#nl-html')
-      const textField = $('#nl-text')
-      htmlField.value = htmlField.value.trimEnd() + '\n' + buildVoiceCtaHtml({ text })
-      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
-      textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + buildVoiceCtaText({ text })
-      toast('Inserted the voice-clip CTA — edit in the preview')
+      nlInsert(buildVoiceCtaHtml({ text }), buildVoiceCtaText({ text }), 'voice CTA',
+        'Inserted the voice-clip CTA — edit in the preview')
+    }
+    else if (a === 'nl-undo') {
+      nlUndoInsert()
     }
     else if (a === 'nl-poster-search') {
       const query = $('#nl-poster-q').value.trim()
@@ -1429,14 +1522,10 @@ document.addEventListener('click', async (e) => {
       if (!p) return
       const link = $('#nl-poster-link').value.trim()
       const block = { poster: p.poster, link, title: p.title, year: p.year }
-      const htmlField = $('#nl-html')
-      const textField = $('#nl-text')
-      htmlField.value = htmlField.value.trimEnd() + '\n' + buildPosterBlockHtml(block)
-      htmlField.dispatchEvent(new Event('input'))  // sync the WYSIWYG preview
-      const textLine = buildPosterBlockText(block)
-      if (textLine) textField.value = (textField.value.trim() ? textField.value.trimEnd() + '\n\n' : '') + textLine
+      // appendTextChunk no-ops on an empty chunk — the poster text line is optional.
+      nlInsert(buildPosterBlockHtml(block), buildPosterBlockText(block), 'poster',
+        `Inserted ${p.title} poster${link ? ' (linked)' : ''} — edit or move it in the preview`)
       $('#nl-poster-results').hidden = true
-      toast(`Inserted ${p.title} poster${link ? ' (linked)' : ''} — edit or move it in the preview`)
     }
     else if (a === 'nl-test') {
       const subject = $('#nl-subject').value.trim()

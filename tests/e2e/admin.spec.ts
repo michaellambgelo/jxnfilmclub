@@ -128,6 +128,86 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  // Inserts append generated blocks by assigning textarea .value, which never
+  // enters the native undo stack — so the snapshot stack is the only thing
+  // making them reversible. Cover both entry points: the button and Cmd/Ctrl+Z.
+  test('newsletter insert is undoable via the button and via the undo key', async ({ page }) => {
+    const ev = {
+      id: 'nl-undo-e2e', title: 'Undo Test Night', film: 'Sunrise',
+      year: 1927, date: '2030-03-09', time: '19:30', venue: 'The Parlor',
+    }
+    const res = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${ev.id}`, value: JSON.stringify(ev) },
+    })
+    expect(res.ok()).toBeTruthy()
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="newsletter"]').click()
+
+    const html = page.locator('#nl-html')
+    const undo = page.locator('#nl-undo')
+    await expect(undo).toBeDisabled()
+    const before = await html.inputValue()
+
+    // The regrouped controls: the entries count now has a visible label rather
+    // than reading as a bare "8" between two unrelated buttons.
+    await expect(page.getByLabel('Entries')).toHaveValue('8')
+
+    // --- Undo button ---
+    await page.getByRole('button', { name: 'Insert upcoming events' }).click()
+    await expect(html).toHaveValue(/Sunrise/)
+    await expect(undo).toBeEnabled()
+    await expect(undo).toHaveText(/Undo upcoming events/)
+
+    await undo.click()
+    await expect(html).toHaveValue(before)
+    await expect(undo).toBeDisabled()
+
+    // --- Cmd/Ctrl+Z, with the caret in the HTML body ---
+    await page.getByRole('button', { name: 'Insert upcoming events' }).click()
+    await expect(html).toHaveValue(/Sunrise/)
+    await html.focus()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(html).toHaveValue(before)
+    await expect(undo).toBeDisabled()
+
+    // --- Cmd/Ctrl+Z with the caret in the preview, which is a separate
+    // document: its keydown never bubbles to the page, and srcdoc replaces it
+    // on every sync, so the listener has to re-attach per load.
+    await page.getByRole('button', { name: 'Insert upcoming events' }).click()
+    await expect(html).toHaveValue(/Sunrise/)
+    await page.frameLocator('#nl-preview').locator('body').press('ControlOrMeta+z')
+    await expect(html).toHaveValue(before)
+    await expect(undo).toBeDisabled()
+  })
+
+  // Once the operator edits by hand, the insert is no longer the most recent
+  // change and the key must fall through to the browser's own undo.
+  test('undo key falls through to native undo after a manual edit', async ({ page }) => {
+    const ev = {
+      id: 'nl-clean-e2e', title: 'Clean Flag Night', film: 'Nosferatu',
+      year: 1922, date: '2030-04-02', time: '19:30', venue: 'The Parlor',
+    }
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${ev.id}`, value: JSON.stringify(ev) },
+    })
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="newsletter"]').click()
+
+    const html = page.locator('#nl-html')
+    await page.getByRole('button', { name: 'Insert upcoming events' }).click()
+    await expect(html).toHaveValue(/Nosferatu/)
+
+    await html.focus()
+    await page.keyboard.type('ZZZ')
+    await page.keyboard.press('ControlOrMeta+z')
+
+    // The typing was undone natively; the inserted block survives.
+    await expect(html).toHaveValue(/Nosferatu/)
+    await expect(page.locator('#nl-undo')).toBeEnabled()
+  })
+
   test('Config tab: theater list edit round-trips to config:theaters', async ({ page }) => {
     // Seed podcast config so the tab render skips the cross-origin
     // episodes.json fetch (deterministic offline).

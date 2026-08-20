@@ -6,6 +6,7 @@ import {
   fmtShowtime, buildEventsSectionHtml, buildEventsSectionText,
   buildPosterBlockHtml, buildPosterBlockText,
   attendanceWithHosts, buildStatsContext, computeMemberStats, ordinal,
+  appendHtmlChunk, appendTextChunk,
 } from '../../admin/lib.js'
 
 afterEach(() => {
@@ -456,5 +457,34 @@ describe('ordinal', () => {
   it('handles the teens exception and the 1/2/3 suffixes', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal))
       .toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th'])
+  })
+})
+
+describe('appendHtmlChunk / appendTextChunk', () => {
+  it('joins HTML with a single newline after trimming trailing whitespace', () => {
+    expect(appendHtmlChunk('<p>a</p>\n\n  ', '<table>b</table>')).toBe('<p>a</p>\n<table>b</table>')
+  })
+
+  it('seeds an empty HTML body without swallowing the chunk', () => {
+    expect(appendHtmlChunk('', '<table>b</table>')).toBe('\n<table>b</table>')
+    expect(appendHtmlChunk(null, '<table>b</table>')).toBe('\n<table>b</table>')
+  })
+
+  it('joins a non-empty text body with a blank line', () => {
+    expect(appendTextChunk('first', 'second')).toBe('first\n\nsecond')
+    expect(appendTextChunk('first\n\n', 'second')).toBe('first\n\nsecond')
+  })
+
+  it('seeds an empty text body with no leading blank line', () => {
+    expect(appendTextChunk('', 'second')).toBe('second')
+    expect(appendTextChunk('   \n ', 'second')).toBe('second')
+    expect(appendTextChunk(null, 'second')).toBe('second')
+  })
+
+  // The poster block's text line is optional — this is the old
+  // `if (textLine)` guard the insert handlers used to carry inline.
+  it('leaves the body untouched for an empty chunk', () => {
+    expect(appendTextChunk('first', '')).toBe('first')
+    expect(appendTextChunk('first', undefined)).toBe('first')
   })
 })

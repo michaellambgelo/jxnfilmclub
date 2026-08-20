@@ -215,11 +215,54 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   border-radius: 3px;
   background: #fff;
 }
-.nl-compose .toolbar input[type="email"] { max-width: 260px }
+/* Compose controls, grouped: poster lookup and content inserts each get a
+   labeled band inside one box, so it's clear which input drives which button
+   (the entries count in particular). Labels wrap their inputs, so the rows
+   bottom-align rather than centering on the label line. */
+.nl-controls {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+.nl-group + .nl-group { border-top: 1px solid var(--border); margin-top: 0.8rem; padding-top: 0.8rem }
+.nl-group h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.nl-group .toolbar, .nl-send-bar { margin-bottom: 0 }
+.nl-controls .toolbar, .nl-send-bar { align-items: flex-end }
+.nl-controls label, .nl-send-bar label { display: block; font-size: 0.8rem; color: var(--muted) }
+.nl-controls label input, .nl-send-bar label input { display: block; margin-top: 0.2rem }
+.nl-poster-bar label:first-child { width: 220px }
+.nl-poster-bar label.grow { flex: 1; max-width: 340px }
+.nl-count input { width: 68px }
+.nl-send-bar label { width: 260px }
+.nl-send-bar label input { width: 100% }
+
+/* Undo sits just past the inserts it reverses — close enough to read as part
+   of that group, with a rule between them so it isn't mistaken for a fourth
+   insert. It names its target, so its width changes; don't right-align it. */
+.nl-undo { margin-left: 0.6rem; border-left-width: 1px; padding-left: 0.9rem }
+.nl-insert-bar .nl-undo { position: relative }
+.nl-insert-bar .nl-undo::before {
+  content: '';
+  position: absolute;
+  left: -0.6rem;
+  top: -0.15rem;
+  bottom: -0.15rem;
+  border-left: 1px solid var(--border);
+}
+.nl-undo:disabled { opacity: 0.45; cursor: default }
+.nl-undo:disabled:hover { background: #fff }
+
 /* The send row is the consequential one — set it off from the inserts. */
 .nl-send-bar { border-top: 1px solid var(--border); padding-top: 0.8rem }
-.nl-poster-bar input[type="text"] { max-width: 220px }
-.nl-poster-bar input[type="url"] { max-width: 340px }
 .nl-poster-results { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem }
 .nl-poster-thumb {
   display: flex; flex-direction: column; align-items: center; gap: 0.3rem;

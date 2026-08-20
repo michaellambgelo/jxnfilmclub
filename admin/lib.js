@@ -175,6 +175,26 @@ export function buildPosterBlockText({ link, title, year }) {
   return `${header}\n[Write your review or announcement here — replace this placeholder before sending.]`
 }
 
+// --- Newsletter compose: body append rules ---
+// Every "insert" button appends a generated block to the two compose bodies.
+// The join rules live here (rather than inline in the four handlers) so they
+// stay identical across inserts and can be unit-tested without the SPA.
+
+// HTML bodies join with a single newline after trimming trailing whitespace —
+// the blocks are self-contained <table> cards, so no blank line is needed.
+export function appendHtmlChunk(current, chunk) {
+  return String(current ?? '').trimEnd() + '\n' + chunk
+}
+
+// Plain-text bodies join with a blank line, but seed a still-empty field
+// without a leading one. An empty chunk is a no-op — the poster block's text
+// line is optional.
+export function appendTextChunk(current, chunk) {
+  const cur = String(current ?? '')
+  if (!chunk) return cur
+  return (cur.trim() ? cur.trimEnd() + '\n\n' : '') + chunk
+}
+
 // '19:30' -> '7:30 pm'. Port of the worker's fmtTime; empty-safe.
 export function fmtShowtime(hhmm) {
   if (typeof hhmm !== 'string' || !/^\d{2}:\d{2}$/.test(hhmm)) return ''

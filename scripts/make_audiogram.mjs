@@ -46,7 +46,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   archivePathFor, BUCKETS, concatWithGaps, ensureWritable, ffmpeg, fmtDur,
-  listApprovedClips, normalizeClip, pullClip, run,
+  listApprovedClips, looksMissing, normalizeClip, pullClip, run,
 } from './lib/voices.mjs'
 import {
   buildRenderArgs, FORMATS, instantiateTemplate, mergeManifest, parseArgs,
@@ -233,12 +233,18 @@ try {
         pullClip(c, args.envName, c.raw, args.keepAudio ? {} : { reuseFrom: archived })
         c.probedSec = normalizeClip(c.raw, c.norm, c.key)
       } catch (err) {
-        console.warn(`  SKIPPING ${c.key} (${c.name || c.memberId}): ${err.message.split('\n')[0]} — likely expired (60-day lifecycle)`)
-        c.skipped = err.message.split('\n')[0]
+        // ONLY a real R2 miss is the expected day-60 state and therefore
+        // skippable. Anything else — a filesystem error, a broken wrangler
+        // invocation — is a bug, and swallowing it as "probably expired"
+        // buries the real cause under a plausible story. Fail loudly instead.
+        if (!looksMissing(err)) throw err
+        const first = err.message.split('\n')[0]
+        console.warn(`  SKIPPING ${c.key} (${c.name || c.memberId}): ${first} — expired (60-day lifecycle)`)
+        c.skipped = first
       }
     })
     const live = clips.filter(c => !c.skipped)
-    if (!live.length) throw new Error(`every clip for prompt "${args.promptId}" failed to pull — all expired?`)
+    if (!live.length) throw new Error(`every clip for prompt "${args.promptId}" has expired — its audio is past the 60-day lifecycle`)
 
     if (!args.segmentOnly) {
       for (const c of live) {

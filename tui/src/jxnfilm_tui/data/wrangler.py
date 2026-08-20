@@ -161,6 +161,11 @@ def r2_get(settings: Settings, r2_key: str, dest: Path, *, expected_size=None,
     the real path looking finished. Raises MissingObject when the object has
     already aged out.
     """
+    # Absolute, always: run_wrangler uses cwd=worker/ so the MEMBERS_KV
+    # binding resolves, which means a relative --file would download under
+    # worker/ while this process renames relative to its own cwd. The JS side
+    # hit exactly that (scripts/lib/voices.mjs r2GetArgs).
+    dest = Path(dest).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if is_complete_copy(dest, expected_size):
         return "cache"
@@ -177,6 +182,8 @@ def r2_get(settings: Settings, r2_key: str, dest: Path, *, expected_size=None,
 
     try:
         source = _with_retry(call)
+        if not part.is_file():
+            raise WranglerError(f"wrangler reported success but wrote nothing to {part}")
     except WranglerError:
         part.unlink(missing_ok=True)
         raise

@@ -8,7 +8,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // wrangler runs from worker/ so the join worker's wrangler.toml resolves the
@@ -82,6 +82,28 @@ export function listApprovedClips(promptId, envName) {
   return { clips, total: keys.length }
 }
 
+// Argv for one R2 object fetch.
+//
+// The --file path is absolutized HERE, at the boundary, because wrangler runs
+// with cwd = worker/ (that's how the MEMBERS_KV binding resolves) while Node
+// resolves the same relative string against the repo root. Hand it
+// 'out/archive/x.webm' and the bytes land in worker/out/archive/x.webm while
+// the caller looks in out/archive/x.webm and sees nothing. Every pull used to
+// target an absolute temp path, which hid this until source audio started
+// being kept under the relative --out.
+export function r2GetArgs(bucket, r2Key, filePath) {
+  return ['r2', 'object', 'get', `${bucket}/${r2Key}`, '--file', resolve(filePath), '--remote']
+}
+
+// Does a failed pull actually mean the object is gone? Only a real R2 miss is
+// the expected 60-day-lifecycle state; a local filesystem or process error is
+// a bug, and reporting it as "likely expired" sends you looking in the wrong
+// place entirely.
+export function looksMissing(err) {
+  const m = String((err && err.message) || err || '')
+  return /\b404\b|not\s*found|does not exist|NoSuchKey|The specified key/i.test(m)
+}
+
 // Where an explicitly archived copy of a clip lives. One shared definition so
 // the CLIs and the TUI can't disagree about it — the CLIs READ this location
 // to avoid re-downloading, the TUI's archive action WRITES it.
@@ -136,17 +158,23 @@ export function pullClip(clip, envName, destPath, opts = {}) {
   }
 
   console.log(`Pulling ${clip.r2Key}…`)
-  mkdirSync(dirname(destPath), { recursive: true })
-  const part = `${destPath}.part`
+  // Absolute from here down: the rename and the stat run in the Node process's
+  // cwd, the download runs in wrangler's. They must name the same file.
+  const dest = isAbsolute(destPath) ? destPath : resolve(destPath)
+  mkdirSync(dirname(dest), { recursive: true })
+  const part = `${dest}.part`
   rmSync(part, { force: true })
   try {
-    wrangler(['r2', 'object', 'get', `${BUCKETS[envName]}/${clip.r2Key}`, '--file', part, '--remote'])
-    renameSync(part, destPath)
+    wrangler(r2GetArgs(BUCKETS[envName], clip.r2Key, part))
+    if (!existsSync(part)) {
+      throw new Error(`wrangler reported success but wrote nothing to ${part}`)
+    }
+    renameSync(part, dest)
   } catch (err) {
     rmSync(part, { force: true })
     throw err
   }
-  return { source: 'r2', bytes: statSync(destPath).size }
+  return { source: 'r2', bytes: statSync(dest).size }
 }
 
 // Refuse to overwrite finished output.

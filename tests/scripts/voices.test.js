@@ -6,8 +6,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isAbsolute, resolve } from 'node:path'
 import {
-  archivePathFor, ensureWritable, isCompleteCopy, pullClip,
+  archivePathFor, ensureWritable, isCompleteCopy, looksMissing, pullClip, r2GetArgs,
 } from '../../scripts/lib/voices.mjs'
 
 let dir
@@ -102,5 +103,49 @@ describe('pullClip idempotency', () => {
     // point: it must NOT take the reuse shortcut.
     expect(() => pullClip(clip, 'production', join(dir, 'raw-0.webm'), { reuseFrom: archived }))
       .toThrow()
+  })
+})
+
+
+describe('r2GetArgs', () => {
+  // Regression: wrangler runs with cwd = worker/ so the MEMBERS_KV binding
+  // resolves, but Node resolves the same relative string against the repo
+  // root. A relative --file therefore downloaded to worker/out/... while the
+  // rename looked in out/... and failed with ENOENT — which the caller then
+  // reported as "likely expired (60-day lifecycle)".
+  it('always hands wrangler an ABSOLUTE --file path', () => {
+    const args = r2GetArgs('jxnfilm-voice', 'voice/g/a.webm', 'out/archive/g/a.webm.part')
+    const file = args[args.indexOf('--file') + 1]
+    expect(isAbsolute(file)).toBe(true)
+    expect(file).toBe(resolve('out/archive/g/a.webm.part'))
+  })
+
+  it('leaves an already-absolute path alone', () => {
+    const abs = '/tmp/jxnfc/a.webm.part'
+    expect(r2GetArgs('b', 'k', abs)).toContain(abs)
+  })
+
+  it('targets the right bucket and stays remote', () => {
+    // --remote is not optional: wrangler v4 defaults R2 ops to the local
+    // simulator and would "succeed" against nothing.
+    const args = r2GetArgs('jxnfilm-voice-staging', 'voice/g/a.webm', '/tmp/x')
+    expect(args).toContain('jxnfilm-voice-staging/voice/g/a.webm')
+    expect(args).toContain('--remote')
+  })
+})
+
+describe('looksMissing', () => {
+  it('recognises a real R2 miss', () => {
+    expect(looksMissing(new Error('The specified key does not exist.'))).toBe(true)
+    expect(looksMissing(new Error('NoSuchKey'))).toBe(true)
+    expect(looksMissing('404 Not Found')).toBe(true)
+  })
+
+  it('does NOT excuse a local failure as an expired clip', () => {
+    // The exact shape that got misreported as expiry.
+    expect(looksMissing(new Error("ENOENT: no such file or directory, rename 'a.part' -> 'a'")))
+      .toBe(false)
+    expect(looksMissing(new Error('401 Unauthorized'))).toBe(false)
+    expect(looksMissing(null)).toBe(false)
   })
 })

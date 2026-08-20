@@ -238,3 +238,45 @@ def test_the_archive_path_matches_the_one_the_clis_read(tmp_path):
     clip = _round(("alice", "approved")).clips[0]
     assert archive_path_for(settings, "general", clip) == \
         tmp_path / "out" / "archive" / "general" / "alice.webm"
+
+
+async def test_the_download_path_handed_to_wrangler_is_absolute(tmp_path, monkeypatch):
+    """wrangler runs with cwd=worker/; a relative --file lands in the wrong tree.
+
+    This is the JS-side bug (scripts/lib/voices.mjs r2GetArgs) in Python form:
+    the download would succeed under worker/ while the rename here failed with
+    ENOENT — and the caller blamed the 60-day lifecycle.
+    """
+    import os
+    from jxnfilm_tui.data import wrangler as wrangler_module
+
+    seen = []
+
+    def fake_run(settings_, args, **kwargs):
+        target = pathlib.Path(args[args.index("--file") + 1])
+        seen.append(target)
+        target.write_bytes(b"audio")
+        return None
+
+    monkeypatch.setattr(wrangler_module, "run_wrangler", fake_run)
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(repo_root=tmp_path)
+
+    # A deliberately relative destination.
+    wrangler_module.r2_get(settings, "voice/g/a.webm",
+                           pathlib.Path("out/archive/g/a.webm"), expected_size=5)
+    assert seen and seen[0].is_absolute()
+    assert (tmp_path / "out" / "archive" / "g" / "a.webm").read_bytes() == b"audio"
+    assert os.getcwd() == str(tmp_path)
+
+
+async def test_a_silent_no_write_is_an_error_not_a_success(tmp_path, monkeypatch):
+    """wrangler exiting 0 without producing the file must not look like a pull."""
+    from jxnfilm_tui.data import wrangler as wrangler_module
+
+    monkeypatch.setattr(wrangler_module, "run_wrangler", lambda *a, **k: None)
+    settings = Settings(repo_root=tmp_path)
+    target = settings.archive_out / "g" / "a.webm"
+    with pytest.raises(WranglerError, match="wrote nothing"):
+        wrangler_module.r2_get(settings, "voice/g/a.webm", target, expected_size=5)
+    assert not target.exists()

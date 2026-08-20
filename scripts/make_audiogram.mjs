@@ -6,12 +6,14 @@
 //   node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all]
 //        [--title T] [--name N] [--out DIR]
 //   node scripts/make_audiogram.mjs --prompt <promptId> [--env production|staging]
-//        [--format ...] [--segment-only|--clips-only] [--out DIR]
+//        [--format ...] [--member ID] [--segment-only|--clips-only] [--out DIR]
 //
 // Pipeline (node + wrangler + ffmpeg + the repo's existing Playwright):
-//   1. Audio: either the given file, or every APPROVED clip for a prompt
-//      (same KV/R2 fetch + two-pass loudnorm as compile_voices.mjs, via
-//      scripts/lib/voices.mjs).
+//   1. Audio: either the given file, or the APPROVED clips for a prompt —
+//      every one of them, or just those named by --member (same KV/R2 fetch +
+//      two-pass loudnorm as compile_voices.mjs, via scripts/lib/voices.mjs).
+//      Filtering happens BEFORE the R2 pulls, so narrowing to one member
+//      downloads one object, not the whole round.
 //   2. Frame: scripts/assets/audiogram.html instantiated per clip/format and
 //      screenshotted by headless Chromium with a transparent wave window —
 //      the template links the real css/tokens.css + self-hosted fonts, served
@@ -24,18 +26,31 @@
 // Prompt mode writes out/audiogram/<promptId>/{<memberId>-<fmt>.mp4,
 // segment-<fmt>.mp4, manifest.json}. Clips age out 60 days after submission
 // (R2 lifecycle) — a missing object is skipped with a warning, not fatal.
+//
+// Output is append-only: existing files are never overwritten or deleted, and
+// a run that would collide stops BEFORE it downloads or encodes anything.
+// --force is the sole override.
+//
+// Pulled source audio is KEPT at out/archive/<promptId>/ (--no-keep-audio opts
+// out), so re-rendering a round makes no R2 requests at all. The 60-day
+// retention promise binds the SERVICE — KV rows and R2 objects — not an
+// operator's local export; once the audio is exported to this machine it is
+// out of that policy's scope. Pulls land via a .part rename, so repeating a
+// run, or resuming an interrupted one, costs nothing and corrupts nothing.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  BUCKETS, concatWithGaps, ffmpeg, fmtDur, listApprovedClips, normalizeClip, pullClip, run,
+  archivePathFor, BUCKETS, concatWithGaps, ensureWritable, ffmpeg, fmtDur,
+  listApprovedClips, normalizeClip, pullClip, run,
 } from './lib/voices.mjs'
 import {
-  buildRenderArgs, FORMATS, instantiateTemplate, parseArgs, safeName,
+  buildRenderArgs, FORMATS, instantiateTemplate, mergeManifest, parseArgs,
+  plannedRenderPaths, safeName, selectClips,
 } from './lib/audiogram.mjs'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -159,32 +174,63 @@ try {
 
   if (!args.promptId) {
     // --- file mode ---
+    const stem = safeName(basename(args.audioPath).replace(/\.[^.]+$/, ''))
+    const fileOutDir = join(args.outDir, 'audiogram')
+    ensureWritable(plannedRenderPaths(fileOutDir, [stem], args.formats), { force: args.force })
+
     const norm = join(tmp, 'norm.wav')
     console.log(`Normalizing ${args.audioPath}…`)
     normalizeClip(args.audioPath, norm, args.audioPath)
-    const stem = safeName(basename(args.audioPath).replace(/\.[^.]+$/, ''))
     await renderJob({
       audioPath: norm,
       title: args.title,
       name: args.name || 'JXN Film Club',
-      outDir: join(args.outDir, 'audiogram'),
+      outDir: fileOutDir,
       stem,
     })
   } else {
     // --- prompt mode ---
-    const { clips } = listApprovedClips(args.promptId, args.envName)
-    if (!clips.length) throw new Error(`no APPROVED clips for prompt "${args.promptId}" on ${args.envName} — approve some in the admin Voice tab first`)
+    const { clips: approved } = listApprovedClips(args.promptId, args.envName)
+    if (!approved.length) throw new Error(`no APPROVED clips for prompt "${args.promptId}" on ${args.envName} — approve some in the admin Voice tab first`)
+
+    // Narrow BEFORE pulling: --member should cost one download, not the round.
+    let clips = approved
+    if (args.members.length) {
+      const { selected, missing } = selectClips(approved, args.members)
+      if (missing.length) {
+        throw new Error(`no approved clip for ${missing.join(', ')} in "${args.promptId}" — approved: ${approved.map(c => c.memberId).join(', ')}`)
+      }
+      clips = selected
+      console.log(`Limited to ${clips.length} of ${approved.length} approved clip(s): ${clips.map(c => c.name || c.memberId).join(', ')}`)
+    }
+
     const outDir = join(args.outDir, 'audiogram', safeName(args.promptId))
     const promptText = clips[0].promptText || args.promptId
+
+    // Refuse collisions BEFORE any download or encode — a run that can't
+    // finish cleanly shouldn't spend ten minutes of ffmpeg finding out.
+    // Planned from the selected clips, so a clip that later turns out to have
+    // aged out is counted conservatively rather than missed. manifest.json is
+    // deliberately NOT in this list: it's a derived index that merges (see
+    // mergeManifest), so it can't collide and can't lose anything either.
+    const plannedStems = [
+      ...(args.segmentOnly ? [] : clips.map(c => c.memberId || c.key)),
+      ...(args.clipsOnly ? [] : ['segment']),
+    ]
+    ensureWritable(plannedRenderPaths(outDir, plannedStems, args.formats), { force: args.force })
 
     // Pull + normalize, skipping clips whose R2 object already aged out (the
     // 60-day lifecycle sweeps daily; a miss is an expected state, not an error).
     clips.forEach((c, i) => {
       const ext = ((c.r2Key.split('.').pop() || '').replace(/[^a-z0-9]/gi, '')) || 'bin'
-      c.raw = join(tmp, `raw-${i}.${ext}`)
+      // Default: pull straight into the archive, so the download is paid for
+      // once per round ever. --no-keep-audio pulls to the temp dir instead but
+      // still reuses an archive if one is already there.
+      const archived = archivePathFor(args.outDir, args.promptId, c)
+      c.raw = args.keepAudio ? archived : join(tmp, `raw-${i}.${ext}`)
       c.norm = join(tmp, `norm-${i}.wav`)
       try {
-        pullClip(c, args.envName, c.raw)
+        pullClip(c, args.envName, c.raw, args.keepAudio ? {} : { reuseFrom: archived })
         c.probedSec = normalizeClip(c.raw, c.norm, c.key)
       } catch (err) {
         console.warn(`  SKIPPING ${c.key} (${c.name || c.memberId}): ${err.message.split('\n')[0]} — likely expired (60-day lifecycle)`)
@@ -228,19 +274,36 @@ try {
       env: args.envName,
       generatedAt: new Date().toISOString(),
       formats: args.formats,
+      ...(args.members.length
+        ? { members: args.members, approvedTotal: approved.length }
+        : {}),
       clips: clips.map((c, i) => ({
         order: i + 1,
         key: c.key,
         memberId: c.memberId,
         name: c.name || null,
+        // Submission order is what a merged manifest re-sorts on.
+        at: c.at || null,
         seconds: c.skipped ? null : Math.min(180, c.probedSec ?? (Number(c.duration) || 0)),
         ...(c.skipped ? { skipped: c.skipped } : { files: c.files || null }),
       })),
       segment,
     }
+    // A narrowed run describes a subset, so it must not clobber the round's
+    // real manifest — that would make a full round look like it shrank.
     const manifestPath = join(outDir, 'manifest.json')
     mkdirSync(outDir, { recursive: true })
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+    let previous = null
+    if (existsSync(manifestPath)) {
+      try {
+        previous = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      } catch {
+        // Refuse rather than silently replacing something we can't read and
+        // therefore can't preserve.
+        throw new Error(`${manifestPath} exists but is not valid JSON — move it aside; refusing to replace a file whose contents can't be merged`)
+      }
+    }
+    writeFileSync(manifestPath, JSON.stringify(mergeManifest(previous, manifest), null, 2) + '\n')
     written.push(manifestPath)
 
     console.log('\nManifest (segment order):')

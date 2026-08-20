@@ -27,10 +27,11 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  BUCKETS, concatWithGaps, fmtDur, listApprovedClips, normalizeClip, pullClip, run,
+  archivePathFor, BUCKETS, concatWithGaps, ensureWritable, fmtDur,
+  listApprovedClips, normalizeClip, pullClip, run,
 } from './lib/voices.mjs'
 
-const USAGE = 'usage: node scripts/compile_voices.mjs <promptId> [--env production|staging] [--out DIR]'
+const USAGE = 'usage: node scripts/compile_voices.mjs <promptId> [--env production|staging] [--force] [--no-keep-audio] [--out DIR]'
 
 function fail(msg) {
   console.error(`error: ${msg}`)
@@ -38,8 +39,9 @@ function fail(msg) {
 }
 
 // fail() exits from inside the pipeline, which would skip a try/finally —
-// clean the temp dir from the exit hook instead so no pulled audio is ever
-// stranded on disk after a wrangler/ffmpeg failure.
+// clean the temp dir from the exit hook instead so the loudnorm intermediates
+// never pile up after a wrangler/ffmpeg failure. (Source audio no longer lives
+// here by default; see keepAudio.)
 let tmp = null
 process.on('exit', () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true })
@@ -51,6 +53,12 @@ const argv = process.argv.slice(2)
 let promptId = null
 let envName = 'production'
 let outDir = 'out'
+// Existing output is never replaced silently; --force is the only override.
+let force = false
+// Pulled source audio is kept at out/archive/<promptId>/ so a re-run costs no
+// R2 requests. The 60-day promise binds the service (KV + R2), not a local
+// export. --no-keep-audio restores the pull-to-temp-and-discard behavior.
+let keepAudio = true
 // Flag values are validated at parse time — a missing value would otherwise
 // surface as a crash at step 4, after every R2 pull and loudnorm pass.
 function flagValue(flag, v) {
@@ -62,6 +70,8 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
   if (a === '--env') envName = flagValue(a, argv[++i])
   else if (a === '--out') outDir = flagValue(a, argv[++i])
+  else if (a === '--force') force = true
+  else if (a === '--no-keep-audio') keepAudio = false
   else if (a.startsWith('--')) fail(`unknown flag: ${a}\n${USAGE}`)
   else if (!promptId) promptId = a
   else fail(`unexpected argument: ${a}\n${USAGE}`)
@@ -77,13 +87,18 @@ try {
   const { clips } = listApprovedClips(promptId, envName)
   if (!clips.length) fail(`no APPROVED clips for prompt "${promptId}" on ${envName} — approve some in the admin Voice tab first`)
 
+  // Refuse the collision before any R2 pull or loudnorm pass.
+  const outFile = join(outDir, `${promptId}-segment.wav`)
+  ensureWritable([outFile], { force })
+
   tmp = mkdtempSync(join(tmpdir(), 'jxnfc-voice-'))
 
   // --- 2. pull the R2 objects ---
   clips.forEach((c, i) => {
     const ext = ((c.r2Key.split('.').pop() || '').replace(/[^a-z0-9]/gi, '')) || 'bin'
-    c.raw = join(tmp, `raw-${i}.${ext}`)
-    pullClip(c, envName, c.raw)
+    const archived = archivePathFor(outDir, promptId, c)
+    c.raw = keepAudio ? archived : join(tmp, `raw-${i}.${ext}`)
+    pullClip(c, envName, c.raw, keepAudio ? {} : { reuseFrom: archived })
   })
 
   // --- 3. two-pass loudnorm + 3-min cap → 48k mono wav intermediates ---
@@ -95,7 +110,6 @@ try {
 
   // --- 4. concat with 0.5s gaps (between clips only, none trailing) ---
   mkdirSync(outDir, { recursive: true })
-  const outFile = join(outDir, `${promptId}-segment.wav`)
   concatWithGaps(clips.map(c => c.norm), outFile, tmp)
 
   // --- 5. manifest ---

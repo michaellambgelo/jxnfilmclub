@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   buildFiltergraph, buildRenderArgs, COLORS, escapeHtml, FORMAT_KEYS, FORMATS,
-  instantiateTemplate, parseArgs, resolveFormats, safeName, WAVE_SRC_W,
+  instantiateTemplate, mergeManifest, parseArgs, plannedRenderPaths, resolveFormats,
+  safeName, selectClips, WAVE_SRC_W,
 } from '../../scripts/lib/audiogram.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -160,5 +161,176 @@ describe('parseArgs', () => {
   })
   it('rejects empty argv with usage', () => {
     expect(() => parseArgs([])).toThrow(/usage:/)
+  })
+})
+
+
+describe('--member (single clip vs whole round)', () => {
+  const argv = (...a) => parseArgs(['--prompt', 'general', ...a])
+
+  it('defaults to the whole round with no --member', () => {
+    const o = argv()
+    expect(o.members).toEqual([])
+    expect(o.clipsOnly).toBe(false)
+    expect(o.segmentOnly).toBe(false)
+  })
+
+  it('accepts repeats and comma lists', () => {
+    expect(argv('--member', 'alice', '--member', 'bo,cass').members)
+      .toEqual(['alice', 'bo', 'cass'])
+  })
+
+  it('implies --clips-only, because a one-clip segment IS the clip', () => {
+    expect(argv('--member', 'alice').clipsOnly).toBe(true)
+  })
+
+  it('lets an explicit scope flag win, so a subset segment stays possible', () => {
+    const o = argv('--member', 'alice', '--member', 'cass', '--segment-only')
+    expect(o.segmentOnly).toBe(true)
+    expect(o.clipsOnly).toBe(false)
+  })
+
+  it('is refused in file mode', () => {
+    expect(() => parseArgs(['clip.wav', '--member', 'alice'])).toThrow(/only apply to --prompt mode/)
+  })
+
+  it('needs a value', () => {
+    expect(() => argv('--member', '--format')).toThrow(/needs a value/)
+  })
+})
+
+describe('selectClips', () => {
+  const clips = [
+    { key: 'voice:general:alice', memberId: 'alice' },
+    { key: 'voice:general:bo', memberId: 'bo' },
+    { key: 'voice:general:cass', memberId: 'cass' },
+  ]
+
+  it('matches a memberId or a full KV key', () => {
+    const { selected, missing } = selectClips(clips, ['bo', 'voice:general:alice'])
+    expect(selected.map(c => c.memberId)).toEqual(['alice', 'bo'])
+    expect(missing).toEqual([])
+  })
+
+  it('keeps submission order, not the order the flags were typed', () => {
+    // A subset segment must still play in the order the round did.
+    expect(selectClips(clips, ['cass', 'alice']).selected.map(c => c.memberId))
+      .toEqual(['alice', 'cass'])
+  })
+
+  it('reports names that matched nothing instead of silently rendering fewer', () => {
+    const { selected, missing } = selectClips(clips, ['alice', 'nobody'])
+    expect(selected.map(c => c.memberId)).toEqual(['alice'])
+    expect(missing).toEqual(['nobody'])
+  })
+
+  it('ignores blank entries', () => {
+    expect(selectClips(clips, ['  bo  ', '']).selected.map(c => c.memberId)).toEqual(['bo'])
+  })
+})
+
+
+describe('plannedRenderPaths', () => {
+  it('enumerates every file a render would write', () => {
+    expect(plannedRenderPaths('out/x', ['alice', 'segment'], ['16x9', '1x1'])).toEqual([
+      'out/x/alice-16x9.mp4', 'out/x/alice-1x1.mp4',
+      'out/x/segment-16x9.mp4', 'out/x/segment-1x1.mp4',
+    ])
+  })
+
+  it('applies safeName, so the guard checks the paths actually written', () => {
+    expect(plannedRenderPaths('out', ['mem alice!'], ['16x9']))
+      .toEqual(['out/mem-alice-16x9.mp4'])
+  })
+
+  it('rejects an unknown format instead of planning a bogus path', () => {
+    expect(() => plannedRenderPaths('out', ['a'], ['4x3'])).toThrow(/unknown format/)
+  })
+})
+
+describe('--force', () => {
+  it('is off by default in both modes', () => {
+    expect(parseArgs(['clip.wav']).force).toBe(false)
+    expect(parseArgs(['--prompt', 'general']).force).toBe(false)
+  })
+
+  it('is accepted in both modes', () => {
+    expect(parseArgs(['clip.wav', '--force']).force).toBe(true)
+    expect(parseArgs(['--prompt', 'general', '--force']).force).toBe(true)
+  })
+})
+
+
+describe('mergeManifest', () => {
+  const clip = (over = {}) => ({
+    order: 1, key: 'voice:g:alice', memberId: 'alice', name: 'Alice',
+    at: '2026-08-01T00:00:00.000Z', seconds: 60, files: { '16x9': 'a-16x9.mp4' },
+    ...over,
+  })
+  const run = (over = {}) => ({
+    promptId: 'g', env: 'production', generatedAt: '2026-08-02T00:00:00.000Z',
+    formats: ['16x9'], clips: [clip()], segment: null, ...over,
+  })
+
+  it('records the run even when there is nothing to merge with', () => {
+    expect(mergeManifest(null, run()).runs).toEqual([
+      { generatedAt: '2026-08-02T00:00:00.000Z', formats: ['16x9'] },
+    ])
+  })
+
+  it('unions formats and per-clip files across runs', () => {
+    const first = mergeManifest(null, run())
+    const second = mergeManifest(first, run({
+      generatedAt: '2026-08-03T00:00:00.000Z',
+      formats: ['1x1'],
+      clips: [clip({ files: { '1x1': 'a-1x1.mp4' } })],
+    }))
+    expect(second.formats).toEqual(['16x9', '1x1'])
+    expect(second.clips[0].files).toEqual({ '16x9': 'a-16x9.mp4', '1x1': 'a-1x1.mp4' })
+    expect(second.runs).toHaveLength(2)
+  })
+
+  it('adds clips from a later narrowed run without dropping earlier ones', () => {
+    const first = mergeManifest(null, run())
+    const second = mergeManifest(first, run({
+      members: ['bo'],
+      clips: [clip({ key: 'voice:g:bo', memberId: 'bo', name: 'Bo',
+                     at: '2026-08-01T01:00:00.000Z', files: { '16x9': 'b-16x9.mp4' } })],
+    }))
+    expect(second.clips.map(c => c.memberId)).toEqual(['alice', 'bo'])
+    // Renumbered by submission order, not by the order the runs happened.
+    expect(second.clips.map(c => c.order)).toEqual([1, 2])
+    expect(second.runs[1].members).toEqual(['bo'])
+  })
+
+  it('never lets a null segment erase a real one', () => {
+    const withSeg = mergeManifest(null, run({ segment: { files: { '16x9': 's.mp4' } } }))
+    expect(mergeManifest(withSeg, run({ segment: null })).segment)
+      .toEqual({ files: { '16x9': 's.mp4' } })
+  })
+
+  it('keeps the renders of a clip that has since aged out', () => {
+    // The audio is gone from R2, but the MP4 made last week is still on disk.
+    const first = mergeManifest(null, run())
+    const second = mergeManifest(first, run({
+      clips: [{ order: 1, key: 'voice:g:alice', memberId: 'alice', name: 'Alice',
+                at: '2026-08-01T00:00:00.000Z', seconds: null, skipped: 'expired' }],
+    }))
+    expect(second.clips[0].files).toEqual({ '16x9': 'a-16x9.mp4' })
+    expect(second.clips[0].skipped).toBe('expired')
+    expect(second.clips[0].seconds).toBe(60)
+  })
+
+  it('tolerates a manifest that is not an object', () => {
+    expect(mergeManifest([], run()).clips).toHaveLength(1)
+  })
+})
+
+describe('--no-keep-audio', () => {
+  it('keeps pulled source audio by default', () => {
+    expect(parseArgs(['--prompt', 'g']).keepAudio).toBe(true)
+  })
+  it('opts out', () => {
+    expect(parseArgs(['--prompt', 'g', '--no-keep-audio']).keepAudio).toBe(false)
   })
 })

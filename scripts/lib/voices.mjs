@@ -7,8 +7,8 @@
 // prompt mode, where a missing R2 object just means the clip aged out).
 
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // wrangler runs from worker/ so the join worker's wrangler.toml resolves the
@@ -82,12 +82,89 @@ export function listApprovedClips(promptId, envName) {
   return { clips, total: keys.length }
 }
 
-// Download a clip's R2 object to destPath. Throws on failure — the KV row can
-// outlive the object briefly (KV TTL is exact, R2 lifecycle sweeps daily, and
-// vice versa), so callers decide whether a miss is fatal.
-export function pullClip(clip, envName, destPath) {
+// Where an explicitly archived copy of a clip lives. One shared definition so
+// the CLIs and the TUI can't disagree about it — the CLIs READ this location
+// to avoid re-downloading, the TUI's archive action WRITES it.
+export function archivePathFor(outDir, promptId, clip) {
+  const ext = extname(clip.r2Key || '') || '.bin'
+  return join(outDir, 'archive', promptId, `${clip.memberId}${ext}`)
+}
+
+// Is `path` a byte-complete copy of this clip? The KV row records the exact
+// uploaded byte count, which is the only integrity signal available —
+// wrangler exposes no ETag and no HEAD.
+export function isCompleteCopy(path, expectedSize) {
+  if (!existsSync(path)) return false
+  if (!Number.isInteger(expectedSize) || expectedSize <= 0) return false
+  try {
+    return statSync(path).size === expectedSize
+  } catch {
+    return false
+  }
+}
+
+// Download a clip's R2 object to destPath — IDEMPOTENTLY.
+//
+// Repeating a pull is free and repeating an interrupted pull is safe:
+//   * destPath already byte-complete → no request at all;
+//   * an explicitly archived copy is byte-complete → copied locally, no request;
+//   * otherwise download to `.part` and rename, so a failed or cancelled
+//     transfer can never leave a truncated file sitting at the real path
+//     looking like a finished one.
+//
+// Returns { source: 'cache' | 'archive' | 'r2', bytes }. Throws on failure —
+// the KV row can outlive the object briefly (KV TTL is exact, the R2 lifecycle
+// sweeps daily, and vice versa), so callers decide whether a miss is fatal.
+export function pullClip(clip, envName, destPath, opts = {}) {
+  const expected = Number.isInteger(opts.expectedSize) ? opts.expectedSize
+    : (Number.isInteger(clip.size) ? clip.size : null)
+
+  if (isCompleteCopy(destPath, expected)) {
+    console.log(`Reusing ${destPath} (already complete, ${expected} bytes)`)
+    return { source: 'cache', bytes: expected }
+  }
+  if (opts.reuseFrom && isCompleteCopy(opts.reuseFrom, expected)) {
+    console.log(`Reusing archived ${opts.reuseFrom} (${expected} bytes) — no R2 request`)
+    mkdirSync(dirname(destPath), { recursive: true })
+    copyFileSync(opts.reuseFrom, destPath)
+    return { source: 'archive', bytes: expected }
+  }
+  if (existsSync(destPath)) {
+    // Present but the wrong size: a half-finished earlier transfer. Replacing
+    // it is a repair, and it is announced rather than silent.
+    console.log(`Re-pulling ${clip.r2Key} — ${destPath} is ${statSync(destPath).size} bytes, expected ${expected ?? '?'}`)
+  }
+
   console.log(`Pulling ${clip.r2Key}…`)
-  wrangler(['r2', 'object', 'get', `${BUCKETS[envName]}/${clip.r2Key}`, '--file', destPath, '--remote'])
+  mkdirSync(dirname(destPath), { recursive: true })
+  const part = `${destPath}.part`
+  rmSync(part, { force: true })
+  try {
+    wrangler(['r2', 'object', 'get', `${BUCKETS[envName]}/${clip.r2Key}`, '--file', part, '--remote'])
+    renameSync(part, destPath)
+  } catch (err) {
+    rmSync(part, { force: true })
+    throw err
+  }
+  return { source: 'r2', bytes: statSync(destPath).size }
+}
+
+// Refuse to overwrite finished output.
+//
+// Nothing in this pipeline deletes or replaces a file in out/ on its own: a
+// run that would land on top of an existing render stops and names the
+// conflicts instead. `force` is the only way past, and it is never a default.
+export function ensureWritable(paths, { force = false } = {}) {
+  if (force) return []
+  const clashes = paths.filter(p => existsSync(p))
+  if (clashes.length) {
+    const shown = clashes.slice(0, 8).map(p => `  ${p}`).join('\n')
+    const more = clashes.length > 8 ? `\n  …and ${clashes.length - 8} more` : ''
+    throw new Error(
+      `refusing to overwrite ${clashes.length} existing output file(s):\n${shown}${more}\n` +
+      'Move or delete them yourself, render to a different --out, or pass --force.')
+  }
+  return clashes
 }
 
 const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11'

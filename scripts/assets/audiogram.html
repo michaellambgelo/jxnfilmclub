@@ -8,7 +8,9 @@
      {{FORMAT}} → body class (f-16x9 | f-1x1 | f-9x16)
      {{WX}}/{{WY}}/{{WW}}/{{WH}} → wave-window rect, injected from FORMATS in
      scripts/lib/audiogram.mjs so JS and CSS can never disagree.
-     {{TITLE}}/{{NAME}} → escaped text.
+     {{TITLE}}/{{NAME}} → escaped text. NAME is the speaker credit and is
+     the frame's second-loudest element after the prompt — the audiogram
+     exists to attribute a member, so the attribution is not a footer.
 
      Colors and fonts come straight from /css/tokens.css (served by the CLI's
      ephemeral http server, so the self-hosted /fonts URLs resolve). -->
@@ -64,6 +66,11 @@
   }
 
   /* The prompt line — rendered only when the CLI opts in; empty otherwise. */
+  /* No prompt line → the speaker becomes the only item in the stack, and
+     space-between puts a lone item at the TOP. The credit therefore inherits
+     the display slot instead of floating above the wave with a hole over it. */
+  .title:empty { display: none; }
+
   .title {
     font-family: var(--font-display);
     font-weight: 900;
@@ -76,27 +83,30 @@
     overflow: hidden;
   }
 
+  /* The speaker credit. Sits with the prompt in the stack above the wave,
+     not in the footer — see .stack. */
+  .speaker {
+    font-family: var(--font-label);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-strong);
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .speaker::before { content: "— "; color: var(--brand); }
+
   .credit {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: baseline;
     gap: 40px;
     border-top: 2px solid var(--line-2);
     padding-top: 28px;
   }
-  .credit .name {
-    font-family: var(--font-label);
-    font-weight: 600;
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
-    color: var(--ink-2);
-    font-size: 30px;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .credit .name::before { content: "— "; color: var(--brand); }
   .credit .site {
     font-family: var(--font-mono);
     font-weight: 400;
@@ -105,21 +115,38 @@
     flex-shrink: 0;
   }
 
+  /* The prompt and the speaker share one box that spans from below the
+     wordmark to just above the wave window, with the prompt pinned to the top
+     of it and the speaker to the bottom. Anchoring the speaker to the wave
+     rather than to the end of the prompt keeps it in the same place whether
+     the prompt runs one line, four, or is omitted entirely. */
+  .stack {
+    top: var(--head-top);
+    height: calc(var(--wy) - var(--head-top) - var(--stack-gap));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 48px;
+  }
+
   /* ---- per-format placement ---- */
   .logo-row { top: 90px; }
-  .head     { top: 260px; }
+  body { --head-top: 260px; --stack-gap: 64px; }
   .title    { font-size: 84px; -webkit-line-clamp: 3; }
+  .speaker  { font-size: 66px; }
   .credit-row { top: calc(var(--wy) + var(--wh) + 44px); }
 
   body.f-1x1 .logo-row { top: 80px; }
-  body.f-1x1 .head     { top: 240px; }
+  body.f-1x1 { --head-top: 240px; --stack-gap: 56px; }
   body.f-1x1 .title    { font-size: 62px; }
+  body.f-1x1 .speaker  { font-size: 52px; }
   body.f-1x1 .credit-row { top: calc(var(--wy) + var(--wh) + 40px); }
   body.f-1x1 .logo .logo-word { font-size: 36px; }
 
   body.f-9x16 .logo-row { top: 140px; }
-  body.f-9x16 .head     { top: 430px; }
+  body.f-9x16 { --head-top: 430px; --stack-gap: 90px; }
   body.f-9x16 .title    { font-size: 76px; -webkit-line-clamp: 5; }
+  body.f-9x16 .speaker  { font-size: 62px; }
   body.f-9x16 .credit-row { top: calc(var(--wy) + var(--wh) + 56px); }
 </style>
 </head>
@@ -136,13 +163,13 @@
     </span>
   </div>
 
-  <div class="content head">
+  <div class="content stack">
     <div class="title">{{TITLE}}</div>
+    <div class="speaker">{{NAME}}</div>
   </div>
 
   <div class="content credit-row">
     <div class="credit">
-      <div class="name">{{NAME}}</div>
       <div class="site">jxnfilm.club</div>
     </div>
   </div>

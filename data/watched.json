@@ -595,6 +595,30 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/spider-man-far-from-home/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/2/9/7/7/362977-spider-man-far-from-home-0-600-0-900-crop.jpg?v=d139fbf2ae",
+      "rating": "4.5",
+      "title": "Spider-Man: Far From Home",
+      "watched_date": "2026-08-19",
+      "year": "2019"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/spider-man-homecoming/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/4/2/7/1/0/242710-spider-man-homecoming-0-600-0-900-crop.jpg?v=61e8c57229",
+      "rating": "4.5",
+      "title": "Spider-Man: Homecoming",
+      "watched_date": "2026-08-19",
+      "year": "2017"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/godzilla-vs-biollante/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/0/4/5/0/40450-godzilla-vs-biollante-0-600-0-900-crop.jpg?v=26c5f20c86",
+      "rating": "2.5",
+      "title": "Godzilla vs. Biollante",
+      "watched_date": "2026-08-18",
+      "year": "1989"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/mortal-kombat-ii/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/8/3/6/5/7/1/836571-mortal-kombat-ii-0-600-0-900-crop.jpg?v=6fea3b13de",
       "rating": "2.0",
@@ -669,32 +693,6 @@
       "title": "Spider-Man: No Way Home",
       "watched_date": "2026-07-29",
       "year": "2021"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/the-mandalorian-and-grogu/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/1/0/7/3/1111073-star-wars-the-mandalorian-and-grogu-0-600-0-900-crop.jpg?v=5da24e2cba",
-      "rating": "2.0",
-      "title": "The Mandalorian and Grogu",
-      "watched_date": "2026-07-26",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/calissippi/film/the-odyssey-2026/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
-      "rating": "4.5",
-      "rewatch": true,
-      "title": "The Odyssey",
-      "watched_date": "2026-07-26",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/masters-of-the-universe-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/6/6/1/3/386613-masters-of-the-universe-2026-0-600-0-900-crop.jpg?v=8340b3dfbe",
-      "rating": "2.0",
-      "title": "Masters of the Universe",
-      "watched_date": "2026-07-25",
-      "year": "2026"
     }
   ],
   "heath_walt": [

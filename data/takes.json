@@ -1,6 +1,16 @@
 [
   {
     "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/american-flyers/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/3/9/2/43392-american-flyers-0-600-0-900-crop.jpg?v=71f99fb0d3",
+    "rating": "3.5",
+    "review": "As a cyclist, I loved this movie But if I wasn't the target audience perhaps not. This was cheesy in a great way. But very stupid in other parts. Doesn't really need a villain like Muzen(you'll see what I mean) but hes great anyway. But it does deliver its message well no matter how stoic and flat\u2026",
+    "title": "American Flyers",
+    "watched_date": "2026-08-19",
+    "year": "1985"
+  },
+  {
+    "handle": "jon_knowledge",
     "liked": true,
     "link": "https://letterboxd.com/jon_knowledge/film/the-king-of-comedy/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/4g/y9/qr/q9/pbAqLKoLydP7jl6P0vmYwlDtRPD-0-600-0-900-crop.jpg?v=8eb030b5f7",
@@ -177,16 +187,6 @@
     "title": "Hot Summer Nights",
     "watched_date": "2026-08-10",
     "year": "2017"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/crime-101/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/5/8/1/3/2/1058132-crime-101-0-600-0-900-crop.jpg?v=eaba4b3224",
-    "rating": "4.5",
-    "review": "Great palette cleanser after Abruptio yeesh. Such a great LA Crime story. Very Micheal Mann. Very solid",
-    "title": "Crime 101",
-    "watched_date": "2026-08-09",
-    "year": "2026"
   },
   {
     "handle": "calissippi",

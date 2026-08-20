@@ -1006,6 +1006,14 @@
   ],
   "jon_knowledge": [
     {
+      "link": "https://letterboxd.com/jon_knowledge/film/american-flyers/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/3/9/2/43392-american-flyers-0-600-0-900-crop.jpg?v=71f99fb0d3",
+      "rating": "3.5",
+      "title": "American Flyers",
+      "watched_date": "2026-08-19",
+      "year": "1985"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/jon_knowledge/film/the-king-of-comedy/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/4g/y9/qr/q9/pbAqLKoLydP7jl6P0vmYwlDtRPD-0-600-0-900-crop.jpg?v=8eb030b5f7",
@@ -1099,14 +1107,6 @@
       "title": "The Jerk",
       "watched_date": "2026-07-16",
       "year": "1979"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/bugonia/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/5/4/0/0/625400-bugonia-0-600-0-900-crop.jpg?v=4c6649150e",
-      "rating": "4.0",
-      "title": "Bugonia",
-      "watched_date": "2026-07-13",
-      "year": "2025"
     }
   ],
   "michaellamb": [

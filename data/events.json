@@ -420,20 +420,5 @@
     "hostId": "ml-seed001",
     "hostName": "Michael Lamb",
     "kind": "meetup"
-  },
-  {
-    "id": "2026-10-29-october-outdoor-garden-screening-hallowe-u88f",
-    "title": "October Outdoor Garden Screening - Halloween",
-    "film": "Halloween",
-    "year": 1978,
-    "date": "2026-10-29",
-    "venue": "Garden in Historic Fondren",
-    "poster": "https://image.tmdb.org/t/p/w500/qVpCaBcnjRzGL3nOPHi6Suy0sB6.jpg",
-    "letterboxd_uri": "https://letterboxd.com/lydiaoflaurel/film/halloween-1978/",
-    "hostId": "7maq7w6yd3",
-    "hostName": "Lydia m",
-    "capacity": 30,
-    "kind": "house",
-    "time": "20:00"
   }
 ]

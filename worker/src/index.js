@@ -191,7 +191,7 @@ async function route(request, env) {
     // these directly so member/event mutations appear without a redeploy.
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
-    if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(env)
+    if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(request, env)
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
     // Operator-editable config (admin portal writes config:* keys in
@@ -1641,11 +1641,35 @@ function safeParseArray(raw) {
 // snapshotted by sibling cron workflows. Admin dashboard writes per-event:{id}
 // rows via the /api/kv shim and patches events:all in the same call.
 
-async function handleEventsGet(env) {
+// A screening at somebody's home is not advertised to the open internet. There
+// is no per-event toggle: kind === 'house' IS the signal, so it cannot be
+// misconfigured, and a host cannot forget to tick a box. Theater meetups
+// (kind: 'meetup') and the club's own screenings (no host) stay public.
+//
+// Legacy rows predate the kind field: a hosted event without one was always a
+// house screening, which is the same reading events-view uses.
+function isMembersOnly(event) {
+  if (!event) return false
+  return event.kind === 'house' || (!event.kind && !!event.hostId)
+}
+
+// GET /events — public, with OPTIONAL auth. A valid session sees every
+// screening; anyone else sees only the public ones.
+//
+// This one filter is what keeps house screenings out of the public data files
+// too: snapshot-events.yml curls this endpoint with no Authorization header,
+// so what it commits to the public repo is exactly the anonymous view. That
+// matters more than the live page — a repo commit is permanent.
+//
+// An invalid or expired token degrades to the anonymous view rather than
+// 401ing, so a stale session still renders a working calendar.
+async function handleEventsGet(request, env) {
   const all = await readEventsAll(env)
+  const claims = await authorize(request, env)
+  const visible = claims ? all : all.filter(e => !isMembersOnly(e))
   // Belt-and-suspenders: even though writers should already project, re-project
   // on the way out so a buggy writer can never leak `address` to a public read.
-  return json(env, all.map(publicEventProjection).filter(Boolean))
+  return json(env, visible.map(publicEventProjection).filter(Boolean))
 }
 
 async function readEventsAll(env) {

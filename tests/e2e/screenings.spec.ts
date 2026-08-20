@@ -54,10 +54,23 @@ test.describe('member-hosted screenings', () => {
     expect(html).not.toContain(SECRET_ADDRESS)
     expect(html).not.toContain('Evergreen Terrace')
 
-    // The public worker response (what a signed-out scraper would see) also
-    // strips the address — defense in depth at the projection layer.
-    const listRes = await page.request.get(`${WORKER_ORIGIN}/events`)
-    const list = await listRes.json()
+    // What a signed-out scraper would see: nothing at all. A screening at
+    // somebody's home is members-only, and this anonymous read is also exactly
+    // what snapshot-events.yml commits to the PUBLIC repo — so a leak here
+    // would be permanent, not just visible.
+    const anonRes = await page.request.get(`${WORKER_ORIGIN}/events`)
+    const anon = await anonRes.json()
+    expect(anon.find((e: any) => e.title === SCREENING_TITLE)).toBeUndefined()
+    expect(JSON.stringify(anon)).not.toContain(SCREENING_TITLE)
+    expect(JSON.stringify(anon)).not.toContain('Evergreen Terrace')
+
+    // The member's own authenticated read returns it in full — and still
+    // strips the address, which auth widens visibility for but never relaxes.
+    const token = await page.evaluate(() => JSON.parse(localStorage.jxnfc_session).token)
+    const mineRes = await page.request.get(`${WORKER_ORIGIN}/events`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const list = await mineRes.json()
     const ours = list.find((e: any) => e.title === SCREENING_TITLE)
     expect(ours).toBeTruthy()
     expect(ours.hostName).toBe('Host McHostface')
@@ -206,3 +219,43 @@ test.describe('member-hosted screenings', () => {
     await expect(page.getByLabel('Title')).toHaveCount(0)
   })
 })
+
+// The rendered page, not just the API. This is the test that matches how the
+// risk actually shows up: someone who is not a member loading /events.
+test('signed-out vs signed-in view of a house screening', async ({ page, browser }) => {
+  const EMAIL = 'vis-e2e@example.com'
+  await signInAs(page, EMAIL, { name: 'Vis Host' })
+  const token = await page.evaluate(() => JSON.parse(localStorage.jxnfc_session).token)
+
+  // Create one of each kind straight through the API.
+  for (const body of [
+    { title: 'HOUSE ONE', film: 'Hereditary', year: 2018, date: '2099-05-01',
+      address: '99 Secret Ln', capacity: 4 },
+    { kind: 'meetup', title: 'MEETUP ONE', film: 'Whiplash', year: 2014,
+      date: '2099-05-02', venue: 'The Capri Theater', time: '19:00' },
+  ]) {
+    const r = await page.request.post(`${WORKER_ORIGIN}/events`, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      data: body,
+    })
+    expect(r.ok()).toBeTruthy()
+  }
+
+  // Signed in: both render on the events page.
+  await page.goto('/events')
+  await expect(page.locator('.event-card', { hasText: 'HOUSE ONE' })).toBeVisible()
+  await expect(page.locator('.event-card', { hasText: 'MEETUP ONE' })).toBeVisible()
+
+  // Signed out, fresh context — no session in localStorage at all.
+  const anonCtx = await browser.newContext()
+  const anonPage = await anonCtx.newPage()
+  await anonPage.addInitScript((o) => { (window as any).JXNFC_WORKER_ORIGIN = o }, WORKER_ORIGIN)
+  await anonPage.goto('http://localhost:8083/events')
+  await expect(anonPage.locator('.event-card', { hasText: 'MEETUP ONE' })).toBeVisible()
+  await expect(anonPage.locator('.event-card', { hasText: 'HOUSE ONE' })).toHaveCount(0)
+  const html = await anonPage.content()
+  expect(html).not.toContain('HOUSE ONE')
+  expect(html).not.toContain('99 Secret Ln')
+  await anonCtx.close()
+})
+

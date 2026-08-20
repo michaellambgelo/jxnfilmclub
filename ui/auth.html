@@ -118,13 +118,18 @@
     // never was a films-logged total; it exists to source newsletter content,
     // and it is not a number a member needs. Dropping it also spares every
     // visit to this page a fetch.
+    // Events come from the AUTHENTICATED Worker read, never the public
+    // snapshot. House screenings are absent from that snapshot by design, so a
+    // member who hosted one would otherwise see hosted: 0 and lose the RSVP
+    // they hold on their own screening. Falls back to the snapshot only when
+    // the Worker read fails, which degrades to the public calendar.
     const parts = await Promise.all([
       snapshot('/data/attendance.json', {}),
-      snapshot('/data/events.json', []),
+      authed('/events', null),
       authed('/voice/history', { clips: [] }),
     ])
     const attendance = parts[0] || {}
-    const events = parts[1] || []
+    const events = Array.isArray(parts[1]) ? parts[1] : await snapshot('/data/events.json', [])
     const voice = parts[2] || { clips: [] }
 
     // Attendance counts, same shape as the home-view leaderboard.
@@ -470,9 +475,10 @@
     <section class="hosting-panel">
       <h2>Host a screening</h2>
       <p class="lede">Pick a film, set a date and capacity, and members can RSVP.
-        Host at your place — your address stays private, only emailed to members
-        who RSVP — or organize a meetup at a local theater: choose a venue from
-        the list and the club shows up together, everyone buying their own ticket.</p>
+        Host at your place — the screening shows only to signed-in members, never
+        on the public site, and your address is only emailed to members who RSVP
+        — or organize a meetup at a local theater: choose a venue from the list
+        and the club shows up together, everyone buying their own ticket.</p>
       <p class="lede">Don't see your theater among the venues when you host? The
         feedback form is the perfect place to request it.</p>
       <a href="/host" class="attend-btn">Host a screening →</a>
@@ -643,6 +649,9 @@
 
     async loadEvent(eventId, session) {
       try {
+        // Public snapshot is fine here: the guard below drops any hosted
+        // screening, and every house screening is hosted - so the rows this
+        // function acts on are exactly the ones that stay public.
         const events = await fetch('/data/events.json').then(r => r.json())
         const ev = events.find(e => e.id === eventId)
         if (!ev) return

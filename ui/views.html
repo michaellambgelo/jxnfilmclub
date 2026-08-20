@@ -1160,11 +1160,16 @@
     <p class="ns-label">Where will you host?</p>
     <div class="host-pick">
       <button type="button" class="host-option { kind === 'house' ? '-selected' : '' }" :onclick="pickHouse">My house</button>
-      <p class="host-note">Your address stays private. It is only emailed to members who RSVP, and never appears on the public listing.</p>
+      <p class="host-note">Members only — a screening at your home is never listed
+        on the public site, and never appears in the public data files. Signed-in
+        members see it; nobody else does. Your address is stricter still: it is
+        only emailed to members who RSVP.</p>
     </div>
     <div class="host-pick">
       <button type="button" class="host-option { kind === 'meetup' ? '-selected' : '' }" :onclick="pickMeetup">A theater</button>
-      <p class="host-note">The theater is listed publicly. Self-organized — everyone buys their own ticket and gets themselves there.</p>
+      <p class="host-note">Listed publicly — a theater is a public place, so the
+        listing helps people find the club. Self-organized: everyone buys their
+        own ticket and gets themselves there.</p>
     </div>
   </div>
 

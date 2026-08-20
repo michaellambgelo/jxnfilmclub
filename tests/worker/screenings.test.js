@@ -116,8 +116,10 @@ describe('POST /events — create hosted screening', () => {
     const agg = JSON.parse(await env.ATTENDANCE_KV.get('events:all'))
     expect(JSON.stringify(agg)).not.toContain('123 Main St')
 
-    // GET /events likewise has no address.
-    const list = await (await req('/events')).json()
+    // GET /events likewise has no address. Read it AUTHENTICATED: a house
+    // screening is absent from the anonymous view now, and an absent event
+    // would satisfy the assertion below without proving anything.
+    const list = await (await req('/events', { token })).json()
     expect(JSON.stringify(list)).not.toContain('123 Main St')
   })
 
@@ -143,7 +145,8 @@ describe('POST /events — create hosted screening', () => {
 
     const agg = await env.ATTENDANCE_KV.get('events:all')
     expect(agg).not.toContain('Gate code')
-    const list = await (await req('/events')).json()
+    // Authenticated for the same reason as the address check above.
+    const list = await (await req('/events', { token: hostTok })).json()
     expect(JSON.stringify(list)).not.toContain('Gate code')
 
     const sent = captureEmails()
@@ -173,7 +176,8 @@ describe('POST /events — create hosted screening', () => {
     expect(created.event.time).toBe('19:00')
     const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
     expect(raw.time).toBe('19:00')
-    const list = await (await req('/events')).json()
+    // House screening: only the authenticated read returns it.
+    const list = await (await req('/events', { token: hostTok })).json()
     expect(list.find(e => e.id === created.id).time).toBe('19:00')
 
     const bad1 = await createScreening(hostTok, { time: '7pm' })
@@ -206,7 +210,7 @@ describe('POST /events — create hosted screening', () => {
     expect(cleared.status).toBe(200)
     const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
     expect(raw.time).toBeUndefined()
-    const list = await (await req('/events')).json()
+    const list = await (await req('/events', { token: hostTok })).json()
     expect(list.find(e => e.id === created.id).time).toBeUndefined()
   })
 
@@ -668,7 +672,8 @@ describe('theater meetups (kind: meetup)', () => {
       expect((await res.json()).event.letterboxd_uri).toBeUndefined()
       const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${id}`))
       expect(raw.letterboxd_uri).toBeUndefined()
-      const list2 = await (await req('/events')).json()
+      // The loop covers a house screening, which only the authed read returns.
+      const list2 = await (await req('/events', { token: hostTok })).json()
       expect(list2.find(e => e.id === id).letterboxd_uri).toBeUndefined()
       // Not a where/when change — nobody gets emailed.
       expect(sent).toHaveLength(0)
@@ -1142,5 +1147,60 @@ describe('the host counts as an attendee', () => {
     captureEmails()
     const r2 = await req(`/events/${created.id}/rsvp`, { method: 'POST', token: guestTok })
     expect((await r2.json()).status).toBe('confirmed')
+  })
+})
+
+// A screening at somebody's home must not be advertised to the open internet.
+// The gate is GET /events with optional auth, and it is load-bearing well
+// beyond the live page: snapshot-events.yml curls this endpoint anonymously
+// and commits the result to a PUBLIC repo, so whatever leaks here leaks
+// permanently into git history.
+describe('house screenings are members-only on GET /events', () => {
+  it('omits a house screening from the anonymous read but keeps meetups', async () => {
+    const { token } = await getTokenFor('vis-host@example.com')
+    captureEmails()
+    await createScreening(token, { title: 'At My Place', date: '2099-03-01' })
+    await createMeetup(token, { title: 'Capri Night', date: '2099-03-02' })
+
+    const anon = await (await req('/events')).json()
+    const titles = anon.map(e => e.title)
+    expect(titles).toContain('Capri Night')
+    expect(titles).not.toContain('At My Place')
+
+    // Nothing about the hidden screening rides along on another field.
+    expect(JSON.stringify(anon)).not.toContain('At My Place')
+    expect(JSON.stringify(anon)).not.toContain('123 Main St')
+  })
+
+  it('includes it for a signed-in member', async () => {
+    const { token } = await getTokenFor('vis-host2@example.com')
+    captureEmails()
+    await createScreening(token, { title: 'Also At My Place', date: '2099-03-03' })
+
+    const mine = await (await req('/events', { token })).json()
+    expect(mine.map(e => e.title)).toContain('Also At My Place')
+    // Auth widens visibility; it never relaxes the address projection.
+    expect(JSON.stringify(mine)).not.toContain('123 Main St')
+  })
+
+  it('degrades an invalid or expired token to the anonymous view, not a 401', async () => {
+    const { token } = await getTokenFor('vis-host3@example.com')
+    captureEmails()
+    await createScreening(token, { title: 'Hidden Place', date: '2099-03-04' })
+
+    const res = await req('/events', { token: 'garbage.not-a-token' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).map(e => e.title)).not.toContain('Hidden Place')
+  })
+
+  // What the snapshot cron commits to the public repo IS the anonymous view.
+  it('what snapshot-events.yml would commit contains no house screening', async () => {
+    const { token } = await getTokenFor('vis-host4@example.com')
+    captureEmails()
+    await createScreening(token, { title: 'Snapshot Leak Check', date: '2099-03-05' })
+
+    const snapshot = await (await req('/events')).json()
+    expect(Array.isArray(snapshot)).toBe(true)
+    expect(snapshot.every(e => e.kind !== 'house' && !(!e.kind && e.hostId))).toBe(true)
   })
 })

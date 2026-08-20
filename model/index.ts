@@ -15,14 +15,34 @@ function resolveWorkerOrigin(): string | null {
   return 'https://join.jxnfilm.club'
 }
 
+// House screenings are omitted from GET /events for anonymous callers, so a
+// signed-in member only sees them if we present their token. Browser-only by
+// construction: resolveWorkerOrigin already returns null under Node, and the
+// build-time path must stay anonymous or a members-only screening would be
+// baked into the static site.
+function sessionToken(): string | null {
+  if (!is_browser) return null
+  try {
+    const raw = localStorage.jxnfc_session
+    return raw ? (JSON.parse(raw).token || null) : null
+  } catch { return null }
+}
+
 async function fetchList(type: string): Promise<any[]> {
   // Try the live Worker first. The static JSON snapshot in data/{type}.json
   // is the fallback — it's refreshed by snapshot-{members,events}.yml every
   // 6h, so it's never more than ~6h stale when the Worker is unreachable.
+  //
+  // Note the fallback is the ANONYMOUS view by definition: the snapshot is
+  // built from an unauthenticated read. If the Worker is unreachable a member
+  // sees the public calendar rather than a stale private one, which is the
+  // right way for this to fail.
   const origin = resolveWorkerOrigin()
   if (origin) {
     try {
-      const res = await fetch(`${origin}/${type}`)
+      const token = sessionToken()
+      const res = await fetch(`${origin}/${type}`,
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) return data

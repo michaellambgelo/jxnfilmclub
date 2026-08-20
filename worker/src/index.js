@@ -182,6 +182,7 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
     if (request.method === 'GET'    && pathname === '/admin/voice')         return handleAdminVoiceList(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/status')  return handleAdminVoiceStatus(request, env)
+    if (request.method === 'POST'   && pathname === '/admin/voice/publish') return handleAdminVoicePublish(request, env)
     if (request.method === 'DELETE' && pathname === '/admin/voice')         return handleAdminVoiceDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
@@ -839,6 +840,20 @@ async function voicePrompt(env) {
   return { id: 'general', text: "Tell us what you're watching" }
 }
 
+// Rounds whose episode has actually aired, as a set of promptIds.
+//
+// This is the difference between "we're using your clip" and "your clip is
+// out in the world", and only a human knows when the second becomes true —
+// hence an explicit admin action rather than anything derived. Approval is a
+// moderation state; publication is an event. Stored as config:voice_published
+// = { promptIds: [...] }; a missing key means nothing has been published yet,
+// which is the correct default for a fresh install.
+async function publishedPrompts(env) {
+  const v = await readConfig(env, 'voice_published')
+  const ids = v && Array.isArray(v.promptIds) ? v.promptIds : []
+  return new Set(ids.filter(id => validPromptId(id)))
+}
+
 // Content-type allowlist → file extension. Prefix-matched, NOT exact:
 // browsers report 'audio/webm;codecs=opus' and friends. Returns null for
 // anything outside the allowlist.
@@ -862,9 +877,12 @@ function voiceExt(contentType) {
 }
 
 // What the member-facing endpoints return: the row minus storage internals.
-function voiceClipProjection(row) {
+function voiceClipProjection(row, published) {
   if (!row) return null
   const out = {
+    // Whether the ROUND has aired. A clip can be approved for months before
+    // its episode drops, so the member UI must be able to tell those apart.
+    published: published instanceof Set ? published.has(row.promptId) : false,
     promptId: row.promptId,
     promptText: row.promptText,
     contentType: row.contentType,
@@ -970,6 +988,7 @@ async function handleVoiceMine(request, env) {
   if (raw) {
     try { clip = JSON.parse(raw) } catch { clip = null }
   }
+  if (clip) clip.published = (await publishedPrompts(env)).has(clip.promptId)
   return json(env, { prompt, clip })
 }
 
@@ -1013,6 +1032,7 @@ async function handleVoiceHistory(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
   const prompt = await voicePrompt(env)
+  const published = await publishedPrompts(env)
   const suffix = `:${claims.id}`
   const clips = []
   let cursor
@@ -1024,7 +1044,7 @@ async function handleVoiceHistory(request, env) {
       if (!raw) continue
       try {
         const row = JSON.parse(raw)
-        if (row.memberId === claims.id) clips.push(voiceClipProjection(row))
+        if (row.memberId === claims.id) clips.push(voiceClipProjection(row, published))
       } catch { /* skip corrupt row */ }
     }
     cursor = page.list_complete ? undefined : page.cursor
@@ -1084,7 +1104,37 @@ async function handleAdminVoiceList(request, env) {
     }
     cursor = page.list_complete ? undefined : page.cursor
   } while (cursor)
-  return json(env, { clips })
+  // The admin UI needs the published set to render a per-round toggle.
+  return json(env, { clips, publishedPromptIds: [...(await publishedPrompts(env))].sort() })
+}
+
+// POST /admin/voice/publish — { promptId, published: boolean }.
+//
+// Marks a whole ROUND as aired, which is what flips every approved clip in it
+// from "Approved" to "Published" for its member. Deliberately round-scoped
+// rather than per-clip: an episode drops once, and a member whose clip was
+// approved shouldn't have to wonder whether their particular clip made the
+// cut after the episode is already out.
+//
+// Rewrites config:voice_published with NO expiry — this is operator config,
+// not member data, and it must outlive the 60-day clip retention so a member
+// who asks later still gets a truthful answer about a round.
+async function handleAdminVoicePublish(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  if (!validPromptId(body.promptId)) return json(env, { error: 'invalid promptId' }, 400)
+  if (typeof body.published !== 'boolean') {
+    return json(env, { error: 'published must be a boolean' }, 400)
+  }
+  const current = await publishedPrompts(env)
+  if (body.published) current.add(body.promptId)
+  else current.delete(body.promptId)
+  const promptIds = [...current].sort()
+  await env.MEMBERS_KV.put('config:voice_published', JSON.stringify({ promptIds }))
+  return json(env, { ok: true, promptIds })
 }
 
 // POST /admin/voice/status — { key, status: 'approved' | 'rejected' }.

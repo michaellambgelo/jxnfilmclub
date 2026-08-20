@@ -171,17 +171,34 @@ node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all] \
 # a prompt round → out/audiogram/<promptId>/{<memberId>-<fmt>.mp4,
 #                  segment-<fmt>.mp4, manifest.json}
 node scripts/make_audiogram.mjs --prompt <promptId> [--env production|staging] \
-    [--format ...] [--with-prompt] [--segment-only|--clips-only] [--out DIR]
+    [--format ...] [--with-prompt] [--member ID[,ID]] \
+    [--segment-only|--clips-only] [--out DIR]
+
+# just one member's clip
+node scripts/make_audiogram.mjs --prompt <promptId> --member <memberId>
 ```
 
 Formats: `16x9` (1920×1080, video-podcast import), `1x1` (1080×1080 feed),
-`9x16` (1080×1920 story/reel); default `16x9`. The frame is the club wordmark
-plus the speaker's name; `--with-prompt` (prompt mode) or `--title` (file
-mode) additionally displays the prompt being answered. Prompt mode reuses the
-compile pipeline (approved-only, submission order, same loudnorm), renders one
-video per member clip credited with the member's name, plus a compiled segment
+`9x16` (1080×1920 story/reel); default `16x9`. Prompt mode reuses the compile
+pipeline (approved-only, submission order, same loudnorm), renders one video
+per member clip credited with the member's name, plus a compiled segment
 video, and writes a `manifest.json`. A clip whose R2 object already aged out
 is **skipped with a warning**, not fatal.
+
+**The frame credits the speaker as its headline.** The attribution is the
+point of the format, so it sits in the display area under the club wordmark —
+not in a footer. With `--with-prompt` (prompt mode) or `--title` (file mode)
+the prompt takes the top of that block and the name is pinned just above the
+waveform; with no prompt line the name takes the display slot outright.
+
+**Choosing the grain.** With no `--member`, a round render produces every
+approved clip *and* the segment. `--member ID` (repeatable, or comma-separated;
+takes a memberId or a full `voice:{promptId}:{memberId}` key) narrows it —
+filtering happens **before** the R2 pulls, so one member costs one download
+rather than the whole round. `--member` on its own implies `--clips-only`,
+since a one-clip "segment" is byte-for-byte the clip; pass `--segment-only`
+explicitly to build a segment from a hand-picked subset. A narrowed run writes
+`manifest-partial.json` so it can't clobber the round's real manifest.
 
 The branded frame is screenshotted by headless Chromium (the repo's existing
 Playwright — run `npx playwright install chromium` if the browser binaries
@@ -189,6 +206,92 @@ are missing) from `scripts/assets/audiogram.html`, which links the real
 `css/tokens.css` + self-hosted fonts; Homebrew's ffmpeg has no `drawtext`
 (the formula dropped freetype), so the browser renders all type and ffmpeg
 only draws the waveform and encodes (H.264/AAC, faststart).
+
+### The same jobs, in a TUI
+
+`tui/` (Python + Textual, `cd tui && uv sync && uv run jxnfilm-tui`) is a local
+front end for everything in this section. It lists every prompt round with its
+clips in submission order, each one's moderation status and **days until the
+audio is deleted**, and which formats are already rendered under `out/`; `a`
+offers both grains against what's highlighted — the single clip on its own, or
+the whole round (all clips + segment, segment only, or clips only) — and runs
+it with live output. A second tab browses the KV keyspace read-only. It shells out
+to the same two scripts — no second implementation to keep in sync. Moderation
+is deliberately absent: approve/reject/delete stay here, where they route
+through the join Worker.
+
+### Output is append-only
+
+Nothing in this pipeline overwrites or deletes a file in `out/`. A render that
+would land on top of existing output **stops before it downloads or encodes
+anything** and names the conflicting files:
+
+```
+error: refusing to overwrite 2 existing output file(s):
+  out/audiogram/noir-november/alice-16x9.mp4
+  out/audiogram/noir-november/segment-16x9.mp4
+Move or delete them yourself, render to a different --out, or pass --force.
+```
+
+`--force` is the only override and is never a default (in the TUI it's an
+explicit "Overwrite existing output" tick). Render to a different `--out` to
+keep both. `out/` is gitignored — `tui/tests/test_settings.py` asks `git
+check-ignore` about every path the pipeline writes, so a future `.gitignore`
+edit that stops covering them fails the suite rather than leaking MP4s into a
+commit.
+
+`manifest.json` is the single exception, and it **merges** rather than
+overwrites: it's a derived index of the directory, not an artifact, so
+rendering 16x9 and then 1x1 — or Alice and then Bo — leaves one manifest
+describing everything present. The merge drops nothing: formats and per-clip
+files are unioned, every run is appended to `runs[]`, a clip that has since
+aged out keeps the renders it already had, and a null segment never erases a
+real one. A manifest that won't parse is refused rather than replaced.
+
+### R2 downloads are idempotent
+
+**Pulled source audio is kept**, at `out/archive/<promptId>/<memberId>.<ext>`.
+The 60-day retention promise governs the *service* — the KV rows and the R2
+objects the club stores on members' behalf. It does not follow an export onto
+an operator's own machine; once the audio is exported the policy's scope ends.
+So the first render of a round downloads it, and **every render after that
+makes no R2 request at all**. `--no-keep-audio` restores pull-to-temp-and-
+discard if you want a run to leave nothing behind.
+
+Pulling is therefore safe to repeat and safe to interrupt:
+
+- a destination that is already **byte-complete** (its size matches the `size`
+  on the KV row — the only integrity signal wrangler leaves us, since there is
+  no ETag and no HEAD) costs no request at all;
+- with `--no-keep-audio`, an existing archived copy is still reused rather than
+  re-fetched;
+- otherwise the transfer lands via a `.part` rename, so a cancelled or failed
+  pull can never leave a truncated file sitting at the real path looking
+  finished. A file that *is* the wrong size is re-pulled, and says so.
+
+"Archive source clips" in the TUI now just does this up front for a whole
+round; re-running it on a round you already have downloads nothing and reports
+`Downloaded 0, already had N`. Note the asymmetry: the CLIs *read* the archive
+and never repair a corrupt file there, while the archive action does.
+
+### Approved vs published
+
+These are two different facts and the Voice tab keeps them apart:
+
+- **approve / reject** is moderation on one clip — "we're using this in a
+  segment". It sets `status` on the `voice:*` row.
+- **publish round** is an event on a whole prompt round — "the episode is
+  actually out". It writes `config:voice_published` (`{ promptIds: [...] }`,
+  no expiry) via the join Worker.
+
+A member's `/speak` page reads `Submitted` → `Approved` → `Published`, and it
+only reaches the last one when you publish the round. That matters because a
+clip can sit approved for weeks before an episode exists; telling a member
+"Published" the day you approve them sends them looking for something that
+isn't there. Publishing is round-scoped rather than per-clip on purpose — an
+episode drops once. Unpublishing is supported (an episode can be pulled), and
+the key outlives the 60-day clip retention so a member asking months later
+still gets a truthful answer.
 
 **The 60-day reality**: both voice buckets carry a bucket-wide lifecycle rule
 that deletes objects 60 days after upload, and the KV rows carry a matching

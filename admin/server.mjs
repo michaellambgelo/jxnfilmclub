@@ -436,8 +436,9 @@ async function handle(req, res) {
     })
     return res.end(buf)
   }
-  // POST /api/voice/status?env=  body = JSON { key, status } — and —
-  // DELETE /api/voice?env=      body = JSON { key }
+  // POST /api/voice/status?env=   body = JSON { key, status } — and —
+  // POST /api/voice/publish?env=  body = JSON { promptId, published } — and —
+  // DELETE /api/voice?env=        body = JSON { key }
   // Voice moderation MUST go through the join Worker: it rewrites the KV row
   // with its remaining TTL (and deletes the R2 object on delete). A raw
   // /api/kv PUT would drop the TTL and make the row persistent. In E2E mode
@@ -445,6 +446,7 @@ async function handle(req, res) {
   // ADMIN_TOKEN=e2e-admin-token applies; locally these need a real token in
   // the environment — without one they're hosted-portal-only.
   if ((method === 'POST' && url.pathname === '/api/voice/status') ||
+      (method === 'POST' && url.pathname === '/api/voice/publish') ||
       (method === 'DELETE' && url.pathname === '/api/voice')) {
     if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
     const token = q.env === 'staging'
@@ -454,7 +456,9 @@ async function handle(req, res) {
       const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
       throw new HttpError(501, `voice moderation proxies the join Worker and needs its ${name} — export it before \`npm run admin\`, or use the hosted portal (admin.jxnfilm.club) where the secret is already set`)
     }
-    const adminPath = url.pathname === '/api/voice/status' ? '/admin/voice/status' : '/admin/voice'
+    const adminPath = url.pathname === '/api/voice/status' ? '/admin/voice/status'
+      : url.pathname === '/api/voice/publish' ? '/admin/voice/publish'
+      : '/admin/voice'
     const body = await readBody(req)
     const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}${adminPath}`, {
       method,

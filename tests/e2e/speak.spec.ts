@@ -41,6 +41,32 @@ test.describe('speak page', () => {
     await page.goto('/speak')
     await expect(page.locator('.speak-prompt-text')).toHaveText('Best theater snack?')
     await expect(page.locator('.speak-deadline')).toContainText('Dec 31, 2099')
+    // A cutoff still ahead of us says nothing extra.
+    await expect(page.locator('.speak-band-closed')).toBeHidden()
+  })
+
+  test('a cutoff in the past says so, and still takes clips', async ({ page }) => {
+    // The deadline is display-only in the Worker by design — the round keeps
+    // accepting. What must not happen is a stale date sitting silently next
+    // to a live Record button.
+    await seedKv(page, 'config:voice_prompt', JSON.stringify({
+      id: 'e2e-closed', text: 'Late answers welcome?', deadline: '2020-01-31',
+    }))
+    await signInAs(page, 'latecomer@e2e.test', { name: 'E2E Latecomer' })
+    await page.goto('/speak')
+
+    await expect(page.locator('.speak-deadline')).toContainText('Closed')
+    await expect(page.locator('.speak-band-closed')).toBeVisible()
+    await expect(page.locator('.speak-band-closed')).toContainText('may not make this episode')
+
+    // Still submittable.
+    await page.locator('.speak-upload input[type="file"]').setInputFiles({
+      name: 'clip.wav', mimeType: 'audio/wav', buffer: tinyWav(),
+    })
+    await page.locator('.speak-consent input[type="checkbox"]').check()
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.speak-history .hrow').first())
+      .toContainText('Submitted', { timeout: 10_000 })
   })
 
   test('member uploads a clip with consent; it round-trips; admin reviews it', async ({ page }) => {
@@ -83,6 +109,50 @@ test.describe('speak page', () => {
     await expect(clip.locator('.pill', { hasText: 'pending' })).toBeVisible()
     await clip.getByRole('button', { name: /approve/i }).click()
     await expect(clip.locator('.pill', { hasText: 'approved' })).toBeVisible()
+
+    // Approval is not publication. Until an admin says the episode aired,
+    // the member must not be told their clip is out in the world.
+    await page.goto('/speak')
+    const approvedRow = page.locator('.speak-history .hrow').first()
+    await expect(approvedRow).toContainText('Approved', { timeout: 10_000 })
+    await expect(approvedRow).not.toContainText('Published')
+
+    // Publishing the round is what flips it.
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="voice"]').click()
+    // Publishing is confirmed — it is the one action that tells members
+    // their episode is out.
+    page.once('dialog', d => d.accept())
+    await page.getByRole('button', { name: 'publish round' }).first().click()
+    await expect(page.locator('.pill', { hasText: 'published' }).first()).toBeVisible()
+
+    await page.goto('/speak')
+    await expect(page.locator('.speak-history .hrow').first())
+      .toContainText('Published', { timeout: 10_000 })
+  })
+
+  test('leaving with an unsubmitted take asks first', async ({ page }) => {
+    await signInAs(page, 'stager@e2e.test', { name: 'E2E Stager' })
+    await page.goto('/speak')
+    await page.locator('.speak-upload input[type="file"]').setInputFiles({
+      name: 'clip.wav', mimeType: 'audio/wav', buffer: tinyWav(),
+    })
+    await expect(page.locator('.speak-status-dd')).toHaveText('Draft')
+
+    // Dismissing the confirm keeps the member — and the take — on the page.
+    // An unsubmitted recording lives only in the recorder's module scope, so
+    // a navigation destroys it silently without this guard.
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('nav a[href="/events"]').first().click()
+    await expect.poll(() => asked).toContain('not been submitted')
+    await expect(page).toHaveURL(/\/speak/)
+    await expect(page.locator('.speak-preview')).toBeVisible()
+
+    // Accepting lets the navigation through.
+    page.once('dialog', d => d.accept())
+    await page.locator('nav a[href="/events"]').first().click()
+    await expect(page).toHaveURL(/\/events/)
   })
 
   test('member records with the mic, previews, and submits', async ({ page }) => {

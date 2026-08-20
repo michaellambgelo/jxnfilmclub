@@ -169,6 +169,18 @@
   color: var(--ink-5);
 }
 
+/* Past the cutoff. The round still accepts clips (the deadline is display-
+   only by design), so this reads as a caution, not a closed door. */
+.speak-band-closed {
+  margin: 14px 0 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand-tint-fg);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
 .speak-band-rail {
   display: flex;
   flex-direction: column;
@@ -259,6 +271,10 @@
   font-family: var(--font-display);
   font-size: 20px;
   color: var(--ink-strong);
+}
+
+.speak-band-details .dd.-closed {
+  color: var(--brand);
 }
 
 @media (max-width: 1000px) {
@@ -506,4 +522,11 @@
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 0.2em;
+}
+
+/* An upload longer than the 3:00 cap is accepted and trimmed at render —
+   flagged at preview so nobody discovers it from the finished audiogram. */
+.speak .speak-toolong {
+  margin: 8px 0 0;
+  color: var(--brand);
 }

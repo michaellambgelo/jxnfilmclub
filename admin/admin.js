@@ -682,11 +682,17 @@ function voiceClipCard(c) {
 }
 
 async function renderVoice() {
-  const [voiceRes, promptRes] = await Promise.all([
+  const [voiceRes, promptRes, pubRes] = await Promise.all([
     loadKv('voice:'),
     loadKv('config:voice_prompt'),
+    loadKv('config:voice_published'),
   ])
   const prompt = tryParse(promptRes.values['config:voice_prompt']) || DEFAULT_VOICE_PROMPT
+  // Published rounds — the member-facing difference between "Approved" and
+  // "Published". Read-only here; the toggle proxies the join Worker so the
+  // key is written in one place.
+  const pubVal = tryParse(pubRes.values['config:voice_published'])
+  const published = new Set(pubVal && Array.isArray(pubVal.promptIds) ? pubVal.promptIds : [])
 
   const rows = voiceRes.keys
     .map(k => ({ keyName: k.name, ...(tryParse(voiceRes.values[k.name]) || {}) }))
@@ -698,7 +704,9 @@ async function renderVoice() {
     <p class="section-hint">Member voice submissions for the podcast (≤3 min each; audio in R2, metadata in
       <code>voice:*</code>). <b>Everything — approved clips included — auto-deletes 60 days after
       submission</b> (R2 bucket lifecycle + KV TTL), so compile or download before the countdown runs
-      out. Approve/reject/delete go through the join Worker to keep the KV TTLs intact. Compile the
+      out. <b>Approve</b> clears a clip for a segment; <b>publish round</b> is what tells its member
+      the episode is actually out — approved clips read “Approved” until then. Approve/reject/delete/publish
+      go through the join Worker to keep the KV TTLs intact. Compile the
       approved set with <code>node scripts/compile_voices.mjs &lt;promptId&gt;</code>, or render branded
       audiogram videos with <code>node scripts/make_audiogram.mjs --prompt &lt;promptId&gt;</code>.</p>
     <p class="section-hint">Current prompt: <code>${escapeHtml(prompt.id)}</code> —
@@ -708,7 +716,12 @@ async function renderVoice() {
       <section class="voice-group">
         <h3><code>${escapeHtml(g.promptId)}</code>
           ${g.promptId === prompt.id ? '<span class="pill on">current prompt</span>' : ''}
-          <span class="muted">(${g.clips.length})</span></h3>
+          ${published.has(g.promptId) ? '<span class="pill on">published</span>' : ''}
+          <span class="muted">(${g.clips.length})</span>
+          <button data-action="voice-publish" data-prompt="${attr(g.promptId)}"
+            data-published="${published.has(g.promptId) ? '1' : '0'}"
+            title="Whether this round's episode has aired — flips every approved clip in it from Approved to Published for its member"
+            >${published.has(g.promptId) ? 'unpublish round' : 'publish round'}</button></h3>
         ${g.promptText ? `<p class="section-hint">“${escapeHtml(g.promptText)}”</p>` : ''}
         ${g.clips.map(voiceClipCard).join('')}
       </section>`).join('') : '<p class="empty">No voice clips yet.</p>'}
@@ -1665,6 +1678,14 @@ document.addEventListener('click', async (e) => {
       const { key, status } = btn.dataset
       await api('POST', `/api/voice/status?${qs({ env: env() })}`, JSON.stringify({ key, status }))
       toast(`Marked ${status}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'voice-publish') {
+      const promptId = btn.dataset.prompt
+      const next = btn.dataset.published !== '1'
+      if (next && !confirm(`Mark "${promptId}" as published?\n\nEvery approved clip in this round will tell its member the episode is out. Only do this once it actually is.`)) return
+      await api('POST', `/api/voice/publish?${qs({ env: env() })}`, JSON.stringify({ promptId, published: next }))
+      toast(next ? 'Round published' : 'Round unpublished')
       await switchTab(currentTab)
     }
     else if (a === 'voice-delete') {

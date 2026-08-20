@@ -356,6 +356,12 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/voice/status') {
     return proxyJoinAdmin(request, env, q, '/admin/voice/status')
   }
+  // POST /api/voice/publish?env=  body = JSON { promptId, published } — mark
+  // a whole ROUND as aired. Approval says "we're using this"; publishing says
+  // "the episode is out", and only a human knows when that becomes true.
+  if (method === 'POST' && url.pathname === '/api/voice/publish') {
+    return proxyJoinAdmin(request, env, q, '/admin/voice/publish')
+  }
   // DELETE /api/voice?env=  body = JSON { key } — delete the R2 object and
   // the KV row via the join Worker.
   if (method === 'DELETE' && url.pathname === '/api/voice') {

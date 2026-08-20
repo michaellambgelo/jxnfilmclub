@@ -144,12 +144,21 @@ club's Spotify show and lists every episode from `data/episodes.json`
 `scripts/refresh_spotify.py` syncs it weekly (Mondays 12:00 UTC via
 `.github/workflows/refresh-spotify.yml`) from the Anchor RSS feed.
 
-Member voice clips submitted via `/speak` feed the show:
-`scripts/compile_voices.mjs` stitches a prompt round's approved clips
+Member voice clips submitted via `/speak` feed the show. The member-facing
+status ladder is `Submitted` → `Approved` → `Published`: approving a clip
+clears it for a segment, publishing the **round** (admin portal → Voice)
+records that the episode actually aired (`config:voice_published`). The
+prompt's cutoff is display-only — past it the page says so and keeps
+accepting. A clip whose audio has hit the 60-day lifecycle is marked
+"audio expired" on its row the first time playback is attempted.
+
+Those clips feed the show: `scripts/compile_voices.mjs` stitches a prompt round's approved clips
 into a broadcast-ready WAV, and `scripts/make_audiogram.mjs` renders
 branded audiogram MP4s (per clip and per segment, 16:9/1:1/9:16) for
 video-podcast import and social promos — see `admin/README.md`
-§"Compiling a podcast segment".
+§"Compiling a podcast segment". `tui/` wraps both in a Textual TUI
+(`uv run jxnfilm-tui`) that shows each clip's days-until-deletion and
+runs the jobs without the flag archaeology.
 
 ## Testing
 
@@ -173,6 +182,15 @@ Member emails live only in Workers KV. `data/members.json` never
 contains emails. The `id` field in public JSON is a random token with
 no connection to the email. Policy served at
 `join.jxnfilm.club/privacy`.
+
+**Scope boundary.** The policy — including the 60-day voice-clip
+retention — binds the *service*: the KV rows and R2 objects the club
+holds on members' behalf, and the crons that expire them. It does not
+follow an export. Once an operator pulls clip audio to their own
+machine (`out/archive/`, via `scripts/make_audiogram.mjs` or the TUI's
+archive action), that copy is outside the policy's scope and is not
+swept. This is deliberate: the local copies are what a round is edited
+from, and they must outlive the round. Don't "fix" it as a leak.
 
 ## Deploy
 

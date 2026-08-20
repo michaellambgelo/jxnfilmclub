@@ -456,3 +456,89 @@ describe('member delete purges voice clips', () => {
     expect(await env.VOICE.head(`voice/general/${bystander.member.id}.webm`)).not.toBeNull()
   })
 })
+
+// Approval and publication are different facts. A clip can sit approved for
+// weeks before its episode airs, so the member UI has to be able to say
+// "we're using this" without claiming "this is out in the world".
+describe('published rounds', () => {
+  const publish = (promptId, published, token = ADMIN) =>
+    req('/admin/voice/publish', { method: 'POST', token, body: { promptId, published } })
+
+  it('nothing is published until an admin says so', async () => {
+    const { token } = await getTokenFor('unpub@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+
+    const mine = await (await req('/voice/mine', { token })).json()
+    expect(mine.clip.published).toBe(false)
+    const hist = await (await req('/voice/history', { token })).json()
+    expect(hist.clips[0].published).toBe(false)
+  })
+
+  it('publishing a round flips it for every member in that round', async () => {
+    const a = await getTokenFor('a-pub@example.com')
+    const b = await getTokenFor('b-pub@example.com')
+    expect((await postVoice(a.token)).status).toBe(200)
+    expect((await postVoice(b.token)).status).toBe(200)
+
+    const res = await publish('general', true)
+    expect(res.status).toBe(200)
+    expect((await res.json()).promptIds).toEqual(['general'])
+
+    for (const who of [a, b]) {
+      const mine = await (await req('/voice/mine', { token: who.token })).json()
+      expect(mine.clip.published).toBe(true)
+    }
+  })
+
+  it('unpublishing is possible — an episode can be pulled', async () => {
+    const { token } = await getTokenFor('unpub2@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await publish('general', true)
+    expect((await publish('general', false)).status).toBe(200)
+
+    const mine = await (await req('/voice/mine', { token })).json()
+    expect(mine.clip.published).toBe(false)
+    expect(await env.MEMBERS_KV.get('config:voice_published', { type: 'json' }))
+      .toEqual({ promptIds: [] })
+  })
+
+  it('only marks the round it was told to', async () => {
+    const { token } = await getTokenFor('other-round@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await publish('noir-november', true)
+
+    const hist = await (await req('/voice/history', { token })).json()
+    expect(hist.clips.every(c => c.published === false)).toBe(true)
+  })
+
+  it('survives the round it describes — config carries no expiry', async () => {
+    // Clip rows die at 60 days; a member asking six months later still
+    // deserves a truthful answer about whether that episode aired.
+    await publish('general', true)
+    const listed = await env.MEMBERS_KV.list({ prefix: 'config:voice_published' })
+    expect(listed.keys[0].expiration).toBeUndefined()
+  })
+
+  it('validates input and auth', async () => {
+    expect((await publish('general', true, null)).status).toBe(401)
+    expect((await publish('general', true, 'wrong-token')).status).toBe(401)
+    // promptId feeds a KV key elsewhere — same slug boundary as everywhere.
+    expect((await publish('voice:general:someone', true)).status).toBe(400)
+    expect((await publish('general', 'yes')).status).toBe(400)
+  })
+
+  it('a malformed config:voice_published reads as nothing published', async () => {
+    const { token } = await getTokenFor('malformed@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.MEMBERS_KV.put('config:voice_published', JSON.stringify({ promptIds: 'general' }))
+
+    const mine = await (await req('/voice/mine', { token })).json()
+    expect(mine.clip.published).toBe(false)
+  })
+
+  it('GET /admin/voice reports the published set for the round toggles', async () => {
+    await publish('general', true)
+    const data = await (await req('/admin/voice', { token: ADMIN })).json()
+    expect(data.publishedPromptIds).toEqual(['general'])
+  })
+})

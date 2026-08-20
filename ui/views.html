@@ -639,6 +639,9 @@
 
   <script>
     const WORKER_ORIGIN = resolveWorkerOrigin()
+    // Published for the recorder child, which is within a few hundred chars
+    // of the 10k script cap and can't afford its own copy of this.
+    globalThis.jxnfcOrigin = WORKER_ORIGIN
 
     function resolveWorkerOrigin() {
       if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
@@ -647,6 +650,42 @@
       if (override === 'prod')  return 'https://join.jxnfilm.club'
       if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
       return 'https://join.jxnfilm.club'
+    }
+
+    // An unsubmitted take lives only in the recorder's module scope, and the
+    // recorder tears itself down on any route change — so without this a nav
+    // click silently destroys three minutes of recording. Page-lifetime and
+    // once-guarded: module scope re-evals on every parent update.
+    if (!globalThis.jxnfcSpeakNavGuard) {
+      globalThis.jxnfcSpeakNavGuard = true
+      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
+      window.addEventListener('beforeunload', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow) return
+        e.preventDefault()
+        e.returnValue = ''
+      })
+      // Capture phase: the SPA router also listens for link clicks, and this
+      // has to win before it starts a route change.
+      document.addEventListener('click', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
+        const a = e.target.closest ? e.target.closest('a[href]') : null
+        if (!a || a.target === '_blank') return
+        const url = new URL(a.getAttribute('href'), location.href)
+        if (url.origin !== location.origin || url.pathname === location.pathname) return
+        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
+      }, true)
+    }
+
+    // Submit-error copy lives here, not in the recorder: that component is
+    // within a few hundred chars of the 10k script cap. Read at click time,
+    // so evaluation order doesn't matter.
+    globalThis.jxnfcVoiceErr = function(status) {
+      if (status === 400) return 'The consent box must be checked first.'
+      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
+      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
     }
 
     function getSession() {
@@ -1226,6 +1265,9 @@
 
   <script>
     const WORKER_ORIGIN = resolveWorkerOrigin()
+    // Published for the recorder child, which is within a few hundred chars
+    // of the 10k script cap and can't afford its own copy of this.
+    globalThis.jxnfcOrigin = WORKER_ORIGIN
 
     function resolveWorkerOrigin() {
       if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
@@ -1234,6 +1276,42 @@
       if (override === 'prod')  return 'https://join.jxnfilm.club'
       if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
       return 'https://join.jxnfilm.club'
+    }
+
+    // An unsubmitted take lives only in the recorder's module scope, and the
+    // recorder tears itself down on any route change — so without this a nav
+    // click silently destroys three minutes of recording. Page-lifetime and
+    // once-guarded: module scope re-evals on every parent update.
+    if (!globalThis.jxnfcSpeakNavGuard) {
+      globalThis.jxnfcSpeakNavGuard = true
+      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
+      window.addEventListener('beforeunload', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow) return
+        e.preventDefault()
+        e.returnValue = ''
+      })
+      // Capture phase: the SPA router also listens for link clicks, and this
+      // has to win before it starts a route change.
+      document.addEventListener('click', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
+        const a = e.target.closest ? e.target.closest('a[href]') : null
+        if (!a || a.target === '_blank') return
+        const url = new URL(a.getAttribute('href'), location.href)
+        if (url.origin !== location.origin || url.pathname === location.pathname) return
+        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
+      }, true)
+    }
+
+    // Submit-error copy lives here, not in the recorder: that component is
+    // within a few hundred chars of the 10k script cap. Read at click time,
+    // so evaluation order doesn't matter.
+    globalThis.jxnfcVoiceErr = function(status) {
+      if (status === 400) return 'The consent box must be checked first.'
+      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
+      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
     }
 
     function getSession() {
@@ -1431,13 +1509,14 @@
           <button type="button" class="speak-band-btn" :onclick="toRecorder">Record a clip</button>
           <button type="button" class="speak-band-btn -quiet" :onclick="toUpload">Upload a file</button>
         </div>
-        <p class="speak-band-reassure">Members only — you can re-record or pull your clip any time before the episode drops.</p>
+        <p class="speak-band-reassure">{ session ? 'You can re-record or pull your clip any time before the episode drops.' : 'Members only — log in to record.' }</p>
+        <p :hidden="!isClosed()" class="speak-band-closed">This round’s cutoff has passed. You can still submit, but a late clip may not make this episode.</p>
       </div>
       <div class="speak-band-rail">
         <div class="speak-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="speak-band-details">
           <div class="drow"><span class="dt">Length</span><span class="dd">3 min or less</span></div>
-          <div class="drow"><span class="dt">Cutoff</span><span class="dd speak-deadline">{ deadlineLabel || (prompt && prompt.deadline) || '—' }</span></div>
+          <div class="drow"><span class="dt">Cutoff</span><span class="dd speak-deadline { isClosed() ? '-closed' : '' }">{ (isClosed() ? 'Closed · ' : '') + (deadlineLabel || (prompt && prompt.deadline) || '—') }</span></div>
           <div class="drow"><span class="dt">Status</span><span class="dd speak-status-dd">{ railStatus() }</span></div>
         </div>
       </div>
@@ -1470,6 +1549,9 @@
 
   <script>
     const WORKER_ORIGIN = resolveWorkerOrigin()
+    // Published for the recorder child, which is within a few hundred chars
+    // of the 10k script cap and can't afford its own copy of this.
+    globalThis.jxnfcOrigin = WORKER_ORIGIN
 
     function resolveWorkerOrigin() {
       if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
@@ -1478,6 +1560,42 @@
       if (override === 'prod')  return 'https://join.jxnfilm.club'
       if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
       return 'https://join.jxnfilm.club'
+    }
+
+    // An unsubmitted take lives only in the recorder's module scope, and the
+    // recorder tears itself down on any route change — so without this a nav
+    // click silently destroys three minutes of recording. Page-lifetime and
+    // once-guarded: module scope re-evals on every parent update.
+    if (!globalThis.jxnfcSpeakNavGuard) {
+      globalThis.jxnfcSpeakNavGuard = true
+      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
+      window.addEventListener('beforeunload', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow) return
+        e.preventDefault()
+        e.returnValue = ''
+      })
+      // Capture phase: the SPA router also listens for link clicks, and this
+      // has to win before it starts a route change.
+      document.addEventListener('click', function(e) {
+        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
+        const a = e.target.closest ? e.target.closest('a[href]') : null
+        if (!a || a.target === '_blank') return
+        const url = new URL(a.getAttribute('href'), location.href)
+        if (url.origin !== location.origin || url.pathname === location.pathname) return
+        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
+      }, true)
+    }
+
+    // Submit-error copy lives here, not in the recorder: that component is
+    // within a few hundred chars of the 10k script cap. Read at click time,
+    // so evaluation order doesn't matter.
+    globalThis.jxnfcVoiceErr = function(status) {
+      if (status === 400) return 'The consent box must be checked first.'
+      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
+      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
     }
 
     function getSession() {
@@ -1499,8 +1617,24 @@
       return new Date(m[0] + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
     }
 
-    this.statusLabel = function(s) {
-      return s === 'approved' ? 'Published' : s === 'rejected' ? 'Not chosen for publication' : 'Submitted'
+    // Approved ≠ aired. A clip is cleared for a segment the moment an admin
+    // approves it, which can be weeks before the episode exists; only
+    // publishing the ROUND (admin portal → Voice) makes "Published" true.
+    this.statusLabel = function(c) {
+      if (!c) return '—'
+      if (c.status === 'approved') return c.published ? 'Published' : 'Approved'
+      if (c.status === 'rejected') return 'Not chosen for publication'
+      return 'Submitted'
+    }
+
+    // The cutoff is display-only by design (worker: voicePrompt) — the round
+    // still accepts clips after it. What was missing was saying so: a stale
+    // date beside a live Record button reads as "you have until then".
+    // Inclusive, so a cutoff of the 15th stays open through the 15th.
+    this.isClosed = function() {
+      const d = this.prompt && this.prompt.deadline
+      const m = typeof d == 'string' ? /^[0-9]{4}-[0-9]{2}-[0-9]{2}/.exec(d) : null
+      return !!m && Date.now() > new Date(m[0] + 'T23:59:59').getTime()
     }
 
     // Detail-rail status: an unsubmitted staged take beats the stored clip
@@ -1514,7 +1648,7 @@
       let base = '—'
       if (this.session) {
         if (!this.mineLoaded) base = '…'
-        else if (this.mine) base = this.statusLabel(this.mine.status)
+        else if (this.mine) base = this.statusLabel(this.mine)
         else if (this.deleted) base = 'Deleted'
       }
       globalThis.jxnfcSpeakBase = base
@@ -1618,6 +1752,7 @@
     <p class="speak-kicker">Preview</p>
     <div class="speak-player"></div>
     <p class="speak-clip-meta">{ clipLabel }</p>
+    <p :hidden="!tooLong" class="hint speak-toolong">That is longer than three minutes — only the first 3:00 will be used.</p>
     <label class="speak-consent">
       <input type="checkbox" :onchange="consentChange" :checked="consent" :disabled="busy">
       I agree this clip may be aired on the Jackson Film Club podcast,
@@ -1633,20 +1768,15 @@
   <p :if="err" class="rsvp-err">{ err }</p>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
+    // Origin and error copy come from the parent (globalThis), read at call
+    // time — this script is close to the 10k serialization cap and can't
+    // afford its own copies. See speak-view.
+    function origin() { return globalThis.jxnfcOrigin || 'https://join.jxnfilm.club' }
+    function friendly(s) { return globalThis.jxnfcVoiceErr(s) }
 
     const MAX_SECONDS = 180
     const MAX_BYTES = 8 * 1024 * 1024
-    const RESET = { recording: false, preview: false, consent: false, elapsed: 0, err: '', clipLabel: '', starting: false }
+    const RESET = { recording: false, preview: false, consent: false, elapsed: 0, err: '', clipLabel: '', starting: false, tooLong: false }
 
     let recorder = null
     let stream = null
@@ -1723,15 +1853,6 @@
       return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
     }
 
-    function friendly(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired. Log in again, then resubmit.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute.'
-    }
-
     this.fmtTime = function(s) { return fmtT(s) }
 
     this.mounted = function() {
@@ -1741,7 +1862,7 @@
       globalThis.jxnfcSpeakDiscard = function() { cleanupAll(); self.update(RESET); tellStaged(false) }
       // Module state does NOT survive parent-triggered remounts (script
       // re-evals, clipBlob resets) — restore branch kept defensively.
-      this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, elapsed: clipSeconds, consent: false, err: '', clipLabel: clipBlob ? 'Staged clip · ' + fmtT(clipSeconds) : '' })
+      this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, elapsed: clipSeconds, consent: false, err: '', tooLong: clipSeconds > MAX_SECONDS, clipLabel: clipBlob ? 'Staged clip · ' + fmtT(clipSeconds) : '' })
       if (clipBlob) this.attachPreview()
       tellStaged(!!clipBlob)
     }
@@ -1757,7 +1878,10 @@
         audioEl.addEventListener('loadedmetadata', function() {
           if (!clipSeconds && isFinite(audioEl.duration) && audioEl.duration > 0) {
             clipSeconds = Math.round(audioEl.duration)
-            self.update({ elapsed: clipSeconds })
+            // An upload longer than the cap is accepted and silently trimmed
+            // at render time — say so here rather than letting the member
+            // find out from the finished audiogram.
+            self.update({ elapsed: clipSeconds, tooLong: clipSeconds > MAX_SECONDS })
             self.attachPreview()
           }
         })
@@ -1844,7 +1968,7 @@
       clipType = f.type || 'application/octet-stream'
       clipSeconds = 0
       clipUrl = URL.createObjectURL(f)
-      self.update({ err: '', preview: true, recording: false, elapsed: 0, clipLabel: 'Upload · ' + f.name })
+      self.update({ err: '', preview: true, recording: false, elapsed: 0, tooLong: false, clipLabel: 'Upload · ' + f.name })
       self.attachPreview()
       tellStaged(true)
     }
@@ -1860,29 +1984,40 @@
       tellStaged(false)
     }
 
+    this.post = function(token) {
+      return fetch(origin() + '/voice', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': clipType || 'application/octet-stream',
+          'X-Voice-Duration': String(clipSeconds || 0),
+          'X-Voice-Consent': 'yes',
+        },
+        body: clipBlob,
+      })
+    }
+
     this.submit = async function() {
       const self = this
       if (!clipBlob) { self.update({ err: 'Record or choose an audio file first.' }); return }
       if (!this.consent) return
       self.update({ busy: true, err: '' })
       try {
-        const res = await fetch(WORKER_ORIGIN + '/voice', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + this.session.token,
-            'Content-Type': clipType || 'application/octet-stream',
-            'X-Voice-Duration': String(clipSeconds || 0),
-            'X-Voice-Consent': 'yes',
-          },
-          body: clipBlob,
-        })
-        if (!res.ok) throw new Error(friendly(res.status))
+        let res = await this.post(this.session.token)
+        // A 401 here used to send the member to /signin — which unmounts this
+        // component and destroys the very take they were told to resubmit.
+        // Renew in place instead and retry once; the blob never moves.
+        if (res.status === 401 && globalThis.jxnfcEnsureSession) {
+          const fresh = await globalThis.jxnfcEnsureSession().catch(function() { return null })
+          if (fresh && fresh.token) res = await this.post(fresh.token)
+        }
+        if (!res.ok) { const err = new Error(friendly(res.status)); err.shown = true; throw err }
         // Fresh route render: the parent refetches /voice/mine and shows
         // the submitted state (house mutation idiom).
         dropClip()
         location.reload()
       } catch (e) {
-        self.update({ busy: false, err: e.message })
+        self.update({ busy: false, err: (e && e.shown) ? e.message : 'Could not reach the server — check your connection and try again. Your recording is still here.' })
         self.attachPreview()
       }
     }
@@ -1904,7 +2039,7 @@
   <h2 :hidden="!items || !items.length" class="speak-history-head">Your submissions</h2>
   <div :each="c in items" key="{ c.promptId }" class="hrow" data-prompt="{ c.promptId }">
     <p class="hrow-prompt">“{ c.promptText }”</p>
-    <p class="hrow-meta"><span :if="c.current" class="hrow-badge">This round</span>{ labelOf(c.status) } · { fmtDate(c.at) }{ c.duration ? ' · ' + fmtClock(c.duration) : '' }{ expiresIn(c.expiresAt) }</p>
+    <p class="hrow-meta"><span :if="c.current" class="hrow-badge">This round</span>{ labelOf(c) } · { fmtDate(c.at) }{ c.duration ? ' · ' + fmtClock(c.duration) : '' }{ expiresIn(c.expiresAt) }</p>
     <div class="hrow-player" data-prompt="{ c.promptId }"></div>
     <div class="hrow-btns">
       <button type="button" class="-ghost hrow-act" data-act="listen" data-prompt="{ c.promptId }">Listen</button>
@@ -1976,6 +2111,20 @@
       globalThis.jxnfcVoicePlay = null
     }
 
+    // The R2 lifecycle sweeps daily while the KV TTL is exact, so a row can
+    // outlive its audio. We only learn on a failed fetch — cheaper than N R2
+    // existence probes per history load — so record it on the row when we do,
+    // instead of leaving a dead Listen button and a countdown that implies
+    // the clip is still there.
+    function markGone(id) {
+      const btn = listenBtn(id)
+      if (btn) { btn.textContent = 'Audio expired'; btn.disabled = true }
+      const meta = document.querySelector('.hrow[data-prompt="' + id + '"] .hrow-meta')
+      if (meta && meta.textContent.indexOf('audio expired') === -1) {
+        meta.textContent = meta.textContent + ' · audio expired'
+      }
+    }
+
     function attachPlayer() {
       const p = globalThis.jxnfcVoicePlay
       if (!p || !p.url) return
@@ -1991,8 +2140,14 @@
       if (btn) btn.textContent = 'Stop'
     }
 
-    this.labelOf = function(s) {
-      return s === 'approved' ? 'Published' : s === 'rejected' ? 'Not chosen for publication' : 'Submitted'
+    // Same mapping as the band's rail (speak-view.statusLabel): approval is
+    // "we're using this", publication is "the episode is out". Only an admin
+    // publishing the round makes the second true.
+    this.labelOf = function(c) {
+      if (!c) return 'Submitted'
+      if (c.status === 'approved') return c.published ? 'Published' : 'Approved'
+      if (c.status === 'rejected') return 'Not chosen for publication'
+      return 'Submitted'
     }
 
     this.fmtDate = function(at) {
@@ -2056,13 +2211,19 @@
       setErr('')
       try {
         const res = await fetch(WORKER_ORIGIN + '/voice/audio?promptId=' + encodeURIComponent(id), { headers: auth() })
+        if (res.status === 404) {
+          markGone(id)
+          setErr('That clip’s audio has been deleted — submissions are kept for 60 days.')
+          working = false
+          return
+        }
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const blob = await res.blob()
         stopPlayback()
         globalThis.jxnfcVoicePlay = { promptId: id, url: URL.createObjectURL(blob) }
         attachPlayer()
       } catch (e) {
-        setErr('Could not load that clip — it may have expired. Reload and try again.')
+        setErr('Could not load that clip. Check your connection and try again.')
       }
       working = false
     }

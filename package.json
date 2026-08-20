@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nue serve",
     "build": "nue build",
-    "postbuild": "rm -rf .dist/admin .dist/tests .dist/worker .dist/scripts .dist/playwright-report .dist/test-results .dist/node_modules .dist/playwright.config.js .dist/vitest.config.js .dist/vitest.workspace.js .dist/package-lock.json .dist/bun.lock",
+    "postbuild": "rm -rf .dist/admin .dist/tests .dist/tui .dist/worker .dist/scripts .dist/playwright-report .dist/test-results .dist/node_modules .dist/playwright.config.js .dist/vitest.config.js .dist/vitest.workspace.js .dist/package-lock.json .dist/bun.lock",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

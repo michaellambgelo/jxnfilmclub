@@ -1,0 +1,16 @@
+
+ ⛅️ wrangler 4.114.0
+────────────────────
+[
+  {
+    "name": "voice:general:mem_alice",
+    "expiration": 1793491200
+  },
+  {
+    "name": "voice:general:mem_bob"
+  },
+  {
+    "name": "voice:noir-november:mem_alice",
+    "expiration": 1798675200
+  }
+]

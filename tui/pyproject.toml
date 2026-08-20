@@ -1,0 +1,30 @@
+[project]
+name = "jxnfilm-tui"
+version = "0.1.0"
+description = "Textual TUI for the JXN Film Club audiogram pipeline and its KV/R2 stores"
+readme = "README.md"
+authors = [
+    { name = "Michael Lamb", email = "michael@michaellamb.dev" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.80",
+]
+
+[project.scripts]
+jxnfilm-tui = "jxnfilm_tui.__main__:main"
+
+[dependency-groups]
+dev = [
+    "textual-dev>=1.5",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"

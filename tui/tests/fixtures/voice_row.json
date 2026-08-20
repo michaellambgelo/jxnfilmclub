@@ -1,0 +1,15 @@
+{
+  "memberId": "mem_alice",
+  "name": "Alice",
+  "handle": "alicewatches",
+  "promptId": "general",
+  "promptText": "Tell us what you're watching",
+  "r2Key": "voice/general/mem_alice.webm",
+  "contentType": "audio/webm",
+  "size": 482134,
+  "consent": true,
+  "at": "2026-08-01T18:04:11.221Z",
+  "expiresAt": 1793491451,
+  "status": "approved",
+  "duration": 212.5
+}

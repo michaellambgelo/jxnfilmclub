@@ -18,6 +18,12 @@ test-results/
 .playwright-report/
 .test-results/
 
+# Python TUI (tui/) — venv + bytecode + pytest cache
+tui/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
 # Admin-local data (emails, notes, exports). README is tracked as the
 # documented convention.
 .admin/*

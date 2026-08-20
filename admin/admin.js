@@ -254,6 +254,8 @@ async function renderNewsletter() {
         <div class="nl-preview-wrap">
           <label>Preview <span class="muted">— editable; edits sync back to the HTML</span></label>
           <div class="nl-fmt" id="nl-fmt">
+            <button type="button" data-cmd="undo" class="nl-fmt-hist" title="Undo the last edit in the preview (⌘Z)">undo</button>
+            <button type="button" data-cmd="redo" class="nl-fmt-hist nl-fmt-hist-end" title="Redo (⇧⌘Z)">redo</button>
             <button type="button" data-cmd="bold" title="Bold"><strong>B</strong></button>
             <button type="button" data-cmd="italic" title="Italic"><em>I</em></button>
             <button type="button" data-cmd="h1" title="Heading">H1</button>
@@ -283,10 +285,12 @@ async function renderNewsletter() {
           <h4>Insert content</h4>
           <div class="toolbar nl-insert-bar">
             <button data-action="nl-insert-events" title="Append all upcoming events as a styled section">Insert upcoming events</button>
-            <label class="nl-count">Entries<input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert"></label>
-            <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
             <button data-action="nl-insert-voice" title="Append a record-a-clip CTA for the podcast, quoting the current voice prompt">Insert voice CTA</button>
             <button id="nl-undo" class="nl-undo" data-action="nl-undo" disabled title="Nothing to undo">↶ Undo insert</button>
+          </div>
+          <div class="toolbar nl-insert-bar nl-watched-bar">
+            <label class="nl-count">Entries<input id="nl-watched-count" type="number" min="1" max="30" value="8" title="How many entries to insert"></label>
+            <button data-action="nl-insert-watched" title="Append the latest member Letterboxd diary entries as a styled section">Insert member watches</button>
           </div>
         </div>
       </div>
@@ -444,19 +448,28 @@ function wireNewsletterPreview(htmlField, textField, preview, toolbar) {
     const doc = preview.contentDocument
     const cmd = btn.dataset.cmd
     preview.contentWindow.focus()
+    const before = doc.body.innerHTML
     if (cmd === 'h1' || cmd === 'h2' || cmd === 'p') {
       doc.execCommand('formatBlock', false, '<' + cmd + '>')
     } else if (cmd === 'createLink') {
       const url = prompt('Link URL (https://…):')
       if (url) doc.execCommand('createLink', false, url)
     } else {
+      // undo/redo included — designMode keeps its own native history, so
+      // execCommand drives it. That history only spans a run of preview-side
+      // edits: syncToPreview replaces the whole document via srcdoc, so typing
+      // in the HTML textarea (or running an insert) resets it. Editing in the
+      // preview does NOT reset it, because syncFromPreview assigns .value
+      // programmatically and that fires no input event.
       doc.execCommand(cmd, false, null)
     }
     // execCommand firing an `input` on the iframe document is browser-
     // dependent, and this path calls syncFromPreview() directly — so mark the
     // body dirty here too, or Cmd+Z could discard the formatting as if the
-    // insert were still the most recent change.
-    clearClean()
+    // insert were still the most recent change. Only when something actually
+    // changed, though: a no-op undo or a cancelled link prompt must not
+    // disable the insert-undo path.
+    if (doc.body.innerHTML !== before) clearClean()
     syncFromPreview()
   })
 

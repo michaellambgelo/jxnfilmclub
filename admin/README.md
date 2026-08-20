@@ -77,14 +77,20 @@ where the secrets are already set.
 The compose box prefills a branded, email-safe HTML template (the Worker
 appends the unsubscribe footer — plus a postal line only if
 `NEWSLETTER_POSTAL_ADDRESS` is configured — so don't add one). The preview pane is
-**editable**: type directly into it or use the formatting toolbar (bold,
-italic, headings, list, link), and edits sync back into the HTML textarea,
+**editable**: type directly into it or use the formatting toolbar (undo/redo,
+bold, italic, headings, list, link), and edits sync back into the HTML textarea,
 which remains what actually gets sent. Scripts never execute in the preview
 (`sandbox` without `allow-scripts`).
 
 The compose controls sit in two labeled groups — **Poster** (title search +
 optional link URL) and **Insert content** (events, member watches with an
 "Entries" count, voice CTA) — with the send row set off below them.
+
+The preview's **undo/redo** buttons drive designMode's own history, so they
+reverse edits you made *in the preview* — distinct from the insert-undo below,
+which reverses a whole generated block. That history only spans a run of
+preview-side edits: typing in the HTML textarea or running an insert replaces
+the preview document and resets it.
 
 Every insert is **undoable**: the ↶ Undo button at the end of the insert row
 names what it will reverse, and ⌘Z / Ctrl+Z does the same while the caret is in

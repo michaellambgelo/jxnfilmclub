@@ -205,6 +205,16 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .nl-body { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.8rem }
 .nl-fmt { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.4rem }
 .nl-fmt button { font-size: 0.8rem; padding: 0.15rem 0.55rem }
+.nl-fmt-hist { color: var(--muted) }
+.nl-fmt-hist-end { margin-right: 0.5rem; position: relative }
+.nl-fmt-hist-end::after {
+  content: '';
+  position: absolute;
+  right: -0.4rem;
+  top: 0;
+  bottom: 0;
+  border-right: 1px solid var(--border);
+}
 
 .ev-sort-label { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; font-size: 0.85rem; color: var(--muted) }
 .ev-sort-label select { padding: 0.2rem 0.4rem }
@@ -236,6 +246,7 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   color: var(--muted);
 }
 .nl-group .toolbar, .nl-send-bar { margin-bottom: 0 }
+.nl-insert-bar + .nl-insert-bar { margin-top: 0.5rem }
 .nl-controls .toolbar, .nl-send-bar { align-items: flex-end }
 .nl-controls label, .nl-send-bar label { display: block; font-size: 0.8rem; color: var(--muted) }
 .nl-controls label input, .nl-send-bar label input { display: block; margin-top: 0.2rem }

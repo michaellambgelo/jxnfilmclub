@@ -181,6 +181,61 @@ test.describe('admin dashboard', () => {
     await expect(undo).toBeDisabled()
   })
 
+  // The preview is a designMode document with its own native history. These
+  // buttons drive it, and are a different thing from the insert-undo above:
+  // this reverses an edit made in the preview, not a whole inserted block.
+  test('editor undo/redo reverses and restores a preview edit', async ({ page }) => {
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="newsletter"]').click()
+
+    const html = page.locator('#nl-html')
+    const body = page.frameLocator('#nl-preview').locator('body')
+    await body.waitFor()
+
+    // Type into the preview; the edit syncs back into the HTML textarea.
+    await body.click()
+    await page.keyboard.type('ZZMARKERZZ')
+    await expect(html).toHaveValue(/ZZMARKERZZ/)
+    const edited = await html.inputValue()
+
+    await page.locator('#nl-fmt button[data-cmd="undo"]').click()
+    await expect(html).not.toHaveValue(/ZZMARKERZZ/)
+    // Undo removed the edit, not the document.
+    await expect(html).toHaveValue(/Jackson Film Club/)
+
+    await page.locator('#nl-fmt button[data-cmd="redo"]').click()
+    await expect(html).toHaveValue(/ZZMARKERZZ/)
+    await expect(html).toHaveValue(edited)
+  })
+
+  // A no-op command must not clear the insert-clean flag — otherwise clicking
+  // undo on an empty history would silently disable Cmd+Z for the insert.
+  test('a no-op editor undo leaves the insert still undoable', async ({ page }) => {
+    const ev = { id: 'nl-noop-e2e', title: 'No-op Night', film: 'Solaris', year: 1972,
+      date: '2030-06-01', time: '19:30', venue: 'The Parlor' }
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${ev.id}`, value: JSON.stringify(ev) },
+    })
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="newsletter"]').click()
+
+    const html = page.locator('#nl-html')
+    const before = await html.inputValue()
+
+    // Insert, then click editor-undo: the srcdoc reload left the preview's
+    // native history empty, so this changes nothing.
+    await page.getByRole('button', { name: 'Insert upcoming events' }).click()
+    await expect(html).toHaveValue(/Solaris/)
+    await page.locator('#nl-fmt button[data-cmd="undo"]').click()
+    await expect(html).toHaveValue(/Solaris/)
+
+    // The insert is still reversible by keyboard, which is what the no-op
+    // guard protects.
+    await html.focus()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(html).toHaveValue(before)
+  })
+
   // Once the operator edits by hand, the insert is no longer the most recent
   // change and the key must fall through to the browser's own undo.
   test('undo key falls through to native undo after a manual edit', async ({ page }) => {

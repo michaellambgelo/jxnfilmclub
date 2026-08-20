@@ -21,8 +21,18 @@ test.describe('account stats card', () => {
 
     // The gate is a positive "ready", so the pending line is what paints first.
     await expect(page.locator('.acct-stats-grid')).toBeVisible()
-    await expect(page.locator('.acct-stat')).toHaveCount(4)
     await expect(page.locator('.acct-stats-pending')).toHaveCount(0)
+
+    // This member has hosted nothing, so the Hosted tile is absent rather than
+    // showing a 0 — three tiles, not four. Hosting costs time and a room, and
+    // a member who has not managed it should not be shown a running tally.
+    await expect(page.locator('.acct-stat')).toHaveCount(3)
+    await expect(page.locator('.acct-stats-grid')).toHaveClass(/-three/)
+    await expect(page.locator('.acct-stat-label', { hasText: 'Hosted' })).toHaveCount(0)
+
+    // Voice clips keep their zero on purpose: submitting one is an ask we are
+    // making, so the count reads as an invitation rather than a scoreboard.
+    await expect(page.locator('.acct-stats-meta')).toContainText('0 voice clips submitted')
 
     // No Letterboxd handle on this member: the films tile wears the muted
     // no-data mark rather than a misleading zero.

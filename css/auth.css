@@ -481,8 +481,16 @@
   gap: var(--space-4);
 }
 
+/* Hosted is omitted at zero, so the row is sometimes three wide. An explicit
+   count beats auto-fit here for the same reason as above: auto-fit sizes
+   tracks off the widest label and would leave the row ragged. */
+.acct-stats-grid.-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 @media (max-width: 480px) {
-  .acct-stats-grid {
+  .acct-stats-grid,
+  .acct-stats-grid.-three {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

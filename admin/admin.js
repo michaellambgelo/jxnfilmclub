@@ -974,11 +974,15 @@ function statsCardHtml(s) {
     s.handle ? `<code>@${escapeHtml(s.handle)}</code>` : 'No Letterboxd linked',
   ].filter(Boolean)
 
+  // Hosted drops out at zero, mirroring the member card - this view claims to
+  // show what they see on /edit, so it has to. No information is lost: the
+  // Stats table behind this keeps its Hosted column, where a 0 is operational
+  // data rather than a nag, and the hosted sort still needs it.
   return `
     <div class="stat-card">
-      <div class="stat-grid">
+      <div class="stat-grid${s.hosted ? '' : ' -three'}">
         ${tile(s.attended, 'Attended')}
-        ${tile(s.hosted, 'Hosted')}
+        ${s.hosted ? tile(s.hosted, 'Hosted') : ''}
         ${tile(s.handle ? s.logged : '—', 'Films logged', !s.handle)}
         ${tile(s.rsvps, 'Upcoming RSVPs')}
       </div>

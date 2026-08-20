@@ -742,12 +742,17 @@
   <p :if="!stats" class="acct-stats-pending">Crunching your numbers…</p>
 
   <div :if="stats">
-    <div class="acct-stats-grid">
+    <!-- Hosted drops out entirely at zero rather than showing a 0. Hosting
+         takes time and a room, and a member who has not managed it yet should
+         not be looking at a running tally of that. Voice clips deliberately
+         keep their zero in the meta line below - submitting one is an ask we
+         are making, so the count reads as an invitation, not a scoreboard. -->
+    <div class="acct-stats-grid { stats.hosted ? '' : '-three' }">
       <div class="acct-stat">
         <b class="acct-stat-value">{ stats.attended }</b>
         <span class="acct-stat-label">Attended</span>
       </div>
-      <div class="acct-stat">
+      <div :if="stats.hosted" class="acct-stat">
         <b class="acct-stat-value">{ stats.hosted }</b>
         <span class="acct-stat-label">Hosted</span>
       </div>

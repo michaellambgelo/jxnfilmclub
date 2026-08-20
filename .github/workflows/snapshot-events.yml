@@ -47,6 +47,39 @@ jobs:
           python3 - <<'PY'
           import json, pathlib
           rows = json.load(open('/tmp/snapshot.json'))
+
+          # Screenings at a home are members-only and must never enter this
+          # file: it is served publicly and committed to a public repo, where a
+          # leak is permanent rather than merely visible.
+          #
+          # GET /events already excludes them for anonymous callers, and this
+          # job calls it anonymously — so in the normal case nothing is dropped
+          # here. This is the second line, and it is load-bearing precisely when
+          # the first one is not: a failed or rolled-back worker deploy makes
+          # the endpoint start serving house screenings again, and without this
+          # the very next run would silently bot-commit one back into the public
+          # file. The invariant belongs to the writer, not to whatever the
+          # upstream happened to return.
+          def members_only(e):
+              return e.get('kind') == 'house' or (not e.get('kind') and e.get('hostId'))
+
+          dropped = sum(1 for e in rows if members_only(e))
+          rows = [e for e in rows if not members_only(e)]
+          if dropped:
+              # Not fatal — a stale snapshot is worse than a filtered one — but
+              # loud, because it means GET /events is serving what it should not.
+              #
+              # COUNT ONLY, never ids. This repo is public, so Actions logs are
+              # world-readable and permanent, and an event id is a slug carrying
+              # the date and title. Naming them here would publish exactly what
+              # the filter above exists to suppress — the same mistake as
+              # letting one into data/events.json, in a different file. The
+              # count is the whole operational signal: the endpoint is serving
+              # what it should not, go look. Which ones is recoverable from KV,
+              # where the data already lives behind access control.
+              print(f'::warning::filtered {dropped} members-only event(s) '
+                    f'that GET /events should not have returned')
+
           # Deterministic: sort by date ascending, then id for tie-breaks.
           rows.sort(key=lambda e: (e.get('date', ''), e.get('id', '')))
           pathlib.Path('data/events.json').write_text(

@@ -1452,6 +1452,21 @@ document.addEventListener('click', async (e) => {
       // Fetch fresh rather than relying on eventsCache — the Events tab may
       // never have rendered this session. Same per-event → aggregate
       // fallback as renderEvents().
+      //
+      // DECIDED, do not "fix": this reads KV directly, so it includes house
+      // screenings — which GET /events hides from anonymous callers, and which
+      // therefore never reach the public site or data files. The newsletter
+      // going wider than the site looks like an inconsistency and is not one.
+      // Michael's call, 2026-08-20: a private newsletter is a fine place to
+      // discuss private events. The audience is opted-in members, the same
+      // population that sees them when signed in.
+      //
+      // What a forwarded email exposes is the venue label plus "hosted by
+      // {name}" — never the address or notes, which buildEventsSectionHtml/Text
+      // have no path to emit (pinned by tests/admin/lib.test.js). Note the
+      // venue is the host's own words when they supply one, and only falls back
+      // to the auto-stamped "{name}'s house" when they don't — so it can be a
+      // location description ("Garden in Historic Fondren") rather than a name.
       const perEvent = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'event:' })}`)
       let events
       if (perEvent.keys.length) {

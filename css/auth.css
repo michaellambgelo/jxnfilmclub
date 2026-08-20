@@ -446,3 +446,129 @@
   font-size: 0.85rem;
   line-height: 1.45;
 }
+
+/* ============================================================
+   Account quick stats — the card at the top of /edit.
+   Values wear Oswald, not Playfair: the display serif is for
+   headings and marquees, and a serif numeral at this size reads
+   as decoration rather than data (same call as .leader-count).
+   Proportional figures throughout — tabular-nums is for columns
+   that must align vertically, and it makes a standalone "121"
+   look loose at display sizes.
+   ============================================================ */
+
+.acct-stats {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.acct-stats-pending {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--ink-4);
+}
+
+/* Fixed 4-up, not auto-fit: auto-fit sizes tracks off the widest
+   label, so a long one ("upcoming rsvps") stole enough width to push
+   the fourth tile onto a row of its own — a 3+1 orphan. Equal
+   minmax(0,1fr) tracks let the labels wrap inside their tile instead,
+   and the card drops to a clean 2x2 below the column-narrow breakpoint. */
+.acct-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 480px) {
+  .acct-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.acct-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.acct-stat-value {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: var(--fs-37);
+  line-height: var(--lh-tight);
+  color: var(--ink-strong);
+}
+
+/* The no-data mark for an unlinked Letterboxd account. At the full
+   value size an em dash is a 40px horizontal bar that reads as a
+   redaction, not an absence — so it drops to label scale and muted ink
+   while keeping the tile's height. */
+.acct-stat-value.-empty {
+  font-size: var(--fs-22);
+  color: var(--ink-6);
+  line-height: 1.9;
+}
+
+.acct-stat-label {
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* The one place the card spends the signal red. Rank is the only
+   line here that says something about the club rather than the
+   member, so it gets the accent and everything else stays ink. */
+.acct-stats-rank {
+  margin: var(--space-5) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--brand);
+}
+
+.acct-stats-rank-mark {
+  margin-right: var(--space-2);
+}
+
+.acct-stats-meta {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  font-size: var(--fs-13);
+  color: var(--ink-4);
+}
+
+/* No separator glyphs. Interpuncts on a wrapping flex row put a dot at
+   the START of the second line, which reads as a bullet the list does
+   not have; spacing alone separates these cleanly at any width. */
+
+.acct-stats-note {
+  margin: var(--space-4) 0 0;
+  font-size: var(--fs-12);
+  line-height: var(--lh-body);
+  color: var(--ink-5);
+}
+
+.acct-stats-note b {
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+/* When rank is absent the :if drops that <p> entirely, so the meta row
+   inherits the divider and the card does not lose its horizontal rule. */
+.acct-stats-grid + .acct-stats-meta {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}

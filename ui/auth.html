@@ -291,6 +291,8 @@
   <div :if="!loading">
     <p class="lede">Signed in as <b>{ session.email }</b>.</p>
 
+    <account-stats :member="member" :session="session"/>
+
     <form :onsubmit="save">
       <label>Display name
         <input type="text" name="name" required value="{ member.name || '' }">
@@ -463,6 +465,10 @@
           pronouns: fd.get('pronouns'),
           newsletter,
         }, this.session.token)
+        // The stats card caches its fan-out on globalThis to survive the
+        // remounts this update() causes. Name and newsletter are both on the
+        // card, so drop the cache first or it re-renders the pre-save values.
+        delete globalThis.jxnfcAcctStats
         this.update({
           busy: false, saved: true,
           member: { ...this.member, name: fd.get('name'), pronouns: fd.get('pronouns'), newsletter },
@@ -479,6 +485,7 @@
       this.update({ lbBusy: true, lbError: '' })
       try {
         await call('POST', '/member/update', { handle }, this.session.token)
+        delete globalThis.jxnfcAcctStats
         this.update({
           lbBusy: false,
           member: { ...this.member, handle },
@@ -493,6 +500,7 @@
       this.update({ lbBusy: true, lbError: '' })
       try {
         await call('POST', '/letterboxd/unlink', {}, this.session.token)
+        delete globalThis.jxnfcAcctStats
         this.update({
           lbBusy: false,
           member: { ...this.member, handle: null },
@@ -592,3 +600,207 @@
     }
   </script>
 </article>
+
+
+<!-- Quick stats for the account page. Split into its own component for the
+     same reason host-guests was split out of event-card: the edit-view script
+     was already at ~7k chars and component scripts over 10k silently truncate
+     in the bundle. Methods use the this.X = function() form and string
+     concatenation on purpose - the dhtml script transformer corrupts dense
+     method-shorthand. No backticks or apostrophes in these comments.
+
+     The card self-caches on globalThis: edit-view calls update() on every
+     keystroke in the delete-confirm field, which remounts this child and would
+     otherwise refire the whole fetch fan-out per character. -->
+<div :is="account-stats" class="acct-stats">
+  <p :if="!ready" class="acct-stats-pending">Crunching your numbers…</p>
+
+  <div :if="ready">
+    <div class="acct-stats-grid">
+      <div class="acct-stat">
+        <b class="acct-stat-value">{ attended }</b>
+        <span class="acct-stat-label">Attended</span>
+      </div>
+      <div class="acct-stat">
+        <b class="acct-stat-value">{ hosted }</b>
+        <span class="acct-stat-label">Hosted</span>
+      </div>
+      <div class="acct-stat">
+        <b class="acct-stat-value { handle ? '' : '-empty' }">{ handle ? logged : '—' }</b>
+        <span class="acct-stat-label">Films logged</span>
+      </div>
+      <div class="acct-stat">
+        <b class="acct-stat-value">{ rsvps }</b>
+        <span class="acct-stat-label">Upcoming RSVPs</span>
+      </div>
+    </div>
+
+    <p :if="rank" class="acct-stats-rank">
+      <span class="acct-stats-rank-mark">★</span>
+      { ordinal(rank) } most screenings attended
+    </p>
+
+    <ul class="acct-stats-meta">
+      <li :if="joined">Member since { joinedLabel }</li>
+      <li>{ clips } voice { clips === 1 ? 'clip' : 'clips' } submitted</li>
+      <li>Newsletter { newsletter ? 'on' : 'off' }</li>
+      <li :if="!handle">No Letterboxd linked yet</li>
+    </ul>
+
+    <p :if="renamed" class="acct-stats-note">Attendance is recorded under the
+      display name used at the time. Screenings have happened since you joined
+      with none logged to <b>{ name }</b> — if you have changed your name, the
+      earlier ones are counted under the old one.</p>
+  </div>
+
+  <script>
+    // The gate is a positive "ready" rather than a "pending": mounted runs
+    // AFTER the first paint, so a pending flag starting undefined would let
+    // the card render one frame of undefined values before the fetch begins.
+    this.mounted = async function() {
+      const self = this
+      const member = this.member || {}
+      const session = this.session
+
+      // Reuse the cached fan-out across parent-driven remounts. Keyed on the
+      // member id so a sign-out plus sign-in as someone else recomputes.
+      const cached = globalThis.jxnfcAcctStats
+      if (cached && cached.key === member.id) {
+        this.update(cached.stats)
+        return
+      }
+
+      const stats = await this.compute(member, session)
+      globalThis.jxnfcAcctStats = { key: member.id, stats: stats }
+      self.update(stats)
+    }
+
+    this.compute = async function(member, session) {
+      const token = session ? session.token : null
+
+      // Static snapshots are public and free; the two authenticated reads and
+      // the per-event RSVP probes ride alongside. Every leg degrades to a zero
+      // rather than failing the card - a stat that cannot be computed is worth
+      // less than the rest of the page rendering.
+      const results = await Promise.all([
+        this.getJson('/data/attendance.json', {}),
+        this.getJson('/data/events.json', []),
+        this.getJson('/data/watched.json', {}),
+        this.authJson('/voice/history', token, { clips: [] }),
+      ])
+
+      const attendance = results[0]
+      const events = results[1] || []
+      const watched = results[2] || {}
+      const voice = results[3] || { clips: [] }
+
+      // ----- attendance counts, same shape as the home-view leaderboard -----
+      const counts = {}
+      Object.keys(attendance).forEach(function(id) {
+        (attendance[id] || []).forEach(function(n) { counts[n] = (counts[n] || 0) + 1 })
+      })
+      const attended = counts[member.name] || 0
+
+      // Rank among everyone with at least one screening. Ties share the better
+      // position: two members on 4 are both 2nd, and nobody is 3rd.
+      let rank = 0
+      if (attended > 0) {
+        const ahead = Object.keys(counts).filter(function(n) { return counts[n] > attended })
+        rank = ahead.length + 1
+      }
+
+      const hosted = events.filter(function(e) { return e.hostId && e.hostId === member.id }).length
+
+      // Exact-key lookup, matching how watched-view resolves a handle. The keys
+      // carry Letterboxd display case, so no normalising here either.
+      const logged = (member.handle && watched[member.handle]) ? watched[member.handle].length : 0
+
+      const rsvps = await this.countRsvps(events, token)
+
+      // Attendance is keyed by display name and a rename does not rewrite the
+      // old rows, so a zero here is ambiguous. Only raise the caveat when it is
+      // actually suspicious: screenings have come and gone since this member
+      // joined, yet none are filed under the name they use now.
+      const today = this.today()
+      const joinedDay = String(member.joined || '').slice(0, 10)
+      const pastSinceJoin = events.filter(function(e) {
+        const d = e.date || ''
+        return d < today && (!joinedDay || d >= joinedDay)
+      }).length
+
+      return {
+        ready: true,
+        attended: attended,
+        rank: rank,
+        hosted: hosted,
+        logged: logged,
+        rsvps: rsvps,
+        clips: (voice.clips || []).length,
+        handle: member.handle || null,
+        joined: member.joined || null,
+        joinedLabel: this.monthYear(member.joined),
+        newsletter: !!member.newsletter,
+        name: member.name || '',
+        renamed: attended === 0 && pastSinceJoin > 0,
+      }
+    }
+
+    // One probe per upcoming screening. There is no per-member RSVP index in
+    // KV - rsvp:{eventId} is the only shape - so this is a fan-out by design.
+    // It stays cheap because the club runs one or two future events at a time.
+    this.countRsvps = async function(events, token) {
+      if (!token) return 0
+      const today = this.today()
+      const upcoming = events.filter(function(e) { return (e.date || '') >= today })
+      if (!upcoming.length) return 0
+      const self = this
+      const states = await Promise.all(upcoming.map(function(e) {
+        return self.authJson('/events/' + encodeURIComponent(e.id) + '/rsvp/me', token, { status: 'none' })
+      }))
+      return states.filter(function(s) {
+        return s && (s.status === 'confirmed' || s.status === 'waitlisted')
+      }).length
+    }
+
+    // Central-time today as YYYY-MM-DD so lexical date compares against the
+    // string dates in events.json do not flip a day early out west.
+    this.today = function() {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+    }
+
+    this.getJson = async function(path, fallback) {
+      try {
+        const res = await fetch(path)
+        if (!res.ok) return fallback
+        return await res.json()
+      } catch { return fallback }
+    }
+
+    this.authJson = async function(path, token, fallback) {
+      if (!token) return fallback
+      try {
+        return await call('GET', path, undefined, token)
+      } catch { return fallback }
+    }
+
+    // Same local-midnight parse as formatEventDate in edit-view: a bare
+    // YYYY-MM-DD must not roll back a day west of UTC. Signup writes joined as
+    // a full ISO timestamp, so both shapes reach here.
+    this.monthYear = function(ts) {
+      if (!ts) return ''
+      const d = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
+      if (isNaN(d.getTime())) return ''
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+    }
+
+    this.ordinal = function(n) {
+      const tens = n % 100
+      if (tens >= 11 && tens <= 13) return n + 'th'
+      const ones = n % 10
+      if (ones === 1) return n + 'st'
+      if (ones === 2) return n + 'nd'
+      if (ones === 3) return n + 'rd'
+      return n + 'th'
+    }
+  </script>
+</div>

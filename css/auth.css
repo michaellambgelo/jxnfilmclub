@@ -580,3 +580,33 @@
   padding-top: var(--space-4);
   border-top: 1px solid var(--line);
 }
+
+/* Voice clips at zero. Signal red is the site's "do this" colour, so the
+   zero draws the eye rather than reading as a deficit — the tile is an
+   invitation to record one, which is the whole point of promoting it out of
+   the meta line. */
+.acct-stat-value.-nudge { color: var(--brand) }
+.acct-stat-label.-nudge { color: var(--brand-tint-fg) }
+
+/* Newsletter state chip: green for on, disabled grey for off. Square, not a
+   pill — corners are for magazines (see the radii block in tokens.css), and
+   .lb-token sets the same precedent for an inline chip. */
+.acct-pill {
+  display: inline-block;
+  padding: 0.1em 0.45em;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.acct-pill.-on {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.acct-pill.-off {
+  background: var(--surface-2);
+  color: var(--ink-5);
+}

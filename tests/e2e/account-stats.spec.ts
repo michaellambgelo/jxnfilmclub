@@ -30,14 +30,20 @@ test.describe('account stats card', () => {
     await expect(page.locator('.acct-stats-grid')).toHaveClass(/-three/)
     await expect(page.locator('.acct-stat-label', { hasText: 'Hosted' })).toHaveCount(0)
 
-    // Voice clips keep their zero on purpose: submitting one is an ask we are
-    // making, so the count reads as an invitation rather than a scoreboard.
-    await expect(page.locator('.acct-stats-meta')).toContainText('0 voice clips submitted')
+    // Voice clips is a tile now, not a meta footnote — we want every member
+    // submitting one. At zero it keeps the count and wears the accent, because
+    // zero is the state the tile exists to change.
+    await expect(page.locator('.acct-stat-label', { hasText: 'Voice clips' })).toHaveCount(1)
+    await expect(page.locator('.acct-stat-value.-nudge')).toHaveText('0')
+    await expect(page.locator('.acct-stats-meta')).not.toContainText('voice')
 
-    // No Letterboxd handle on this member: the films tile wears the muted
-    // no-data mark rather than a misleading zero.
-    await expect(page.locator('.acct-stat-value.-empty')).toHaveCount(1)
-    await expect(page.locator('.acct-stats-meta')).toContainText('No Letterboxd linked yet')
+    // Films logged is gone everywhere member-facing: it was a capped RSS window
+    // (12 max), never a total, and exists only to source newsletter content.
+    await expect(page.locator('.acct-stat-label', { hasText: 'Films' })).toHaveCount(0)
+
+    // Newsletter state reads as a green/disabled chip rather than bare text.
+    await expect(page.locator('.acct-pill.-off')).toHaveText('off')
+
   })
 
   // The card caches its fan-out on globalThis precisely because this handler
@@ -75,13 +81,13 @@ test.describe('account stats card', () => {
   // has to drop the cache itself or the card contradicts the form below it.
   test('saving the newsletter preference refreshes the card', async ({ page }) => {
     await signInAs(page, EMAIL, { name: 'Stats Member' })
-    await expect(page.locator('.acct-stats-meta')).toContainText('Newsletter off')
+    await expect(page.locator('.acct-pill.-off')).toHaveText('off')
 
     const hits = countFanouts(page)
     await page.getByRole('checkbox', { name: /announcements/i }).check()
     await page.getByRole('button', { name: 'Save', exact: true }).click()
 
-    await expect(page.locator('.acct-stats-meta')).toContainText('Newsletter on')
+    await expect(page.locator('.acct-pill.-on')).toHaveText('on')
     expect(hits.n).toBeGreaterThan(0)
   })
 })

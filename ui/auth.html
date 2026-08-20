@@ -113,16 +113,19 @@
 
     // Every leg degrades to a zero rather than failing the card: a stat that
     // cannot be computed is worth less than the rest of the page rendering.
+    // watched.json is deliberately NOT read here. It is a recent-RSS window
+    // capped at 12 entries per handle (WATCHED_FEED_DEPTH in the Worker), so it
+    // never was a films-logged total; it exists to source newsletter content,
+    // and it is not a number a member needs. Dropping it also spares every
+    // visit to this page a fetch.
     const parts = await Promise.all([
       snapshot('/data/attendance.json', {}),
       snapshot('/data/events.json', []),
-      snapshot('/data/watched.json', {}),
       authed('/voice/history', { clips: [] }),
     ])
     const attendance = parts[0] || {}
     const events = parts[1] || []
-    const watched = parts[2] || {}
-    const voice = parts[3] || { clips: [] }
+    const voice = parts[2] || { clips: [] }
 
     // Attendance counts, same shape as the home-view leaderboard.
     const counts = {}
@@ -169,12 +172,8 @@
     return {
       attended: attended,
       hosted: events.filter(function(e) { return e.hostId && e.hostId === member.id }).length,
-      // Exact-key lookup, matching how watched-view resolves a handle: the
-      // keys carry Letterboxd display case, so no normalising here either.
-      logged: (member.handle && watched[member.handle]) ? watched[member.handle].length : 0,
       rsvps: rsvps,
       clips: (voice.clips || []).length,
-      handle: member.handle || null,
       name: member.name || '',
       newsletter: !!member.newsletter,
       rankLabel: rank ? ordinalOf(rank) : '',
@@ -756,9 +755,13 @@
         <b class="acct-stat-value">{ stats.hosted }</b>
         <span class="acct-stat-label">Hosted</span>
       </div>
+      <!-- Voice clips is promoted out of the meta line to a tile of its own:
+           we want every member submitting one, so the count is the ask, not a
+           footnote. At zero it wears the accent instead of hiding, because
+           zero is the state we are inviting them to change. -->
       <div class="acct-stat">
-        <b class="acct-stat-value { stats.handle ? '' : '-empty' }">{ stats.handle ? stats.logged : '—' }</b>
-        <span class="acct-stat-label">Films logged</span>
+        <b class="acct-stat-value { stats.clips ? '' : '-nudge' }">{ stats.clips }</b>
+        <span class="acct-stat-label { stats.clips ? '' : '-nudge' }">Voice { stats.clips === 1 ? 'clip' : 'clips' }</span>
       </div>
       <div class="acct-stat">
         <b class="acct-stat-value">{ stats.rsvps }</b>
@@ -773,9 +776,9 @@
 
     <ul class="acct-stats-meta">
       <li :if="stats.joinedLabel">Member since { stats.joinedLabel }</li>
-      <li>{ stats.clips } voice { stats.clips === 1 ? 'clip' : 'clips' } submitted</li>
-      <li>Newsletter { stats.newsletter ? 'on' : 'off' }</li>
-      <li :if="!stats.handle">No Letterboxd linked yet</li>
+      <li>Newsletter
+        <span class="acct-pill { stats.newsletter ? '-on' : '-off' }">{ stats.newsletter ? 'on' : 'off' }</span>
+      </li>
     </ul>
 
     <p :if="stats.renamed" class="acct-stats-note">Attendance is recorded under

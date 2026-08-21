@@ -9,7 +9,11 @@ export const WAVE_SRC_W = 32
 export const FORMATS = {
   '16x9': { width: 1920, height: 1080, wave: { x: 320, y: 700, w: 1280, h: 240 } },
   '1x1': { width: 1080, height: 1080, wave: { x: 140, y: 660, w: 800, h: 220 } },
-  '9x16': { width: 1080, height: 1920, wave: { x: 140, y: 1210, w: 800, h: 260 } },
+  // 9x16 is posted to Instagram, whose action rail sits over the right edge
+  // from about x=958 and whose story header covers the top ~210px. The wave is
+  // held to x 140..876 so it clears the rail; see the safe-area block in
+  // scripts/assets/audiogram.html for the rest.
+  '9x16': { width: 1080, height: 1920, wave: { x: 140, y: 1210, w: 736, h: 260 } },
 }
 export const FORMAT_KEYS = Object.keys(FORMATS)
 

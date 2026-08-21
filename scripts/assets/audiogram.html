@@ -49,9 +49,14 @@
   }
 
   /* ---- branding (copied from .logo in css/global.css, scaled for video) ---- */
-  .content { position: absolute; z-index: 1; left: var(--mx); right: var(--mx); }
+  /* Content insets. The right edge is separate because 9x16 is posted to
+     Instagram, where the action rail (heart / comment / share / send) sits
+     over roughly the rightmost 120px from x=958 down the middle of the frame.
+     Accepting that this is pinned to one app's current chrome. */
+  .content { position: absolute; z-index: 1; left: var(--mx); right: var(--mx-right, var(--mx)); }
   body { --mx: 100px; }
   body.f-16x9 { --mx: 120px; }
+  body.f-9x16 { --mx-right: 190px; }
 
   .logo {
     display: inline-flex;
@@ -158,7 +163,9 @@
   body.f-1x1 .credit-row { top: calc(var(--wy) + var(--wh) + 40px); }
   body.f-1x1 .logo .logo-word { font-size: 36px; }
 
-  body.f-9x16 .logo-row { top: 140px; }
+  /* Below Instagram's story header (avatar, handle, timestamp), which covers
+     roughly the top 210px. */
+  body.f-9x16 .logo-row { top: 270px; }
   body.f-9x16 { --head-top: 430px; --stack-gap: 90px; }
   body.f-9x16 .title    { font-size: 76px; -webkit-line-clamp: 5; }
   body.f-9x16 .speaker  { font-size: 62px; }

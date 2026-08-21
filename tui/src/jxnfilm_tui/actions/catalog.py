@@ -53,6 +53,14 @@ FORCE_OPTION = Option(
     help="Off: a run that would replace files already in out/ stops and lists them",
 )
 
+# Off unless the clip's transcript is REVIEWED, in which case the app pre-ticks
+# it (app.action_run_action). The CLI refuses captions without a reviewed
+# transcript anyway; pre-ticking just stops the useful case needing a click.
+CAPTIONS_OPTION = Option(
+    name="captions", label="Burn in captions", kind="bool", default=False,
+    help="Needs a transcript reviewed in the admin panel — uploading a draft is not enough",
+)
+
 FORMAT_OPTION = Option(
     name="format", label="Format", kind="choice", default="16x9",
     choices=(*FORMATS, "all"),
@@ -75,6 +83,7 @@ CATALOG: tuple[Action, ...] = (
             Option(name="with_prompt", label="Show the prompt text", kind="bool",
                    default=False,
                    help="Adds the question being answered to the frame"),
+            CAPTIONS_OPTION,
             FORCE_OPTION,
         ),
     ),
@@ -90,6 +99,7 @@ CATALOG: tuple[Action, ...] = (
             Option(name="with_prompt", label="Show the prompt text", kind="bool",
                    default=False,
                    help="Adds the question being answered to the frame"),
+            CAPTIONS_OPTION,
             FORCE_OPTION,
         ),
     ),
@@ -110,10 +120,11 @@ CATALOG: tuple[Action, ...] = (
     Action(
         id="upload_transcript",
         title="Upload transcript (mark reviewed)",
-        summary="Push the edited SRT to R2 beside the audio. This is the review "
-                "gate — captions render from the R2 copy, never the local draft.",
+        summary="Replace the transcript in R2 with the local one. Transcribing "
+                "already publishes a fresh draft; use this after editing the "
+                "file locally. Does NOT mark it reviewed.",
         scope="clip",
-        cost="one small upload; runs no model",
+        cost="one small upload; runs no model; overwrites what is in R2",
     ),
     Action(
         id="pull_transcript",
@@ -199,6 +210,7 @@ def build(action: Action, settings: Settings, bindings: dict, *,
             with_prompt=bool(bindings.get("with_prompt", False)),
             scope=str(bindings.get("scope", "all")),
             force=bool(bindings.get("force", False)),
+            captions=bool(bindings.get("captions", False)),
         )
     if action.id == "audiogram_clip":
         if not member_id:
@@ -210,6 +222,7 @@ def build(action: Action, settings: Settings, bindings: dict, *,
             fmt=str(bindings.get("format", "16x9")),
             with_prompt=bool(bindings.get("with_prompt", False)),
             force=bool(bindings.get("force", False)),
+            captions=bool(bindings.get("captions", False)),
         )
     if action.id in ("transcribe_clip", "upload_transcript", "pull_transcript"):
         if not member_id:

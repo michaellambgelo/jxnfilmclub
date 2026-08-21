@@ -99,7 +99,7 @@ def test_transcribe_cli_still_accepts_the_flags_the_tui_passes(repo_root):
     """The TUI's whole contract with transcribe.mjs is its flag list."""
     source = (repo_root / "scripts" / "transcribe.mjs").read_text()
     for flag in ("--prompt", "--env", "--member", "--model", "--force",
-                 "--upload", "--upload-only"):
+                 "--upload", "--upload-only", "--no-upload", "--pull"):
         assert f"'{flag}'" in source, f"{flag} is gone from transcribe.mjs"
 
 

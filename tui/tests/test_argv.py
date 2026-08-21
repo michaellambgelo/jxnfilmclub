@@ -226,3 +226,48 @@ def test_the_three_transcript_actions_are_clip_scoped(settings):
         argv = build(action, settings, defaults_for(action),
                      prompt_id="general", member_id="alice")
         assert argv[argv.index("--member") + 1] == "alice"
+
+
+def test_captions_are_off_unless_asked(settings):
+    action = BY_ID["audiogram_clip"]
+    argv = build(action, settings, defaults_for(action), prompt_id="general", member_id="alice")
+    assert "--captions" not in argv
+
+
+def test_captions_reach_the_cli_for_clip_and_round(settings):
+    for action_id in ("audiogram_clip", "audiogram_round"):
+        action = BY_ID[action_id]
+        bindings = defaults_for(action) | {"captions": True}
+        argv = build(action, settings, bindings, prompt_id="general", member_id="alice")
+        assert "--captions" in argv, action_id
+
+
+def test_caption_preset_follows_the_reviewed_stamp():
+    """Pre-tick only when the render would actually succeed."""
+    from datetime import datetime, timezone
+    from jxnfilm_tui.app import _caption_preset
+    from jxnfilm_tui.data.parsers import group_rounds, parse_voice_row
+
+    def clip(member, reviewed):
+        stamp = ',"transcript":{"reviewedAt":"2026-08-20T00:00:00.000Z"}' if reviewed else ""
+        return parse_voice_row(
+            f"voice:general:{member}",
+            f'{{"memberId":"{member}","status":"approved",'
+            f'"r2Key":"voice/general/{member}.webm","at":"2026-08-0{member[-1]}T00:00:00.000Z"'
+            f'{stamp}}}')
+
+    reviewed, raw = clip("mem1", True), clip("mem2", False)
+    assert isinstance(reviewed.transcript_reviewed, datetime)
+    assert raw.transcript_reviewed is None
+
+    clip_action, round_action = BY_ID["audiogram_clip"], BY_ID["audiogram_round"]
+    rnd_mixed = group_rounds([reviewed, raw])[0]
+    rnd_all = group_rounds([reviewed])[0]
+
+    assert _caption_preset(clip_action, rnd_mixed, reviewed) == {"captions": True}
+    assert _caption_preset(clip_action, rnd_mixed, raw) == {"captions": False}
+    # One unreviewed clip refuses the whole round render — pre-ticking is a trap.
+    assert _caption_preset(round_action, rnd_mixed, reviewed) == {"captions": False}
+    assert _caption_preset(round_action, rnd_all, reviewed) == {"captions": True}
+    # Actions without the option are untouched.
+    assert _caption_preset(BY_ID["compile_segment"], rnd_all, reviewed) == {}

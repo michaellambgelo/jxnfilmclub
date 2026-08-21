@@ -21,14 +21,17 @@ class LaunchScreen(ModalScreen):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def __init__(self, action: Action, settings, *, prompt_id: str = "",
-                 member_id: str = "", subject: str = "") -> None:
+                 member_id: str = "", subject: str = "", preset: dict | None = None) -> None:
         super().__init__()
         self.action = action
         self.settings = settings
         self.prompt_id = prompt_id
         self.member_id = member_id
         self.subject = subject or prompt_id
-        self.bindings_values = defaults_for(action)
+        # `preset` lets the caller start an option somewhere other than its
+        # catalog default when it knows something the catalog cannot — e.g.
+        # ticking captions because THIS clip has a reviewed transcript.
+        self.bindings_values = {**defaults_for(action), **(preset or {})}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="launch-box"):
@@ -38,16 +41,17 @@ class LaunchScreen(ModalScreen):
                 for opt in self.action.options:
                     with Horizontal(classes="opt-row"):
                         yield Label(opt.label, classes="opt-label")
+                        value = self.bindings_values.get(opt.name, opt.default)
                         if opt.kind == "choice":
                             yield Select(
                                 [(choice, choice) for choice in opt.choices],
-                                value=opt.default, allow_blank=False,
+                                value=value, allow_blank=False,
                                 id=f"opt-{opt.name}",
                             )
                         elif opt.kind == "bool":
-                            yield Switch(value=bool(opt.default), id=f"opt-{opt.name}")
+                            yield Switch(value=bool(value), id=f"opt-{opt.name}")
                         else:
-                            yield Input(value=str(opt.default), placeholder=opt.help,
+                            yield Input(value=str(value), placeholder=opt.help,
                                         id=f"opt-{opt.name}")
                     if opt.help and opt.kind != "text":
                         yield Static(f"[dim]{opt.help}[/]", classes="opt-help")

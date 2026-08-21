@@ -65,6 +65,9 @@ class Clip:
     # what marks it reviewed, and that is not knowable without an R2 read, so
     # this only ever means "whisper has written one here".
     transcript_draft: bool = False
+    # From the KV row: set when an admin SAVES the transcript in the panel.
+    # Uploading a draft does not set it — that is the whole point of the gate.
+    transcript_reviewed: datetime | None = None
 
     @property
     def label(self) -> str:

@@ -115,6 +115,10 @@ def parse_voice_row(key: str, raw: str, listed_expiry: datetime | None = None) -
         # keep it as the fallback when a row predates the expiresAt field.
         expires_at=expires_at or listed_expiry,
         prompt_text=row.get("promptText") or None,
+        transcript_reviewed=parse_iso(
+            (row.get("transcript") or {}).get("reviewedAt")
+            if isinstance(row.get("transcript"), dict) else None
+        ),
         raw=row,
         error=error,
     )

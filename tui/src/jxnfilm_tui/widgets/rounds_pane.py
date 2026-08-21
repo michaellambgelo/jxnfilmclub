@@ -28,6 +28,20 @@ def _status_cell(status: str) -> str:
     return f"[yellow]{status or 'no status'}[/]"
 
 
+def _transcript_state(clip) -> str:
+    """Where this clip's transcript is, and what has to happen next.
+
+    Reviewed is the only state that unlocks captions, and it is set by SAVING
+    in the admin panel — uploading a draft deliberately does not set it.
+    """
+    if clip.transcript_reviewed:
+        return ("[b green]reviewed[/] "
+                f"[dim]{clip.transcript_reviewed.strftime('%Y-%m-%d')} — captions available[/]")
+    if clip.transcript_draft:
+        return "[yellow]draft on disk[/] [dim]— upload it, then save it in the admin panel[/]"
+    return "[dim]none[/] [dim]— transcribe it first[/]"
+
+
 def _days_cell(days) -> str:
     text = fmt_days(days)
     if days is None:
@@ -162,8 +176,7 @@ class RoundsPane(Vertical):
             f"size       {fmt_bytes(clip.size)}  {clip.content_type or ''}",
             f"r2Key      {clip.r2_key or '[red]missing[/]'}",
             f"rendered   {', '.join(clip.rendered) if clip.rendered else '[dim]not yet[/]'}",
-            "transcript " + ("[yellow]draft on disk — read it, then upload[/]"
-                             if clip.transcript_draft else "[dim]none[/]"),
+            f"transcript {_transcript_state(clip)}",
         ]
         if clip.prompt_text:
             lines += ["", f"[dim]prompt:[/] {clip.prompt_text}"]

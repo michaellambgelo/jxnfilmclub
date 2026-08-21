@@ -198,7 +198,8 @@ class JxnFilmTui(App):
             )
         bindings = await self.push_screen_wait(
             LaunchScreen(action, self.settings, prompt_id=rnd.prompt_id,
-                         member_id=member_id, subject=subject)
+                         member_id=member_id, subject=subject,
+                         preset=_caption_preset(action, rnd, clip))
         )
         if bindings is None:
             return
@@ -274,6 +275,22 @@ class JxnFilmTui(App):
             subprocess.Popen([opener, str(target)])
         except OSError as exc:
             self.notify(f"could not open {target}: {exc}", severity="error")
+
+
+def _caption_preset(action, rnd, clip) -> dict:
+    """Start the captions toggle on when the render would actually succeed.
+
+    Captions need a transcript REVIEWED in the admin panel; uploading a draft
+    is not enough. A clip action asks about its own clip, a round action about
+    every approved clip in the round — one unreviewed clip and the whole round
+    render refuses, so pre-ticking it there would just be a trap.
+    """
+    if not any(opt.name == "captions" for opt in action.options):
+        return {}
+    if action.scope == "clip":
+        return {"captions": bool(clip and clip.transcript_reviewed)}
+    approved = rnd.approved_clips if rnd else ()
+    return {"captions": bool(approved) and all(c.transcript_reviewed for c in approved)}
 
 
 def run() -> None:

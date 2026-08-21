@@ -26,7 +26,8 @@ def _check(fmt: str, env_name: str) -> None:
 
 def audiogram_round_argv(settings: Settings, prompt_id: str, *, fmt: str = "16x9",
                          with_prompt: bool = False, scope: str = "all",
-                         members=(), force: bool = False) -> list[str]:
+                         members=(), force: bool = False,
+                         captions: bool = False) -> list[str]:
     """`make_audiogram.mjs --prompt <id>` — the round render.
 
     `members` narrows it to specific approved clips. The CLI filters before it
@@ -45,6 +46,8 @@ def audiogram_round_argv(settings: Settings, prompt_id: str, *, fmt: str = "16x9
         argv += ["--member", str(member)]
     if with_prompt:
         argv.append("--with-prompt")
+    if captions:
+        argv.append("--captions")
     if force:
         argv.append("--force")
     if scope == "clips-only":

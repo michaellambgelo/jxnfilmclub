@@ -447,6 +447,7 @@ async function handle(req, res) {
   // the environment — without one they're hosted-portal-only.
   if ((method === 'POST' && url.pathname === '/api/voice/status') ||
       (method === 'POST' && url.pathname === '/api/voice/publish') ||
+      (method === 'POST' && url.pathname === '/api/voice/transcript') ||
       (method === 'DELETE' && url.pathname === '/api/voice')) {
     if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
     const token = q.env === 'staging'
@@ -458,6 +459,7 @@ async function handle(req, res) {
     }
     const adminPath = url.pathname === '/api/voice/status' ? '/admin/voice/status'
       : url.pathname === '/api/voice/publish' ? '/admin/voice/publish'
+      : url.pathname === '/api/voice/transcript' ? '/admin/voice/transcript'
       : '/admin/voice'
     const body = await readBody(req)
     const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}${adminPath}`, {

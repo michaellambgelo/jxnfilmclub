@@ -362,6 +362,12 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/voice/publish') {
     return proxyJoinAdmin(request, env, q, '/admin/voice/publish')
   }
+  // POST /api/voice/transcript?env=  body = JSON { key, srt } — save an edited
+  // caption file. Edit-only by design: drafts are produced locally by
+  // scripts/transcribe.mjs, so no model runs on Cloudflare.
+  if (method === 'POST' && url.pathname === '/api/voice/transcript') {
+    return proxyJoinAdmin(request, env, q, '/admin/voice/transcript')
+  }
   // DELETE /api/voice?env=  body = JSON { key } — delete the R2 object and
   // the KV row via the join Worker.
   if (method === 'DELETE' && url.pathname === '/api/voice') {

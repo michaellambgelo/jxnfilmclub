@@ -464,3 +464,22 @@ dialog pre.rich {
   padding-top: 0.6rem;
   border-top: 1px solid var(--border);
 }
+
+/* Transcript editor in the Voice tab. Monospace because the operator is
+   editing timing lines as well as words, and misaligned digits hide errors. */
+.voice-srt {
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 6px;
+  background: var(--surface-2, #fafafa);
+}
+
+.voice-srt textarea {
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+  resize: vertical;
+}

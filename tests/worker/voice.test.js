@@ -231,11 +231,14 @@ describe('GET /voice/mine', () => {
     const data = await (await req('/voice/mine', { token })).json()
     expect(data.prompt).toEqual(prompt)
     // The clip is the caller's full row (nothing in it is secret to its owner).
-    expect(data.clip.memberId).toBe(member.id)
     expect(data.clip.promptId).toBe('aug-2026')
     expect(data.clip.promptText).toBe('Best theater snack?')
-    expect(data.clip.r2Key).toBe(`voice/aug-2026/${member.id}.webm`)
     expect(data.clip.status).toBe('pending')
+    // Storage internals are asserted against storage, not against what the
+    // member-facing endpoint hands back — that response is a whitelist.
+    expect(data.clip.r2Key).toBeUndefined()
+    const stored = await env.MEMBERS_KV.get(`voice:aug-2026:${member.id}`, { type: 'json' })
+    expect(stored.r2Key).toBe(`voice/aug-2026/${member.id}.webm`)
     // And the storage keys are prompt-scoped as contracted.
     expect(await env.VOICE.head(`voice/aug-2026/${member.id}.webm`)).not.toBeNull()
     expect(await env.MEMBERS_KV.get(`voice:aug-2026:${member.id}`)).not.toBeNull()
@@ -540,5 +543,89 @@ describe('published rounds', () => {
     await publish('general', true)
     const data = await (await req('/admin/voice', { token: ADMIN })).json()
     expect(data.publishedPromptIds).toEqual(['general'])
+  })
+})
+
+// Transcripts. The admin panel only EDITS: drafts are produced locally by
+// scripts/transcribe.mjs and uploaded, so no model runs on Cloudflare. Because
+// a draft must reach R2 before it can be edited there, "an .srt exists" cannot
+// mean "a human read it" — the reviewed marker lives on the KV row instead.
+describe('transcripts', () => {
+  const SRT = '1\n00:00:00,000 --> 00:00:02,400\nHey, this is Michael Lamb.\n'
+  const save = (key, srt, token = ADMIN) =>
+    req('/admin/voice/transcript', { method: 'POST', token, body: { key, srt } })
+
+  it('writes the SRT beside the audio and stamps the row reviewed', async () => {
+    const { token, member } = await getTokenFor('srt@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const key = `voice:general:${member.id}`
+
+    const res = await save(key, SRT)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // Same stem as the audio, so the bucket's all-prefixes 60-day lifecycle
+    // expires the transcript with the recording it describes.
+    expect(body.transcriptKey).toBe(`voice/general/${member.id}.srt`)
+    expect(await (await env.VOICE.get(body.transcriptKey)).text()).toBe(SRT)
+
+    const row = await env.MEMBERS_KV.get(key, { type: 'json' })
+    expect(row.transcript.reviewedAt).toEqual(expect.any(String))
+    expect(row.transcript.bytes).toBe(SRT.length)
+  })
+
+  it('reviewing never resets the retention clock', async () => {
+    const { token, member } = await getTokenFor('srt-ttl@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const [before] = await listVoiceRows()
+
+    expect((await save(`voice:general:${member.id}`, SRT)).status).toBe(200)
+
+    const [after] = await listVoiceRows()
+    expect(after.value.expiresAt).toBe(before.value.expiresAt)
+    expect(after.key.expiration).toBe(before.value.expiresAt)
+    // Nothing else on the row moved.
+    const { transcript, ...rest } = after.value
+    expect(rest).toEqual(before.value)
+  })
+
+  it('refuses text with no timing lines', async () => {
+    // An SRT with no cues renders no captions, and finding that out at render
+    // time costs ten minutes of ffmpeg.
+    const { token, member } = await getTokenFor('srt-bad@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const key = `voice:general:${member.id}`
+    expect((await save(key, 'just some notes I typed')).status).toBe(400)
+    expect((await save(key, '   ')).status).toBe(400)
+    expect((await save(key, 'x'.repeat(256 * 1024 + 1))).status).toBe(413)
+  })
+
+  it('validates key and auth like every other admin voice route', async () => {
+    const { member } = await getTokenFor('srt-auth@example.com')
+    const key = `voice:general:${member.id}`
+    expect((await save(key, SRT, null)).status).toBe(401)
+    expect((await save(key, SRT, 'wrong-token')).status).toBe(401)
+    expect((await save('member:someone', SRT)).status).toBe(400)
+    // A clip that never existed, or already aged out.
+    expect((await save('voice:general:nobody', SRT)).status).toBe(404)
+  })
+
+  it('rides along on the admin listing so the panel can show reviewed state', async () => {
+    const { token, member } = await getTokenFor('srt-list@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await save(`voice:general:${member.id}`, SRT)
+
+    const data = await (await req('/admin/voice', { token: ADMIN })).json()
+    const row = data.clips.find(c => c.key === `voice:general:${member.id}`)
+    expect(row.transcript.reviewedAt).toEqual(expect.any(String))
+  })
+
+  it('is not exposed to the member', async () => {
+    // Members see their own clip, but the review state is operator bookkeeping.
+    const { token, member } = await getTokenFor('srt-priv@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await save(`voice:general:${member.id}`, SRT)
+
+    const mine = await (await req('/voice/mine', { token })).json()
+    expect(mine.clip.transcript).toBeUndefined()
   })
 })

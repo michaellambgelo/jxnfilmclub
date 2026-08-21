@@ -655,8 +655,17 @@ function voiceStatusPill(status) {
   return '<span class="pill warn">pending</span>'
 }
 
+// Reviewed state comes off the KV row, not from the .srt existing in R2: the
+// DRAFT has to be uploaded before it can be edited here, so object presence
+// stops meaning "a human read it" (worker: handleAdminVoiceTranscript).
+function voiceTranscriptPill(t) {
+  if (!t || !t.reviewedAt) return '<span class="pill" title="No reviewed transcript — draft it locally with scripts/transcribe.mjs, upload, then edit here">no transcript</span>'
+  return `<span class="pill on" title="Reviewed ${attr(t.reviewedAt)}">transcript reviewed</span>`
+}
+
 function voiceClipCard(c) {
   const src = `/api/voice?${qs({ env: env(), key: c.r2Key })}`
+  const srtKey = String(c.r2Key || '').replace(/\.[^.]+$/, '.srt')
   return `
     <div class="voice-clip">
       <div class="voice-meta">
@@ -666,14 +675,26 @@ function voiceClipCard(c) {
         <span class="muted">${fmtDuration(c.duration)} · ${fmtBytes(c.size)}</span>
         ${voiceStatusPill(c.status)}
         ${voiceExpiryPill(c.expiresAt)}
+        ${voiceTranscriptPill(c.transcript)}
         ${c.consent ? '' : '<span class="pill danger" title="The row has no consent flag — do not publish">⚠ no consent</span>'}
       </div>
       <div class="voice-player">
         <audio controls preload="metadata" src="${attr(src)}"></audio>
         <span class="voice-expired-note muted" hidden>audio gone — the R2 object hit the 60-day lifecycle (or upload failed); only this metadata row remains</span>
       </div>
+      <div class="voice-srt" hidden data-key="${attr(c.keyName)}">
+        <p class="section-hint">Fix what whisper misheard. Saving writes the SRT back to R2
+          beside the audio and marks the clip reviewed; the TUI pulls this copy before
+          rendering captions, so what you save here is what appears on screen.</p>
+        <textarea spellcheck="true" rows="14"></textarea>
+        <div class="toolbar">
+          <button class="primary" data-action="voice-srt-save" data-key="${attr(c.keyName)}">save transcript</button>
+          <span class="voice-srt-note muted"></span>
+        </div>
+      </div>
       <div class="toolbar">
         <a class="voice-dl" href="${attr(src + '&download=1')}">download</a>
+        <button data-action="voice-transcript" data-key="${attr(c.keyName)}" data-srt="${attr(srtKey)}">edit transcript</button>
         ${c.status !== 'approved' ? `<button class="primary" data-action="voice-status" data-key="${attr(c.keyName)}" data-status="approved">approve</button>` : ''}
         ${c.status !== 'rejected' ? `<button data-action="voice-status" data-key="${attr(c.keyName)}" data-status="rejected">reject</button>` : ''}
         <button class="danger" data-action="voice-delete" data-key="${attr(c.keyName)}">delete</button>
@@ -1678,6 +1699,33 @@ document.addEventListener('click', async (e) => {
       const { key, status } = btn.dataset
       await api('POST', `/api/voice/status?${qs({ env: env() })}`, JSON.stringify({ key, status }))
       toast(`Marked ${status}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'voice-transcript') {
+      const box = btn.closest('.voice-clip').querySelector('.voice-srt')
+      if (!box.hidden) { box.hidden = true; btn.textContent = 'edit transcript'; return }
+      const area = box.querySelector('textarea')
+      const note = box.querySelector('.voice-srt-note')
+      area.value = ''
+      note.textContent = 'loading…'
+      box.hidden = false
+      btn.textContent = 'hide transcript'
+      // Raw bytes, not JSON — /api/voice streams the R2 object, and the .srt
+      // key sits under voice/ so the existing path already allows it.
+      const res = await fetch(`/api/voice?${qs({ env: env(), key: btn.dataset.srt })}`)
+      if (res.ok) {
+        area.value = await res.text()
+        note.textContent = ''
+      } else {
+        note.textContent = 'no transcript in R2 yet — draft one with scripts/transcribe.mjs and upload it'
+      }
+    }
+    else if (a === 'voice-srt-save') {
+      const box = btn.closest('.voice-srt')
+      const srt = box.querySelector('textarea').value
+      if (!srt.includes('-->')) { toast('That has no timing lines — not an SRT'); return }
+      await api('POST', `/api/voice/transcript?${qs({ env: env() })}`, JSON.stringify({ key: btn.dataset.key, srt }))
+      toast('Transcript saved and marked reviewed')
       await switchTab(currentTab)
     }
     else if (a === 'voice-publish') {

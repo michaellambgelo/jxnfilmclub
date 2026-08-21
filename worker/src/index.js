@@ -183,6 +183,7 @@ async function route(request, env) {
     if (request.method === 'GET'    && pathname === '/admin/voice')         return handleAdminVoiceList(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/status')  return handleAdminVoiceStatus(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/publish') return handleAdminVoicePublish(request, env)
+    if (request.method === 'POST'   && pathname === '/admin/voice/transcript') return handleAdminVoiceTranscript(request, env)
     if (request.method === 'DELETE' && pathname === '/admin/voice')         return handleAdminVoiceDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
@@ -978,7 +979,13 @@ async function handleVoiceSubmit(request, env) {
 }
 
 // GET /voice/mine — authenticated. The current prompt plus the caller's clip
-// for it (full row — nothing in it is secret to its owner), or null.
+// for it, or null.
+//
+// Returns the same whitelisted projection as /voice/history rather than the
+// raw row. It used to hand back everything on the grounds that nothing in it
+// was secret from its owner — which stopped being true the moment the row
+// started carrying operator bookkeeping (transcript.reviewedAt). A whitelist
+// makes new fields private by default instead of public by default.
 async function handleVoiceMine(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
@@ -988,8 +995,7 @@ async function handleVoiceMine(request, env) {
   if (raw) {
     try { clip = JSON.parse(raw) } catch { clip = null }
   }
-  if (clip) clip.published = (await publishedPrompts(env)).has(clip.promptId)
-  return json(env, { prompt, clip })
+  return json(env, { prompt, clip: voiceClipProjection(clip, await publishedPrompts(env)) })
 }
 
 // Prompt ids are admin-set slugs. The pattern is a security boundary, not
@@ -1167,6 +1173,64 @@ async function handleAdminVoiceStatus(request, env) {
   row.status = body.status
   await env.MEMBERS_KV.put(body.key, JSON.stringify(row), { expiration: row.expiresAt })
   return json(env, { ok: true, key: body.key, status: row.status })
+}
+
+// POST /admin/voice/transcript — { key, srt }. Saves an EDITED caption file.
+//
+// The admin panel only ever edits: transcripts are drafted locally by
+// scripts/transcribe.mjs and uploaded, so no model runs anywhere near
+// Cloudflare. This endpoint writes the corrected SRT back beside its audio and
+// stamps the KV row as reviewed.
+//
+// The reviewed marker lives on the row rather than being inferred from the
+// object's presence, because the DRAFT has to reach R2 before it can be edited
+// here — so "an .srt exists" can no longer mean "a human read it". Rewritten
+// with the row's ORIGINAL absolute expiry (the feedback: pattern) so reviewing
+// never resets the 60-day retention clock, and the marker dies with the clip.
+const VOICE_TRANSCRIPT_MAX = 256 * 1024
+
+async function handleAdminVoiceTranscript(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  if (typeof body.key !== 'string' || !body.key.startsWith('voice:')) {
+    return json(env, { error: 'invalid key' }, 400)
+  }
+  if (typeof body.srt !== 'string' || !body.srt.trim()) {
+    return json(env, { error: 'srt is required' }, 400)
+  }
+  if (body.srt.length > VOICE_TRANSCRIPT_MAX) {
+    return json(env, { error: 'transcript too large' }, 413)
+  }
+  // Cheapest possible shape check. An SRT with no timing line renders no
+  // captions at all, and finding that out at render time is expensive.
+  if (!body.srt.includes('-->')) {
+    return json(env, { error: 'that does not look like an SRT — no timing lines' }, 400)
+  }
+
+  const raw = await env.MEMBERS_KV.get(body.key)
+  if (!raw) return json(env, { error: 'clip not found' }, 404)
+  let row
+  try { row = JSON.parse(raw) } catch { return json(env, { error: 'clip not found' }, 404) }
+  if (!row.r2Key) return json(env, { error: 'clip has no audio' }, 404)
+
+  const remaining = (row.expiresAt || 0) - Math.floor(Date.now() / 1000)
+  if (remaining < 60) {
+    await env.MEMBERS_KV.delete(body.key)
+    return json(env, { error: 'clip has expired' }, 404)
+  }
+
+  // Same stem as the audio, so the bucket's all-prefixes lifecycle expires the
+  // transcript with the recording it describes.
+  const transcriptKey = row.r2Key.replace(/\.[^.]+$/, '.srt')
+  await env.VOICE.put(transcriptKey, body.srt, {
+    httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+  })
+  row.transcript = { reviewedAt: new Date().toISOString(), bytes: body.srt.length }
+  await env.MEMBERS_KV.put(body.key, JSON.stringify(row), { expiration: row.expiresAt })
+  return json(env, { ok: true, key: body.key, transcriptKey, transcript: row.transcript })
 }
 
 // DELETE /admin/voice — { key }. Removes the KV row and its R2 object.

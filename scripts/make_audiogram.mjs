@@ -20,8 +20,10 @@
 //      by an ephemeral local http server (fonts use absolute /fonts URLs).
 //      NOTE: Homebrew's ffmpeg has no drawtext (formula dropped freetype), so
 //      the browser is the text renderer; ffmpeg never draws type.
-//   3. ffmpeg: showfreqs waveform (grey + brand-red band) upscaled into the
-//      wave window, branded PNG composited on top, H.264/AAC + faststart.
+//   3. ffmpeg: the speech ENVELOPE as bottom-anchored bars, colored through a
+//      vertical ramp so a bar's red tracks its own height (i.e. the audio),
+//      upscaled into the wave window, branded PNG composited on top,
+//      H.264/AAC + faststart.
 //
 // Prompt mode writes out/audiogram/<promptId>/{<memberId>-<fmt>.mp4,
 // segment-<fmt>.mp4, manifest.json}. Clips age out 60 days after submission
@@ -45,9 +47,11 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  archivePathFor, BUCKETS, concatWithGaps, ensureWritable, ffmpeg, fmtDur,
-  listApprovedClips, looksMissing, normalizeClip, pullClip, run,
+  archivePathFor, BUCKETS, CONCAT_GAP_SECONDS, concatWithGaps, ensureWritable, ffmpeg, fmtDur,
+  listApprovedClips, looksMissing, normalizeClip, probeSeconds, pullClip, run,
+  transcriptKeyFor, transcriptPathFor, wrangler,
 } from './lib/voices.mjs'
+import { captionTimeline, concatPlaylist, joinCueTracks, parseSrt } from './lib/srt.mjs'
 import {
   buildRenderArgs, FORMATS, instantiateTemplate, mergeManifest, parseArgs,
   plannedRenderPaths, safeName, selectClips,
@@ -118,9 +122,9 @@ async function launchChromium() {
 
 // Screenshot one instantiated frame. The template body is transparent except
 // the panels/grill, so the PNG composites on top of the waveform.
-async function screenshotFrame(page, port, frames, { format, title, name }, pngPath) {
+async function screenshotFrame(page, port, frames, { format, title, name, caption }, pngPath) {
   const key = `${frames.size}-${format}.html`
-  frames.set(key, instantiateTemplate(TEMPLATE, { format, title, name }))
+  frames.set(key, instantiateTemplate(TEMPLATE, { format, title, name, caption }))
   const { width, height } = FORMATS[format]
   await page.setViewportSize({ width, height })
   await page.goto(`http://127.0.0.1:${port}/frame/${key}`, { waitUntil: 'load' })
@@ -156,20 +160,61 @@ try {
   tmp = mkdtempSync(join(tmpdir(), 'jxnfc-audiogram-'))
   const written = []
 
-  // Render one audio+text job across all requested formats.
-  async function renderJob({ audioPath, title, name, outDir, stem }) {
+  // Render one audio+text job across all requested formats. With cues, the
+  // frame layer becomes a timed SEQUENCE of stills instead of one looped PNG:
+  // a screenshot per distinct cue plus one uncaptioned frame reused for every
+  // silence, played back through an ffconcat playlist.
+  async function renderJob({ audioPath, title, name, outDir, stem, cues }) {
     mkdirSync(outDir, { recursive: true })
     const files = {}
+    const timeline = cues && cues.length
+      ? captionTimeline(cues, probeSeconds(audioPath))
+      : null
+
     for (const format of args.formats) {
-      const png = join(tmp, `frame-${safeName(stem)}-${format}.png`)
-      await screenshotFrame(page, port, frames, { format, title, name }, png)
+      let frameArgs
+      if (timeline) {
+        const pngFor = new Map()
+        for (const seg of timeline) {
+          if (pngFor.has(seg.text)) continue
+          const png = join(tmp, `cap-${safeName(stem)}-${format}-${pngFor.size}.png`)
+          await screenshotFrame(page, port, frames, { format, title, name, caption: seg.text }, png)
+          pngFor.set(seg.text, png)
+        }
+        const playlist = join(tmp, `frames-${safeName(stem)}-${format}.txt`)
+        writeFileSync(playlist, concatPlaylist(timeline, t => pngFor.get(t)))
+        frameArgs = { framePlaylist: playlist }
+      } else {
+        const png = join(tmp, `frame-${safeName(stem)}-${format}.png`)
+        await screenshotFrame(page, port, frames, { format, title, name, caption: '' }, png)
+        frameArgs = { framePath: png }
+      }
       const outPath = join(outDir, `${stem}-${format}.mp4`)
-      console.log(`Rendering ${outPath}…`)
-      ffmpeg(buildRenderArgs({ format, audioPath, framePath: png, outPath }))
+      const cueCount = timeline ? timeline.filter(seg => seg.text).length : 0
+      console.log(`Rendering ${outPath}${cueCount ? ` (${cueCount} captions)` : ''}…`)
+      ffmpeg(buildRenderArgs({ format, audioPath, outPath, ...frameArgs }))
       files[format] = outPath
       written.push(outPath)
     }
     return files
+  }
+
+  // The reviewed transcript for one clip, always fetched fresh. R2 wins by
+  // construction here rather than by convention: the admin panel is an editing
+  // surface, so a local copy can be stale, and re-reading it every render
+  // makes it impossible to burn in an edit that was superseded.
+  function reviewedCues(clip) {
+    if (!clip.transcript?.reviewedAt) {
+      throw new Error(`${clip.name || clip.memberId}: no reviewed transcript. Draft one ` +
+        `(scripts/transcribe.mjs), upload it, then edit it in the admin panel's Voice tab.`)
+    }
+    const srtPath = transcriptPathFor(args.outDir, args.promptId, clip)
+    mkdirSync(dirname(srtPath), { recursive: true })
+    wrangler(['r2', 'object', 'get', `${BUCKETS[args.envName]}/${transcriptKeyFor(clip)}`,
+      '--file', resolve(srtPath), '--remote'])
+    const cues = parseSrt(readFileSync(srtPath, 'utf8'))
+    if (!cues.length) throw new Error(`${srtPath} has no cues`)
+    return cues
   }
 
   if (!args.promptId) {
@@ -178,10 +223,18 @@ try {
     const fileOutDir = join(args.outDir, 'audiogram')
     ensureWritable(plannedRenderPaths(fileOutDir, [stem], args.formats), { force: args.force })
 
+    let cues = null
+    if (args.captions) {
+      if (!args.srtPath) throw new Error('--captions needs --srt <file> in file mode')
+      cues = parseSrt(readFileSync(args.srtPath, 'utf8'))
+      if (!cues.length) throw new Error(`${args.srtPath} has no cues`)
+    }
+
     const norm = join(tmp, 'norm.wav')
     console.log(`Normalizing ${args.audioPath}…`)
     normalizeClip(args.audioPath, norm, args.audioPath)
     await renderJob({
+      cues,
       audioPath: norm,
       title: args.title,
       name: args.name || 'JXN Film Club',
@@ -246,9 +299,16 @@ try {
     const live = clips.filter(c => !c.skipped)
     if (!live.length) throw new Error(`every clip for prompt "${args.promptId}" has expired — its audio is past the 60-day lifecycle`)
 
+    // One R2 read per clip, shared by the per-clip renders and the segment.
+    const cueTracks = new Map()
+    if (args.captions) {
+      for (const c of live) cueTracks.set(c.key, reviewedCues(c))
+    }
+
     if (!args.segmentOnly) {
       for (const c of live) {
         c.files = await renderJob({
+          cues: args.captions ? cueTracks.get(c.key) : null,
           audioPath: c.norm,
           title: args.withPrompt ? (c.promptText || promptText) : '',
           name: c.name || 'A JXN Film Club member',
@@ -263,8 +323,22 @@ try {
       const segWav = join(tmp, 'segment.wav')
       console.log('Concatenating segment…')
       concatWithGaps(live.map(c => c.norm), segWav, tmp)
+
+      // Each clip's cues are timed against its OWN audio, so the segment track
+      // shifts every clip by what plays before it. The gap comes from the same
+      // constant the audio concat used — guessing it would drift every caption
+      // after the first clip onto the wrong speaker.
+      const segCues = args.captions
+        ? joinCueTracks(
+          live.map(c => ({ cues: cueTracks.get(c.key), duration: probeSeconds(c.norm) })),
+          CONCAT_GAP_SECONDS,
+        )
+        : null
+      if (segCues) console.log(`Segment captions: ${segCues.length} cue(s) across ${live.length} clip(s).`)
+
       segment = {
         files: await renderJob({
+          cues: segCues,
           audioPath: segWav,
           title: args.withPrompt ? promptText : '',
           name: `${live.length} member${live.length === 1 ? '' : 's'} · JXN Film Club`,

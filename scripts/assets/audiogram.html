@@ -8,7 +8,9 @@
      {{FORMAT}} → body class (f-16x9 | f-1x1 | f-9x16)
      {{WX}}/{{WY}}/{{WW}}/{{WH}} → wave-window rect, injected from FORMATS in
      scripts/lib/audiogram.mjs so JS and CSS can never disagree.
-     {{TITLE}}/{{NAME}} → escaped text. NAME is the speaker credit and is
+     {{TITLE}}/{{NAME}}/{{CAPTION}} → escaped text. CAPTION is one cue and is
+     empty on frames where nobody is speaking; :empty collapses the block, so
+     an uncaptioned frame lays out exactly as it did before captions existed. NAME is the speaker credit and is
      the frame's second-loudest element after the prompt — the audiogram
      exists to attribute a member, so the attribution is not a footer.
 
@@ -99,6 +101,19 @@
   }
   .speaker::before { content: "— "; color: var(--brand); }
 
+  /* ---- captions ---- */
+
+  .caption-row { display: flex; }
+  .caption:empty { display: none; }
+
+  .caption {
+    font-family: var(--font-body);
+    font-weight: 400;
+    color: var(--ink-strong);
+    line-height: 1.34;
+    text-wrap: pretty;
+  }
+
   .credit {
     display: flex;
     justify-content: flex-end;
@@ -148,6 +163,32 @@
   body.f-9x16 .title    { font-size: 76px; -webkit-line-clamp: 5; }
   body.f-9x16 .speaker  { font-size: 62px; }
   body.f-9x16 .credit-row { top: calc(var(--wy) + var(--wh) + 56px); }
+
+  /* 16x9 carries everything in its left half, so the right column is free —
+     captions go there and the prompt/credit stack narrows to make it a column
+     rather than a leftover. */
+  body.f-16x9 .stack { right: 52%; }
+  body.f-16x9 .caption-row {
+    left: 50%;
+    right: var(--mx);
+    top: var(--head-top);
+    height: calc(var(--wy) - var(--head-top) - var(--stack-gap));
+    align-items: center;
+  }
+  body.f-16x9 .caption { font-size: 54px; }
+
+  /* The vertical formats have no side room. Captions take the empty band
+     between the prompt and the speaker credit — above the author. */
+  body.f-1x1 .caption-row,
+  body.f-9x16 .caption-row {
+    left: var(--mx);
+    right: var(--mx);
+    align-items: flex-end;
+  }
+  body.f-1x1 .caption-row { top: 340px; height: 190px; }
+  body.f-1x1 .caption { font-size: 40px; }
+  body.f-9x16 .caption-row { top: 660px; height: 300px; }
+  body.f-9x16 .caption { font-size: 50px; }
 </style>
 </head>
 <body class="{{FORMAT}}">
@@ -166,6 +207,10 @@
   <div class="content stack">
     <div class="title">{{TITLE}}</div>
     <div class="speaker">{{NAME}}</div>
+  </div>
+
+  <div class="content caption-row">
+    <div class="caption">{{CAPTION}}</div>
   </div>
 
   <div class="content credit-row">

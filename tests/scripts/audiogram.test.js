@@ -24,8 +24,23 @@ describe('brand token guard', () => {
   const hex = (ffmpegColor) => ffmpegColor.replace(/^0x/, '#').toLowerCase()
 
   it('COLORS.bg is --bg', () => expect(hex(COLORS.bg)).toBe(token('--bg')))
-  it('COLORS.bar is --line-2 (the .speak-wave bar grey)', () => expect(hex(COLORS.bar)).toBe(token('--line-2')))
-  it('COLORS.brand is --brand', () => expect(hex(COLORS.brand)).toBe(token('--brand')))
+  it('COLORS.wavePeak is --brand-tint-fg', () => expect(hex(COLORS.wavePeak)).toBe(token('--brand-tint-fg')))
+
+  it('the ramp runs dark to bright in every channel', () => {
+    // The direction is the whole idea: a bar at rest must be darker than a bar
+    // at full travel, or height stops reading as loudness.
+    const ch = (c) => [1, 3, 5].map((i) => parseInt(c.replace(/^0x/, '').slice(i - 1, i + 1), 16))
+    const base = ch(COLORS.waveBase)
+    const peak = ch(COLORS.wavePeak)
+    base.forEach((v, i) => expect(v).toBeLessThan(peak[i]))
+  })
+
+  it('the ramp base stays inside the brand red, not a neutral', () => {
+    // Red dominant and clearly warm — a grey base is what this replaced.
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(COLORS.waveBase.slice(i + 1, i + 3), 16))
+    expect(r).toBeGreaterThan(g * 2)
+    expect(r).toBeGreaterThan(b * 2)
+  })
 })
 
 describe('FORMATS geometry', () => {
@@ -37,7 +52,7 @@ describe('FORMATS geometry', () => {
     expect(wave.x + wave.w).toBeLessThanOrEqual(width)
     expect(wave.y + wave.h).toBeLessThanOrEqual(height)
   })
-  it.each(FORMAT_KEYS)('%s wave width is an exact multiple of the showfreqs source width', (key) => {
+  it.each(FORMAT_KEYS)('%s wave width is an exact multiple of the wave source width', (key) => {
     // Anything else would blur the neighbor upscale's chunky columns.
     expect(FORMATS[key].wave.w % WAVE_SRC_W).toBe(0)
   })
@@ -74,20 +89,56 @@ describe('instantiateTemplate', () => {
 })
 
 describe('buildFiltergraph', () => {
-  it.each(FORMAT_KEYS)('%s wires the wave window geometry and brand colors', (key) => {
+  it.each(FORMAT_KEYS)('%s wires the wave window geometry', (key) => {
     const { wave } = FORMATS[key]
     const g = buildFiltergraph(key)
-    expect(g).toContain(`s=${WAVE_SRC_W}x${wave.h}`)
+    // Rendered double-height, lower half kept and flipped: bars grow from the
+    // baseline, keeping the .speak-wave silhouette.
+    expect(g).toContain(`s=${WAVE_SRC_W}x${wave.h * 2}`)
+    expect(g).toContain(`crop=${WAVE_SRC_W}:${wave.h}:0:${wave.h},vflip`)
     expect(g).toContain(`scale=${wave.w}:${wave.h}:flags=neighbor`)
     expect(g).toContain(`overlay=${wave.x}:${wave.y}:shortest=1`)
-    expect(g).toContain(`colors=${COLORS.bar}`)
-    expect(g).toContain(`colors=${COLORS.brand}`)
-    // Both composites blend in RGB — yuv blending rounds the base and the
-    // PNG differently and re-introduces the grill-stripe artifact.
-    expect(g.match(/format=rgb/g)).toHaveLength(2)
+    // Both composites blend in RGB — yuv blending rounds the base and the PNG
+    // differently and re-introduces the grill-stripe artifact.
+    expect(g.match(/overlay=[^;]*format=rgb(?![0-9])/g)).toHaveLength(2)
   })
-  it('keys out the showfreqs background', () => {
-    expect(buildFiltergraph('16x9')).toContain('colorkey=0x000000')
+
+  it('colors the wave by height rather than by column', () => {
+    const g = buildFiltergraph('16x9')
+    // An alpha mask over a ramp, not per-bar colors: showwaves takes one color
+    // per channel and cannot vary with height.
+    expect(g).toContain('alphamerge')
+    expect(g).toContain('format=gray')
+    // The ramp must reach alphamerge as rgba. On an alpha-less format the
+    // filter yields NO frames and ffmpeg dies later with an internal error
+    // that names neither the filter nor the format.
+    expect(g).toMatch(/format=rgba\[ramp\];\[ramp\]\[mask\]alphamerge/)
+    // The old fixed red band is gone — that is what looked parked while the
+    // shape around it moved.
+    expect(g).not.toContain('crop=2:')
+    expect(g).not.toContain('colorkey')
+  })
+
+  it('escapes the commas inside the ramp expression', () => {
+    // Unescaped, the filtergraph parser reads them as filter separators and
+    // the render dies at ffmpeg with an opaque message.
+    const g = buildFiltergraph('16x9')
+    expect(g).toContain('min(1\\,max(0\\,')
+    expect(g).not.toMatch(/min\(1,max/)
+  })
+
+  it.each(FORMAT_KEYS)('%s saturates the ramp partway up, not at the ceiling', (key) => {
+    const { wave } = FORMATS[key]
+    // Speech peaks rarely pass ~60% of the window, so a ramp reaching full
+    // brightness only at the very top would never show it.
+    expect(buildFiltergraph(key)).toContain(`/${Math.round(wave.h * 0.5)}))`)
+  })
+
+  it('gain and knee are tunable together', () => {
+    // They interact: more gain means taller bars, which want a looser ramp.
+    const g = buildFiltergraph('16x9', { gainDb: 14, rampKnee: 0.75 })
+    expect(g).toContain('volume=14dB')
+    expect(g).toContain(`/${Math.round(FORMATS['16x9'].wave.h * 0.75)}))`)
   })
 })
 

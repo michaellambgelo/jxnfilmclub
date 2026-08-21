@@ -14,12 +14,33 @@ export const FORMATS = {
 export const FORMAT_KEYS = Object.keys(FORMATS)
 
 // Brand colors handed to ffmpeg (0xRRGGBB). The HTML template gets its colors
-// from css/tokens.css directly; these three are the only hardcoded copies and
-// are guarded against tokens.css by tests/scripts/audiogram.test.js.
+// from css/tokens.css directly; these are the only hardcoded copies and are
+// guarded against tokens.css by tests/scripts/audiogram.test.js.
 export const COLORS = {
   bg: '0x100f0e', // --bg
-  bar: '0x3a352d', // --line-2 — the .speak-wave bar grey
-  brand: '0xd7321f', // --brand — bars 3/4/5 of the motif
+  // The wave is drawn through a vertical ramp, so a bar's color is a function
+  // of its own height: at rest it sits in the deep red, at full travel it hits
+  // the bright one. Red therefore tracks the AUDIO rather than sitting in a
+  // fixed band of columns, which is what made it look parked while the shape
+  // around it moved.
+  wavePeak: '0xe8604f', // --brand-tint-fg — a bar at full travel
+  waveBase: '0x7a2014', // --brand held down to ~57% — a bar at rest
+}
+
+// Push the analysis branch up so bars use the window instead of hugging the
+// floor. Safe to hold constant: every clip reaching the renderer has already
+// been through the two-pass EBU R128 loudnorm in normalizeClip, so a quiet
+// speaker and a loud one arrive at the same loudness.
+export const WAVE_GAIN_DB = 8
+
+// Where the ramp reaches wavePeak, as a fraction of the window height. Speech
+// peaks rarely exceed ~60% of the window, so a ramp that only saturated at the
+// very top would never actually show its brightest tone.
+export const WAVE_RAMP_KNEE = 0.5
+
+function rgb(color) {
+  const n = parseInt(String(color).replace(/^0x/, ''), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
 export function escapeHtml(s) {
@@ -33,8 +54,10 @@ export function escapeHtml(s) {
 
 // Substitute template slots. `format` becomes the body class (f-16x9 …) and
 // the wave-window rect is injected from FORMATS so the CSS can never disagree
-// with the ffmpeg overlay geometry; title/name are user text and are escaped.
-export function instantiateTemplate(tpl, { format, title, name }) {
+// with the ffmpeg overlay geometry; title/name/caption are user text — the
+// caption especially, since it comes back from a hand-edited SRT — and are
+// escaped.
+export function instantiateTemplate(tpl, { format, title, name, caption }) {
   const f = FORMATS[format]
   if (!f) throw new Error(`unknown format: ${format}`)
   return tpl
@@ -45,53 +68,84 @@ export function instantiateTemplate(tpl, { format, title, name }) {
     .replaceAll('{{WH}}', String(f.wave.h))
     .replaceAll('{{TITLE}}', escapeHtml(title))
     .replaceAll('{{NAME}}', escapeHtml(name))
+    .replaceAll('{{CAPTION}}', escapeHtml(caption))
 }
 
-// The -filter_complex graph: grey showfreqs bars + a brand-red band overlaid
-// at the low-mid frequencies (echoing .speak-wave's red bars 3/4/5), upscaled
-// with nearest-neighbor into the wave window of the branded frame, which sits
-// on top with transparent slots. Inputs: 0 = normalized WAV, 1 = frame PNG,
-// 2 = lavfi color base.
+// The -filter_complex graph: the speech ENVELOPE, drawn as bottom-anchored
+// bars through a vertical color ramp, upscaled into the wave window of the
+// branded frame, which sits on top with transparent slots.
+//
+// Envelope, not spectrum. showfreqs answers "which frequencies are present",
+// which for one person talking is a nearly static shape — and with the display
+// spanning 0..Nyquist, the top of it was structurally dead (voice codecs
+// lowpass; a clip measures ~-91 dB above 8 kHz). showwaves in p2p mode answers
+// "how loud, right now", so the bars track syllables, stress and pauses.
+//
+// Bottom-anchored via a double-height render cropped to its lower half and
+// flipped, which keeps the silhouette of the .speak-wave motif exactly.
+// Coloring is an alpha mask over a ramp rather than per-bar colors, because
+// showwaves takes one color per channel and cannot vary by height.
+//
+// Inputs: 0 = normalized WAV, 1 = frame PNG, 2 = lavfi color base.
 export function buildFiltergraph(format, opts = {}) {
   const f = FORMATS[format]
   if (!f) throw new Error(`unknown format: ${format}`)
   const { x, y, w, h } = f.wave
   const fps = opts.fps ?? 30
-  const freqs = `showfreqs=s=${WAVE_SRC_W}x${h}:mode=bar:ascale=cbrt:fscale=log:win_size=64:rate=${fps}`
-  // Red band: 2 of the 32 source columns starting at column 2 → ~3 grill bars
-  // after the upscale, echoing .speak-wave's red bars 3/4/5. The colorkey
-  // knocks out showfreqs' opaque black background so the grill slots show the
-  // ink base (#100f0e), not a slightly-blacker stripe; similarity 0.1 is far
-  // below the bar grey's distance from black (~0.2), so bars are untouched.
+  const gain = opts.gainDb ?? WAVE_GAIN_DB
+  const knee = Math.max(1, Math.round(h * (opts.rampKnee ?? WAVE_RAMP_KNEE)))
+  const [br, bg, bb] = rgb(COLORS.waveBase)
+  const [pr, pg, pb] = rgb(COLORS.wavePeak)
+  // Commas inside a geq expression must be escaped or the filtergraph parser
+  // reads them as filter separators.
+  const t = `min(1\\,max(0\\,(${h - 1}-Y)/${knee}))`
+  const ramp = `geq=r='${br}+(${pr - br})*${t}':g='${bg}+(${pg - bg})*${t}':b='${bb}+(${pb - bb})*${t}'`
   return [
-    `[0:a]asplit=2[a1][a2]`,
-    `[a1]${freqs}:colors=${COLORS.bar}[wg]`,
-    `[a2]${freqs}:colors=${COLORS.brand}[wr]`,
-    `[wr]crop=2:${h}:2:0[wrc]`,
-    `[wg][wrc]overlay=2:0[wave]`,
-    `[wave]colorkey=0x000000:0.1:0.0[wavekey]`,
-    `[wavekey]scale=${w}:${h}:flags=neighbor[wavebig]`,
+    // Double height, lower half, flipped → bars grow from the baseline.
+    `[0:a]volume=${gain}dB,showwaves=s=${WAVE_SRC_W}x${h * 2}:mode=p2p:rate=${fps}:colors=0xffffff:draw=full,` +
+      `crop=${WAVE_SRC_W}:${h}:0:${h},vflip,format=gray[mask]`,
+    // rgb24 for the geq math, then rgba: alphamerge has to have somewhere to
+    // WRITE the alpha, and on an alpha-less format it silently yields no
+    // frames at all — the encoder then dies with an opaque internal error.
+    `color=c=black:s=${WAVE_SRC_W}x${h}:r=${fps},format=rgb24,${ramp},format=rgba[ramp]`,
+    `[ramp][mask]alphamerge[wave]`,
+    `[wave]scale=${w}:${h}:flags=neighbor[wavebig]`,
     // Both overlays blend in RGB so the ink base, the PNG frame, and the wave
     // hit yuv420p through ONE conversion at the encoder — blending in the
     // default yuv420 rounds the base and the PNG differently for the same
     // #100f0e, leaving faint stripes where the grill slots meet the panels.
     `[2:v][wavebig]overlay=${x}:${y}:shortest=1:format=rgb[base]`,
-    `[base][1:v]overlay=0:0:format=rgb[out]`,
+    // Rate normalization is needed only for the concat form: a playlist of
+    // stills arrives at whatever rate its durations imply, and the overlay
+    // wants a steady one. The looped-PNG form already arrives at -framerate,
+    // so fps= there is a no-op and is skipped rather than carried.
+    ...(opts.frameSequence ? [`[1:v]fps=${fps}[frames]`] : []),
+    `[base][${opts.frameSequence ? 'frames' : '1:v'}]overlay=0:0:format=rgb[out]`,
   ].join(';')
 }
 
 // Full ffmpeg argument list for one render.
-export function buildRenderArgs({ format, audioPath, framePath, outPath, fps = 30 }) {
+//
+// The frame layer is input 1 and comes in two shapes. Without captions it is a
+// single looped PNG. With captions it is an ffconcat playlist of stills whose
+// durations are the cue timings — one input, rather than one overlay filter
+// per cue with an enable= window, which for a 50-cue clip is a filtergraph
+// nobody can read and ffmpeg is slow to build.
+export function buildRenderArgs({ format, audioPath, framePath, framePlaylist, outPath, fps = 30 }) {
   const f = FORMATS[format]
   if (!f) throw new Error(`unknown format: ${format}`)
+  if (!framePath && !framePlaylist) throw new Error('a frame PNG or a frame playlist is required')
+  const frameInput = framePlaylist
+    ? ['-f', 'concat', '-safe', '0', '-i', framePlaylist]
+    : ['-framerate', String(fps), '-loop', '1', '-i', framePath]
   return [
     '-i', audioPath,
-    '-framerate', String(fps), '-loop', '1', '-i', framePath,
+    ...frameInput,
     // format=rgb24 makes the color source emit exact RGB — left to negotiate
     // it goes yuv-first and lands ~2/255 off the PNG's identical ink, which
     // shows as faint stripes at the grill slots.
     '-f', 'lavfi', '-i', `color=c=${COLORS.bg}:s=${f.width}x${f.height}:r=${fps},format=rgb24`,
-    '-filter_complex', buildFiltergraph(format, { fps }),
+    '-filter_complex', buildFiltergraph(format, { fps, frameSequence: Boolean(framePlaylist) }),
     '-map', '[out]', '-map', '0:a',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', String(fps),
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
@@ -196,7 +250,8 @@ export function resolveFormats(flag) {
 }
 
 export const USAGE = `usage:
-  node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all] [--title T] [--name N] [--force] [--out DIR]
+  node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all] [--title T] [--name N]
+  [--captions --srt FILE] [--force] [--out DIR]
   node scripts/make_audiogram.mjs --prompt <promptId> [--env production|staging] [--format ...] [--with-prompt] [--member ID[,ID]] [--segment-only|--clips-only] [--force] [--out DIR]
 
   --member narrows the round to specific approved clips (repeatable, or comma-
@@ -204,6 +259,10 @@ export const USAGE = `usage:
   --member and no scope flag the default is --clips-only, since a "segment" of
   one clip is just that clip; pass --segment-only or drop --clips-only to build
   a segment from the subset.
+
+  --captions burns in the clip's transcript. In prompt mode that is the copy
+  reviewed in the admin panel; a clip whose row is not marked reviewed is
+  refused, so nothing unread reaches a video. File mode takes --srt.
 
   Existing output is never overwritten or deleted: a run that would land on top
   of files already in --out stops and names them. --force is the only override.
@@ -221,6 +280,7 @@ export function parseArgs(argv) {
     audioPath: null, promptId: null, envName: 'production', format: '16x9',
     title: null, name: null, outDir: 'out', segmentOnly: false, clipsOnly: false,
     withPrompt: false, members: [], force: false, keepAudio: true,
+    captions: false, srtPath: null,
   }
   const flagValue = (flag, v) => {
     if (v === undefined || v.startsWith('--')) throw new Error(`${flag} needs a value\n${USAGE}`)
@@ -242,6 +302,8 @@ export function parseArgs(argv) {
     else if (a === '--with-prompt') opts.withPrompt = true
     else if (a === '--force') opts.force = true
     else if (a === '--no-keep-audio') opts.keepAudio = false
+    else if (a === '--captions') opts.captions = true
+    else if (a === '--srt') opts.srtPath = flagValue(a, argv[++i])
     else if (a.startsWith('--')) throw new Error(`unknown flag: ${a}\n${USAGE}`)
     else if (!opts.audioPath) opts.audioPath = a
     else throw new Error(`unexpected argument: ${a}\n${USAGE}`)
@@ -252,6 +314,12 @@ export function parseArgs(argv) {
     throw new Error(`--segment-only/--clips-only/--with-prompt/--member only apply to --prompt mode\n${USAGE}`)
   }
   if (opts.segmentOnly && opts.clipsOnly) throw new Error(`--segment-only and --clips-only are mutually exclusive\n${USAGE}`)
+  if (opts.srtPath && opts.promptId) {
+    // In prompt mode the transcript's location is derived from the clip, and
+    // captions require the REVIEWED copy — letting an arbitrary file in would
+    // walk straight around that gate.
+    throw new Error(`--srt only applies to file mode; --prompt reads the reviewed transcript\n${USAGE}`)
+  }
   // Rendering a one-clip "segment" duplicates the clip video byte for byte, so
   // --member on its own means the per-clip files and nothing else. An explicit
   // scope flag always wins.

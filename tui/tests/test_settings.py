@@ -93,3 +93,18 @@ def test_the_clis_still_accept_the_force_flag(repo_root):
     """The TUI's force toggle is only real if the CLIs still parse it."""
     assert "'--force'" in (repo_root / "scripts" / "lib" / "audiogram.mjs").read_text()
     assert "'--force'" in (repo_root / "scripts" / "compile_voices.mjs").read_text()
+
+
+def test_transcribe_cli_still_accepts_the_flags_the_tui_passes(repo_root):
+    """The TUI's whole contract with transcribe.mjs is its flag list."""
+    source = (repo_root / "scripts" / "transcribe.mjs").read_text()
+    for flag in ("--prompt", "--env", "--member", "--model", "--force",
+                 "--upload", "--upload-only"):
+        assert f"'{flag}'" in source, f"{flag} is gone from transcribe.mjs"
+
+
+def test_the_transcript_location_is_defined_identically_in_js(repo_root):
+    """The renderer reads the path the TUI reports; both must agree."""
+    source = (repo_root / "scripts" / "lib" / "voices.mjs").read_text()
+    assert "export function transcriptPathFor(outDir, promptId, clip)" in source
+    assert "export function transcriptKeyFor(clip)" in source

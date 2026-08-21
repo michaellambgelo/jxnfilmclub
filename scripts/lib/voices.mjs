@@ -95,6 +95,25 @@ export function r2GetArgs(bucket, r2Key, filePath) {
   return ['r2', 'object', 'get', `${bucket}/${r2Key}`, '--file', resolve(filePath), '--remote']
 }
 
+// Argv for writing one object back to R2. Absolutized for the same reason
+// r2GetArgs is: wrangler's cwd is worker/, this process's is the repo root.
+export function r2PutArgs(bucket, key, filePath, contentType) {
+  return ['r2', 'object', 'put', `${bucket}/${key}`, '--file', resolve(filePath),
+    ...(contentType ? ['--content-type', contentType] : []), '--remote']
+}
+
+// Where a clip's transcript lives, on both sides of the wire: beside the audio
+// locally, beside the object in R2. Same stem, .srt extension — so the bucket's
+// all-prefixes 60-day lifecycle expires a transcript with the recording it
+// describes, without anyone configuring that.
+export function transcriptPathFor(outDir, promptId, clip) {
+  return archivePathFor(outDir, promptId, clip).replace(/\.[^.]+$/, '.srt')
+}
+
+export function transcriptKeyFor(clip) {
+  return String(clip.r2Key || '').replace(/\.[^.]+$/, '.srt')
+}
+
 // Does a failed pull actually mean the object is gone? Only a real R2 miss is
 // the expected 60-day-lifecycle state; a local filesystem or process error is
 // a bug, and reporting it as "likely expired" sends you looking in the wrong
@@ -195,6 +214,16 @@ export function ensureWritable(paths, { force = false } = {}) {
   return clashes
 }
 
+// Duration in seconds, parsed off ffmpeg's own report — the caption timeline
+// has to know how long the rendered audio actually is, and the render input is
+// the NORMALIZED file (capped at 3 minutes), not the source.
+export function probeSeconds(path) {
+  const out = ffmpeg(['-i', path, '-f', 'null', '-'])
+  const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(out)
+  if (!m) throw new Error(`could not read the duration of ${path}`)
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
+}
+
 const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11'
 
 // Two-pass EBU R128 loudnorm + hard 3-minute cap → 48 kHz mono WAV.
@@ -228,12 +257,18 @@ export function normalizeClip(rawPath, destWav, label = rawPath) {
   return probedSec
 }
 
-// Concatenate normalized WAVs with 0.5 s silence gaps (between clips only,
-// none trailing) into destWav. All inputs share format (48k mono s16 wav from
+// Silence inserted between clips in a compiled segment. Exported because the
+// caption track has to shift each clip's cues by exactly this much — if the
+// two ever disagreed, every caption after the first clip would drift and end
+// up attributed to the wrong speaker.
+export const CONCAT_GAP_SECONDS = 0.5
+
+// Concatenate normalized WAVs with CONCAT_GAP_SECONDS silence gaps (between
+// clips only, none trailing) into destWav. All inputs share format (48k mono s16 wav from
 // normalizeClip) so stream copy is safe. tmpDir holds the intermediates.
 export function concatWithGaps(normPaths, destWav, tmpDir) {
   const silence = join(tmpDir, 'silence.wav')
-  ffmpeg(['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=mono', '-t', '0.5', silence])
+  ffmpeg(['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=mono', '-t', String(CONCAT_GAP_SECONDS), silence])
   const listFile = join(tmpDir, 'concat.txt')
   const lines = []
   normPaths.forEach((p, i) => {

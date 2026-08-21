@@ -61,6 +61,10 @@ class Clip:
     error: str | None = None
     # Filled in by data/renders.py — formats already rendered for this clip.
     rendered: tuple[str, ...] = ()
+    # A local draft SRT sits beside the archived audio. Its presence in R2 is
+    # what marks it reviewed, and that is not knowable without an R2 read, so
+    # this only ever means "whisper has written one here".
+    transcript_draft: bool = False
 
     @property
     def label(self) -> str:

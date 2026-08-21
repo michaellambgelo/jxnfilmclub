@@ -69,3 +69,32 @@ def test_attach_renders_matches_by_member_id_not_display_name(tmp_path):
     # (gitignored) one.
     annotated = attach_renders(rounds, Settings(repo_root=tmp_path))
     assert annotated[0].clips[0].rendered == ("16x9",)
+
+
+def test_transcript_draft_is_detected_beside_the_audio(tmp_path):
+    """Local SRT = whisper wrote one. Reviewed is R2 presence, not this."""
+    from jxnfilm_tui.data.voices import transcript_path
+
+    (tmp_path / "out" / "archive" / "general").mkdir(parents=True)
+    (tmp_path / "out" / "archive" / "general" / "mem_alice.srt").write_text("1\n")
+
+    rounds = group_rounds([parse_voice_row(
+        "voice:general:mem_alice",
+        '{"memberId":"mem_alice","status":"approved",'
+        '"r2Key":"voice/general/mem_alice.webm","at":"2026-08-01T00:00:00.000Z"}',
+    )])
+    settings = Settings(repo_root=tmp_path)
+    assert transcript_path(settings, "general", rounds[0].clips[0]).name == "mem_alice.srt"
+
+    annotated = attach_renders(rounds, settings)
+    assert annotated[0].clips[0].transcript_draft is True
+
+
+def test_no_transcript_draft_when_none_written(tmp_path):
+    rounds = group_rounds([parse_voice_row(
+        "voice:general:mem_bo",
+        '{"memberId":"mem_bo","status":"approved",'
+        '"r2Key":"voice/general/mem_bo.webm","at":"2026-08-01T00:00:00.000Z"}',
+    )])
+    annotated = attach_renders(rounds, Settings(repo_root=tmp_path))
+    assert annotated[0].clips[0].transcript_draft is False

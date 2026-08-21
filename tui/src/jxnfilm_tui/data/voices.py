@@ -9,6 +9,7 @@ rather than a silently shorter round.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from ..model.state import LoadResult, Round, utcnow
 from ..settings import Settings
@@ -51,19 +52,29 @@ def load_rounds(settings: Settings, *, progress=None) -> LoadResult:
     return LoadResult(rounds=rounds, warnings=tuple(warnings), fetched_at=utcnow())
 
 
+def transcript_path(settings: Settings, prompt_id: str, clip) -> Path:
+    """out/archive/<promptId>/<memberId>.srt — beside the audio it describes.
+
+    Must match transcriptPathFor in scripts/lib/voices.mjs.
+    """
+    return settings.archive_out / prompt_id / f"{clip.member_id}.srt"
+
+
 def attach_renders(rounds, settings: Settings) -> tuple[Round, ...]:
-    """Mark each clip with the formats already sitting in out/audiogram/."""
+    """Mark each clip with what already exists locally: rendered formats, and
+    whether whisper has written a draft transcript beside its audio."""
     rendered = scan_all(settings.audiogram_out)
     out = []
     for rnd in rounds:
         render_set = rendered.get(rnd.prompt_id)
-        if render_set is None:
-            out.append(rnd)
-            continue
         # make_audiogram names files by safeName(memberId), so the lookup is by
         # member id, not by display name.
         clips = tuple(
-            replace(clip, rendered=render_set.formats_for(clip.member_id))
+            replace(
+                clip,
+                rendered=render_set.formats_for(clip.member_id) if render_set else (),
+                transcript_draft=transcript_path(settings, rnd.prompt_id, clip).is_file(),
+            )
             for clip in rnd.clips
         )
         out.append(replace(rnd, clips=clips))

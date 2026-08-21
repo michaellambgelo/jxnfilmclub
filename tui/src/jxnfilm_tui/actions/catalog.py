@@ -15,7 +15,10 @@ from dataclasses import dataclass, field
 
 from ..data.renders import FORMATS
 from ..settings import Settings
-from .argv import SCOPES, audiogram_file_argv, audiogram_round_argv, compile_argv
+from .argv import (
+    SCOPES, WHISPER_MODELS, audiogram_file_argv, audiogram_round_argv,
+    compile_argv, transcribe_argv,
+)
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,50 @@ CATALOG: tuple[Action, ...] = (
         ),
     ),
     Action(
+        id="transcribe_clip",
+        title="Transcribe this clip",
+        summary="Whisper locally → a caption SRT beside the audio. A DRAFT: "
+                "read it and fix what it misheard before uploading.",
+        scope="clip",
+        cost="under a minute for a 3-minute clip once the model is cached",
+        options=(
+            Option(name="model", label="Whisper model", kind="choice", default="small",
+                   choices=WHISPER_MODELS,
+                   help="Bigger models mishear fewer proper nouns; small is usually enough"),
+            FORCE_OPTION,
+        ),
+    ),
+    Action(
+        id="upload_transcript",
+        title="Upload transcript (mark reviewed)",
+        summary="Push the edited SRT to R2 beside the audio. This is the review "
+                "gate — captions render from the R2 copy, never the local draft.",
+        scope="clip",
+        cost="one small upload; runs no model",
+    ),
+    Action(
+        id="pull_transcript",
+        title="Pull reviewed transcript",
+        summary="Fetch the transcript from R2, overwriting the local copy. Do "
+                "this after editing it in the admin panel — R2 is the source "
+                "of truth.",
+        scope="clip",
+        cost="one small download; overwrites the local file without asking",
+    ),
+    Action(
+        id="transcribe_round",
+        title="Transcribe the whole round",
+        summary="Whisper every approved clip in this round into draft SRTs.",
+        scope="round",
+        cost="under a minute per clip",
+        options=(
+            Option(name="model", label="Whisper model", kind="choice", default="small",
+                   choices=WHISPER_MODELS,
+                   help="Bigger models mishear fewer proper nouns; small is usually enough"),
+            FORCE_OPTION,
+        ),
+    ),
+    Action(
         id="compile_segment",
         title="Compile segment WAV",
         summary="Approved clips → one loudness-normalized 48kHz mono WAV with "
@@ -162,6 +209,22 @@ def build(action: Action, settings: Settings, bindings: dict, *,
             settings, prompt_id, members=(member_id,), scope="clips-only",
             fmt=str(bindings.get("format", "16x9")),
             with_prompt=bool(bindings.get("with_prompt", False)),
+            force=bool(bindings.get("force", False)),
+        )
+    if action.id in ("transcribe_clip", "upload_transcript", "pull_transcript"):
+        if not member_id:
+            raise ValueError(f"{action.id} needs a member id")
+        return transcribe_argv(
+            settings, prompt_id, members=(member_id,),
+            model=str(bindings.get("model", "small")),
+            force=bool(bindings.get("force", False)),
+            upload_only=action.id == "upload_transcript",
+            pull=action.id == "pull_transcript",
+        )
+    if action.id == "transcribe_round":
+        return transcribe_argv(
+            settings, prompt_id,
+            model=str(bindings.get("model", "small")),
             force=bool(bindings.get("force", False)),
         )
     if action.id == "compile_segment":

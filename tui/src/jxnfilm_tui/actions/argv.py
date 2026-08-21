@@ -85,6 +85,45 @@ def compile_argv(settings: Settings, prompt_id: str, *,
     return argv
 
 
+WHISPER_MODELS = ("tiny", "base", "small", "medium", "large-v3")
+
+
+def transcribe_argv(settings: Settings, prompt_id: str, *, members=(),
+                    model: str = "small", force: bool = False,
+                    upload_only: bool = False, pull: bool = False) -> list[str]:
+    """`transcribe.mjs` — whisper locally, SRT beside the audio.
+
+    `upload_only` publishes an already-reviewed transcript to R2 and runs no
+    model at all; re-transcribing at upload time would overwrite the edits the
+    upload exists to publish. `pull` goes the other way and R2 wins — the admin
+    panel is an editing surface, so once a transcript has been round-tripped
+    the local copy is stale by definition.
+    """
+    if not prompt_id:
+        raise ValueError("a prompt id is required")
+    if model not in WHISPER_MODELS:
+        raise ValueError(f"model must be one of {', '.join(WHISPER_MODELS)} (got {model!r})")
+    if settings.env_name not in ENVS:
+        raise ValueError(f"env must be one of {', '.join(ENVS)}")
+    argv = ["node", str(settings.transcribe), "--prompt", prompt_id,
+            "--env", settings.env_name]
+    for member in members:
+        if not str(member).strip():
+            raise ValueError("a member id cannot be blank")
+        argv += ["--member", str(member)]
+    if upload_only and pull:
+        raise ValueError("--pull and --upload are opposite directions")
+    if pull:
+        argv.append("--pull")
+    elif upload_only:
+        argv.append("--upload-only")
+    else:
+        argv += ["--model", model]
+        if force:
+            argv.append("--force")
+    return argv
+
+
 def render_command(argv, root=None) -> str:
     """One-line display form. Quotes only what actually needs it.
 

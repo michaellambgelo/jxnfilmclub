@@ -162,6 +162,8 @@ class RoundsPane(Vertical):
             f"size       {fmt_bytes(clip.size)}  {clip.content_type or ''}",
             f"r2Key      {clip.r2_key or '[red]missing[/]'}",
             f"rendered   {', '.join(clip.rendered) if clip.rendered else '[dim]not yet[/]'}",
+            "transcript " + ("[yellow]draft on disk — read it, then upload[/]"
+                             if clip.transcript_draft else "[dim]none[/]"),
         ]
         if clip.prompt_text:
             lines += ["", f"[dim]prompt:[/] {clip.prompt_text}"]

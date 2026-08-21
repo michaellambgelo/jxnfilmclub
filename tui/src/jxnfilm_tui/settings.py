@@ -110,6 +110,10 @@ class Settings:
         return self.repo_root / "scripts" / "make_audiogram.mjs"
 
     @property
+    def transcribe(self) -> Path:
+        return self.repo_root / "scripts" / "transcribe.mjs"
+
+    @property
     def compile_voices(self) -> Path:
         return self.repo_root / "scripts" / "compile_voices.mjs"
 

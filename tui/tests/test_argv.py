@@ -146,3 +146,83 @@ def test_force_reaches_every_cli_when_ticked(settings):
         bindings = defaults_for(action) | {"force": True, "audio_path": "/tmp/x.wav"}
         argv = build(action, settings, bindings, prompt_id="general", member_id="alice")
         assert "--force" in argv, action_id
+
+
+def test_transcribe_defaults(settings):
+    from jxnfilm_tui.actions.argv import transcribe_argv
+
+    argv = transcribe_argv(settings, "general", members=("alice",))
+    assert argv[1].endswith("scripts/transcribe.mjs")
+    assert argv[argv.index("--member") + 1] == "alice"
+    assert argv[argv.index("--model") + 1] == "small"
+    # Not uploaded by default: a machine transcript is a draft.
+    assert "--upload" not in argv and "--upload-only" not in argv
+    assert "--force" not in argv
+
+
+def test_upload_only_runs_no_model(settings):
+    """Re-transcribing at upload time would overwrite the very edits the
+    upload exists to publish."""
+    from jxnfilm_tui.actions.argv import transcribe_argv
+
+    argv = transcribe_argv(settings, "general", members=("alice",), upload_only=True)
+    assert "--upload-only" in argv
+    assert "--model" not in argv
+    assert "--force" not in argv
+
+
+def test_transcribe_rejects_an_unknown_model(settings):
+    from jxnfilm_tui.actions.argv import transcribe_argv
+
+    with pytest.raises(ValueError):
+        transcribe_argv(settings, "general", model="enormous")
+    with pytest.raises(ValueError):
+        transcribe_argv(settings, "")
+
+
+def test_transcribe_actions_wire_through_the_catalog(settings):
+    clip_action = BY_ID["transcribe_clip"]
+    argv = build(clip_action, settings, defaults_for(clip_action),
+                 prompt_id="general", member_id="alice")
+    assert "--prompt" in argv and argv[argv.index("--member") + 1] == "alice"
+
+    upload = BY_ID["upload_transcript"]
+    argv = build(upload, settings, defaults_for(upload),
+                 prompt_id="general", member_id="alice")
+    assert "--upload-only" in argv
+
+    rnd = BY_ID["transcribe_round"]
+    argv = build(rnd, settings, defaults_for(rnd), prompt_id="general")
+    assert "--member" not in argv
+
+
+def test_clip_scoped_transcribe_needs_a_member(settings):
+    for action_id in ("transcribe_clip", "upload_transcript"):
+        action = BY_ID[action_id]
+        with pytest.raises(ValueError):
+            build(action, settings, defaults_for(action), prompt_id="general")
+
+
+def test_pull_overwrites_and_runs_no_model(settings):
+    """R2 wins: the admin panel edits there, so local is stale once round-tripped."""
+    from jxnfilm_tui.actions.argv import transcribe_argv
+
+    argv = transcribe_argv(settings, "general", members=("alice",), pull=True)
+    assert "--pull" in argv
+    assert "--model" not in argv and "--upload-only" not in argv
+
+
+def test_pull_and_upload_are_refused_together(settings):
+    from jxnfilm_tui.actions.argv import transcribe_argv
+
+    with pytest.raises(ValueError, match="opposite directions"):
+        transcribe_argv(settings, "general", members=("a",), pull=True, upload_only=True)
+
+
+def test_the_three_transcript_actions_are_clip_scoped(settings):
+    for action_id in ("transcribe_clip", "upload_transcript", "pull_transcript"):
+        assert BY_ID[action_id].scope == "clip"
+        action = BY_ID[action_id]
+        argv = build(action, settings, defaults_for(action),
+                     prompt_id="general", member_id="alice")
+        assert argv[argv.index("--member") + 1] == "alice"

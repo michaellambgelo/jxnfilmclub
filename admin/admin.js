@@ -695,6 +695,7 @@ function voiceClipCard(c) {
       <div class="toolbar">
         <a class="voice-dl" href="${attr(src + '&download=1')}">download</a>
         <button data-action="voice-transcript" data-key="${attr(c.keyName)}" data-srt="${attr(srtKey)}">edit transcript</button>
+        ${c.transcript?.reviewedAt ? '' : `<button data-action="voice-srt-review" data-key="${attr(c.keyName)}" title="Vouch for the transcript as it stands — use this when whisper got it right and there is nothing to fix">mark reviewed</button>`}
         ${c.status !== 'approved' ? `<button class="primary" data-action="voice-status" data-key="${attr(c.keyName)}" data-status="approved">approve</button>` : ''}
         ${c.status !== 'rejected' ? `<button data-action="voice-status" data-key="${attr(c.keyName)}" data-status="rejected">reject</button>` : ''}
         <button class="danger" data-action="voice-delete" data-key="${attr(c.keyName)}">delete</button>
@@ -1719,6 +1720,12 @@ document.addEventListener('click', async (e) => {
       } else {
         note.textContent = 'no transcript in R2 yet — draft one with scripts/transcribe.mjs and upload it'
       }
+    }
+    else if (a === 'voice-srt-review') {
+      if (!confirm('Mark this transcript reviewed?\n\nOnly if you have actually read it. Captions render from this, and the review stamp is the one thing between a machine transcript and a published video.')) return
+      await api('POST', `/api/voice/transcript?${qs({ env: env() })}`, JSON.stringify({ key: btn.dataset.key }))
+      toast('Marked reviewed')
+      await switchTab(currentTab)
     }
     else if (a === 'voice-srt-save') {
       const box = btn.closest('.voice-srt')

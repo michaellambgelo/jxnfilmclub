@@ -629,3 +629,50 @@ describe('transcripts', () => {
     expect(mine.clip.transcript).toBeUndefined()
   })
 })
+
+// "Mark reviewed" — vouching for a transcript that needed no fixes. Same
+// endpoint with the body omitted, because it is the same fact being recorded.
+describe('mark reviewed without rewriting', () => {
+  const SRT = '1\n00:00:00,000 --> 00:00:02,400\nHey, this is Michael Lamb.\n'
+  const mark = (key, token = ADMIN) =>
+    req('/admin/voice/transcript', { method: 'POST', token, body: { key } })
+
+  it('stamps the row and leaves the stored transcript byte-identical', async () => {
+    const { token, member } = await getTokenFor('mark@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const key = `voice:general:${member.id}`
+    const r2Key = `voice/general/${member.id}.srt`
+    await env.VOICE.put(r2Key, SRT)
+
+    const res = await mark(key)
+    expect(res.status).toBe(200)
+    expect(await (await env.VOICE.get(r2Key)).text()).toBe(SRT)
+
+    const row = await env.MEMBERS_KV.get(key, { type: 'json' })
+    expect(row.transcript.reviewedAt).toEqual(expect.any(String))
+    expect(row.transcript.bytes).toBe(SRT.length)
+  })
+
+  it('refuses to vouch for a transcript that is not there', async () => {
+    // Stamping a clip whose transcript never arrived would open the caption
+    // gate on nothing.
+    const { token, member } = await getTokenFor('mark-empty@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const res = await mark(`voice:general:${member.id}`)
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toMatch(/upload one first/)
+  })
+
+  it('still validates the body when one IS sent', async () => {
+    const { token, member } = await getTokenFor('mark-bad@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    const key = `voice:general:${member.id}`
+    // An empty string is a save attempt, not a mark-reviewed.
+    expect((await req('/admin/voice/transcript', { method: 'POST', token: ADMIN, body: { key, srt: '' } })).status).toBe(400)
+  })
+
+  it('needs the admin token like everything else here', async () => {
+    const { member } = await getTokenFor('mark-auth@example.com')
+    expect((await mark(`voice:general:${member.id}`, null)).status).toBe(401)
+  })
+})

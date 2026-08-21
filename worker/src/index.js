@@ -1175,7 +1175,9 @@ async function handleAdminVoiceStatus(request, env) {
   return json(env, { ok: true, key: body.key, status: row.status })
 }
 
-// POST /admin/voice/transcript — { key, srt }. Saves an EDITED caption file.
+// POST /admin/voice/transcript — { key, srt? }. Saves an EDITED caption file,
+// or with `srt` omitted, marks the existing one reviewed without rewriting it
+// (the panel's "mark reviewed" button, for a transcript that needed no fixes).
 //
 // The admin panel only ever edits: transcripts are drafted locally by
 // scripts/transcribe.mjs and uploaded, so no model runs anywhere near
@@ -1198,16 +1200,19 @@ async function handleAdminVoiceTranscript(request, env) {
   if (typeof body.key !== 'string' || !body.key.startsWith('voice:')) {
     return json(env, { error: 'invalid key' }, 400)
   }
-  if (typeof body.srt !== 'string' || !body.srt.trim()) {
-    return json(env, { error: 'srt is required' }, 400)
-  }
-  if (body.srt.length > VOICE_TRANSCRIPT_MAX) {
-    return json(env, { error: 'transcript too large' }, 413)
-  }
-  // Cheapest possible shape check. An SRT with no timing line renders no
-  // captions at all, and finding that out at render time is expensive.
-  if (!body.srt.includes('-->')) {
-    return json(env, { error: 'that does not look like an SRT — no timing lines' }, 400)
+  const saving = body.srt !== undefined
+  if (saving) {
+    if (typeof body.srt !== 'string' || !body.srt.trim()) {
+      return json(env, { error: 'srt is required' }, 400)
+    }
+    if (body.srt.length > VOICE_TRANSCRIPT_MAX) {
+      return json(env, { error: 'transcript too large' }, 413)
+    }
+    // Cheapest possible shape check. An SRT with no timing line renders no
+    // captions at all, and finding that out at render time is expensive.
+    if (!body.srt.includes('-->')) {
+      return json(env, { error: 'that does not look like an SRT — no timing lines' }, 400)
+    }
   }
 
   const raw = await env.MEMBERS_KV.get(body.key)
@@ -1225,10 +1230,21 @@ async function handleAdminVoiceTranscript(request, env) {
   // Same stem as the audio, so the bucket's all-prefixes lifecycle expires the
   // transcript with the recording it describes.
   const transcriptKey = row.r2Key.replace(/\.[^.]+$/, '.srt')
-  await env.VOICE.put(transcriptKey, body.srt, {
-    httpMetadata: { contentType: 'text/plain; charset=utf-8' },
-  })
-  row.transcript = { reviewedAt: new Date().toISOString(), bytes: body.srt.length }
+  let bytes
+  if (saving) {
+    await env.VOICE.put(transcriptKey, body.srt, {
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+    })
+    bytes = body.srt.length
+  } else {
+    // Marking reviewed without a body means vouching for what is already
+    // stored — so there had better be something stored. Refusing here beats
+    // stamping a clip whose transcript never arrived.
+    const existing = await env.VOICE.head(transcriptKey)
+    if (!existing) return json(env, { error: 'no transcript to review — upload one first' }, 404)
+    bytes = existing.size
+  }
+  row.transcript = { reviewedAt: new Date().toISOString(), bytes }
   await env.MEMBERS_KV.put(body.key, JSON.stringify(row), { expiration: row.expiresAt })
   return json(env, { ok: true, key: body.key, transcriptKey, transcript: row.transcript })
 }

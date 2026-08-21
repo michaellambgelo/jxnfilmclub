@@ -10,11 +10,14 @@
 // reimplement" shape. Nothing here touches Workers AI or needs a deploy.
 //
 // The SRT lands beside the audio at out/archive/<promptId>/<memberId>.srt and
-// is NOT uploaded by default — a machine transcript is a draft. Pushing it to
-// R2 (--upload, or the TUI's Upload action) is the review gate: local means
-// whisper wrote it, in R2 means a human read it. There is no separate
-// "reviewed" flag to keep in sync, because which store it is in answers the
-// question.
+// is pushed to R2 immediately when the bucket has none, so a fresh transcript
+// is reviewable in the admin panel the moment it exists. An existing one is
+// never replaced without --upload: that copy may carry human edits.
+//
+// Being in R2 does NOT mean reviewed. The reviewed stamp lives on the KV row
+// and is set by saving — or pressing "mark reviewed" — in the admin panel.
+// Rendering captions requires it, so a machine transcript cannot reach a video
+// on its own.
 //
 // Cue timing comes from whisper's SEGMENTS, never its words — see the header
 // of scripts/lib/srt.mjs for the measurements behind that.
@@ -25,8 +28,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import {
   archivePathFor, BUCKETS, ensureWritable, ffmpeg, fmtDur, listApprovedClips,
-  looksMissing, pullClip, r2PutArgs, run, transcriptKeyFor, transcriptPathFor,
-  wrangler,
+  looksMissing, pullClip, r2Has, r2PutArgs, run, transcriptKeyFor,
+  transcriptPathFor, wrangler,
 } from './lib/voices.mjs'
 import { selectClips } from './lib/audiogram.mjs'
 import { captionCues, coverage, formatSrt } from './lib/srt.mjs'
@@ -34,11 +37,15 @@ import { captionCues, coverage, formatSrt } from './lib/srt.mjs'
 const MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3']
 const USAGE = `usage:
   node scripts/transcribe.mjs --prompt <promptId> [--member ID] [--env production|staging]
-       [--model ${MODELS.join('|')}] [--out DIR] [--force] [--upload|--upload-only|--pull]
+       [--model ${MODELS.join('|')}] [--out DIR] [--force]
+       [--upload|--no-upload|--upload-only|--pull]
   node scripts/transcribe.mjs <audio-file> [--model ...] [--out DIR] [--force]
 
-  The SRT is a DRAFT until you read it. --upload puts it in R2 next to the
-  audio, which is what marks it reviewed; rendering captions requires that.`
+  A fresh draft is pushed to R2 automatically when nothing is there yet, so it
+  is reviewable in the admin panel the moment it exists. An existing transcript
+  is never replaced without --upload, because that copy may carry edits.
+  Uploading does NOT mark it reviewed — saving or "mark reviewed" in the admin
+  panel does, and rendering captions requires that.`
 
 function fail(msg) {
   console.error(`error: ${msg}`)
@@ -53,7 +60,7 @@ process.on('exit', () => { if (tmp) rmSync(tmp, { recursive: true, force: true }
 const argv = process.argv.slice(2)
 const opts = { audioPath: null, promptId: null, members: [], envName: 'production',
   model: 'small', outDir: 'out', force: false, upload: false, uploadOnly: false,
-  pull: false }
+  pull: false, noUpload: false }
 const flagValue = (flag, v) => {
   if (v === undefined || v.startsWith('--')) fail(`${flag} needs a value\n${USAGE}`)
   return v
@@ -69,6 +76,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--upload') opts.upload = true
   else if (a === '--upload-only') { opts.upload = true; opts.uploadOnly = true }
   else if (a === '--pull') opts.pull = true
+  else if (a === '--no-upload') opts.noUpload = true
   else if (a.startsWith('--')) fail(`unknown flag: ${a}\n${USAGE}`)
   else if (!opts.audioPath) opts.audioPath = a
   else fail(`unexpected argument: ${a}\n${USAGE}`)
@@ -81,6 +89,9 @@ if (!opts.promptId && (opts.members.length || opts.upload || opts.pull)) {
   fail(`--member/--upload/--pull only apply to --prompt mode\n${USAGE}`)
 }
 if (opts.pull && opts.upload) fail(`--pull and --upload are opposite directions\n${USAGE}`)
+if (opts.noUpload && (opts.upload || opts.uploadOnly || opts.pull)) {
+  fail(`--no-upload contradicts --upload/--upload-only/--pull\n${USAGE}`)
+}
 
 // --- whisper ---
 
@@ -197,10 +208,10 @@ try {
 
   console.log('\nWrote:')
   written.forEach(f => console.log(`  ${f}`))
-  if (!opts.upload && opts.promptId) {
-    console.log('\nThis is a DRAFT. Read it, fix what whisper misheard, then upload it')
-    console.log('(--upload, or the TUI\'s Upload transcript action) — captions render')
-    console.log('from the copy in R2, so nothing unreviewed can reach a video.')
+  if (opts.promptId && !opts.pull && !opts.uploadOnly) {
+    console.log('\nThese are DRAFTS. Open the admin panel\'s Voice tab, fix what whisper')
+    console.log('misheard, and save — or press "mark reviewed" if it got everything right.')
+    console.log('Captions will not render until that stamp exists.')
   }
 } catch (err) {
   fail(err.message)

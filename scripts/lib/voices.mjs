@@ -144,6 +144,18 @@ export function isCompleteCopy(path, expectedSize) {
   }
 }
 
+// Is `key` already in the bucket? wrangler exposes no HEAD, so this fetches
+// into a scratch path — fine for a few-kB SRT, not for audio.
+export function r2Has(bucket, key, scratchPath) {
+  try {
+    wrangler(['r2', 'object', 'get', `${bucket}/${key}`, '--file', resolve(scratchPath), '--remote'])
+    return true
+  } catch (err) {
+    if (looksMissing(err)) return false
+    throw err
+  }
+}
+
 // Download a clip's R2 object to destPath — IDEMPOTENTLY.
 //
 // Repeating a pull is free and repeating an interrupted pull is safe:

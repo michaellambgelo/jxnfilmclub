@@ -38,6 +38,10 @@ async function getTokenFor(email, overrides = {}) {
   return { token: (await res.json()).token, member }
 }
 
+// Attendance entries are { id, name } keyed on member id; most assertions
+// below care who is listed and in what order, not the ids.
+const names = (attendees) => (attendees || []).map(a => a.name)
+
 // Capture all outgoing transactional sendEmail() requests so tests can
 // assert the address only leaves the Worker through Resend.
 function captureEmails() {
@@ -277,7 +281,7 @@ describe('POST /events/:id/rsvp + waitlist', () => {
     // Confirmed list is mirrored to the public attend:{id} — behind the host,
     // who attends their own screening without holding an RSVP slot.
     const att = await (await req(`/events/${eventId}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-host', 'M-member1'])
+    expect(names(att.attendees)).toEqual(['M-host', 'M-member1'])
   })
 
   it('re-RSVP is idempotent', async () => {
@@ -317,7 +321,7 @@ describe('DELETE /events/:id/rsvp — auto-promote waitlist', () => {
 
     // Public attendees array now shows the host + promoted member, not the canceller.
     const att = await (await req(`/events/${eventId}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-host', 'M-second'])
+    expect(names(att.attendees)).toEqual(['M-host', 'M-second'])
   })
 
   it('cancel of waitlisted does NOT promote (silent)', async () => {
@@ -558,7 +562,7 @@ describe('theater meetups (kind: meetup)', () => {
       expect((await r.json()).status).toBe('confirmed')
     }
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
+    expect(names(att.attendees)).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
   })
 
   it('with capacity set → waitlists past the cap like house screenings', async () => {
@@ -629,7 +633,7 @@ describe('theater meetups (kind: meetup)', () => {
     const raw = JSON.parse(await env.ATTENDANCE_KV.get(`event:${created.id}`))
     expect(raw.capacity).toBeUndefined()
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
+    expect(names(att.attendees)).toEqual(['M-host', 'M-m1', 'M-m2', 'M-m3'])
   })
 
   it('host can PATCH a Letterboxd diary link; non-Letterboxd URLs rejected', async () => {
@@ -813,7 +817,7 @@ describe('POST/DELETE /events/:id/rsvp/guest — manual guest RSVPs', () => {
 
     // Public attend: mirror includes the host and the guest name.
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual(['M-host', 'Gwen Guest'])
+    expect(names(att.attendees)).toEqual(['M-host', 'Gwen Guest'])
   })
 
   it('admin add stamps addedBy: admin (never the operator email)', async () => {
@@ -1085,9 +1089,11 @@ describe('the host counts as an attendee', () => {
     const created = await (await createScreening(token)).json()
 
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual([member.name])
-    // Mirrored into KV, not only synthesized on read.
-    expect(JSON.parse(await env.ATTENDANCE_KV.get(`attend:${created.id}`))).toEqual([member.name])
+    expect(att.attendees).toEqual([{ id: member.id, name: member.name }])
+    // Mirrored into KV, not only synthesized on read — and keyed on hostId,
+    // so a host who renames is renamed in their own screening's list too.
+    expect(JSON.parse(await env.ATTENDANCE_KV.get(`attend:${created.id}`)))
+      .toEqual([{ id: member.id, name: member.name }])
   })
 
   it('the bulk map carries the host too (this is what the leaderboard snapshot reads)', async () => {
@@ -1096,7 +1102,7 @@ describe('the host counts as an attendee', () => {
     const created = await (await createScreening(token)).json()
 
     const { attendance } = await (await req('/events/attendance')).json()
-    expect(attendance[created.id]).toEqual([member.name])
+    expect(attendance[created.id]).toEqual([{ id: member.id, name: member.name }])
   })
 
   it('overlays the host on legacy rows whose attend:{id} predates the rule', async () => {
@@ -1111,9 +1117,13 @@ describe('the host counts as an attendee', () => {
     await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(all))
 
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual([member.name, 'Old Guest'])
+    expect(att.attendees).toEqual([
+      { id: member.id, name: member.name }, { id: null, name: 'Old Guest' },
+    ])
     const { attendance } = await (await req('/events/attendance')).json()
-    expect(attendance[created.id]).toEqual([member.name, 'Old Guest'])
+    expect(attendance[created.id]).toEqual([
+      { id: member.id, name: member.name }, { id: null, name: 'Old Guest' },
+    ])
   })
 
   it('never double-lists the host, and leaves non-hosted club events alone', async () => {
@@ -1123,12 +1133,41 @@ describe('the host counts as an attendee', () => {
     await req(`/events/${created.id}/rsvp/guest`, { method: 'POST', token, body: { name: 'Plus One' } })
 
     const att = await (await req(`/events/${created.id}/attendance`)).json()
-    expect(att.attendees).toEqual([member.name, 'Plus One'])
+    expect(names(att.attendees)).toEqual([member.name, 'Plus One'])
 
     // Admin-curated event (no hostId) keeps its exact stored list.
-    await env.ATTENDANCE_KV.put('attend:club-night', JSON.stringify(['Someone']))
+    await env.ATTENDANCE_KV.put('attend:club-night', JSON.stringify([{ id: 'm-x', name: 'Someone' }]))
     const club = await (await req('/events/club-night/attendance')).json()
-    expect(club.attendees).toEqual(['Someone'])
+    expect(club.attendees).toEqual([{ id: 'm-x', name: 'Someone' }])
+  })
+
+  it('a legacy bare-name host row is upgraded to the hostId, not duplicated', async () => {
+    const { token, member } = await getTokenFor('legacy-name-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+    // Pre-migration mirror: the host is present, but as a bare name.
+    await env.ATTENDANCE_KV.put(`attend:${created.id}`, JSON.stringify([member.name, 'Old Guest']))
+
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual([
+      { id: member.id, name: member.name }, { id: null, name: 'Old Guest' },
+    ])
+  })
+
+  it('a host who renames is renamed in the attendee list and the Hosted-by line', async () => {
+    const { token, member } = await getTokenFor('renaming-host@example.com')
+    captureEmails()
+    const created = await (await createScreening(token)).json()
+
+    const upd = await req('/member/update', { method: 'POST', token, body: { name: 'Renamed Host' } })
+    expect(upd.status).toBe(200)
+
+    const att = await (await req(`/events/${created.id}/attendance`)).json()
+    expect(att.attendees).toEqual([{ id: member.id, name: 'Renamed Host' }])
+
+    // Authenticated: house screenings are members-only in the public read.
+    const events = await (await req('/events', { token })).json()
+    expect(events.find(e => e.id === created.id).hostName).toBe('Renamed Host')
   })
 
   it('rejects a host RSVPing to their own screening — no self-eaten capacity slot', async () => {

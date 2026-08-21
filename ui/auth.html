@@ -3,6 +3,7 @@
 
 <script>
   import { state } from 'state'
+  import { getMembers, normalizeAttendees, attendanceTally } from 'app'
 
   const WORKER_ORIGIN = resolveWorkerOrigin()
 
@@ -127,23 +128,25 @@
       snapshot('/data/attendance.json', {}),
       authed('/events', null),
       authed('/voice/history', { clips: [] }),
+      getMembers({ limit: 1000 }).catch(function() { return { items: [] } }),
     ])
     const attendance = parts[0] || {}
     const events = Array.isArray(parts[1]) ? parts[1] : await snapshot('/data/events.json', [])
     const voice = parts[2] || { clips: [] }
+    const members = (parts[3] && parts[3].items) || []
 
-    // Attendance counts, same shape as the home-view leaderboard.
-    const counts = {}
-    Object.keys(attendance).forEach(function(id) {
-      (attendance[id] || []).forEach(function(n) { counts[n] = (counts[n] || 0) + 1 })
-    })
-    const attended = counts[member.name] || 0
+    // Attendance counts, same tally the home-view leaderboard uses — keyed on
+    // member id, with names resolved off the live members list rather than the
+    // 6-hourly snapshot.
+    const tally = attendanceTally(attendance, members)
+    const mine = member.id ? tally.get('id:' + member.id) : null
+    const attended = mine ? mine.count : 0
 
     // Ties share the better position: two members on 4 are both 2nd, and
     // nobody is 3rd.
     let rank = 0
     if (attended > 0) {
-      rank = Object.keys(counts).filter(function(n) { return counts[n] > attended }).length + 1
+      rank = Array.from(tally.values()).filter(function(r) { return r.count > attended }).length + 1
     }
 
     // Central-time today so lexical compares against the YYYY-MM-DD strings in
@@ -164,26 +167,14 @@
       }).length
     }
 
-    // Attendance is keyed by display name and a rename does not rewrite the
-    // old rows, so a zero is ambiguous. Raise the caveat only when it is
-    // actually suspicious: screenings have come and gone since this member
-    // joined, yet none are filed under the name they use now.
-    const joinedDay = String(member.joined || '').slice(0, 10)
-    const pastSinceJoin = events.filter(function(e) {
-      const d = e.date || ''
-      return d < today && (!joinedDay || d >= joinedDay)
-    }).length
-
     return {
       attended: attended,
       hosted: events.filter(function(e) { return e.hostId && e.hostId === member.id }).length,
       rsvps: rsvps,
       clips: (voice.clips || []).length,
-      name: member.name || '',
       newsletter: !!member.newsletter,
       rankLabel: rank ? ordinalOf(rank) : '',
       joinedLabel: monthYearOf(member.joined),
-      renamed: attended === 0 && pastSinceJoin > 0,
     }
   }
 
@@ -662,8 +653,12 @@
         // offered a button that can only fail.
         if (ev.hostId) return
         const attendance = await fetch('/data/attendance.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
-        const attendees = attendance[eventId] || []
-        if (attendees.includes(session.name)) {
+        // Match on member id. A legacy row that predates the backfill has no
+        // id, so fall back to the stored name for those alone — same rule the
+        // Worker's attendeeIndex() applies when it splices the entry out.
+        const attendees = normalizeAttendees(attendance[eventId])
+        const mine = attendees.some(a => a.id ? a.id === session.id : a.name === session.name)
+        if (mine) {
           this.update({ eventToEdit: ev })
         }
       } catch {}
@@ -790,9 +785,5 @@
       </li>
     </ul>
 
-    <p :if="stats.renamed" class="acct-stats-note">Attendance is recorded under
-      the display name used at the time. Screenings have happened since you
-      joined with none logged to <b>{ stats.name }</b> — if you have changed
-      your name, the earlier ones are counted under the old one.</p>
   </div>
 </div>

@@ -311,3 +311,110 @@ function sortBy(spec: string, arr: any[]) {
     return String(av ?? '').localeCompare(String(bv ?? ''))
   })
 }
+
+// --- Attendance entries ---
+//
+// Attendance is keyed on member id. The stored `name` is only a fallback, for
+// entries no member row can resolve: host-added guests, members who deleted
+// their account, and rows that predate the id migration. Resolving names off
+// the live members list means a rename shows up here the moment it is saved,
+// not on the next snapshot tick.
+//
+// Both the Worker's live response and the data/attendance.json snapshot can
+// hand back the legacy `[name]` shape — mid-deploy, or from a namespace that
+// hasn't been written since the migration — so every reader normalizes first.
+export interface Attendee { id: string | null; name: string }
+
+export function normalizeAttendees(value: any): Attendee[] {
+  if (!Array.isArray(value)) return []
+  const out: Attendee[] = []
+  for (const v of value) {
+    if (typeof v === 'string') {
+      if (v) out.push({ id: null, name: v })
+    } else if (v && typeof v === 'object') {
+      const id = typeof v.id === 'string' && v.id ? v.id : null
+      const name = typeof v.name === 'string' ? v.name : ''
+      if (id || name) out.push({ id, name })
+    }
+  }
+  return out
+}
+
+export function namesById(members: any[] = []): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const m of members) if (m && m.id && m.name) out[m.id] = m.name
+  return out
+}
+
+// Reverse index for counting rows that have no id yet — a row written before
+// the backfill still belongs to whoever answers to that name today. Names
+// shared by two members are dropped rather than guessed at, and a member who
+// renamed before the backfill matches nothing, which is what the backfill
+// script's --alias flag is for.
+export function idsByName(members: any[] = []): Record<string, string> {
+  const seen: Record<string, string> = {}
+  const dupes = new Set<string>()
+  for (const m of members) {
+    if (!m || !m.id || !m.name) continue
+    const k = String(m.name).trim().toLowerCase()
+    if (seen[k] && seen[k] !== m.id) dupes.add(k)
+    seen[k] = m.id
+  }
+  for (const k of dupes) delete seen[k]
+  return seen
+}
+
+// Mirrors resolveAttendees() in worker/src/index.js: rename by id, then drop
+// repeat ids and id-less rows whose name now duplicates an id-bearing one (a
+// half-backfilled event). Two different members sharing a display name both
+// survive — the id check runs first.
+export function resolveAttendees(entries: Attendee[], names: Record<string, string>): Attendee[] {
+  const resolved = entries.map(a => (a.id && names[a.id] ? { id: a.id, name: names[a.id] } : a))
+  const identified = new Set(resolved.filter(a => a.id).map(a => a.name))
+  const out: Attendee[] = []
+  const seenIds = new Set<string>()
+  const seenNames = new Set<string>()
+  for (const a of resolved) {
+    if (a.id) {
+      if (seenIds.has(a.id)) continue
+      seenIds.add(a.id)
+    } else {
+      if (identified.has(a.name) || seenNames.has(a.name)) continue
+      seenNames.add(a.name)
+    }
+    out.push(a)
+  }
+  return out
+}
+
+// Counting identity: the member id when there is one, else the name — so
+// guests and unmatched legacy rows still each count once.
+export function attendeeKey(a: Attendee): string {
+  return a.id ? `id:${a.id}` : `name:${a.name}`
+}
+
+export interface AttendanceTallyRow { id: string | null; name: string; count: number }
+
+// One pass over the whole attendance map → per-person totals. Both the
+// homepage leaderboard and the account-stats rank read this, so they can't
+// drift apart on how a person is identified.
+export function attendanceTally(
+  attendance: any, members: any[] = [],
+): Map<string, AttendanceTallyRow> {
+  const names = namesById(members)
+  const ids = idsByName(members)
+  const tally = new Map<string, AttendanceTallyRow>()
+  for (const eventId of Object.keys(attendance || {})) {
+    for (const a of resolveAttendees(normalizeAttendees(attendance[eventId]), names)) {
+      // Fold an un-backfilled row onto the member who still answers to that
+      // name, so the count is right before the backfill runs as well as after.
+      const id = a.id || ids[a.name.trim().toLowerCase()] || null
+      const entry = id && names[id] ? { id, name: names[id] } : a
+      const key = attendeeKey(entry)
+      const row = tally.get(key)
+      if (row) row.count++
+      else tally.set(key, { id: entry.id, name: entry.name, count: 1 })
+    }
+  }
+  return tally
+}

@@ -681,25 +681,56 @@ export function buildEventsSectionText(events) {
 // what a member sees on /edit. The two cannot share code — that one lives in
 // Nue dhtml module scope, this one in the admin's plain-module SPA — so the
 // semantics are pinned by tests/admin/lib.test.js instead. Change one, change
-// both: rank ties, the upcoming-events window, the exact-key watched lookup
-// and the rename heuristic all have to agree or the admin will quietly
-// contradict the member's own page.
+// both: rank ties, the upcoming-events window and the exact-key watched
+// lookup all have to agree or the admin will quietly contradict the member's
+// own page.
 //
 // The inputs are the raw KV shapes the admin already bulk-loads, so a whole
 // club costs the same handful of reads as one member.
+
+// Attendance entries are { id, name } keyed on member id; the name is only a
+// fallback for rows no member row resolves (guests, deleted members, rows that
+// predate the id migration). Mirrors normalizeAttendees in worker/src/index.js
+// and model/index.ts - the admin reads raw KV, so it meets both shapes.
+export function normalizeAttendees(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const v of value) {
+    if (typeof v === 'string') {
+      if (v) out.push({ id: null, name: v })
+    } else if (v && typeof v === 'object') {
+      const id = typeof v.id === 'string' && v.id ? v.id : null
+      const name = typeof v.name === 'string' ? v.name : ''
+      if (id || name) out.push({ id, name })
+    }
+  }
+  return out
+}
 
 // Hosts are overlaid onto attendance at READ time by the join Worker
 // (handleAttendanceMap), because screenings created before that change never
 // got the host mirrored into attend:{id}. data/attendance.json - the snapshot
 // the member card reads - is taken off that endpoint, so it already has them.
 // Raw attendance:all does NOT. Without this the admin undercounts every host
-// against their own card.
+// against their own card. Dedupe is by hostId, with a name fallback for the
+// pre-migration mirror that wrote the host as a bare string.
 export function attendanceWithHosts(attendance, events) {
-  const out = { ...(attendance || {}) }
+  const out = {}
+  for (const id of Object.keys(attendance || {})) out[id] = normalizeAttendees(attendance[id])
   for (const e of events || []) {
-    if (!e || !e.hostId || !e.hostName) continue
-    const names = out[e.id] || []
-    out[e.id] = names.includes(e.hostName) ? names : [e.hostName, ...names]
+    if (!e || !e.hostId) continue
+    const list = out[e.id] || []
+    if (list.some(a => a.id === e.hostId)) { out[e.id] = list; continue }
+    const legacy = e.hostName ? list.findIndex(a => !a.id && a.name === e.hostName) : -1
+    if (legacy !== -1) {
+      const next = list.slice()
+      next[legacy] = { id: e.hostId, name: e.hostName }
+      out[e.id] = next
+    } else if (e.hostName) {
+      out[e.id] = [{ id: e.hostId, name: e.hostName }, ...list]
+    } else {
+      out[e.id] = list
+    }
   }
   return out
 }
@@ -714,13 +745,34 @@ export function clubToday(now) {
 
 // One pass over the raw reads, shared by every member. Returns the derived
 // lookups computeMemberStats needs, so a club of N costs one pass, not N.
-export function buildStatsContext({ attendance, events, rsvps, voiceKeys, watched }, now) {
+export function buildStatsContext({ attendance, events, rsvps, voiceKeys, watched, members }, now) {
   const evs = events || []
   const withHosts = attendanceWithHosts(attendance, evs)
 
+  // Reverse name index, for rows that have no id yet: a row written before the
+  // backfill still belongs to whoever answers to that name today. Names shared
+  // by two members are dropped rather than guessed at. Mirrors idsByName() in
+  // model/index.ts.
+  const idsByName = {}
+  const dupeNames = new Set()
+  for (const m of members || []) {
+    if (!m || !m.id || !m.name) continue
+    const k = String(m.name).trim().toLowerCase()
+    if (idsByName[k] && idsByName[k] !== m.id) dupeNames.add(k)
+    idsByName[k] = m.id
+  }
+  for (const k of dupeNames) delete idsByName[k]
+
+  // Keyed on member id (name as the key of last resort for guests and
+  // unmatched legacy rows), so a rename no longer splits one member's history
+  // across two buckets.
   const counts = {}
   for (const id of Object.keys(withHosts)) {
-    for (const n of withHosts[id] || []) counts[n] = (counts[n] || 0) + 1
+    for (const a of withHosts[id] || []) {
+      const resolved = a.id || idsByName[String(a.name).trim().toLowerCase()] || null
+      const key = resolved ? `id:${resolved}` : `name:${a.name}`
+      counts[key] = (counts[key] || 0) + 1
+    }
   }
 
   const today = clubToday(now)
@@ -752,11 +804,11 @@ export function buildStatsContext({ attendance, events, rsvps, voiceKeys, watche
 
 export function computeMemberStats(member, ctx) {
   const m = member || {}
-  const attended = ctx.counts[m.name] || 0
+  const attended = (m.id && ctx.counts[`id:${m.id}`]) || 0
 
   // Ties share the better position: two members on 4 are both 2nd, nobody 3rd.
   const rank = attended > 0
-    ? Object.keys(ctx.counts).filter(n => ctx.counts[n] > attended).length + 1
+    ? Object.keys(ctx.counts).filter(k => ctx.counts[k] > attended).length + 1
     : 0
 
   // Exact-key lookup on the handle. watched keys carry Letterboxd display
@@ -769,15 +821,6 @@ export function computeMemberStats(member, ctx) {
   // render 12+ rather than lie. The member-facing card does not show it at all.
   const logged = (m.handle && ctx.watched[m.handle]) ? ctx.watched[m.handle].length : 0
   const atFilmCap = logged >= WATCHED_FEED_DEPTH
-
-  // A rename does not rewrite past attendance rows, so a zero is ambiguous.
-  // Only suspicious when screenings have come and gone since they joined with
-  // none filed under the name they use now.
-  const joinedDay = String(m.joined || '').slice(0, 10)
-  const pastSinceJoin = ctx.events.filter(e => {
-    const d = e.date || ''
-    return d < ctx.today && (!joinedDay || d >= joinedDay)
-  }).length
 
   return {
     id: m.id || '',
@@ -793,7 +836,6 @@ export function computeMemberStats(member, ctx) {
     atFilmCap,
     rsvps: ctx.rsvpByMember[m.id] || 0,
     clips: ctx.clipsByMember[m.id] || 0,
-    renamed: attended === 0 && pastSinceJoin > 0,
   }
 }
 

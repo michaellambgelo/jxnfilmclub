@@ -127,14 +127,20 @@ describe('POST /member/delete', () => {
   })
 
   describe('with { anonymize: true }', () => {
-    async function seedAttendance(eventId, names) {
-      await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(names))
+    // Attendance entries are { id, name }. Seeds take [name] or [id, name]
+    // pairs so a test can say which rows are id-keyed and which are the
+    // pre-migration bare-name kind.
+    async function seedAttendance(eventId, rows) {
+      const entries = rows.map(r => (Array.isArray(r) ? { id: r[0], name: r[1] } : { id: null, name: r }))
+      await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(entries))
     }
+    const names = (list) => list.map(a => a.name)
+    const read = async (key) => JSON.parse(await env.ATTENDANCE_KV.get(key))
 
-    it('replaces the member name with "former member" across every attend:* key', async () => {
-      const { token } = await getTokenFor('scrub@example.com', { name: 'Alice Scrub' })
-      await seedAttendance('evt-1', ['Alice Scrub', 'Bob', 'Carol'])
-      await seedAttendance('evt-2', ['Dan', 'Alice Scrub'])
+    it('replaces the member with "former member" across every attend:* key', async () => {
+      const { token, member } = await getTokenFor('scrub@example.com', { name: 'Alice Scrub' })
+      await seedAttendance('evt-1', [[member.id, 'Alice Scrub'], 'Bob', 'Carol'])
+      await seedAttendance('evt-2', ['Dan', [member.id, 'Alice Scrub']])
       await seedAttendance('evt-3', ['Bob', 'Carol']) // does NOT include the member
       mockFetch(async () => new Response('', { status: 204 }))
 
@@ -142,33 +148,53 @@ describe('POST /member/delete', () => {
       expect(res.status).toBe(200)
 
       // Each event that previously listed Alice now has "former member" in
-      // her slot; event without her is untouched.
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
-        .toEqual(['Bob', 'Carol', 'former member'])
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-2')))
-        .toEqual(['Dan', 'former member'])
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-3')))
-        .toEqual(['Bob', 'Carol'])
+      // her slot; event without her is untouched. The label carries no id —
+      // it is deliberately unresolvable.
+      expect(await read('attend:evt-1'))
+        .toEqual([{ id: null, name: 'Bob' }, { id: null, name: 'Carol' }, { id: null, name: 'former member' }])
+      expect(names(await read('attend:evt-2'))).toEqual(['Dan', 'former member'])
+      expect(names(await read('attend:evt-3'))).toEqual(['Bob', 'Carol'])
 
       // attendance:all aggregate stays in sync with the per-event keys.
       const all = JSON.parse(await env.ATTENDANCE_KV.get('attendance:all'))
-      expect(all['evt-1']).toContain('former member')
-      expect(all['evt-1']).not.toContain('Alice Scrub')
-      expect(all['evt-2']).toContain('former member')
+      expect(names(all['evt-1'])).toContain('former member')
+      expect(all['evt-1'].some(a => a.id === member.id)).toBe(false)
+      expect(names(all['evt-2'])).toContain('former member')
 
       // Member row still removed.
       expect(await env.MEMBERS_KV.get('member:scrub@example.com')).toBeNull()
     })
 
+    it('scrubs a row that predates the id backfill by matching its bare name', async () => {
+      const { token } = await getTokenFor('legacy-scrub@example.com', { name: 'Legacy Leaver' })
+      await seedAttendance('evt-1', ['Legacy Leaver', 'Bob'])
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      await fetchWith('/member/delete', 'POST', { anonymize: true }, token)
+      expect(names(await read('attend:evt-1'))).toEqual(['Bob', 'former member'])
+    })
+
+    it('scrubs only the leaver when another member shares their display name', async () => {
+      const { token, member } = await getTokenFor('twin-1@example.com', { name: 'Shared Name' })
+      await seedAttendance('evt-1', [[member.id, 'Shared Name'], ['other-id', 'Shared Name']])
+      mockFetch(async () => new Response('', { status: 204 }))
+
+      await fetchWith('/member/delete', 'POST', { anonymize: true }, token)
+      expect(await read('attend:evt-1')).toEqual([
+        { id: 'other-id', name: 'Shared Name' },
+        { id: null, name: 'former member' },
+      ])
+    })
+
     it('is idempotent when "former member" already exists from a previous anonymizer', async () => {
       const { token } = await getTokenFor('second@example.com', { name: 'Second Leaver' })
       // evt-1 already shows a former-member entry from someone earlier.
-      await env.ATTENDANCE_KV.put('attend:evt-1', JSON.stringify(['Second Leaver', 'former member', 'Charlie']))
+      await seedAttendance('evt-1', ['Second Leaver', 'former member', 'Charlie'])
       mockFetch(async () => new Response('', { status: 204 }))
 
       await fetchWith('/member/delete', 'POST', { anonymize: true }, token)
       // Single "former member" entry — no duplicate added.
-      const attendees = JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1'))
+      const attendees = names(await read('attend:evt-1'))
       expect(attendees.filter(n => n === 'former member')).toHaveLength(1)
       expect(attendees).not.toContain('Second Leaver')
     })
@@ -180,8 +206,7 @@ describe('POST /member/delete', () => {
 
       const res = await fetchWith('/member/delete', 'POST', { anonymize: false }, token)
       expect(res.status).toBe(200)
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
-        .toEqual(['Loud Member', 'Bob'])
+      expect(names(await read('attend:evt-1'))).toEqual(['Loud Member', 'Bob'])
     })
 
     it('best-effort dispatch: a 401 from GitHub still returns 200 to the client and records dispatch_failed:* audit', async () => {
@@ -235,8 +260,7 @@ describe('POST /member/delete', () => {
         body: '',
       })
       expect(res.status).toBe(200)
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-1')))
-        .toEqual(['Quiet Member'])
+      expect(names(await read('attend:evt-1'))).toEqual(['Quiet Member'])
     })
   })
 
@@ -286,8 +310,11 @@ describe('POST /member/delete', () => {
       expect(sent.subject).toMatch(/You're in for/)
 
       // attend mirror reflects the new confirmed list, behind the host (who
-      // attends their own screening without holding an RSVP slot).
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-up'))).toEqual(['Host', 'Waiting'])
+      // attends their own screening without holding an RSVP slot). Each entry
+      // carries the id it was mirrored from.
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-up'))).toEqual([
+        { id: 'host-1', name: 'Host' }, { id: 'w-1', name: 'Waiting' },
+      ])
     })
 
     it('scrubs past-event records directly: no emails, attend history untouched', async () => {
@@ -297,7 +324,9 @@ describe('POST /member/delete', () => {
       await env.ATTENDANCE_KV.put('rsvp:evt-past', JSON.stringify({
         confirmed: [entry(member), other], waitlist: [],
       }))
-      await env.ATTENDANCE_KV.put('attend:evt-past', JSON.stringify(['Purge Past', 'Other']))
+      await env.ATTENDANCE_KV.put('attend:evt-past', JSON.stringify([
+        { id: member.id, name: 'Purge Past' }, { id: 'o-1', name: 'Other' },
+      ]))
 
       const calls = []
       mockFetch(async (url, init) => {
@@ -311,9 +340,10 @@ describe('POST /member/delete', () => {
       const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:evt-past'))
       expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['o-1'])
       expect(calls.some(u => u.includes('api.resend.com'))).toBe(false)
-      // Names-only history is a separate concern (the anonymize opt-in).
-      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-past')))
-        .toEqual(['Purge Past', 'Other'])
+      // Attendance history is a separate concern (the anonymize opt-in).
+      expect(JSON.parse(await env.ATTENDANCE_KV.get('attend:evt-past'))).toEqual([
+        { id: member.id, name: 'Purge Past' }, { id: 'o-1', name: 'Other' },
+      ])
     })
 
     it('removes waitlist-only entries without promoting anyone', async () => {

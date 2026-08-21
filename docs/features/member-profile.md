@@ -127,16 +127,18 @@ lists are part of the club archive.
 *"Also remove my name from past event attendance"* checkbox that is
 disabled until the typed-email gate clears. When ticked, the client
 posts `{ anonymize: true }` to `/member/delete`; the Worker then walks
-every `attend:*` key in `ATTENDANCE_KV`, replaces the member's display
-name with the literal label `former member`, and patches the
+every `attend:*` key in `ATTENDANCE_KV`, replaces the member's entry
+with `{ id: null, name: 'former member' }`, and patches the
 `attendance:all` aggregate to match. Event counts stay intact; the
 identity is gone.
 
 Implementation notes:
 
-- The scrub matches on `member.name`, not `member.id` (attendance is
-  name-keyed). Members sharing a display name would be conflated; the
-  signup flow does not enforce unique display names.
+- The scrub matches on `member.id` (attendance is
+  [id-keyed](./attendance.md#identity)), falling back to an exact name
+  match only for rows that predate the id backfill. Two members sharing a
+  display name are no longer conflated — under the old name-keying, one
+  member leaving scrubbed both.
 - Idempotent: if a previous departing member already left a
   `former member` token in the same event, the new scrub doesn't add a
   duplicate.

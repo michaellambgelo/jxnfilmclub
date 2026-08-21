@@ -18,8 +18,7 @@ import {
   appendHtmlChunk, appendTextChunk,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
-  buildStatsContext, computeMemberStats,
-} from './lib.js'
+  buildStatsContext, computeMemberStats, normalizeAttendees } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -1083,18 +1082,18 @@ async function loadStats() {
     if (parsed) rsvps[k.name] = parsed
   }
 
+  const memberRows = members.keys.map(k => tryParse(members.values[k.name])).filter(Boolean)
+
   const ctx = buildStatsContext({
     attendance: tryParse(attendanceAgg.values['attendance:all']) || {},
     events: tryParse(eventsAgg.values['events:all']) || [],
     rsvps,
     voiceKeys: voiceRaw.keys.map(k => k.name),
     watched: watched || {},
+    members: memberRows,
   })
 
-  const rows = members.keys
-    .map(k => tryParse(members.values[k.name]))
-    .filter(Boolean)
-    .map(m => computeMemberStats(m, ctx))
+  const rows = memberRows.map(m => computeMemberStats(m, ctx))
 
   statsCache = { rows, ctx }
   return statsCache
@@ -1139,7 +1138,6 @@ function statsCardHtml(s) {
       </div>
       ${s.rankLabel ? `<p class="stat-rank">★ ${escapeHtml(s.rankLabel)} most screenings attended</p>` : ''}
       <p class="stat-meta">${meta.join(' · ')}</p>
-      ${s.renamed ? `<p class="stat-warn">No attendance is filed under <b>${escapeHtml(s.name)}</b>, though screenings have happened since they joined. Attendance is keyed by display name and a rename does not rewrite past rows — the earlier ones are likely under the old name.</p>` : ''}
     </div>`
 }
 
@@ -1173,7 +1171,7 @@ async function renderStats() {
       <tbody>
         ${sorted.map(s => `
           <tr data-search="${attr([s.name, s.handle, s.id].filter(Boolean).join(' ').toLowerCase())}">
-            <td>${escapeHtml(s.name)}${s.renamed ? ' <span class="stat-flag" title="No attendance filed under this name — possible rename">rename?</span>' : ''}</td>
+            <td>${escapeHtml(s.name)}</td>
             <td>${escapeHtml(String(s.attended))}</td>
             <td>${s.rankLabel ? escapeHtml(s.rankLabel) : '<span class="muted">—</span>'}</td>
             <td>${escapeHtml(String(s.hosted))}</td>
@@ -1245,7 +1243,9 @@ async function renderEvents() {
   attendanceCache = {}
   for (const k of attendanceRaw.keys) {
     const eventId = k.name.slice('attend:'.length)
-    attendanceCache[eventId] = tryParse(attendanceRaw.values[k.name]) || []
+    // Entries are { id, name } keyed on member id; normalizeAttendees also
+    // accepts the pre-migration [name] rows still sitting in KV.
+    attendanceCache[eventId] = normalizeAttendees(tryParse(attendanceRaw.values[k.name]))
   }
   const rsvpRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'rsvp:' })}`)
   rsvpCache = {}
@@ -1362,9 +1362,9 @@ function renderEventCards() {
       <div class="attendance">
         <strong>Attendance (${(attendanceCache[e.id] || []).length})</strong>
         <ul>
-          ${(attendanceCache[e.id] || []).map(name => `
-            <li>${escapeHtml(name)}
-              <button class="danger" data-action="attend-rm" data-event="${attr(e.id)}" data-name="${attr(name)}">remove</button>
+          ${(attendanceCache[e.id] || []).map((a, ai) => `
+            <li>${escapeHtml(a.name)}${a.id ? '' : ' <span class="stat-flag" title="No member id on this row — it predates the id migration, or matched no member">unlinked</span>'}
+              <button class="danger" data-action="attend-rm" data-event="${attr(e.id)}" data-idx="${ai}">remove</button>
             </li>
           `).join('') || '<li class="muted">no attendees</li>'}
         </ul>
@@ -1681,9 +1681,15 @@ document.addEventListener('click', async (e) => {
       await switchTab(currentTab)
     }
     else if (a === 'attend-rm') {
-      const { event: eventId, name } = btn.dataset
-      if (!confirm(`Remove ${name} from attendance for ${eventId}?`)) return
-      const list = (attendanceCache[eventId] || []).filter(n => n !== name)
+      // Index, not name: two attendees can share a display name, and only the
+      // one the operator clicked should go.
+      const eventId = btn.dataset.event
+      const idx = Number(btn.dataset.idx)
+      const current = attendanceCache[eventId] || []
+      const entry = current[idx]
+      if (!entry) return
+      if (!confirm(`Remove ${entry.name} from attendance for ${eventId}?`)) return
+      const list = current.filter((_, i) => i !== idx)
       await putKv(`attend:${eventId}`, JSON.stringify(list), 'ATTENDANCE_KV')
       // Patch the aggregate too so /events/attendance reflects the change.
       const aggregateRaw = await loadKv('attendance:all', 'ATTENDANCE_KV')
@@ -1691,7 +1697,7 @@ document.addEventListener('click', async (e) => {
       const aggregate = tryParse(aggregateValue) || {}
       aggregate[eventId] = list
       await putKv('attendance:all', JSON.stringify(aggregate), 'ATTENDANCE_KV')
-      toast(`Removed ${name} from ${eventId}`)
+      toast(`Removed ${entry.name} from ${eventId}`)
       await switchTab(currentTab)
     }
     // --- Voice tab actions (mutations via the join Worker — never raw KV,

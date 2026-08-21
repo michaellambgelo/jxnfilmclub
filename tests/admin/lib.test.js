@@ -348,11 +348,23 @@ const STATS_EVENTS = [
   { id: 'e-future2', date: '2099-06-01' },
 ]
 
+// Attendance entries are { id, name } keyed on the member id. 'e-past-2'
+// deliberately still holds Ann under an OLD display name: the whole point of
+// the id keying is that her count follows her rename.
 const STATS_ATTENDANCE = {
-  'e-past-1': ['Ann Attendee', 'Bob Buff', 'Cara Cinema'],
-  'e-past-2': ['Ann Attendee', 'Bob Buff'],
-  'e-hosted': ['Ann Attendee'],
+  'e-past-1': [
+    { id: 'id-ann', name: 'Ann Attendee' },
+    { id: 'id-bob', name: 'Bob Buff' },
+    { id: 'id-cara', name: 'Cara Cinema' },
+  ],
+  'e-past-2': [
+    { id: 'id-ann', name: 'Ann Oldname' },
+    { id: 'id-bob', name: 'Bob Buff' },
+  ],
+  'e-hosted': [{ id: 'id-ann', name: 'Ann Attendee' }],
 }
+
+const attendeeNames = (list) => (list || []).map(a => a.name)
 
 function ctxFor(overrides = {}) {
   return buildStatsContext({
@@ -366,26 +378,43 @@ function ctxFor(overrides = {}) {
     },
     voiceKeys: ['voice:general:id-ann', 'voice:muppets:id-ann', 'voice:general:id-bob'],
     watched: { michaellamb: [1, 2, 3], MixedCase: [1] },
+    members: [
+      { id: 'id-ann', name: 'Ann Attendee' },
+      { id: 'id-bob', name: 'Bob Buff' },
+      { id: 'id-cara', name: 'Cara Cinema' },
+      { id: 'id-hosty', name: 'Hosty McHost' },
+    ],
     ...overrides,
   }, new Date('2026-08-19T12:00:00Z'))
 }
 
 describe('attendanceWithHosts', () => {
-  it('overlays the host onto their own screening', () => {
+  it('overlays the host onto their own screening, keyed on hostId', () => {
     const out = attendanceWithHosts(STATS_ATTENDANCE, STATS_EVENTS)
-    expect(out['e-hosted']).toEqual(['Hosty McHost', 'Ann Attendee'])
+    expect(out['e-hosted']).toEqual([
+      { id: 'id-hosty', name: 'Hosty McHost' },
+      { id: 'id-ann', name: 'Ann Attendee' },
+    ])
   })
 
   it('is idempotent — a host already present is not duplicated', () => {
-    const already = { 'e-hosted': ['Hosty McHost', 'Ann Attendee'] }
+    const already = { 'e-hosted': [{ id: 'id-hosty', name: 'Hosty McHost' }] }
     expect(attendanceWithHosts(already, STATS_EVENTS)['e-hosted'])
-      .toEqual(['Hosty McHost', 'Ann Attendee'])
+      .toEqual([{ id: 'id-hosty', name: 'Hosty McHost' }])
+  })
+
+  it('upgrades a legacy bare-name host row in place rather than duplicating it', () => {
+    const legacy = { 'e-hosted': ['Hosty McHost', 'Ann Attendee'] }
+    expect(attendanceWithHosts(legacy, STATS_EVENTS)['e-hosted']).toEqual([
+      { id: 'id-hosty', name: 'Hosty McHost' },
+      { id: null, name: 'Ann Attendee' },
+    ])
   })
 
   it('leaves club screenings (no host) untouched and does not mutate the input', () => {
-    const input = { 'e-past-1': ['Ann Attendee'] }
+    const input = { 'e-past-1': [{ id: 'id-ann', name: 'Ann Attendee' }] }
     const out = attendanceWithHosts(input, STATS_EVENTS)
-    expect(out['e-past-1']).toEqual(['Ann Attendee'])
+    expect(out['e-past-1']).toEqual([{ id: 'id-ann', name: 'Ann Attendee' }])
     expect(input['e-hosted']).toBeUndefined()
   })
 })
@@ -397,6 +426,23 @@ describe('computeMemberStats', () => {
     const hosty = computeMemberStats({ id: 'id-hosty', name: 'Hosty McHost' }, ctx)
     expect(hosty.attended).toBe(1)
     expect(hosty.hosted).toBe(1)
+  })
+
+  it('folds a pre-backfill row with no id onto the member who answers to that name', () => {
+    // Parity with attendanceTally() in model/index.ts: an un-backfilled row
+    // still counts for its member as long as the name has not changed.
+    const ctx = ctxFor({
+      attendance: { 'e-past-1': ['Bob Buff'] },
+      members: [{ id: 'id-bob', name: 'Bob Buff' }],
+    })
+    expect(computeMemberStats({ id: 'id-bob', name: 'Bob Buff' }, ctx).attended).toBe(1)
+  })
+
+  it('counts a renamed member under their id, not their old display name', () => {
+    // Ann appears as 'Ann Oldname' on e-past-2. Name-keyed counting scored her
+    // 2; id-keyed scores all 3.
+    const ann = computeMemberStats({ id: 'id-ann', name: 'Ann Attendee' }, ctxFor())
+    expect(ann.attended).toBe(3)
   })
 
   it('ranks ties to the better position, leaving the next place vacant', () => {
@@ -454,19 +500,6 @@ describe('computeMemberStats', () => {
     expect(computeMemberStats({ id: 'id-cara', name: 'Cara Cinema' }, ctx).clips).toBe(0)
   })
 
-  it('flags a likely rename: joined before past screenings, yet attended none', () => {
-    const ctx = ctxFor()
-    const renamed = computeMemberStats({ id: 'id-ghost', name: 'New Name', joined: '2026-01-01' }, ctx)
-    expect(renamed.renamed).toBe(true)
-
-    // Joined after every past screening — a zero is simply "not been yet".
-    const fresh = computeMemberStats({ id: 'id-fresh', name: 'Fresh', joined: '2026-08-01' }, ctx)
-    expect(fresh.renamed).toBe(false)
-
-    // Attendance on the board is never a rename, whenever they joined.
-    const present = computeMemberStats({ id: 'id-ann', name: 'Ann Attendee', joined: '2026-01-01' }, ctx)
-    expect(present.renamed).toBe(false)
-  })
 })
 
 describe('ordinal', () => {

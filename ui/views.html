@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally } from 'app'
 </script>
 
 
@@ -273,12 +273,11 @@
         .slice(0, 4)
 
       // ----- leaders: attendance counts across all events -----
-      const counts = {}
-      Object.keys(attendance).forEach(function(id) {
-        (attendance[id] || []).forEach(function(n) { counts[n] = (counts[n] || 0) + 1 })
-      })
-      const leaders = Object.keys(counts)
-        .map(function(n) { return { n: n, c: counts[n] } })
+      // Counted per member id, and the names come from the live members list
+      // rather than the snapshot — so a rename lands here immediately instead
+      // of waiting out the 6h snapshot cron.
+      const leaders = Array.from(attendanceTally(attendance, members).values())
+        .map(function(row) { return { n: row.name, c: row.count } })
         .sort(function(a, b) { return b.c - a.c })
         .slice(0, 5)
 
@@ -632,7 +631,7 @@
     <event-card :each="el in items" key="{ el.id }"
       :event="el"
       :session="session"
-      :handles="handlesByName"
+      :handles="handlesById"
       :avatars="avatars"
       :attendees="attendance[el.id] || []"/>
   </div>
@@ -696,12 +695,21 @@
       } catch { return null }
     }
 
+    // The Worker already resolves each entry's name off its member id, so the
+    // only work left here is tolerating a legacy [name] payload from a worker
+    // that predates the id migration.
     async function loadAttendance() {
       try {
         const res = await fetch(`${WORKER_ORIGIN}/events/attendance`)
         if (res.ok) {
           const data = await res.json()
-          if (data?.attendance) return { attendance: data.attendance, error: false }
+          if (data?.attendance) {
+            const map = {}
+            for (const id of Object.keys(data.attendance)) {
+              map[id] = normalizeAttendees(data.attendance[id])
+            }
+            return { attendance: map, error: false }
+          }
         }
       } catch {}
       return { attendance: {}, error: true }
@@ -724,7 +732,7 @@
 
     async mounted() {
       const session = getSession()
-      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesByName: {}, avatars: {} })
+      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
       // Remembered device with a lapsed token: trade the device token for a
       // fresh session in the background so RSVP affordances light up without
       // a trip through /signin. jxnfcEnsureSession is installed by the auth
@@ -741,13 +749,15 @@
         getAvatars().catch(() => ({})),
       ])
       const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
-      const handlesByName = {}
+      // Keyed by member id, not display name: an attendee row carries the id,
+      // and two members could share a name.
+      const handlesById = {}
       for (const m of members) {
-        if (m.handle) handlesByName[m.name] = m.handle
+        if (m.handle) handlesById[m.id] = m.handle
       }
       // Avatars ride the same update as venues/handles — a later update would
       // detach every event-card sibling and reset scroll (see the card note).
-      this.update({ venues, handlesByName, avatars })
+      this.update({ venues, handlesById, avatars })
       await this.reload()
     }
   </script>
@@ -805,10 +815,10 @@
     <div class="event-attendance">
       <div :if="!event.hostId" class="attendance-count">{ (attendees || []).length } attended</div>
       <div :if="(attendees || []).length" class="attendance-list">
-        <span :each="n in attendees" key="{ n }" class="attendee">
-          <a :if="handles[n]" href="https://letterboxd.com/{ handles[n] }/"
-            target="_blank" rel="noopener">{ n }</a>
-          <span :if="!handles[n]">{ n }</span>
+        <span :each="a in attendees" key="{ a.id || a.name }" class="attendee">
+          <a :if="handleFor(a)" href="https://letterboxd.com/{ handleFor(a) }/"
+            target="_blank" rel="noopener">{ a.name }</a>
+          <span :if="!handleFor(a)">{ a.name }</span>
         </span>
       </div>
       <button :if="!event.hostId && canToggle() && !attended()" type="button" class="attend-btn"
@@ -901,13 +911,19 @@
       }
     }
 
-    // Host avatar via the name->handle map + avatar map props. Lives here
+    // Host avatar via the id->handle map + avatar map props. Lives here
     // because brace literals inside attribute values are template syntax.
     this.hostAvatarSrc = function() {
       const handles = this.handles || {}
       const avatars = this.avatars || {}
-      const handle = handles[this.event.hostName]
+      const handle = handles[this.event.hostId]
       return handle ? (avatars[handle] || '') : ''
+    }
+
+    // Attendee rows are { id, name }. Only a member id resolves to a
+    // Letterboxd handle — guests and pre-migration rows render as plain text.
+    this.handleFor = function(a) {
+      return (a && a.id && (this.handles || {})[a.id]) || ''
     }
 
     this.patchLbUri = async function(uri) {
@@ -982,13 +998,14 @@
     // host-less count. Mirrors the worker, where capacity gates
     // rsvp.confirmed only.
     this.guestCount = function() {
-      const host = this.event.hostName
-      return (this.attendees || []).filter(function(n) { return n !== host }).length
+      const host = this.event.hostId
+      return (this.attendees || []).filter(function(a) { return a.id !== host }).length
     }
 
     this.canToggle = function() { return !!this.session }
     this.attended = function() {
-      return this.session && this.session.name && (this.attendees || []).includes(this.session.name)
+      const me = this.session && this.session.id
+      return !!me && (this.attendees || []).some(function(a) { return a.id === me })
     }
     this.isFuture = function() {
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
@@ -1024,7 +1041,7 @@
         if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
         this.update({ myRsvp: { status: data.status, position: data.position }, busy: false })
         if (data.status === 'confirmed') {
-          const list = (this.attendees || []).concat([this.session.name])
+          const list = (this.attendees || []).concat([{ id: this.session.id, name: this.session.name }])
           this.update({ attendees: list })
         }
       } catch (err) {
@@ -1042,8 +1059,8 @@
         })
         const data = await res.json().catch(function () { return {} })
         if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
-        const me = this.session.name
-        const list = (this.attendees || []).filter(function (n) { return n !== me })
+        const me = this.session.id
+        const list = (this.attendees || []).filter(function (a) { return a.id !== me })
         this.update({ myRsvp: { status: 'none' }, attendees: list, busy: false })
       } catch (err) {
         this.update({ busy: false, rsvpError: err.message })
@@ -1118,8 +1135,8 @@
     // NOTE: no backticks or apostrophes in view script comments — they trip
     // the dhtml compiler serialization (see the sibling note in event-card).
     this.isFull = function() {
-      const host = this.event.hostName
-      const guests = (this.attendees || []).filter(function(n) { return n !== host }).length
+      const host = this.event.hostId
+      const guests = (this.attendees || []).filter(function(a) { return a.id !== host }).length
       return !!(this.event.capacity && guests >= this.event.capacity)
     }
 

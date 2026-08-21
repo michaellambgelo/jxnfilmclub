@@ -123,10 +123,11 @@ be used to enumerate members.
 
 `scripts/refresh_letterboxd.py` runs on a 6-hour GitHub Actions cron
 (`.github/workflows/refresh-letterboxd.yml`). Walks each member's
-Letterboxd RSS, writes `data/watched.json` (4 most recent diary
-entries per member) and `data/attendance.json` (events → member list,
-matched by the `jxnfilmclub` diary tag). *RSS field mapping needs
-verification against a real feed.*
+Letterboxd RSS and writes `data/watched.json` (recent diary entries per
+member). It has not touched `data/attendance.json` since attendance
+became self-reported: that ledger is snapshotted off the Worker by
+`snapshot-attendance.yml`, and its entries are `{ id, name }` keyed on
+member id — see [attendance.md § Identity](./features/attendance.md#identity).
 
 ### 6. Events
 

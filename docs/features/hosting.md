@@ -18,8 +18,11 @@ view (`GET /events/:id/host`).
 
 The host counts as an attendee of their own screening but never holds an RSVP
 slot: capacity is guest seats, `POST /events/:id/rsvp` 409s for the host, and
-the host name is mirrored/overlaid into the public attendee list. See
+the host is mirrored/overlaid into the public attendee list, as an entry keyed
+on `hostId`. See
 [attendance.md § Hosts count as attendees](./attendance.md#hosts-count-as-attendees).
+A host who renames is renamed in that list and in the "Hosted by …" line —
+both resolve off `hostId` (see [§ Identity](./attendance.md#identity)).
 
 ## Privacy model
 
@@ -56,8 +59,8 @@ deleted. `scrubPastEvents()` in `worker/src/index.js` delivers on that:
 - Sweeps orphaned `rsvp:{id}` records whose event row is gone (the admin
   dashboard writes KV directly and can orphan one; `handleDeleteEvent` cleans
   up after itself).
-- The names-only `attend:{eventId}` history and the public event listing are
-  untouched — they never contained emails or addresses.
+- The `attend:{eventId}` history (`{ id, name }` entries — no emails, no
+  addresses) and the public event listing are untouched.
 - `POST /events/:id/rsvp` rejects screenings whose `date` is past (409), so a
   late RSVP can't recreate a scrubbed record.
 - Account deletion also purges the member's entries from every `rsvp:*` record

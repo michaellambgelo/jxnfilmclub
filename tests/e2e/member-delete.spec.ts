@@ -93,17 +93,20 @@ test.describe('remove membership (/edit danger zone)', () => {
   test('Anonymize checkbox is disabled until email matches, and scrubs past attendance when ticked', async ({ page, request }) => {
     const EMAIL = 'anonymize-e2e@example.com'
     const NAME = 'Quiet Departure'
-    await signInAs(page, EMAIL, { name: NAME })
+    const member = await signInAs(page, EMAIL, { name: NAME })
 
     // Seed past attendance for this member directly in ATTENDANCE_KV via the
-    // E2E shim. Two events with the member's name, one without.
-    const seedAttend = async (eventId: string, attendees: string[]) =>
+    // E2E shim. Entries are { id, name } keyed on member id; past-evt-b is
+    // deliberately a pre-migration bare-name row, which the scrub still has to
+    // match. Two events list the member, one does not.
+    const entry = (id: string | null, name: string) => ({ id, name })
+    const seedAttend = async (eventId: string, attendees: unknown[]) =>
       request.post(`${WORKER_ORIGIN}/__test/kv`, {
         data: { ns: 'ATTENDANCE_KV', key: `attend:${eventId}`, value: JSON.stringify(attendees) },
       })
-    await seedAttend('past-evt-a', [NAME, 'Other Member'])
+    await seedAttend('past-evt-a', [entry(member.id, NAME), entry('other-1', 'Other Member')])
     await seedAttend('past-evt-b', ['Other Member', NAME, 'Third Person'])
-    await seedAttend('past-evt-c', ['Other Member'])
+    await seedAttend('past-evt-c', [entry('other-1', 'Other Member')])
 
     const checkbox = page.locator('input[type="checkbox"][name="anonymize"]')
 
@@ -134,18 +137,26 @@ test.describe('remove membership (/edit danger zone)', () => {
       const { value } = await res.json()
       return value ? JSON.parse(value) : null
     }
-    expect(await readAttend('past-evt-a')).toEqual(['Other Member', 'former member'])
-    expect(await readAttend('past-evt-b')).toEqual(['Other Member', 'Third Person', 'former member'])
+    const attendeeNames = (list: any[] | null) => (list || []).map((a) => a.name)
+    expect(await readAttend('past-evt-a')).toEqual([
+      { id: 'other-1', name: 'Other Member' },
+      { id: null, name: 'former member' },
+    ])
+    expect(attendeeNames(await readAttend('past-evt-b')))
+      .toEqual(['Other Member', 'Third Person', 'former member'])
     // Event that did NOT list the member is untouched.
-    expect(await readAttend('past-evt-c')).toEqual(['Other Member'])
+    expect(await readAttend('past-evt-c')).toEqual([{ id: 'other-1', name: 'Other Member' }])
   })
 
   test('Anonymize defaults to opt-out: clicking Remove without ticking leaves attendance intact', async ({ page, request }) => {
     const EMAIL = 'optout@example.com'
     const NAME = 'Stays In Archive'
-    await signInAs(page, EMAIL, { name: NAME })
+    const member = await signInAs(page, EMAIL, { name: NAME })
     await request.post(`${WORKER_ORIGIN}/__test/kv`, {
-      data: { ns: 'ATTENDANCE_KV', key: 'attend:optout-evt', value: JSON.stringify([NAME, 'Bystander']) },
+      data: {
+        ns: 'ATTENDANCE_KV', key: 'attend:optout-evt',
+        value: JSON.stringify([{ id: member.id, name: NAME }, { id: 'other-1', name: 'Bystander' }]),
+      },
     })
 
     await page.locator('input[name="confirm"]').fill(EMAIL)
@@ -156,6 +167,6 @@ test.describe('remove membership (/edit danger zone)', () => {
     const res = await request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=attend:optout-evt`)
     const attendees = JSON.parse((await res.json()).value)
     // The member's name stays in the archive; "former member" never appears.
-    expect(attendees).toEqual([NAME, 'Bystander'])
+    expect(attendees).toEqual([{ id: member.id, name: NAME }, { id: 'other-1', name: 'Bystander' }])
   })
 })

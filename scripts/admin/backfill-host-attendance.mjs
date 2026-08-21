@@ -73,20 +73,26 @@ console.log(`env=${ENV || 'production'} mode=${APPLY ? 'APPLY' : 'dry-run'}`)
 const events = parse(kvGet('events:all')) || []
 const hosts = new Map()
 for (const ev of events) {
-  if (ev && ev.id && ev.hostId && ev.hostName) hosts.set(ev.id, ev.hostName)
+  if (ev && ev.id && ev.hostId && ev.hostName) hosts.set(ev.id, { id: ev.hostId, name: ev.hostName })
 }
 console.log(`events: ${events.length}, hosted screenings: ${hosts.size}`)
 
 const all = parse(kvGet('attendance:all')) || {}
 let changed = 0
 
-for (const [eventId, hostName] of hosts) {
+// Attendance entries are { id, name } keyed on member id. A row that still
+// holds bare names is left in that shape apart from the host we insert —
+// backfill-attendance-ids.mjs is the pass that links the rest.
+for (const [eventId, host] of hosts) {
   const key = `attend:${eventId}`
   // Canonical per-event key wins; the aggregate covers rows that never got one.
   const current = parse(kvGet(key).trim() || 'null') || all[eventId] || []
-  if (current.includes(hostName)) continue
+  const present = current.some(a => (
+    a && typeof a === 'object' ? a.id === host.id || (!a.id && a.name === host.name) : a === host.name
+  ))
+  if (present) continue
 
-  const next = [hostName, ...current]
+  const next = [{ id: host.id, name: host.name }, ...current]
   changed++
   console.log(`  + ${eventId}: ${JSON.stringify(current)} -> ${JSON.stringify(next)}`)
   all[eventId] = next

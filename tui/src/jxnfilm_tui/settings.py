@@ -45,7 +45,7 @@ KV_PREFIXES: tuple[Prefix, ...] = (
     Prefix("event:", "Events", "event:{id}"),
     Prefix("events:", "Events aggregate", "events:all", True),
     Prefix("rsvp:", "RSVPs", "scrubbed 30 days after the event"),
-    Prefix("attend:", "Attendance", "attend:{id}"),
+    Prefix("attend:", "Attendance", "attend:{id} — [{id, name}] keyed on member id"),
     Prefix("attendance:", "Attendance aggregate",
            "attendance:all omits hosts — the Worker overlays them at read time, "
            "so this raw row is correctly incomplete", True),

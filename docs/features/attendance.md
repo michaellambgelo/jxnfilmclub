@@ -2,6 +2,8 @@
 
 Authenticated members can self-report attendance at events. The button on each event row toggles between "I was there" and "Remove me" based on the signed-in member's current state. `ATTENDANCE_KV` is the single live source of truth; a scheduled workflow snapshots KV into the archival `data/attendance.json` ledger every 6 hours, and the ledger seeds KV exactly once when a new namespace is brought up.
 
+Attendance is keyed on the **member id**. See [Identity](#identity) — that is what makes a rename land everywhere at once.
+
 ## Mark Attendance
 
 ```mermaid
@@ -16,7 +18,7 @@ sequenceDiagram
     User->>Events: Clicks "I was there"
     Events->>Worker: POST /events/{id}/attend (bearer token)
     Worker->>Worker: Read attend:{id} (fallback to attendance:all)
-    Worker->>Worker: Append name; write-through to<br/>attend:{id} + attendance:all
+    Worker->>Worker: Append { id, name }; write-through to<br/>attend:{id} + attendance:all
     Worker-->>Events: { attendees: [...] }
     Events->>User: Button flips to "Remove me",<br/>name appears in attendee list
 
@@ -37,7 +39,7 @@ sequenceDiagram
     User->>Events: Sees "Remove me" on an attended event
     User->>Events: Clicks "Remove me"
     Events->>Worker: DELETE /events/{id}/attend (bearer token)
-    Worker->>Worker: Splice name; write-through to<br/>attend:{id} + attendance:all
+    Worker->>Worker: Splice by member id; write-through to<br/>attend:{id} + attendance:all
     Worker-->>Events: { attendees: [...] }
     Events->>User: Button flips back to "I was there"
 
@@ -64,11 +66,11 @@ stateDiagram-v2
 
 | Key | Role |
 |-----|------|
-| `attend:{eventId}` | Canonical per-event attendee array |
-| `attendance:all` | Aggregate `{ eventId: [names] }` — the bulk endpoint's O(1) read path |
+| `attend:{eventId}` | Canonical per-event attendee array of `{ id, name }` entries |
+| `attendance:all` | Aggregate `{ eventId: [{ id, name }] }` — the bulk endpoint's O(1) read path |
 | `attendance:bootstrapped` | Marker; presence means the repo→KV seed has already run |
 
-**Reads:** `GET /events/attendance` reads `attendance:all` plus `events:all` (for the host overlay below). `GET /events/:id/attendance` reads `attend:{id}` (falling back to the aggregate for events that don't have a per-event key yet) plus `event:{id}`. The hot path never fetches from GitHub raw — the bulk endpoint reads `events:all` raw rather than through `readEventsAll()` precisely so it can't trigger the events bootstrap.
+**Reads:** `GET /events/attendance` reads `attendance:all` plus `events:all` (for the host overlay below) plus `members:all` (to resolve each entry's current name). `GET /events/:id/attendance` reads `attend:{id}` (falling back to the aggregate for events that don't have a per-event key yet) plus `event:{id}` plus `members:all`. The hot path never fetches from GitHub raw — the bulk endpoint reads `events:all` and `members:all` raw rather than through `readEventsAll()` / `readMembersAll()` precisely so it can't trigger either bootstrap.
 
 **Writes:** `POST`/`DELETE /events/:id/attend` writes through to both `attend:{id}` and `attendance:all`, so the next bulk read reflects the change without extra work.
 
@@ -76,7 +78,51 @@ stateDiagram-v2
 
 The UI hydrates from `GET /events/attendance`. If the Worker is unreachable it renders an "attendance data is temporarily unavailable" banner rather than falling back to a potentially-stale static JSON; that keeps the displayed answer consistent with whatever the next successful fetch returns. After a click, the UI trusts the Worker's POST/DELETE response and mutates its local attendance map in place — no reconcile round-trip.
 
-The attendee identifier is the member's **display name** (not Letterboxd handle), so members without Letterboxd can participate.
+### Identity
+
+An attendee entry is `{ id, name }`:
+
+| Field | Meaning |
+|-------|---------|
+| `id` | The member id — or a synthetic `guest:xxxxxxxx` id for a host-added guest, or `null` for a row that predates the id migration and matched no member |
+| `name` | A display-name **snapshot**. Only a fallback: it is what gets rendered when `id` resolves to nothing |
+
+The id is canonical. Every read resolves names off `members:all`, so **a member who changes their display name is renamed everywhere their name appears at once** — attendee lists, the homepage leaderboard, their account stats, the host's guest list, the "Hosted by …" line, and (on the next cron tick) the `data/attendance.json` snapshot. Attendance was keyed on the display name until August 2026, which meant a rename orphaned every past row; the admin dashboard carried a "rename?" flag to surface exactly that, and it is gone because the condition can no longer arise.
+
+Consequences worth knowing:
+
+- **Letterboxd is still optional.** The identifier is the member id, never the handle, so members without Letterboxd participate the same way — they just render as plain text instead of a profile link.
+- **Two members can share a display name.** They are separate rows and separate leaderboard entries. Under name-keying they were silently conflated, including by the deletion scrub.
+- **Every read path accepts the legacy `[name]` shape** (`normalizeAttendees` in `worker/src/index.js`, `model/index.ts`, and `admin/lib.js`), so nothing breaks before the backfill runs. A legacy row still counts toward the member who answers to that name today — see `attendanceTally`.
+- **`scripts/admin/backfill-attendance-ids.mjs`** attaches ids to the rows already in KV; it is what makes *old* rows follow a rename too. A member who renamed *before* it ran matches nobody, and has to be named explicitly with `--alias "Old Name=memberId"`.
+
+#### The one-time migration
+
+`data/attendance.json` was converted in the repo when the id keying landed; the KV pass is the same mapping, and one member had already renamed by then:
+
+```bash
+node scripts/admin/backfill-attendance-ids.mjs --alias "mia barranco=0cykofv8f6"          # dry run, production
+node scripts/admin/backfill-attendance-ids.mjs --alias "mia barranco=0cykofv8f6" --apply
+gh workflow run snapshot-attendance.yml
+```
+
+Two names are deliberately left at `id: null`, and re-running the script will keep reporting them as unmatched:
+
+| Name | Why it stays unlinked |
+|------|----------------------|
+| `JSyd` (4 screenings) | Removed her membership without ticking the anonymize box, so the name stays as historical record — that is the documented default (see [member-profile.md](./member-profile.md)). There is no member row left to link to. |
+| `Bryan` (1 screening) | No membership record ever existed — a guest. |
+
+Both still count on the leaderboard under their own name; `attendanceTally` keys an id-less row on its name.
+
+### Where a name is still copied
+
+Two rows hold a name the member does not own, and both are resolved off an id at read time:
+
+- `event.hostName` — resolved from `hostId` on `GET /events` (and therefore in the `data/events.json` snapshot).
+- `rsvp:{eventId}` entries — resolved from `memberId` in the host's own `GET /events/:id/host` view.
+
+Because outbound email and the admin dashboard read those rows raw, `/member/update` also rewrites both in place when the display name actually changes (`propagateNameChange`). That write-through is belt-and-braces; the read-time resolution is what the site actually depends on.
 
 ### Hosts count as attendees
 

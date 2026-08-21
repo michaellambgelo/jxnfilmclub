@@ -638,12 +638,52 @@ async function handleMemberUpdate(request, env) {
     await env.MEMBERS_KV.put(`handle:${claims.email}`, updates.handle)
   }
 
+  const renamedTo = updates.name && updates.name !== member.name ? updates.name : null
+
   Object.assign(member, updates)
   await env.MEMBERS_KV.put(`member:${claims.email}`, JSON.stringify(member))
   await patchMembersAll(env, publicMemberProjection(member))
   await writeSession(env, member)
+  // Attendance is id-keyed and resolved on read, so it needs nothing here.
+  // The two rows that still carry a *copy* of the name — event:{id}.hostName
+  // and the rsvp:{id} entries — are read straight out of KV by outbound email
+  // and the admin dashboard, so rewrite them when the name actually changes.
+  if (renamedTo) await propagateNameChange(env, member.id, renamedTo)
   await dispatchGithub(env, 'update-member', { id: member.id, updates })
   return json(env, { ok: true, id: member.id })
+}
+
+// Rewrite the name snapshots a rename leaves stale. Guarded on an actual name
+// change (a pronouns-only edit must not pay for two prefix scans), and both
+// scans are bounded by the club's event count — screenings, not members.
+//
+// Failures are logged, not thrown: the rename itself already succeeded and is
+// live everywhere that resolves on read, so a KV hiccup here must not 500 a
+// member's profile save. The next write to either row picks up the new name
+// from the resolvers anyway.
+async function propagateNameChange(env, memberId, name) {
+  if (!memberId) return
+  try {
+    const events = await env.ATTENDANCE_KV.list({ prefix: 'event:' })
+    for (const k of events.keys) {
+      const event = await readEvent(env, k.name.slice('event:'.length))
+      if (!event || event.hostId !== memberId || event.hostName === name) continue
+      await writeEvent(env, { ...event, hostName: name })
+    }
+    const rsvps = await env.ATTENDANCE_KV.list({ prefix: 'rsvp:' })
+    for (const k of rsvps.keys) {
+      const eventId = k.name.slice('rsvp:'.length)
+      const rsvp = await readRsvp(env, eventId)
+      const stale = r => r.memberId === memberId && r.name !== name
+      if (!rsvp.confirmed.some(stale) && !rsvp.waitlist.some(stale)) continue
+      const rename = r => (r.memberId === memberId ? { ...r, name } : r)
+      rsvp.confirmed = rsvp.confirmed.map(rename)
+      rsvp.waitlist = rsvp.waitlist.map(rename)
+      await writeRsvp(env, eventId, rsvp)
+    }
+  } catch (e) {
+    console.error('name propagation failed:', e?.message || e)
+  }
 }
 
 // POST /member/delete — authenticated.
@@ -669,8 +709,8 @@ async function handleMemberDelete(request, env) {
   // each occurrence of member.name with a generic "former member" label so the
   // event count is preserved while the identity is removed.
   const body = await request.json().catch(() => ({}))
-  if (body && body.anonymize === true && member.name) {
-    await anonymizeAttendance(env, member.name)
+  if (body && body.anonymize === true && (member.id || member.name)) {
+    await anonymizeAttendance(env, member)
   }
 
   // Purge the member's RSVP entries before the KV cascade. Deliberately not
@@ -711,15 +751,15 @@ async function handleMemberDelete(request, env) {
   return json(env, { ok: true })
 }
 
-// Attendance is stored as `attend:{eventId} -> [name, name, ...]`, name-keyed
-// (not id-keyed). Walking the entire prefix is the only way to find a
-// member's past attendance — there's no per-member index. For a small club
-// this is cheap; a 1000-member future would want an `attended_by:{name}` index.
+// Attendance is stored as `attend:{eventId} -> [{ id, name }, ...]`, keyed on
+// the member id. Walking the entire prefix is the only way to find a member's
+// past attendance — there's no per-member index. For a small club this is
+// cheap; a 1000-member future would want an `attended_by:{id}` index.
 //
-// Collision note: members are de-duped by display name on attend, so two
-// members sharing a name would already be conflated in attendance lists.
-// Scrubbing by name will remove all of them. The signup flow doesn't enforce
-// unique names — picking a creative-but-unique display name is on the user.
+// Matching is by id, so two members sharing a display name are no longer
+// conflated — the pre-migration store deduped on name and would have scrubbed
+// both. Rows that predate the id backfill still match on their id-less name
+// (see attendeeIndex), which is the old behaviour for exactly those rows.
 const FORMER_MEMBER_LABEL = 'former member'
 
 // Deliberately name-only: `event.hostName` is NOT scrubbed, so a member who
@@ -728,18 +768,19 @@ const FORMER_MEMBER_LABEL = 'former member'
 // record. /privacy states this and routes removal to a by-hand request at
 // privacy@jxnfilm.club; the danger-zone checkbox in ui/auth.html repeats it.
 // Don't "fix" this without changing all three.
-async function anonymizeAttendance(env, memberName) {
+async function anonymizeAttendance(env, member) {
   const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
   for (const k of list.keys) {
     const raw = await env.ATTENDANCE_KV.get(k.name)
     if (!raw) continue
     let arr
-    try { arr = JSON.parse(raw) } catch { continue }
-    if (!Array.isArray(arr)) continue
-    const idx = arr.indexOf(memberName)
+    try { arr = normalizeAttendees(JSON.parse(raw)) } catch { continue }
+    const idx = attendeeIndex(arr, member.id, member.name)
     if (idx === -1) continue
     arr.splice(idx, 1)
-    if (!arr.includes(FORMER_MEMBER_LABEL)) arr.push(FORMER_MEMBER_LABEL)
+    if (!arr.some(a => !a.id && a.name === FORMER_MEMBER_LABEL)) {
+      arr.push(attendEntry(null, FORMER_MEMBER_LABEL))
+    }
     const eventId = k.name.slice('attend:'.length)
     // Reuse writeAttendees so attendance:all aggregate stays in lockstep.
     await writeAttendees(env, eventId, arr)
@@ -1437,39 +1478,152 @@ async function readSession(env, claims) {
 // Reads never touch the repo on the hot path. The aggregate is refreshed
 // write-through on every mutation, mirroring the session:{id} overlay pattern.
 
-// The host of a screening attended it. writeRsvp() mirrors the host name into
+// An attendance entry is `{ id, name }`:
+//   id   — a member id, a synthetic `guest:xxxxxxxx` id, or null when the row
+//          predates the id migration and no member matched the stored name
+//   name — a display-name snapshot; the fallback rendered whenever `id`
+//          resolves to nothing (deleted member, guest, legacy row)
+//
+// The id is what is canonical. Names are re-resolved from `members:all` on
+// every read, so a member who renames is renamed everywhere their name shows
+// up at once — attendee lists, the homepage leaderboard, their account stats,
+// and (on the next cron tick) the data/attendance.json snapshot.
+function attendEntry(id, name) {
+  return { id: id || null, name: typeof name === 'string' ? name : '' }
+}
+
+// Every read path funnels through here, so both the current `[{id,name}]`
+// shape and the legacy `[name]` arrays that predate the migration parse —
+// including bootstrapAttendance, which meets an old-format
+// data/attendance.json on a cold namespace.
+function normalizeAttendees(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const v of value) {
+    if (typeof v === 'string') {
+      if (v) out.push(attendEntry(null, v))
+    } else if (v && typeof v === 'object') {
+      const id = typeof v.id === 'string' && v.id ? v.id : null
+      const name = typeof v.name === 'string' ? v.name : ''
+      if (id || name) out.push(attendEntry(id, name))
+    }
+  }
+  return out
+}
+
+// Locate a member in an attendee list: by id first, then — for rows that
+// haven't been backfilled yet — by an exact match on a legacy id-less name.
+// Without that second arm a member who attended before the migration would be
+// appended a second time the next time they toggled the button.
+function attendeeIndex(attendees, id, name) {
+  if (id) {
+    const i = attendees.findIndex(a => a.id === id)
+    if (i !== -1) return i
+  }
+  return name ? attendees.findIndex(a => !a.id && a.name === name) : -1
+}
+
+// Read-time name resolution. Reads `members:all` RAW rather than through
+// readMembersAll(): the attendance hot path must not be able to trigger the
+// members bootstrap (an extra origin fetch) — the same reasoning as the raw
+// events:all read in handleAttendanceMap.
+async function memberNamesById(env) {
+  const map = new Map()
+  const raw = await env.MEMBERS_KV.get('members:all')
+  if (!raw) return map
+  for (const m of safeParseArray(raw)) {
+    if (m && m.id && m.name) map.set(m.id, m.name)
+  }
+  return map
+}
+
+// Swap stored name snapshots for each member's current name, then dedupe.
+// Dedupe drops (a) repeated ids and (b) id-less legacy rows whose name now
+// duplicates an id-bearing one — the artifact of a half-backfilled event, and
+// exactly the conflation the old name-keyed store performed unconditionally.
+// Two *different* members who share a display name both survive: the id check
+// runs first, so only the id-less row can ever be collapsed.
+function resolveAttendees(attendees, names) {
+  const resolved = attendees.map(a => (
+    a.id && names.has(a.id) ? attendEntry(a.id, names.get(a.id)) : a
+  ))
+  const identified = new Set(resolved.filter(a => a.id).map(a => a.name))
+  const out = []
+  const seenIds = new Set()
+  const seenNames = new Set()
+  for (const a of resolved) {
+    if (a.id) {
+      if (seenIds.has(a.id)) continue
+      seenIds.add(a.id)
+    } else {
+      if (identified.has(a.name) || seenNames.has(a.name)) continue
+      seenNames.add(a.name)
+    }
+    out.push(a)
+  }
+  return out
+}
+
+// Same read-time resolution for the one other place a member's name is copied
+// into a row they don't own: `event.hostName`.
+function resolveHostNames(events, names) {
+  return events.map(e => {
+    if (!e || !e.hostId) return e
+    const name = names.get(e.hostId)
+    return name && name !== e.hostName ? { ...e, hostName: name } : e
+  })
+}
+
+// The host of a screening attended it. writeRsvp() mirrors the host into
 // attend:{id}, but this read-time overlay is what makes it true everywhere:
-// screenings created before this change never get a fresh RSVP write, and the
+// screenings created before that rule never get a fresh RSVP write, and the
 // leaderboard reads the data/attendance.json snapshot taken off these
 // endpoints — so overlaying on read backfills both without a KV migration.
-// Idempotent: a host already in the array is left alone.
+// Idempotent, and runs BEFORE name resolution so a pre-migration mirror that
+// wrote the host as a bare name is upgraded in place instead of gaining an
+// id-bearing twin beside it.
 function withHost(attendees, event) {
-  const hostName = event && event.hostId ? event.hostName : null
-  if (!hostName || attendees.includes(hostName)) return attendees
-  return [hostName, ...attendees]
+  if (!event || !event.hostId) return attendees
+  if (attendees.some(a => a.id === event.hostId)) return attendees
+  const hostName = event.hostName || ''
+  const legacy = hostName ? attendees.findIndex(a => !a.id && a.name === hostName) : -1
+  if (legacy !== -1) {
+    const next = attendees.slice()
+    next[legacy] = attendEntry(event.hostId, hostName)
+    return next
+  }
+  if (!hostName) return attendees
+  return [attendEntry(event.hostId, hostName), ...attendees]
 }
 
-// GET /events/:id/attendance — public; returns { attendees: [...names] }.
+// GET /events/:id/attendance — public; returns { attendees: [{ id, name }] }.
 async function handleAttendanceGet(env, eventId) {
-  const attendees = await readAttendees(env, eventId)
-  return json(env, { attendees: withHost(attendees, await readEvent(env, eventId)) })
+  const [attendees, event, names] = await Promise.all([
+    readAttendees(env, eventId),
+    readEvent(env, eventId),
+    memberNamesById(env),
+  ])
+  return json(env, { attendees: resolveAttendees(withHost(attendees, event), names) })
 }
 
-// GET /events/attendance — public; bulk read { [eventId]: [...names] }.
-// Two KV GETs in the steady state (attendance:all + events:all for the hosts).
-// Deliberately reads events:all raw rather than via readEventsAll(): the
-// attendance path must not trigger the events bootstrap (an extra origin
-// fetch). On a cold namespace the host overlay simply waits for the first
-// GET /events, which every page load already performs.
+// GET /events/attendance — public; bulk read { [eventId]: [{ id, name }] }.
+// Three KV GETs in the steady state (attendance:all + events:all for the
+// hosts + members:all for current names). Deliberately reads events:all and
+// members:all raw rather than via their readers: the attendance path must not
+// trigger either bootstrap (an extra origin fetch). On a cold namespace the
+// host overlay simply waits for the first GET /events, which every page load
+// already performs.
 async function handleAttendanceMap(env) {
   const all = await readAttendanceAll(env)
   const eventsRaw = await env.ATTENDANCE_KV.get('events:all')
   const events = eventsRaw ? safeParseArray(eventsRaw) : []
+  const names = await memberNamesById(env)
   const out = { ...all }
   for (const e of events) {
-    if (!e || !e.hostId || !e.hostName) continue
+    if (!e || !e.hostId) continue
     out[e.id] = withHost(out[e.id] || [], e)
   }
+  for (const id of Object.keys(out)) out[id] = resolveAttendees(out[id], names)
   return json(env, { attendance: out })
 }
 
@@ -1493,11 +1647,11 @@ async function handleAttend(request, env, eventId) {
   const member = JSON.parse(memberRaw)
 
   const attendees = await readAttendees(env, eventId)
-  if (!attendees.includes(member.name)) {
-    attendees.push(member.name)
+  if (attendeeIndex(attendees, member.id, member.name) === -1) {
+    attendees.push(attendEntry(member.id, member.name))
     await writeAttendees(env, eventId, attendees)
   }
-  return json(env, { ok: true, attendees })
+  return json(env, { ok: true, attendees: resolveAttendees(attendees, await memberNamesById(env)) })
 }
 
 // DELETE /events/:id/attend — authenticated. KV-only, same reasoning as attend.
@@ -1514,12 +1668,12 @@ async function handleUnattend(request, env, eventId) {
   const member = JSON.parse(memberRaw)
 
   const attendees = await readAttendees(env, eventId)
-  const idx = attendees.indexOf(member.name)
+  const idx = attendeeIndex(attendees, member.id, member.name)
   if (idx !== -1) {
     attendees.splice(idx, 1)
     await writeAttendees(env, eventId, attendees)
   }
-  return json(env, { ok: true, attendees })
+  return json(env, { ok: true, attendees: resolveAttendees(attendees, await memberNamesById(env)) })
 }
 
 // Per-event read: canonical attend:{id} first, then aggregate overlay as a
@@ -1528,10 +1682,10 @@ async function handleUnattend(request, env, eventId) {
 async function readAttendees(env, eventId) {
   const raw = await env.ATTENDANCE_KV.get(`attend:${eventId}`)
   if (raw) {
-    try { return JSON.parse(raw) } catch { /* fall through */ }
+    try { return normalizeAttendees(JSON.parse(raw)) } catch { /* fall through */ }
   }
   const all = await readAttendanceAll(env)
-  return Array.isArray(all[eventId]) ? all[eventId] : []
+  return normalizeAttendees(all[eventId])
 }
 
 // Aggregate read with one-shot bootstrap. Returns {} on total cold start if
@@ -1539,18 +1693,33 @@ async function readAttendees(env, eventId) {
 async function readAttendanceAll(env) {
   const raw = await env.ATTENDANCE_KV.get('attendance:all')
   if (raw) {
-    try { return JSON.parse(raw) } catch { /* fall through to bootstrap */ }
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return normalizeAttendanceMap(parsed)
+      }
+    } catch { /* fall through to bootstrap */ }
   }
   return await bootstrapAttendance(env)
+}
+
+function normalizeAttendanceMap(map) {
+  const out = {}
+  for (const [eventId, list] of Object.entries(map)) out[eventId] = normalizeAttendees(list)
+  return out
 }
 
 // Write-through: canonical per-event key + patch the aggregate overlay so the
 // next bulk read reflects this change in a single KV GET.
 async function writeAttendees(env, eventId, attendees) {
-  await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(attendees))
+  const entries = normalizeAttendees(attendees)
+  await env.ATTENDANCE_KV.put(`attend:${eventId}`, JSON.stringify(entries))
+  // Other events' lists are written back byte-for-byte, legacy shape included:
+  // the aggregate migrates lazily, one event per mutation, and any row that
+  // never gets touched is still normalized on read.
   const allRaw = await env.ATTENDANCE_KV.get('attendance:all')
   const all = allRaw ? safeParseObject(allRaw) : await bootstrapAttendance(env)
-  all[eventId] = attendees
+  all[eventId] = entries
   await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(all))
 }
 
@@ -1562,23 +1731,23 @@ async function writeAttendees(env, eventId, attendees) {
 async function bootstrapAttendance(env) {
   if (await env.ATTENDANCE_KV.get('attendance:bootstrapped')) {
     const raw = await env.ATTENDANCE_KV.get('attendance:all')
-    return raw ? safeParseObject(raw) : {}
+    return raw ? normalizeAttendanceMap(safeParseObject(raw)) : {}
   }
   const baseline = await fetchAttendanceBaseline(env)
   const list = await env.ATTENDANCE_KV.list({ prefix: 'attend:' })
   const existing = await Promise.all(
     list.keys.map(async k => [k.name.slice('attend:'.length), await env.ATTENDANCE_KV.get(k.name)]),
   )
-  const merged = { ...baseline }
+  const merged = normalizeAttendanceMap(baseline)
   for (const [eventId, raw] of existing) {
     if (raw) {
-      try { merged[eventId] = JSON.parse(raw) } catch { /* skip corrupt entry */ }
+      try { merged[eventId] = normalizeAttendees(JSON.parse(raw)) } catch { /* skip corrupt entry */ }
     }
   }
   await env.ATTENDANCE_KV.put('attendance:all', JSON.stringify(merged))
   await Promise.all(
     Object.entries(merged).map(([id, attendees]) =>
-      env.ATTENDANCE_KV.put(`attend:${id}`, JSON.stringify(Array.isArray(attendees) ? attendees : [])),
+      env.ATTENDANCE_KV.put(`attend:${id}`, JSON.stringify(attendees)),
     ),
   )
   await env.ATTENDANCE_KV.put('attendance:bootstrapped', '1')
@@ -1799,7 +1968,11 @@ async function handleEventsGet(request, env) {
   const visible = claims ? all : all.filter(e => !isMembersOnly(e))
   // Belt-and-suspenders: even though writers should already project, re-project
   // on the way out so a buggy writer can never leak `address` to a public read.
-  return json(env, visible.map(publicEventProjection).filter(Boolean))
+  // hostName is a snapshot of the host's name at create time; resolve it off
+  // hostId so a rename lands here (and in the data/events.json snapshot the
+  // cron takes off this endpoint) without rewriting every row.
+  const names = await memberNamesById(env)
+  return json(env, resolveHostNames(visible.map(publicEventProjection).filter(Boolean), names))
 }
 
 async function readEventsAll(env) {
@@ -2120,8 +2293,9 @@ function parseProfileAvatar(html) {
 //
 // RSVP state lives at `rsvp:{eventId}` in ATTENDANCE_KV as
 //   { confirmed: [{ memberId, name, email, at }], waitlist: [{ ... }] }
-// The confirmed list is mirrored write-through into `attend:{eventId}` (names
-// only) so the existing public attendance read path keeps working unchanged.
+// The confirmed list is mirrored write-through into `attend:{eventId}` as
+// `{ id, name }` entries keyed on the same memberId, so a rename resolves
+// there the same way it does everywhere else.
 
 async function isHostedEvent(env, eventId) {
   const raw = await env.ATTENDANCE_KV.get(`event:${eventId}`)
@@ -2174,9 +2348,9 @@ async function readRsvp(env, eventId) {
   }
 }
 
-// Write the RSVP record AND mirror the attendee names into attend:{id} so
-// public GET /events/:id/attendance keeps returning the same shape it always
-// has. The host is an attendee — they're in the room, and the leaderboard /
+// Write the RSVP record AND mirror the attendees into attend:{id} as id-keyed
+// entries, so public GET /events/:id/attendance sees the same people the RSVP
+// list does. The host is an attendee — they're in the room, and the leaderboard /
 // member attendance history read this mirror — but is deliberately NOT an
 // rsvp.confirmed entry: capacity counts guest slots, so a synthetic host RSVP
 // would eat one, mail the host their own address, and trip the "cannot reduce
@@ -2187,10 +2361,11 @@ async function readRsvp(env, eventId) {
 async function writeRsvp(env, eventId, rsvp, event) {
   await env.ATTENDANCE_KV.put(`rsvp:${eventId}`, JSON.stringify(rsvp))
   const ev = event || await readEvent(env, eventId)
-  const names = rsvp.confirmed.map(r => r.name)
-  const hostName = ev && ev.hostId ? ev.hostName : null
-  if (hostName && !names.includes(hostName)) names.unshift(hostName)
-  await writeAttendees(env, eventId, names)
+  const entries = rsvp.confirmed.map(r => attendEntry(r.memberId, r.name))
+  if (ev && ev.hostId && !entries.some(e => e.id === ev.hostId)) {
+    entries.unshift(attendEntry(ev.hostId, ev.hostName || ''))
+  }
+  await writeAttendees(env, eventId, entries)
 }
 
 async function removeRsvp(env, eventId) {
@@ -3060,6 +3235,11 @@ async function handleEventHostView(request, env, eventId) {
     return json(env, { error: 'only the host can view this' }, 403)
   }
   const rsvp = await readRsvp(env, eventId)
+  // RSVP rows carry the guest's name as it was when they signed up; members
+  // are resolved off memberId so the host sees current names. Guest entries
+  // (no member row) keep the name the host typed.
+  const names = await memberNamesById(env)
+  const nameOf = r => (r.memberId && names.get(r.memberId)) || r.name
   return json(env, {
     kind: event.kind || 'house',
     capacity: event.capacity || null,
@@ -3067,8 +3247,8 @@ async function handleEventHostView(request, env, eventId) {
     venue: event.venue || null,
     time: event.time || null,
     notes: event.notes || null,
-    confirmed: rsvp.confirmed.map(r => r.name),
-    waitlist:  rsvp.waitlist.map(r => r.name),
+    confirmed: rsvp.confirmed.map(nameOf),
+    waitlist:  rsvp.waitlist.map(nameOf),
     // Guest entries only, id + name — the id is what the remove button
     // sends back; member ids and emails stay unexposed.
     guests: [

@@ -67,9 +67,9 @@ DNS records are printed in the Resend dashboard.
 |--------|----------------------------|---------|
 | GET    | `/members`                 | Array of public member projections `[{ id, name, joined, pronouns?, handle? }]`. Emails are never on the wire. Reads from `members:all` aggregate; bootstraps from `data/members.json` on cold KV. |
 | GET    | `/events`                  | Array of public event projections `[{ id, title, film, year, date, venue, poster, letterboxd_uri, hostId?, hostName?, capacity?, kind?, time? }]` — never `address` or `notes` (both are RSVP-email/host-only). Reads from `events:all` aggregate (in `ATTENDANCE_KV`); bootstraps from `data/events.json` on cold KV. |
-| GET    | `/events/attendance`       | Bulk attendance map (existing). |
+| GET    | `/events/attendance`       | Bulk attendance map `{ eventId: [{ id, name }] }`, names resolved off `members:all`. |
 | GET    | `/watched`                 | Live Last Four: handle-keyed map of linked members' recent Letterboxd diary entries, fetched from RSS on demand and KV-cached 15 min (`watched:cache`). Empty map under `E2E_MODE`. |
-| GET    | `/events/:id/attendance`   | Per-event attendees (existing). |
+| GET    | `/events/:id/attendance`   | Per-event attendees `[{ id, name }]`, names resolved off `members:all`. |
 
 ### Authenticated (bearer token from `/signup/verify` or `/otp/verify`)
 
@@ -89,7 +89,7 @@ DNS records are printed in the Resend dashboard.
 | POST   | `/events/:id/rsvp`      | Confirm (emails house address or meetup venue) or waitlist when at capacity; uncapped meetups always confirm. |
 | DELETE | `/events/:id/rsvp`      | Cancel own RSVP; promotes the waitlist head. |
 | GET    | `/events/:id/rsvp/me`   | `{ status: 'confirmed' \| 'waitlisted' \| 'none', position? }`. |
-| GET    | `/events/:id/host`      | Host-only: `{ kind, capacity, address, venue, time, notes, confirmed: [names], waitlist: [names] }` — never attendee emails. |
+| GET    | `/events/:id/host`      | Host-only: `{ kind, capacity, address, venue, time, notes, confirmed: [names], waitlist: [names] }` — never attendee emails. Member names are resolved off `memberId`; guests keep the name the host typed. |
 | GET    | `/tmdb/search?q=`       | Poster search proxy for the /host form (step 1). Top 8 TMDB movie matches with posters: `{ results: [{ id, title, year, poster, thumb }] }`. 503 when `TMDB_API_KEY` is unset; canned fixture under `E2E_MODE`. |
 | GET    | `/tmdb/posters?id=`     | Step 2: up to 12 alternate posters for a TMDB movie id: `{ posters: [{ full, thumb }] }`. Same key/503/E2E semantics as `/tmdb/search`. |
 | GET/POST | `/rsvp/cancel?token=` | One-click cancel from email (HMAC token, purpose-tagged; GET renders a confirm page). |
@@ -123,7 +123,7 @@ Set in `wrangler.toml` per env:
 - `watched:cache` — aggregated Last Four RSS results, 15min `expirationTtl`.
 
 **ATTENDANCE_KV:**
-- `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot (unchanged). For hosted events, `attend:{id}` is a names-only write-through mirror of `rsvp:{id}.confirmed`.
+- `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot. Entries are `{ id, name }` keyed on the member id; the name is a snapshot resolved off `members:all` on read, so a rename lands everywhere at once (see `docs/features/attendance.md` § Identity). Reads still accept the legacy `[name]` shape. For hosted events, `attend:{id}` is a write-through mirror of `rsvp:{id}.confirmed` plus the host.
 - `event:{id}` — canonical per-event row (admin dashboard or hosted-event handlers). Hosted rows carry `hostId`/`hostName` and `kind` (`'house'` with private `address`, or `'meetup'` with public `venue`/optional `time`; rows without `kind` predate meetups = house).
 - `rsvp:{eventId}` — `{ confirmed: [{ memberId, name, email, at }], waitlist: [...] }` for hosted events.
 - `events:all` — public projection array served by `GET /events`. Patched in lockstep by `event:{id}` writes.

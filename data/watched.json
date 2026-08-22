@@ -1,6 +1,14 @@
 {
   "Crockett1848": [
     {
+      "link": "https://letterboxd.com/crockett1848/film/us-2019/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/5/2/0/390520-us-0-600-0-900-crop.jpg?v=968884c876",
+      "rating": "3.5",
+      "title": "Us",
+      "watched_date": "2026-08-21",
+      "year": "2019"
+    },
+    {
       "link": "https://letterboxd.com/crockett1848/film/the-hunger-games/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/x3/tw/wu/z4/vAkjFEm76Lu5hSevquxPgQ91OtI-0-600-0-900-crop.jpg?v=f4bfaf16df",
       "rating": "4.0",
@@ -89,14 +97,6 @@
       "title": "Licorice Pizza",
       "watched_date": "2026-01-16",
       "year": "2021"
-    },
-    {
-      "link": "https://letterboxd.com/crockett1848/film/pitch-perfect-2/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/7/8/2/8/2/178282-pitch-perfect-2-0-600-0-900-crop.jpg?v=c4530d149e",
-      "rating": "4.5",
-      "title": "Pitch Perfect 2",
-      "watched_date": "2026-01-16",
-      "year": "2015"
     }
   ],
   "Kennypahina": [
@@ -1006,6 +1006,14 @@
   ],
   "jon_knowledge": [
     {
+      "link": "https://letterboxd.com/jon_knowledge/film/rebel-without-a-cause/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/3/5/51835-rebel-without-a-cause-0-600-0-900-crop.jpg?v=a260a5a896",
+      "rating": "3.5",
+      "title": "Rebel Without a Cause",
+      "watched_date": "2026-08-21",
+      "year": "1955"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/american-flyers/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/3/9/2/43392-american-flyers-0-600-0-900-crop.jpg?v=71f99fb0d3",
       "rating": "3.5",
@@ -1099,14 +1107,6 @@
       "title": "The Odyssey",
       "watched_date": "2026-07-17",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/the-jerk/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/8/3/0/3/48303-the-jerk-0-600-0-900-crop.jpg?v=53ff176c14",
-      "rating": "3.0",
-      "title": "The Jerk",
-      "watched_date": "2026-07-16",
-      "year": "1979"
     }
   ],
   "michaellamb": [

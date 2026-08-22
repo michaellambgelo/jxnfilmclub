@@ -1,6 +1,26 @@
 [
   {
     "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/rebel-without-a-cause/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/3/5/51835-rebel-without-a-cause-0-600-0-900-crop.jpg?v=a260a5a896",
+    "rating": "3.5",
+    "review": "First off. It makes so much sense that everyone in this movie wants to have sex with James Dean. But I just didnt get it. Maybe I outgrew my teenage angst.",
+    "title": "Rebel Without a Cause",
+    "watched_date": "2026-08-21",
+    "year": "1955"
+  },
+  {
+    "handle": "Crockett1848",
+    "link": "https://letterboxd.com/crockett1848/film/us-2019/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/5/2/0/390520-us-0-600-0-900-crop.jpg?v=968884c876",
+    "rating": "3.5",
+    "review": "Guess Halloween season started early I love Jordan peele a lot but his movies weirdly don\u2019t hold up great. US is smart and well done but in the end it feels..manufactured? Idk I thought this was way better the first time. Still an extremely fun movie though",
+    "title": "Us",
+    "watched_date": "2026-08-21",
+    "year": "2019"
+  },
+  {
+    "handle": "jon_knowledge",
     "link": "https://letterboxd.com/jon_knowledge/film/american-flyers/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/3/9/2/43392-american-flyers-0-600-0-900-crop.jpg?v=71f99fb0d3",
     "rating": "3.5",
@@ -39,17 +59,6 @@
     "title": "Godzilla vs. Biollante",
     "watched_date": "2026-08-18",
     "year": "1989"
-  },
-  {
-    "handle": "jon_knowledge",
-    "liked": true,
-    "link": "https://letterboxd.com/jon_knowledge/film/stakeout/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/8/2/6/45826-stakeout-0-600-0-900-crop.jpg?v=706e1420cd",
-    "rating": "5.0",
-    "review": "Everybody's so cool in this movie Hey young Forrest Whitaker \ud83d\udc4b",
-    "title": "Stakeout",
-    "watched_date": "2026-08-17",
-    "year": "1987"
   },
   {
     "handle": "badmov1eenjoyer",
@@ -207,16 +216,6 @@
     "review": "Peter Parker Piggies in XD",
     "title": "Spider-Man: Brand New Day",
     "watched_date": "2026-08-08",
-    "year": "2026"
-  },
-  {
-    "handle": "Crockett1848",
-    "link": "https://letterboxd.com/crockett1848/film/the-drama/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/5/4/9/4/1205494-the-drama-0-600-0-900-crop.jpg?v=2320acafd5",
-    "rating": "4.0",
-    "review": "The photoshoot was uncured, unadulterated, unbearable horror",
-    "title": "The Drama",
-    "watched_date": "2026-08-07",
     "year": "2026"
   },
   {

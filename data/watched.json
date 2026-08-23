@@ -1,6 +1,14 @@
 {
   "Crockett1848": [
     {
+      "link": "https://letterboxd.com/crockett1848/film/the-odyssey/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/0/9/6/41096-the-odyssey-0-600-0-900-crop.jpg?v=b2a55713ac",
+      "rating": "3.5",
+      "title": "The Odyssey",
+      "watched_date": "2026-08-22",
+      "year": "1997"
+    },
+    {
       "link": "https://letterboxd.com/crockett1848/film/us-2019/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/5/2/0/390520-us-0-600-0-900-crop.jpg?v=968884c876",
       "rating": "3.5",
@@ -89,14 +97,6 @@
       "title": "Excalibur",
       "watched_date": "2026-02-26",
       "year": "1981"
-    },
-    {
-      "link": "https://letterboxd.com/crockett1848/film/licorice-pizza/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/6/4/1/0/8/6/641086-licorice-pizza-0-600-0-900-crop.jpg?v=6f08c3828c",
-      "rating": "5.0",
-      "title": "Licorice Pizza",
-      "watched_date": "2026-01-16",
-      "year": "2021"
     }
   ],
   "Kennypahina": [

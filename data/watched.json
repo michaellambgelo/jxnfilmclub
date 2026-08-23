@@ -1112,6 +1112,15 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/her/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/au/nb/i6/lq/fsoTLnUXEUTNuVCBxAJMY0HPPd-0-600-0-900-crop.jpg?v=16789732be",
+      "rating": "4.5",
+      "title": "Her",
+      "watched_date": "2026-08-22",
+      "year": "2013"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/blade/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/7/3/0/27730-blade-0-600-0-900-crop.jpg?v=c6c4275ae2",
       "rating": "3.5",
@@ -1209,14 +1218,6 @@
       "title": "Deep Water",
       "watched_date": "2026-08-06",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/animal-farm-2025/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/9/0/0/2/469002-animal-farm-2025-0-600-0-900-crop.jpg?v=20f43862ff",
-      "rating": "0.5",
-      "title": "Animal Farm",
-      "watched_date": "2026-08-06",
-      "year": "2025"
     }
   ],
   "witch21": [

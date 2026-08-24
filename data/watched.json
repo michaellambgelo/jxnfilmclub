@@ -256,6 +256,104 @@
       "year": "2000"
     }
   ],
+  "Oscar_G": [
+    {
+      "link": "https://letterboxd.com/oscar_g/film/the-terminator/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/g2/2g/f0/6b/the-terminator-original-0-600-0-900-crop.jpg?v=677a47d94a",
+      "rating": "3.5",
+      "title": "The Terminator",
+      "watched_date": "2026-08-15",
+      "year": "1984"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/rocky/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/0/9/0/51090-rocky-0-600-0-900-crop.jpg?v=da48c9eb5a",
+      "rating": "4.0",
+      "title": "Rocky",
+      "watched_date": "2026-08-01",
+      "year": "1976"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/the-big-lebowski/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/9/3/5/51935-the-big-lebowski-0-600-0-900-crop.jpg?v=5cd64defcf",
+      "rating": "4.0",
+      "title": "The Big Lebowski",
+      "watched_date": "2026-07-31",
+      "year": "1998"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/a-complete-unknown/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/8/6/5/8/3/586583-a-complete-unknown-0-600-0-900-crop.jpg?v=f14ab6ecf6",
+      "rating": "3.5",
+      "title": "A Complete Unknown",
+      "watched_date": "2026-07-19",
+      "year": "2024"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/paris-texas/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/4/6/9/51469-paris-texas-0-600-0-900-crop.jpg?v=c8f2743612",
+      "rating": "4.5",
+      "title": "Paris, Texas",
+      "watched_date": "2026-07-09",
+      "year": "1984"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/theres-something-about-mary/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/5/7/3/51573-theres-something-about-mary-0-600-0-900-crop.jpg?v=9ed4411461",
+      "rating": "4.0",
+      "title": "There's Something About Mary",
+      "watched_date": "2026-06-07",
+      "year": "1998"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/star-wars/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/0/6/2706-star-wars-0-600-0-900-crop.jpg?v=f1f1271bf5",
+      "rating": "5.0",
+      "title": "Star Wars",
+      "watched_date": "2026-06-05",
+      "year": "1977"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/is-this-thing-on-2025/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/cu/cp/cr/2m/o0uOCDLZEwlForZ5Bf3IeBwlPLd-0-600-0-900-crop.jpg?v=371b64c948",
+      "rating": "3.5",
+      "title": "Is This Thing On?",
+      "watched_date": "2026-06-05",
+      "year": "2025"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/harakiri/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/0/1/5/43015-harakiri-0-600-0-900-crop.jpg?v=007080a0fb",
+      "rating": "5.0",
+      "title": "Harakiri",
+      "watched_date": "2026-02-23",
+      "year": "1962"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/rounders/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/0g/7j/qh/rv/j5IzmdWdO5CqgeoyJLZ1dO7w375-0-600-0-900-crop.jpg?v=0e6c4dca2d",
+      "rating": "3.5",
+      "title": "Rounders",
+      "watched_date": "2026-02-21",
+      "year": "1998"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/ugetsu/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/2/8/8/4/42884-ugetsu-0-600-0-900-crop.jpg?v=f955526e53",
+      "rating": "5.0",
+      "title": "Ugetsu",
+      "watched_date": "2026-02-16",
+      "year": "1953"
+    },
+    {
+      "link": "https://letterboxd.com/oscar_g/film/rashomon/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/5/7/0/51570-rashomon-0-600-0-900-crop.jpg?v=f8eb7c45da",
+      "rating": "4.5",
+      "title": "Rashomon",
+      "watched_date": "2026-02-09",
+      "year": "1950"
+    }
+  ],
   "SammyK101": [
     {
       "link": "https://letterboxd.com/sammyk101/film/bottoms/",

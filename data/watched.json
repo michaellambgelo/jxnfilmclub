@@ -488,6 +488,15 @@
   "badmov1eenjoyer": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/teenage-sex-and-death-at-camp-miasma/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
+      "rating": "4.0",
+      "title": "Teenage Sex and Death at Camp Miasma",
+      "watched_date": "2026-08-23",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/rocky/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/0/9/0/51090-rocky-0-600-0-900-crop.jpg?v=da48c9eb5a",
       "rating": "4.0",
@@ -581,15 +590,6 @@
       "rating": "4.5",
       "title": "The Odyssey",
       "watched_date": "2026-07-18",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/the-invite-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/5/4/8/3/1/854831-the-invite-2026-0-600-0-900-crop.jpg?v=ee72905e48",
-      "rating": "4.5",
-      "title": "The Invite",
-      "watched_date": "2026-07-14",
       "year": "2026"
     }
   ],

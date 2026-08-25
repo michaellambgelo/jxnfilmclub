@@ -153,6 +153,15 @@
   ],
   "Moviemont": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/moviemont/film/teenage-sex-and-death-at-camp-miasma/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
+      "rating": "4.0",
+      "title": "Teenage Sex and Death at Camp Miasma",
+      "watched_date": "2026-08-24",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/moviemont/film/hot-summer-nights/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/8/1/9/8/278198-hot-summer-nights-0-600-0-900-crop.jpg?v=bfa3d42965",
       "rating": "3.0",
@@ -245,15 +254,6 @@
       "title": "F1",
       "watched_date": "2025-07-15",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/moviemont/film/high-fidelity/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/fh/qn/as/cp/sEZKCUFU6Ozf7hZ3UuaKWUqHLTZ-0-600-0-900-crop.jpg?v=73f6b8a843",
-      "rating": "4.0",
-      "title": "High Fidelity",
-      "watched_date": "2025-07-14",
-      "year": "2000"
     }
   ],
   "Oscar_G": [
@@ -693,6 +693,14 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/teenage-sex-and-death-at-camp-miasma/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
+      "rating": "3.0",
+      "title": "Teenage Sex and Death at Camp Miasma",
+      "watched_date": "2026-08-24",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/spider-man-far-from-home/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/2/9/7/7/362977-spider-man-far-from-home-0-600-0-900-crop.jpg?v=d139fbf2ae",
       "rating": "4.5",
@@ -783,14 +791,6 @@
       "title": "Inside Out",
       "watched_date": "2026-07-30",
       "year": "2015"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/spider-man-no-way-home/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/0/7/8/7/560787-spider-man-no-way-home-0-600-0-900-crop.jpg?v=a336d4f40c",
-      "rating": "4.0",
-      "title": "Spider-Man: No Way Home",
-      "watched_date": "2026-07-29",
-      "year": "2021"
     }
   ],
   "heath_walt": [

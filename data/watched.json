@@ -1209,6 +1209,15 @@
   ],
   "michaellamb": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/teenage-sex-and-death-at-camp-miasma/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
+      "rating": "4.5",
+      "title": "Teenage Sex and Death at Camp Miasma",
+      "watched_date": "2026-08-24",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/escape-from-tomorrow/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/8/4/0/6/118406-escape-from-tomorrow-0-600-0-900-crop.jpg?v=db0e7e46ae",
       "rating": "1.0",
@@ -1306,16 +1315,6 @@
       "title": "Hereditary",
       "watched_date": "2026-08-09",
       "year": "2018"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/the-lord-of-the-rings-the-two-towers/3/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/9/2/9/51929-the-lord-of-the-rings-the-two-towers-0-600-0-900-crop.jpg?v=9ef6c09783",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "The Lord of the Rings: The Two Towers",
-      "watched_date": "2026-08-07",
-      "year": "2002"
     }
   ],
   "witch21": [

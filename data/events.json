@@ -408,5 +408,18 @@
     "hostName": "Michael Lamb",
     "kind": "meetup",
     "time": "19:05"
+  },
+  {
+    "id": "2026-08-28-coyote-vs-acme-premiere-twuu",
+    "title": "Coyote vs. ACME Premiere",
+    "film": "Coyote vs. Acme",
+    "year": 2026,
+    "date": "2026-08-28",
+    "venue": "Malco Grandview & IMAX in Madison",
+    "poster": "https://image.tmdb.org/t/p/w500/qgBAdr7kf7L6rhyxt4pVJFsReqm.jpg",
+    "hostId": "ml-seed001",
+    "hostName": "Michael Lamb",
+    "kind": "meetup",
+    "time": "12:05"
   }
 ]

@@ -594,6 +594,15 @@
   "badmov1eenjoyer": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/nine-to-five/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/6/1/1/39611-nine-to-five-0-600-0-900-crop.jpg?v=585e6eeb9e",
+      "rating": "4.0",
+      "title": "Nine to Five",
+      "watched_date": "2026-08-25",
+      "year": "1980"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/teenage-sex-and-death-at-camp-miasma/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
       "rating": "4.0",
@@ -688,15 +697,6 @@
       "title": "You Can Live Forever",
       "watched_date": "2026-07-18",
       "year": "2022"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/the-odyssey-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
-      "rating": "4.5",
-      "title": "The Odyssey",
-      "watched_date": "2026-07-18",
-      "year": "2026"
     }
   ],
   "calissippi": [

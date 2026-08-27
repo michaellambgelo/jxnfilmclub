@@ -1,5 +1,16 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/mother-mary-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/4/3/5/3/994353-mother-mary-2026-0-600-0-900-crop.jpg?v=a2644168b4",
+    "rating": "3.0",
+    "review": "Hey, Sam? I'm sorry. I'm sorry. I'm sorry. Heartfelt performances, compelling visuals, fun music, though the metaphors sometimes lost me",
+    "title": "Mother Mary",
+    "watched_date": "2026-08-26",
+    "year": "2026"
+  },
+  {
     "handle": "badmov1eenjoyer",
     "liked": true,
     "link": "https://letterboxd.com/badmov1eenjoyer/film/nine-to-five/",
@@ -62,17 +73,6 @@
     "title": "Teenage Sex and Death at Camp Miasma",
     "watched_date": "2026-08-23",
     "year": "2026"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/blade/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/7/3/0/27730-blade-0-600-0-900-crop.jpg?v=c6c4275ae2",
-    "rating": "3.5",
-    "review": "fantastic kickboxing vampire movie",
-    "title": "Blade",
-    "watched_date": "2026-08-22",
-    "year": "1998"
   },
   {
     "handle": "Crockett1848",

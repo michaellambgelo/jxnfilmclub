@@ -593,6 +593,13 @@
   ],
   "badmov1eenjoyer": [
     {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/summer-tour/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/1/2/2/3/0/1412230-summer-tour-0-600-0-900-crop.jpg?v=2d29002d4b",
+      "title": "Summer Tour",
+      "watched_date": "2026-08-27",
+      "year": "2025"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/nine-to-five/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/6/1/1/39611-nine-to-five-0-600-0-900-crop.jpg?v=585e6eeb9e",
@@ -688,18 +695,17 @@
       "title": "The Odyssey",
       "watched_date": "2026-07-25",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/you-can-live-forever/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/7/9/8/5/3/1/798531-you-can-live-forever-0-600-0-900-crop.jpg?v=c6b70832e5",
-      "rating": "3.5",
-      "rewatch": true,
-      "title": "You Can Live Forever",
-      "watched_date": "2026-07-18",
-      "year": "2022"
     }
   ],
   "calissippi": [
+    {
+      "link": "https://letterboxd.com/calissippi/film/summer-tour/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/1/2/2/3/0/1412230-summer-tour-0-600-0-900-crop.jpg?v=2d29002d4b",
+      "rating": "3.0",
+      "title": "Summer Tour",
+      "watched_date": "2026-08-27",
+      "year": "2025"
+    },
     {
       "link": "https://letterboxd.com/calissippi/film/batman-knightfall-part-1-knightfall/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/3/3/3/2/9/1433329-batman-knightfall-part-1-knightfall-0-600-0-900-crop.jpg?v=9577ab1b3d",
@@ -788,14 +794,6 @@
       "title": "Altered States",
       "watched_date": "2026-08-09",
       "year": "1980"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/deep-water-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/1/5/7/6/5/1015765-deep-water-2026-0-600-0-900-crop.jpg?v=bd2c4b8363",
-      "rating": "1.5",
-      "title": "Deep Water",
-      "watched_date": "2026-08-06",
-      "year": "2026"
     }
   ],
   "heath_walt": [
@@ -1214,6 +1212,14 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/grand-theft-auto-vi-an-extended-look/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/9/8/9/0/1609890-grand-theft-auto-vi-an-extended-look-0-600-0-900-crop.jpg?v=467b6becd6",
+      "rating": "1.5",
+      "title": "Grand Theft Auto VI: An Extended Look",
+      "watched_date": "2026-08-28",
+      "year": "2026"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/mother-mary-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/4/3/5/3/994353-mother-mary-2026-0-600-0-900-crop.jpg?v=a2644168b4",
@@ -1309,16 +1315,6 @@
       "title": "Pillion",
       "watched_date": "2026-08-10",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/across-the-universe/1/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/q8/nn/ii/wc/uMgjKSNZlcYtChVfdF2zhoFxilC-0-600-0-900-crop.jpg?v=c820683a9a",
-      "rating": "3.0",
-      "rewatch": true,
-      "title": "Across the Universe",
-      "watched_date": "2026-08-09",
-      "year": "2007"
     }
   ],
   "witch21": [

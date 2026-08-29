@@ -1213,6 +1213,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/disclosure-day/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/5/9/2/5/1/1159251-disclosure-day-0-600-0-900-crop.jpg?v=9ae810e4bb",
+      "rating": "3.0",
+      "rewatch": true,
+      "title": "Disclosure Day",
+      "watched_date": "2026-08-28",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/coyote-vs-acme/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
       "rating": "4.0",
@@ -1305,15 +1315,6 @@
       "rating": "1.0",
       "title": "The Strangers: Chapter 2",
       "watched_date": "2026-08-12",
-      "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/clown-in-a-cornfield/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/6/3/6/6/3/7/636637-clown-in-a-cornfield-0-600-0-900-crop.jpg?v=49846f3c67",
-      "rating": "2.5",
-      "title": "Clown in a Cornfield",
-      "watched_date": "2026-08-10",
       "year": "2025"
     }
   ],

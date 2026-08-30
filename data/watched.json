@@ -593,6 +593,15 @@
   ],
   "badmov1eenjoyer": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/13-going-on-30-3/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/um/45/8m/or/t0c3qxcKSaO4iBYVAzIeyPbC8I1-0-600-0-900-crop.jpg?v=72ab2e2ec7",
+      "rating": "5.0",
+      "title": "13 Going on 30",
+      "watched_date": "2026-08-29",
+      "year": "2004"
+    },
+    {
       "link": "https://letterboxd.com/badmov1eenjoyer/film/summer-tour/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/1/2/2/3/0/1412230-summer-tour-0-600-0-900-crop.jpg?v=2d29002d4b",
       "title": "Summer Tour",
@@ -684,16 +693,6 @@
       "rating": "3.0",
       "title": "How to Make a Killing",
       "watched_date": "2026-07-28",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/the-odyssey-2026/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "The Odyssey",
-      "watched_date": "2026-07-25",
       "year": "2026"
     }
   ],

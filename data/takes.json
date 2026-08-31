@@ -1,5 +1,45 @@
 [
   {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/the-wizard-of-the-kremlin/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/7/4/4/5/1/1174451-the-wizard-of-the-kremlin-0-600-0-900-crop.jpg?v=7c3ac03cd2",
+    "rating": "2.5",
+    "review": "Left me with more questions than answers Its just 2hrs of Paul Dano as a lizard man Jude Law was great as always",
+    "title": "The Wizard of the Kremlin",
+    "watched_date": "2026-08-30",
+    "year": "2025"
+  },
+  {
+    "handle": "Moviemont",
+    "link": "https://letterboxd.com/moviemont/film/summer-tour/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/1/2/2/3/0/1412230-summer-tour-0-600-0-900-crop.jpg?v=2d29002d4b",
+    "rating": "2.0",
+    "review": "I\u2019m glad they made it, but I thought it portrayed the dead community from such an outside looking in perspective. I would\u2019ve enjoyed a storyline focused on more point of views, different kinds of people following the tour, and the good/bad parts of following a band on tour. Felt like it took the\u2026",
+    "title": "Summer Tour",
+    "watched_date": "2026-08-30",
+    "year": "2025"
+  },
+  {
+    "handle": "Moviemont",
+    "link": "https://letterboxd.com/moviemont/film/the-drama/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/5/4/9/4/1205494-the-drama-0-600-0-900-crop.jpg?v=2320acafd5",
+    "rating": "3.0",
+    "review": "The media really overhyped this one, I was expecting a much bigger twist. If I had watched it with any pre-conceived notion, I think I would\u2019ve enjoyed it much more. It was a good concept that I don\u2019t believe was done well enough. Alana Haim played her role so well, and I hated her character so\u2026",
+    "title": "The Drama",
+    "watched_date": "2026-08-30",
+    "year": "2026"
+  },
+  {
+    "handle": "Crockett1848",
+    "link": "https://letterboxd.com/crockett1848/film/wake-in-fright/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/nh/p9/92/wm/y1mWPdAOQC3ZezWHNscqrUTMl8G-0-600-0-900-crop.jpg?v=dc532f0f0b",
+    "rating": "4.0",
+    "review": "Honestly a 5-star movie but damn the kangaroo hunt was utterly horrific. This is about as nihilistic as Friedkin\u2019s SORCERER and perhaps more even. A swirling fever nightmare of hospitality, machismo, impulsivity, and homoeroticism. More than a few times I felt like I was watching a movie set in a\u2026",
+    "title": "Wake in Fright",
+    "watched_date": "2026-08-30",
+    "year": "1971"
+  },
+  {
     "handle": "Crockett1848",
     "link": "https://letterboxd.com/crockett1848/film/picnic-at-hanging-rock/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/3k/2b/j9/o8/R1C3mLnyC7LbWoH3mhT3ZZZobv-0-600-0-900-crop.jpg?v=facefec0d5",
@@ -134,26 +174,6 @@
     "year": "1955"
   },
   {
-    "handle": "Crockett1848",
-    "link": "https://letterboxd.com/crockett1848/film/us-2019/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/5/2/0/390520-us-0-600-0-900-crop.jpg?v=968884c876",
-    "rating": "3.5",
-    "review": "Guess Halloween season started early I love Jordan peele a lot but his movies weirdly don\u2019t hold up great. US is smart and well done but in the end it feels..manufactured? Idk I thought this was way better the first time. Still an extremely fun movie though",
-    "title": "Us",
-    "watched_date": "2026-08-21",
-    "year": "2019"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/american-flyers/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/3/9/2/43392-american-flyers-0-600-0-900-crop.jpg?v=71f99fb0d3",
-    "rating": "3.5",
-    "review": "As a cyclist, I loved this movie But if I wasn't the target audience perhaps not. This was cheesy in a great way. But very stupid in other parts. Doesn't really need a villain like Muzen(you'll see what I mean) but hes great anyway. But it does deliver its message well no matter how stoic and flat\u2026",
-    "title": "American Flyers",
-    "watched_date": "2026-08-19",
-    "year": "1985"
-  },
-  {
     "handle": "heath_walt",
     "link": "https://letterboxd.com/heath_walt/film/obsession-2025/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/3/4/4/7/2/1234472-obsession-2025-2-0-600-0-900-crop.jpg?v=cff6fc00b6",
@@ -206,16 +226,6 @@
     "year": "2000"
   },
   {
-    "handle": "Moviemont",
-    "link": "https://letterboxd.com/moviemont/film/hot-summer-nights/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/8/1/9/8/278198-hot-summer-nights-0-600-0-900-crop.jpg?v=bfa3d42965",
-    "rating": "3.0",
-    "review": "About everything and nothing at the same time. Only redeeming quality is the soundtrack.",
-    "title": "Hot Summer Nights",
-    "watched_date": "2026-08-10",
-    "year": "2017"
-  },
-  {
     "handle": "Kennypahina",
     "liked": true,
     "link": "https://letterboxd.com/kennypahina/film/spider-man-brand-new-day/",
@@ -225,17 +235,6 @@
     "title": "Spider-Man: Brand New Day",
     "watched_date": "2026-08-08",
     "year": "2026"
-  },
-  {
-    "handle": "Moviemont",
-    "liked": true,
-    "link": "https://letterboxd.com/moviemont/film/y-tu-mama-tambien/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/0/6/8/51068-y-tu-mama-tambien-0-600-0-900-crop.jpg?v=1052852218",
-    "rating": "4.0",
-    "review": "I\u2019ll come back to this review later, but I loved the timing of the movie, especially with the narration. It felt as if was I was reading a novel. After some thought, I believe this film is about freedom. Freedom can be a feeling, a way of viewing life around oneself. One character finds her freedom\u2026",
-    "title": "Y Tu Mam\u00e1 Tambi\u00e9n",
-    "watched_date": "2026-08-05",
-    "year": "2001"
   },
   {
     "handle": "heath_walt",

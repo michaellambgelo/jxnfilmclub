@@ -1,5 +1,16 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/buddy-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
+    "rating": "4.0",
+    "review": "I'm considering this as part of my annual Thanksgiving film programming, an event where I subject my family to films I believe they should watch regardless of their actual interest in it. The tight runtime of 96 minutes feels really good and the pacing was overall excellent \u2014 I will say the\u2026",
+    "title": "Buddy",
+    "watched_date": "2026-08-30",
+    "year": "2026"
+  },
+  {
     "handle": "jon_knowledge",
     "link": "https://letterboxd.com/jon_knowledge/film/the-wizard-of-the-kremlin/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/7/4/4/5/1/1174451-the-wizard-of-the-kremlin-0-600-0-900-crop.jpg?v=7c3ac03cd2",
@@ -48,6 +59,26 @@
     "title": "Picnic at Hanging Rock",
     "watched_date": "2026-08-30",
     "year": "1975"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/buddy-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
+    "rating": "4.5",
+    "review": "The Truman Show but you're watching it on an iPad covered in Spaghetti-Os",
+    "title": "Buddy",
+    "watched_date": "2026-08-30",
+    "year": "2026"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/teenage-sex-and-death-at-camp-miasma/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
+    "rating": "5.0",
+    "review": "This hit a really specific place for me because so many of my projects have been labeled as \"not horror\" or \"something wearing a horror skin\" when I'm taking genre conventions and twisting them into whatever fucked up beautiful little queer story is in my brain at the moment also goddamn I would\u2026",
+    "title": "Teenage Sex and Death at Camp Miasma",
+    "watched_date": "2026-08-30",
+    "year": "2026"
   },
   {
     "handle": "badmov1eenjoyer",
@@ -111,15 +142,14 @@
     "year": "2025"
   },
   {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/mother-mary-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/4/3/5/3/994353-mother-mary-2026-0-600-0-900-crop.jpg?v=a2644168b4",
-    "rating": "3.0",
-    "review": "Hey, Sam? I'm sorry. I'm sorry. I'm sorry. Heartfelt performances, compelling visuals, fun music, though the metaphors sometimes lost me",
-    "title": "Mother Mary",
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/lovers-knot/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/8/9/8/3/168983-lovers-knot-0-600-0-900-crop.jpg?v=22af2fe28f",
+    "rating": "2.0",
+    "review": "I hope Tim Curry is the angel personally responsible for me finding my true love",
+    "title": "Lover's Knot",
     "watched_date": "2026-08-26",
-    "year": "2026"
+    "year": "1996"
   },
   {
     "handle": "badmov1eenjoyer",

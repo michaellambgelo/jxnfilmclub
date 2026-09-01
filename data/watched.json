@@ -802,6 +802,14 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/the-uninvited/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/6/0/7/41607-the-uninvited-0-600-0-900-crop.jpg?v=2903726521",
+      "rating": "2.5",
+      "title": "The Uninvited",
+      "watched_date": "2026-08-31",
+      "year": "1944"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/the-dog-stars/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/9/2/8/7/1269287-the-dog-stars-0-600-0-900-crop.jpg?v=b44af504b0",
       "rating": "2.5",
@@ -887,15 +895,6 @@
       "rating": "2.0",
       "title": "Mortal Kombat II",
       "watched_date": "2026-08-18",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/calissippi/film/the-end-of-oak-street/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/2/9/6/2/992962-the-end-of-oak-street-0-600-0-900-crop.jpg?v=b06dbfb4c9",
-      "rating": "3.5",
-      "title": "The End of Oak Street",
-      "watched_date": "2026-08-15",
       "year": "2026"
     }
   ],

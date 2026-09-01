@@ -704,6 +704,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/panman/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/5/1/3/4/105134-panman-0-600-0-900-crop.jpg?v=559ff25c5a",
+      "rating": "2.0",
+      "title": "Panman",
+      "watched_date": "2026-09-01",
+      "year": "2011"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/buddy-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
       "rating": "4.5",
@@ -790,14 +798,6 @@
       "title": "Marcel the Shell with Shoes On",
       "watched_date": "2026-08-19",
       "year": "2021"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/where-the-wild-things-are/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/5/1/9/41519-where-the-wild-things-are-0-600-0-900-crop.jpg?v=7324cb0409",
-      "rating": "3.5",
-      "title": "Where the Wild Things Are",
-      "watched_date": "2026-08-19",
-      "year": "2009"
     }
   ],
   "calissippi": [

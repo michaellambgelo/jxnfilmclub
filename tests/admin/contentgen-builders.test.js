@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
+  imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
   fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
@@ -629,5 +630,111 @@ describe('diarySeriesCopy', () => {
       expect(buildSocialCopy('diary', 'x', { ...p, page: i + 1, pageCount }).length)
         .toBeLessThanOrEqual(PLATFORM_LIMITS.x)
     })
+  })
+})
+
+// --- Newsletter image announcement block ------------------------------------
+//
+// A flyer is a complex image: the club's real one carries two showtimes, a
+// date, an RSVP number and a deadline entirely as pixels. These tests pin the
+// rule that the information must exist as TEXT as well — for screen readers,
+// for plain-text readers, and for the majority of clients that block images.
+describe('imageBlockIssues', () => {
+  const OK = { src: 'https://img.jxnfilm.club/abc123.jpg', alt: 'Double feature poster', details: 'Sunday Sept 13. Yojimbo 2PM.' }
+
+  it('accepts a hosted image with concise alt and real details', () => {
+    expect(imageBlockIssues(OK)).toEqual([])
+  })
+
+  it('rejects a data: URI — the exact thing a browser paste produces', () => {
+    const issues = imageBlockIssues({ ...OK, src: 'data:image/png;base64,iVBORw0KGgo=' })
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatch(/hosted/i)
+  })
+
+  it('requires https, not http or a bare path', () => {
+    for (const src of ['http://x/y.jpg', '/img/y.jpg', 'y.jpg']) {
+      expect(imageBlockIssues({ ...OK, src })).not.toEqual([])
+    }
+  })
+
+  it('requires alt text', () => {
+    for (const alt of ['', '   ', undefined]) {
+      const issues = imageBlockIssues({ ...OK, alt })
+      expect(issues.some(i => /alt text is required/i.test(i))).toBe(true)
+    }
+  })
+
+  it('rejects alt long enough to be unnavigable by a screen reader', () => {
+    // Cramming the whole flyer into alt is the failure mode this guards.
+    const crammed = 'Men With No Names double feature: Yojimbo by Akira Kurosawa at 2PM and ' +
+      'A Fistful of Dollars by Sergio Leone at 5PM, Sunday September 13th, text 502-387-7503 to RSVP by 09/07/26'
+    const issues = imageBlockIssues({ ...OK, alt: crammed })
+    expect(issues.some(i => /too long/i.test(i))).toBe(true)
+  })
+
+  it('requires the details, so the content never lives only inside the image', () => {
+    const issues = imageBlockIssues({ ...OK, details: '' })
+    expect(issues.some(i => /must not live only inside the image/i.test(i))).toBe(true)
+  })
+
+  it('reports every problem at once rather than one at a time', () => {
+    expect(imageBlockIssues({}).length).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('buildImageBlockHtml / buildImageBlockText', () => {
+  const BLOCK = {
+    src: 'https://img.jxnfilm.club/abc123.jpg',
+    alt: 'Men With No Names double feature poster',
+    details: 'Yojimbo 2PM, A Fistful of Dollars 5PM.\n\nText 502-387-7503 to RSVP by 09/07/26.',
+  }
+
+  it('carries the alt into the markup', () => {
+    expect(buildImageBlockHtml(BLOCK)).toContain('alt="Men With No Names double feature poster"')
+  })
+
+  it('sizes for Outlook and for everything else', () => {
+    const html = buildImageBlockHtml(BLOCK)
+    // Word's engine ignores max-width, so the width ATTRIBUTE is load-bearing.
+    expect(html).toMatch(/width="600"/)
+    expect(html).toContain('max-width:600px')
+    // Without height:auto a fluid image distorts when scaled down.
+    expect(html).toContain('height:auto')
+  })
+
+  it('renders the details as real text, not as part of the image', () => {
+    const html = buildImageBlockHtml(BLOCK)
+    expect(html).toContain('Yojimbo 2PM')
+    expect(html).toContain('502-387-7503')
+    expect((html.match(/<p style/g) || [])).toHaveLength(2)   // blank line splits paragraphs
+  })
+
+  it('escapes details rather than trusting them as markup', () => {
+    const html = buildImageBlockHtml({ ...BLOCK, details: '<script>alert(1)</script> & more' })
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&amp; more')
+  })
+
+  it('marks layout tables presentational so screen readers skip them', () => {
+    // Nested layout tables announced as data tables are a classic email a11y
+    // failure — every one of ours must carry role="presentation".
+    const html = buildImageBlockHtml(BLOCK)
+    const tables = html.match(/<table[^>]*>/g) || []
+    expect(tables.length).toBeGreaterThan(0)
+    for (const t of tables) expect(t).toContain('role="presentation"')
+  })
+
+  it('puts the details first in the plain-text half, with the image named after', () => {
+    const text = buildImageBlockText(BLOCK)
+    expect(text.indexOf('Yojimbo 2PM')).toBeLessThan(text.indexOf('[Image:'))
+    expect(text).toContain('502-387-7503')
+    expect(text).toContain('[Image: Men With No Names double feature poster]')
+  })
+
+  it('wraps the image in the link when one is given', () => {
+    const html = buildImageBlockHtml({ ...BLOCK, link: 'https://jxnfilm.club/events' })
+    expect(html).toMatch(/<a href="https:\/\/jxnfilm\.club\/events"><img/)
+    expect(buildImageBlockText({ ...BLOCK, link: 'https://jxnfilm.club/events' })).toContain('https://jxnfilm.club/events')
   })
 })

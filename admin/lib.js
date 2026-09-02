@@ -169,6 +169,82 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
 </table>`
 }
 
+// --- Pasted/uploaded image announcement block ---
+//
+// A flyer is a COMPLEX IMAGE in the WCAG sense: the one the club actually gets
+// carries two films, two showtimes, a date, an RSVP number and a deadline, all
+// as pixels. Alt text cannot carry that — a listener can't pause inside alt,
+// navigate it by section, or replay part of it, and some clients truncate it.
+// So this block follows the same shape buildPosterBlockHtml already uses for
+// exactly this reason: a CONCISE alt naming the image, and the real
+// information as adjacent text that a screen reader, a plain-text reader, and
+// anyone with images off all receive.
+//
+// `src` must be a hosted https URL, never a data: URI. Two independent reasons:
+// major webmail strips data: image sources outright, and the arithmetic rules
+// it out anyway — a 600px-wide JPEG of a real flyer is ~250-440KB as base64
+// against Gmail's ~102KB clipping threshold, so there is no quality setting
+// that both fits and stays legible.
+
+// Everything wrong with a proposed image block, as operator-facing strings.
+// The UI gates insertion on this being empty; it is exported separately from
+// the builders so the reason can be shown rather than the button just failing.
+export function imageBlockIssues({ src, alt, details } = {}) {
+  const issues = []
+  const url = String(src || '').trim()
+  if (!url) issues.push('No image yet.')
+  else if (/^data:/i.test(url)) issues.push('Image must be hosted, not embedded — a data: URI is stripped by most mail clients and blows past Gmail\u2019s size limit.')
+  else if (!/^https:\/\//i.test(url)) issues.push('Image URL must be https.')
+
+  const altText = String(alt || '').trim()
+  if (!altText) issues.push('Alt text is required — it is what a screen reader announces and what shows when images are blocked.')
+  // Long alt is its own accessibility failure, not a nitpick: it cannot be
+  // navigated or replayed. The details field is where the content belongs.
+  else if (altText.length > 140) issues.push('Alt text is too long — describe the image briefly and put the details in the text below it.')
+
+  if (!String(details || '').trim()) issues.push('Add the details in text — the date, time and RSVP info must not live only inside the image.')
+  return issues
+}
+
+export function buildImageBlockHtml({ src, alt, details, link, width = 600 } = {}) {
+  const safeAlt = String(alt || '').trim()
+  // width attribute for Outlook's Word engine (it ignores max-width); the CSS
+  // pair keeps it fluid everywhere else. height:auto stops a scaled image
+  // from distorting.
+  const img = `<img src="${attr(src)}" width="${attr(width)}" alt="${attr(safeAlt)}" style="display:block;border:0;width:100%;max-width:${attr(width)}px;height:auto">`
+  const inner = link ? `<a href="${attr(link)}">${img}</a>` : img
+  const detailHtml = String(details || '').trim()
+    .split(/\n{2,}/)
+    .map(par => `<p style="margin:0 0 16px;font-size:16px;line-height:1.6">${escapeHtml(par.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('')
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+            ${inner}
+          </td></tr></table>
+          <div style="margin-top:20px">${detailHtml}</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+}
+
+// The plain-text half. The details are the payload here — the alt only names
+// what the image was, since a text reader never sees it.
+export function buildImageBlockText({ alt, details, link } = {}) {
+  const lines = []
+  const safeAlt = String(alt || '').trim()
+  const body = String(details || '').trim()
+  if (body) lines.push(body)
+  if (safeAlt) lines.push(`[Image: ${safeAlt}]`)
+  if (link) lines.push(link)
+  return lines.join('\n\n')
+}
+
 export function buildPosterBlockText({ link, title, year }) {
   const caption = `${title || ''}${year ? ` (${year})` : ''}`.trim()
   const header = link ? (caption ? `${caption}: ${link}` : link) : caption

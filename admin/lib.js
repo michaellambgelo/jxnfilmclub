@@ -169,6 +169,177 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
 </table>`
 }
 
+// --- Newsletter body size + safety guards ---
+//
+// Three independent failure modes live on this one path, and two of them are
+// silent:
+//
+//   Gmail strips data: image sources at RENDER time — the message arrives
+//   intact and looks correct in the preview, in Resend's dashboard, and in a
+//   test send to an Apple Mail address, then shows most of the club a blank
+//   gap. That is why a data: URI is refused outright rather than warned about.
+//
+//   Gmail clips the text/html part around 102KB, at an arbitrary byte offset,
+//   hiding the unsubscribe footer behind "View entire message".
+//
+//   sendBatch JSON.stringify's a chunk of 100 messages, and stringify flattens
+//   each .html in place while the flat copies stay reachable — peak heap is
+//   roughly twice the stringified length, so a ~640KB body already approaches
+//   the 128MB isolate ceiling. That failure surfaces as "internal server
+//   error" after the whole newsletter has been composed.
+
+// UTF-8 bytes, not .length — .length undercounts every non-ASCII character,
+// and these bodies carry curly quotes, em dashes and emoji.
+export function utf8Bytes(s) {
+  return new TextEncoder().encode(String(s || '')).length
+}
+
+// 92KB is a deliberate margin under Gmail's ~102KB clip, not a derivation: the
+// per-recipient unsubscribe footer is concatenated AFTER any check here, and
+// transfer encoding expands the body further.
+export const NL_HTML_WARN_BYTES = 72 * 1024
+export const NL_HTML_BLOCK_BYTES = 92 * 1024
+export const NL_TEXT_BLOCK_BYTES = 32 * 1024
+
+export function newsletterSizeReport(html, text) {
+  const htmlBytes = utf8Bytes(html)
+  const textBytes = utf8Bytes(text)
+  const level = htmlBytes >= NL_HTML_BLOCK_BYTES || textBytes >= NL_TEXT_BLOCK_BYTES ? 'over'
+    : htmlBytes >= NL_HTML_WARN_BYTES ? 'warn'
+    : 'ok'
+  return { htmlBytes, textBytes, level }
+}
+
+const DATA_SRC = /src\s*=\s*["']?\s*data:/i
+const HOSTED_IMG = /https?:\/\/[^"'\s>]*\/nl\/img\/[^"'\s>]*/gi
+
+// The single highest-priority reason this body must not be sent, or null.
+// Returns a reason rather than a boolean so the UI can say WHY rather than a
+// button merely refusing.
+//
+// `expectedOrigin` is the join Worker origin for the selected env; a body
+// composed against staging carries staging image URLs that 404 for every
+// recipient once it is sent from production.
+export function newsletterSendBlocker(html, text, { expectedOrigin } = {}) {
+  const body = String(html || '')
+  if (DATA_SRC.test(body)) {
+    return {
+      code: 'data_uri',
+      message: 'This body has an embedded image. Gmail strips those, so most members would see nothing — host the image and insert it as a flyer instead.',
+    }
+  }
+  if (expectedOrigin) {
+    const wrong = (body.match(HOSTED_IMG) || []).find(u => !u.startsWith(expectedOrigin + '/'))
+    if (wrong) {
+      return {
+        code: 'cross_env',
+        message: `This body references an image on another environment (${wrong}). Recompose the flyer with the environment you are sending from.`,
+      }
+    }
+  }
+  const { htmlBytes, textBytes, level } = newsletterSizeReport(html, text)
+  if (level === 'over') {
+    const over = htmlBytes >= NL_HTML_BLOCK_BYTES
+      ? `The HTML body is ${Math.round(htmlBytes / 1024)}KB`
+      : `The plain-text body is ${Math.round(textBytes / 1024)}KB`
+    return {
+      code: 'too_large',
+      message: `${over}. Gmail clips messages over about 102KB, cutting off the unsubscribe footer — trim it before sending.`,
+    }
+  }
+  if ((body + String(text || '')).includes('[Write your review or announcement here')) {
+    return {
+      code: 'placeholder',
+      message: 'The poster block still has its placeholder text — replace it in the preview before sending.',
+    }
+  }
+  return null
+}
+
+// --- Pasted/uploaded image announcement block ---
+//
+// A flyer is a COMPLEX IMAGE in the WCAG sense: the one the club actually gets
+// carries two films, two showtimes, a date, an RSVP number and a deadline, all
+// as pixels. Alt text cannot carry that — a listener can't pause inside alt,
+// navigate it by section, or replay part of it, and some clients truncate it.
+// So this block follows the same shape buildPosterBlockHtml already uses for
+// exactly this reason: a CONCISE alt naming the image, and the real
+// information as adjacent text that a screen reader, a plain-text reader, and
+// anyone with images off all receive.
+//
+// `src` must be a hosted https URL, never a data: URI. Two independent reasons:
+// major webmail strips data: image sources outright, and the arithmetic rules
+// it out anyway — a 600px-wide JPEG of a real flyer is ~250-440KB as base64
+// against Gmail's ~102KB clipping threshold, so there is no quality setting
+// that both fits and stays legible.
+
+// Everything wrong with a proposed image block, as operator-facing strings.
+// The UI gates insertion on this being empty; it is exported separately from
+// the builders so the reason can be shown rather than the button just failing.
+export function imageBlockIssues({ src, alt, details } = {}) {
+  const issues = []
+  const url = String(src || '').trim()
+  if (!url) issues.push('No image yet.')
+  else if (/^data:/i.test(url)) issues.push('Image must be hosted, not embedded — a data: URI is stripped by most mail clients and blows past Gmail\u2019s size limit.')
+  else if (!/^https:\/\//i.test(url)) issues.push('Image URL must be https.')
+
+  const altText = String(alt || '').trim()
+  if (!altText) issues.push('Alt text is required — it is what a screen reader announces and what shows when images are blocked.')
+  // Long alt is its own accessibility failure, not a nitpick: it cannot be
+  // navigated or replayed. The details field is where the content belongs.
+  else if (altText.length > 140) issues.push('Alt text is too long — describe the image briefly and put the details in the text below it.')
+
+  if (!String(details || '').trim()) issues.push('Add the details in text — the date, time and RSVP info must not live only inside the image.')
+  return issues
+}
+
+// 536, not 600: the card is <table width="600"> with td padding 28px 32px, so
+// the content box is 600 - 32 - 32. Word-engine Outlook honours the width
+// ATTRIBUTE and ignores max-width, so a 600 here renders 64px wider than its
+// own cell — reproducing the overflow this block exists to fix.
+export const IMAGE_BLOCK_MAX_WIDTH = 536
+
+export function buildImageBlockHtml({ src, alt, details, link, width = IMAGE_BLOCK_MAX_WIDTH } = {}) {
+  const safeAlt = String(alt || '').trim()
+  // The width attribute is what actually sizes an image in Outlook's Word
+  // engine, and it reserves layout space when images are blocked. max-width
+  // only ever SHRINKS — width:100% would stretch a narrow source to fill the
+  // slot, upscaling and blurring it. height:auto stops a scaled image from
+  // distorting.
+  const img = `<img src="${attr(src)}" width="${attr(width)}" alt="${attr(safeAlt)}" style="display:block;border:0;max-width:100%;height:auto">`
+  const inner = link ? `<a href="${attr(link)}">${img}</a>` : img
+  const detailHtml = String(details || '').trim()
+    .split(/\n{2,}/)
+    .map(par => `<p style="margin:0 0 16px;font-size:16px;line-height:1.6">${escapeHtml(par.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('')
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:12px 0 24px">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
+      <tr>
+        <td style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+            ${inner}
+          </td></tr></table>
+          <div style="margin-top:20px">${detailHtml}</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`
+}
+
+// The plain-text half. The details are the payload here — the alt only names
+// what the image was, since a text reader never sees it.
+export function buildImageBlockText({ alt, details, link } = {}) {
+  const lines = []
+  const safeAlt = String(alt || '').trim()
+  const body = String(details || '').trim()
+  if (body) lines.push(body)
+  if (safeAlt) lines.push(`[Image: ${safeAlt}]`)
+  if (link) lines.push(link)
+  return lines.join('\n\n')
+}
+
 export function buildPosterBlockText({ link, title, year }) {
   const caption = `${title || ''}${year ? ` (${year})` : ''}`.trim()
   const header = link ? (caption ? `${caption}: ${link}` : link) : caption

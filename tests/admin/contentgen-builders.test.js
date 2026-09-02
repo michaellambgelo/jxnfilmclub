@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
+  imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
+  newsletterSendBlocker, newsletterSizeReport, utf8Bytes,
+  NL_HTML_WARN_BYTES, NL_HTML_BLOCK_BYTES, NL_TEXT_BLOCK_BYTES,
   fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
@@ -629,5 +632,206 @@ describe('diarySeriesCopy', () => {
       expect(buildSocialCopy('diary', 'x', { ...p, page: i + 1, pageCount }).length)
         .toBeLessThanOrEqual(PLATFORM_LIMITS.x)
     })
+  })
+})
+
+// --- Newsletter image announcement block ------------------------------------
+//
+// A flyer is a complex image: the club's real one carries two showtimes, a
+// date, an RSVP number and a deadline entirely as pixels. These tests pin the
+// rule that the information must exist as TEXT as well — for screen readers,
+// for plain-text readers, and for the majority of clients that block images.
+describe('imageBlockIssues', () => {
+  const OK = { src: 'https://img.jxnfilm.club/abc123.jpg', alt: 'Double feature poster', details: 'Sunday Sept 13. Yojimbo 2PM.' }
+
+  it('accepts a hosted image with concise alt and real details', () => {
+    expect(imageBlockIssues(OK)).toEqual([])
+  })
+
+  it('rejects a data: URI — the exact thing a browser paste produces', () => {
+    const issues = imageBlockIssues({ ...OK, src: 'data:image/png;base64,iVBORw0KGgo=' })
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatch(/hosted/i)
+  })
+
+  it('requires https, not http or a bare path', () => {
+    for (const src of ['http://x/y.jpg', '/img/y.jpg', 'y.jpg']) {
+      expect(imageBlockIssues({ ...OK, src })).not.toEqual([])
+    }
+  })
+
+  it('requires alt text', () => {
+    for (const alt of ['', '   ', undefined]) {
+      const issues = imageBlockIssues({ ...OK, alt })
+      expect(issues.some(i => /alt text is required/i.test(i))).toBe(true)
+    }
+  })
+
+  it('rejects alt long enough to be unnavigable by a screen reader', () => {
+    // Cramming the whole flyer into alt is the failure mode this guards.
+    const crammed = 'Men With No Names double feature: Yojimbo by Akira Kurosawa at 2PM and ' +
+      'A Fistful of Dollars by Sergio Leone at 5PM, Sunday September 13th, text 502-387-7503 to RSVP by 09/07/26'
+    const issues = imageBlockIssues({ ...OK, alt: crammed })
+    expect(issues.some(i => /too long/i.test(i))).toBe(true)
+  })
+
+  it('requires the details, so the content never lives only inside the image', () => {
+    const issues = imageBlockIssues({ ...OK, details: '' })
+    expect(issues.some(i => /must not live only inside the image/i.test(i))).toBe(true)
+  })
+
+  it('reports every problem at once rather than one at a time', () => {
+    expect(imageBlockIssues({}).length).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('buildImageBlockHtml / buildImageBlockText', () => {
+  const BLOCK = {
+    src: 'https://img.jxnfilm.club/abc123.jpg',
+    alt: 'Men With No Names double feature poster',
+    details: 'Yojimbo 2PM, A Fistful of Dollars 5PM.\n\nText 502-387-7503 to RSVP by 09/07/26.',
+  }
+
+  it('carries the alt into the markup', () => {
+    expect(buildImageBlockHtml(BLOCK)).toContain('alt="Men With No Names double feature poster"')
+  })
+
+  // Assert on the <img> alone — the surrounding shell legitimately carries
+  // width="600" and width:100%, and matching the whole document would pass
+  // on those instead of on the image.
+  const imgTag = (html) => (html.match(/<img\b[^>]*>/) || [''])[0]
+
+  it('sizes to the card content box, not the card', () => {
+    const img = imgTag(buildImageBlockHtml(BLOCK))
+    // The shell is width="600" with 32px td padding either side, so anything
+    // wider than 536 overflows its own cell in Outlook — which honours the
+    // width ATTRIBUTE and ignores max-width. 600 here would reproduce the very
+    // overflow this block exists to fix.
+    expect(img).toMatch(/width="536"/)
+    expect(img).not.toMatch(/width="600"/)
+  })
+
+  it('shrinks but never stretches', () => {
+    const img = imgTag(buildImageBlockHtml(BLOCK))
+    // width:100% would scale a narrow source UP to fill the slot, blurring it.
+    expect(img).toContain('max-width:100%')
+    expect(img).not.toMatch(/[;"]width:100%/)
+    expect(img).toContain('height:auto')            // else a fluid image distorts
+    expect(img).not.toMatch(/\sheight="/)           // fixed height + fluid width distorts
+  })
+
+  it('honours an explicit narrower width', () => {
+    // A 2:3 portrait at 536 wide renders ~804px tall and swallows the email,
+    // so callers cap on height and pass the resulting width down.
+    expect(imgTag(buildImageBlockHtml({ ...BLOCK, width: 480 }))).toMatch(/width="480"/)
+  })
+
+  it('renders the details as real text, not as part of the image', () => {
+    const html = buildImageBlockHtml(BLOCK)
+    expect(html).toContain('Yojimbo 2PM')
+    expect(html).toContain('502-387-7503')
+    expect((html.match(/<p style/g) || [])).toHaveLength(2)   // blank line splits paragraphs
+  })
+
+  it('escapes details rather than trusting them as markup', () => {
+    const html = buildImageBlockHtml({ ...BLOCK, details: '<script>alert(1)</script> & more' })
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&amp; more')
+  })
+
+  it('marks layout tables presentational so screen readers skip them', () => {
+    // Nested layout tables announced as data tables are a classic email a11y
+    // failure — every one of ours must carry role="presentation".
+    const html = buildImageBlockHtml(BLOCK)
+    const tables = html.match(/<table[^>]*>/g) || []
+    expect(tables.length).toBeGreaterThan(0)
+    for (const t of tables) expect(t).toContain('role="presentation"')
+  })
+
+  it('puts the details first in the plain-text half, with the image named after', () => {
+    const text = buildImageBlockText(BLOCK)
+    expect(text.indexOf('Yojimbo 2PM')).toBeLessThan(text.indexOf('[Image:'))
+    expect(text).toContain('502-387-7503')
+    expect(text).toContain('[Image: Men With No Names double feature poster]')
+  })
+
+  it('wraps the image in the link when one is given', () => {
+    const html = buildImageBlockHtml({ ...BLOCK, link: 'https://jxnfilm.club/events' })
+    expect(html).toMatch(/<a href="https:\/\/jxnfilm\.club\/events"><img/)
+    expect(buildImageBlockText({ ...BLOCK, link: 'https://jxnfilm.club/events' })).toContain('https://jxnfilm.club/events')
+  })
+})
+
+// --- Newsletter send guards -------------------------------------------------
+describe('utf8Bytes / newsletterSizeReport', () => {
+  it('counts UTF-8 bytes, not code units', () => {
+    // Curly quotes, em dashes and emoji all appear in real newsletter copy,
+    // and .length undercounts every one of them.
+    expect(utf8Bytes('café—')).toBeGreaterThan('café—'.length)
+    expect(utf8Bytes('abc')).toBe(3)
+    expect(utf8Bytes(null)).toBe(0)
+  })
+
+  it('grades ok / warn / over on the byte thresholds', () => {
+    expect(newsletterSizeReport('x'.repeat(1000), '').level).toBe('ok')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_WARN_BYTES), '').level).toBe('warn')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_BLOCK_BYTES), '').level).toBe('over')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_WARN_BYTES - 1), '').level).toBe('ok')
+  })
+
+  it('grades the plain-text body too, independently of the HTML', () => {
+    expect(newsletterSizeReport('', 'x'.repeat(NL_TEXT_BLOCK_BYTES)).level).toBe('over')
+  })
+})
+
+describe('newsletterSendBlocker', () => {
+  const ORIGIN = 'https://join.jxnfilm.club'
+  const opts = { expectedOrigin: ORIGIN }
+
+  it('passes a clean body', () => {
+    expect(newsletterSendBlocker('<p>Hello</p>', 'Hello', opts)).toBeNull()
+  })
+
+  it('blocks an embedded data: image at any size', () => {
+    // Gmail's sanitizer is size-blind, so a small inline image is exactly as
+    // invisible as a huge one — there is no threshold that makes this safe.
+    const tiny = '<img src="data:image/png;base64,iVBORw0KGgo=">'
+    expect(newsletterSendBlocker(tiny, '', opts).code).toBe('data_uri')
+    expect(newsletterSendBlocker(tiny, '', opts).message).toMatch(/gmail/i)
+  })
+
+  it('catches data: however the attribute is written', () => {
+    for (const body of ["<img src='data:image/png;base64,AA'>", '<img src = "data:image/gif;base64,AA">', '<img SRC="DATA:image/png;base64,AA">']) {
+      expect(newsletterSendBlocker(body, '', opts)?.code).toBe('data_uri')
+    }
+  })
+
+  it('blocks an image hosted on another environment', () => {
+    const staging = '<img src="https://join-staging.jxnfilm.club/nl/img/abc.jpg">'
+    expect(newsletterSendBlocker(staging, '', opts).code).toBe('cross_env')
+    // ...and allows the matching one.
+    expect(newsletterSendBlocker(`<img src="${ORIGIN}/nl/img/abc.jpg">`, '', opts)).toBeNull()
+  })
+
+  it('blocks a body over the size ceiling, naming which body', () => {
+    const big = newsletterSendBlocker('x'.repeat(NL_HTML_BLOCK_BYTES), '', opts)
+    expect(big.code).toBe('too_large')
+    expect(big.message).toMatch(/HTML body/)
+    expect(newsletterSendBlocker('', 'x'.repeat(NL_TEXT_BLOCK_BYTES), opts).message).toMatch(/plain-text body/)
+  })
+
+  it('still catches the poster placeholder', () => {
+    expect(newsletterSendBlocker('<p>[Write your review or announcement here — x]</p>', '', opts).code).toBe('placeholder')
+  })
+
+  it('reports the most serious reason when several apply', () => {
+    // A data URI is both oversized AND unrenderable; the unrenderable half is
+    // what the operator needs to hear, because trimming will not fix it.
+    const both = '<img src="data:image/png;base64,AA">' + 'x'.repeat(NL_HTML_BLOCK_BYTES)
+    expect(newsletterSendBlocker(both, '', opts).code).toBe('data_uri')
+  })
+
+  it('works without an expectedOrigin', () => {
+    expect(newsletterSendBlocker('<img src="https://anywhere/nl/img/a.jpg">', '', {})).toBeNull()
   })
 })

@@ -3515,6 +3515,14 @@ async function handleUnsubscribe(request, env) {
   ))
 }
 
+// Deliberately looser than the admin's own 92KB block: the operator should
+// always hear the client's quality-framed message first, and this exists only
+// to stop an unrecoverable failure reaching sendBatch.
+const NEWSLETTER_HTML_MAX_BYTES = 128 * 1024
+const NEWSLETTER_TEXT_MAX_BYTES = 64 * 1024
+
+const utf8Len = (s) => new TextEncoder().encode(String(s || '')).length
+
 // POST /admin/newsletter/send — bearer-auth with ADMIN_TOKEN.
 // Body: { subject, html?, text? }. Sends to every member with newsletter===true.
 async function handleNewsletterSend(request, env) {
@@ -3526,6 +3534,38 @@ async function handleNewsletterSend(request, env) {
   const { subject, html: bodyHtml, text: bodyText, testTo } = await request.json().catch(() => ({}))
   if (!subject || (!bodyHtml && !bodyText)) {
     return json(env, { error: 'subject and html or text required' }, 400)
+  }
+
+  // These run BEFORE the testTo branch below, deliberately. A test send is the
+  // one path that makes a broken body look fine — a data: URI renders
+  // perfectly in a test to an Apple Mail address and is stripped by Gmail for
+  // the actual list — so an unguarded test send is a false-confidence
+  // generator. The admin mirrors these checks; this is the authority, and it
+  // also catches a body arriving through any other caller.
+  const htmlBytes = utf8Len(bodyHtml)
+  if (htmlBytes > NEWSLETTER_HTML_MAX_BYTES) {
+    return json(env, {
+      error: `html body is ${Math.round(htmlBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_HTML_MAX_BYTES / 1024)}KB limit. ` +
+        'Gmail clips messages near 102KB and a body this size can exhaust the Worker while fanning out per recipient.',
+    }, 413)
+  }
+  const textBytes = utf8Len(bodyText)
+  if (textBytes > NEWSLETTER_TEXT_MAX_BYTES) {
+    return json(env, { error: `text body is ${Math.round(textBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_TEXT_MAX_BYTES / 1024)}KB limit.` }, 413)
+  }
+  if (/src\s*=\s*["']?\s*data:/i.test(String(bodyHtml || ''))) {
+    return json(env, {
+      error: 'html body contains an embedded data: image. Gmail strips those at render time, so most recipients would see nothing. Host the image and reference it by URL.',
+    }, 400)
+  }
+  {
+    // A staging image URL in a production send 404s for every recipient.
+    const selfOrigin = new URL(request.url).origin
+    const wrong = (String(bodyHtml || '').match(/https?:\/\/[^"'\s>]*\/nl\/img\/[^"'\s>]*/gi) || [])
+      .find(u => !u.startsWith(selfOrigin + '/'))
+    if (wrong) {
+      return json(env, { error: `html body references an image on another environment (${wrong}).` }, 400)
+    }
   }
 
   // Postal address is OPTIONAL: the footer prints it only when the var is
@@ -3542,8 +3582,16 @@ async function handleNewsletterSend(request, env) {
   // isn't a real broadcast.
   if (testTo) {
     if (!isValidEmail(testTo)) return json(env, { error: 'invalid testTo' }, 400)
-    const sent = await sendBatch(env, [await buildNewsletterMessage(env, testTo, opts)])
-    return json(env, { ok: true, sent, test: true })
+    try {
+      const sent = await sendBatch(env, [await buildNewsletterMessage(env, testTo, opts)])
+      return json(env, { ok: true, sent, test: true })
+    } catch (err) {
+      // Without this, a `Resend batch 422: ...` throw funnels through the
+      // top-level catch and reaches the operator as "internal server error",
+      // with the real cause visible only in Workers Logs. The route is
+      // admin-only, so forwarding upstream text leaks nothing.
+      return json(env, { error: String((err && err.message) || err) }, 502)
+    }
   }
 
   // Collect opted-in recipients from the canonical member rows. KV list pages
@@ -3570,7 +3618,16 @@ async function handleNewsletterSend(request, env) {
     messages.push(await buildNewsletterMessage(env, email, opts))
   }
 
-  const sent = await sendBatch(env, messages)
+  let sent = 0
+  try {
+    sent = await sendBatch(env, messages)
+  } catch (err) {
+    // Same reasoning as the test-send branch: surface the real cause instead
+    // of "internal server error". sendBatch attaches how many messages had
+    // already gone out, so a partial broadcast is reported as partial —
+    // retrying a send that already reached 100 inboxes would double-send them.
+    return json(env, { error: String((err && err.message) || err), sent: err.sent || 0, partial: (err.sent || 0) > 0 }, 502)
+  }
   // Audit trail: one row per real broadcast, surfaced in the admin dashboard's
   // newsletter history. Tiny and kept indefinitely (no TTL).
   if (sent > 0) {
@@ -3622,7 +3679,14 @@ async function sendBatch(env, messages) {
       },
       body: JSON.stringify(chunk),
     })
-    if (!res.ok) throw new Error(`Resend batch ${res.status}: ${await res.text()}`)
+    if (!res.ok) {
+      // Carry how many already went out. A mid-broadcast failure is not
+      // all-or-nothing — chunk 1 of 3 may already be in 100 inboxes — and a
+      // caller that reports 0 invites a retry that duplicates them.
+      const err = new Error(`Resend batch ${res.status}: ${await res.text()}`)
+      err.sent = sent
+      throw err
+    }
     sent += chunk.length
   }
   return sent

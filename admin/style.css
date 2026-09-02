@@ -510,3 +510,11 @@ dialog pre.rich {
 .cg-copy-card.dirty textarea { border-left: 3px solid var(--brand, #d7321f) }
 /* A paint is in flight; the canvas below may still be the previous page. */
 .cg-canvas-wrap.loading { opacity: 0.55 }
+
+/* --- Newsletter compose: size budget + flyer card --- */
+.nl-size { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted) }
+.nl-size[data-level="warn"] { color: #a5750a; font-weight: 600 }
+.nl-size[data-level="over"] { color: var(--danger); font-weight: 600 }
+.nl-flyer-bar { align-items: flex-end }
+.nl-flyer-why { font-size: 0.8rem; color: var(--danger) }
+.nl-group textarea { width: 100%; font-size: 0.85rem }

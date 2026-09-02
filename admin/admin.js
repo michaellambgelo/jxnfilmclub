@@ -18,7 +18,9 @@ import {
   appendHtmlChunk, appendTextChunk,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
-  buildStatsContext, computeMemberStats, normalizeAttendees } from './lib.js'
+  buildStatsContext, computeMemberStats, normalizeAttendees,
+  imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
+  newsletterSendBlocker, newsletterSizeReport } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -249,6 +251,7 @@ async function renderNewsletter() {
         <div class="nl-fields">
           <label>HTML body<textarea id="nl-html" rows="12" placeholder="<h1>…</h1>">${escapeHtml(prefillHtml)}</textarea></label>
           <label>Plain-text body <span class="muted">— fallback</span><textarea id="nl-text" rows="6" placeholder="…"></textarea></label>
+          <p class="nl-size" id="nl-size" data-level="ok"></p>
         </div>
         <div class="nl-preview-wrap">
           <label>Preview <span class="muted">— editable; edits sync back to the HTML</span></label>
@@ -279,6 +282,25 @@ async function renderNewsletter() {
             <label class="grow">Link URL <span class="muted">— optional</span><input id="nl-poster-link" type="url" placeholder="where the poster points"></label>
           </div>
           <div id="nl-poster-results" class="nl-poster-results" hidden></div>
+        </div>
+        <!-- Flyer: a member-made image, hosted elsewhere. Pasting one into the
+             preview embeds a data: URI that Gmail strips at render time, so
+             this takes a URL instead and forces the alt + details that make
+             the flyer readable without images. -->
+        <div class="nl-group">
+          <h4>Flyer</h4>
+          <div class="toolbar nl-flyer-bar">
+            <label class="grow">Image URL<input id="nl-flyer-src" type="url" placeholder="https://… (must be publicly reachable)"></label>
+            <label class="grow">Link URL <span class="muted">— optional</span><input id="nl-flyer-link" type="url" placeholder="where the flyer points"></label>
+          </div>
+          <div class="toolbar nl-flyer-bar">
+            <label class="grow">Alt text <span class="muted">— what a screen reader announces</span><input id="nl-flyer-alt" type="text" placeholder="Men With No Names double feature poster"></label>
+          </div>
+          <label>Details <span class="muted">— the date, time and RSVP info, as text</span><textarea id="nl-flyer-details" rows="3" placeholder="Sunday September 13th. Yojimbo 2PM, A Fistful of Dollars 5PM.&#10;&#10;Text 502-387-7503 to RSVP by 09/07/26."></textarea></label>
+          <div class="toolbar nl-flyer-bar">
+            <button data-action="nl-insert-flyer" id="nl-flyer-insert">Insert flyer</button>
+            <span class="nl-flyer-why muted" id="nl-flyer-why"></span>
+          </div>
         </div>
         <div class="nl-group">
           <h4>Insert content</h4>
@@ -339,12 +361,69 @@ async function renderNewsletter() {
   `
 
   wireNewsletterPreview($('#nl-html'), $('#nl-text'), $('#nl-preview'), $('#nl-fmt'))
+  $('#nl-html').addEventListener('input', nlUpdateSize)
+  $('#nl-text').addEventListener('input', nlUpdateSize)
+  for (const id of ['#nl-flyer-src', '#nl-flyer-link', '#nl-flyer-alt', '#nl-flyer-details']) {
+    $(id)?.addEventListener('input', nlUpdateFlyer)
+  }
+  nlUpdateSize()
   wireFilter($('#nl-filter'), '#nl-table tbody tr')
 }
 
 // Every insert routes through here: snapshot both bodies first, then append,
 // resync the preview, and refresh the Undo button. `label` names what the
 // Undo button offers to reverse.
+// The join Worker origin for the selected env, so a staging image URL in a
+// production body is caught before it 404s for every recipient. The server
+// is the authority on this; the client only mirrors it earlier.
+const nlExpectedOrigin = () =>
+  env() === 'staging' ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+
+// Running byte budget under the two body fields. Wired to BOTH — #nl-text
+// reaches neither preview sync, so a meter driven off the HTML alone shows
+// green while the text body sails past its limit.
+function nlUpdateSize() {
+  const el = $('#nl-size')
+  if (!el) return
+  const { htmlBytes, textBytes, level } = newsletterSizeReport($('#nl-html').value, $('#nl-text').value)
+  const kb = (n) => `${(n / 1024).toFixed(1)}KB`
+  el.dataset.level = level
+  el.textContent = level === 'over'
+    ? `${kb(htmlBytes)} HTML · ${kb(textBytes)} text — too large to send. Gmail clips near 102KB.`
+    : level === 'warn'
+      ? `${kb(htmlBytes)} HTML · ${kb(textBytes)} text — approaching Gmail's ~102KB clipping point.`
+      : `${kb(htmlBytes)} HTML · ${kb(textBytes)} text`
+  nlUpdateFlyer()
+}
+
+const nlFlyerDraft = () => ({
+  src: ($('#nl-flyer-src')?.value || '').trim(),
+  link: ($('#nl-flyer-link')?.value || '').trim(),
+  alt: ($('#nl-flyer-alt')?.value || '').trim(),
+  details: ($('#nl-flyer-details')?.value || '').trim(),
+})
+
+// Insert stays disabled until the block would be valid, with the first reason
+// shown rather than the button merely refusing.
+function nlUpdateFlyer() {
+  const btn = $('#nl-flyer-insert')
+  const why = $('#nl-flyer-why')
+  if (!btn) return
+  const issues = imageBlockIssues(nlFlyerDraft())
+  btn.disabled = issues.length > 0
+  btn.title = issues[0] || 'Append the flyer with its alt text and details'
+  if (why) why.textContent = issues[0] || ''
+}
+
+// Refuse a send the recipients cannot read, naming the reason. Runs before
+// the confirm() and before any POST, and returns true when blocked.
+function nlBlockedSend() {
+  const blocker = newsletterSendBlocker($('#nl-html').value, $('#nl-text').value,
+    { expectedOrigin: nlExpectedOrigin() })
+  if (blocker) toast(blocker.message, true)
+  return !!blocker
+}
+
 function nlInsert(htmlChunk, textChunk, label, message) {
   const htmlField = $('#nl-html')
   const textField = $('#nl-text')
@@ -434,7 +513,28 @@ function wireNewsletterPreview(htmlField, textField, preview, toolbar) {
   preview.addEventListener('load', () => {
     const doc = preview.contentDocument
     doc.designMode = 'on'
-    doc.addEventListener('input', () => { clearClean(); syncFromPreview() })
+    doc.addEventListener('input', () => {
+      clearClean()
+      // Strip embedded images before they reach the textarea. Pasting a file
+      // makes the browser insert <img src="data:..."> — 4.7MB of base64 for a
+      // typical flyer, which Gmail strips at render time anyway. blob: is
+      // worse: page-local, so it dies on reload and would send as a dead link.
+      //
+      // Done HERE rather than by taking over the paste event on purpose:
+      // intercepting paste discards Chrome and Safari's own clipboard
+      // sanitizer, which is what removes <script>, <style> and on* handlers
+      // from copied web content. The iframe sandbox stops that executing in
+      // the preview; it does nothing about it being serialized into #nl-html
+      // and mailed. Catching it after the native paste keeps that protection
+      // and covers drag-drop on the same path.
+      const embedded = doc.body.querySelectorAll('img[src^="data:"], img[src^="blob:"]')
+      if (embedded.length) {
+        embedded.forEach(img => img.remove())
+        toast(`Removed ${embedded.length} embedded image${embedded.length === 1 ? '' : 's'} — Gmail strips those. Host it and use the Flyer card.`, true)
+      }
+      syncFromPreview()
+      nlUpdateSize()
+    })
     doc.addEventListener('keydown', onUndoKey)
   })
 
@@ -1564,6 +1664,14 @@ document.addEventListener('click', async (e) => {
     else if (a === 'nl-undo') {
       nlUndoInsert()
     }
+    else if (a === 'nl-insert-flyer') {
+      const draft = nlFlyerDraft()
+      const issues = imageBlockIssues(draft)
+      if (issues.length) { toast(issues[0], true); return }
+      nlInsert(buildImageBlockHtml(draft), buildImageBlockText(draft), 'flyer',
+        'Flyer inserted — the details are real text, so it reads with images off')
+      nlUpdateSize()
+    }
     else if (a === 'nl-poster-search') {
       const query = $('#nl-poster-q').value.trim()
       if (!query) { toast('Enter a film title to search', true); return }
@@ -1600,6 +1708,10 @@ document.addEventListener('click', async (e) => {
       const testTo = $('#nl-test-email').value.trim()
       if (!subject || (!html && !text)) { toast('Subject and a body are required', true); return }
       if (!testTo) { toast('Enter a test email address', true); return }
+      // Blocked on identical terms. A data: URI renders perfectly in a test to
+      // an Apple Mail address and is stripped by Gmail for the real list, so
+      // an unguarded test send is a false-confidence generator.
+      if (nlBlockedSend()) return
       const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined, testTo })
       const r = await api('POST', `/api/newsletter/send?${qs({ env: env() })}`, body)
       toast(`Test sent to ${testTo} (${r.sent})`)
@@ -1609,12 +1721,10 @@ document.addEventListener('click', async (e) => {
       const html = $('#nl-html').value
       const text = $('#nl-text').value
       if (!subject || (!html && !text)) { toast('Subject and a body are required', true); return }
-      // The poster insert seeds bracketed placeholder copy — block a real
-      // send that still contains it.
-      if ((html + text).includes('[Write your review or announcement here')) {
-        toast('The body still contains the poster placeholder text — replace it before sending', true)
-        return
-      }
+      // Covers the poster placeholder plus the three ways a body reaches
+      // recipients unreadable: an embedded data: image, a cross-env image
+      // URL, and a body past Gmail's clipping point.
+      if (nlBlockedSend()) return
       const count = document.querySelectorAll('#nl-table .pill.on').length
       if (!confirm(`Send "${subject}" to ${count} opted-in member(s) on ${env()}?\n\nThis emails real people.`)) return
       const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined })

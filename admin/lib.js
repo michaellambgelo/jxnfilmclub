@@ -275,6 +275,20 @@ export function fmtSocialDate(iso, { short = false } = {}) {
     : { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
+// 'Mar 12 – Apr 3, 2026' / 'Dec 28, 2025 – Jan 4, 2026' / 'Apr 3, 2026'.
+// Display only — diary date comparisons stay lexical on the bare YYYY-MM-DD.
+// The year is carried on the left half only when the range straddles two
+// years, so the common case stays short. Parsed with the T00:00:00 suffix so
+// the day never shifts, exactly as fmtSocialDate does.
+export function fmtDiaryRange(from, to) {
+  const ok = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))
+  if (!ok(from) || !ok(to)) return ''
+  const f = (iso, withYear) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US',
+    withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' })
+  if (from === to) return f(to, true)
+  return `${f(from, from.slice(0, 4) !== to.slice(0, 4))} – ${f(to, true)}`
+}
+
 // Post-length ceilings per platform; null = no practical limit.
 export const PLATFORM_LIMITS = {
   instagram: null,
@@ -329,18 +343,20 @@ function eventBits(event) {
   return { e, name, titled, when, whenShort, venue }
 }
 
-// kind: announce | countdown | recap | roundup | episode | lineup | monthwrap | milestone
+// kind: announce | countdown | recap | roundup | diary | episode | lineup | monthwrap | milestone
 // platform: instagram | facebook | discord | bluesky | x
 // data by kind:
 //   announce/recap — { event, count? }        (count = attendance, recap only)
 //   countdown      — { event, today? }        (today = YYYY-MM-DD anchor for tests)
 //   roundup        — { films, total }         (from buildRoundupData)
+//   diary          — { films, from, to, page, pageCount }  (one buildDiaryPages page)
 //   episode        — { episode: { title, date?, url } }
 //   lineup         — { events: [...] }        (upcoming, already sorted)
 //   monthwrap      — { monthLabel, films: [names], screenings, attendees }
 //   milestone      — { stat: members|screenings|attendance, value }
 export function buildSocialCopy(kind, platform, data = {}) {
   if (kind === 'roundup') return roundupCopy(platform, data)
+  if (kind === 'diary') return diaryCopy(platform, data)
   if (kind === 'episode') return episodeCopy(platform, data.episode || {})
   if (kind === 'lineup') return lineupCopy(platform, data.events || [])
   if (kind === 'monthwrap') return monthwrapCopy(platform, data)
@@ -482,6 +498,47 @@ function roundupCopy(platform, { films = [], total = 0 } = {}) {
   return `📽️ What the club is watching\n\n${names.join('\n')}\n\n${logged} See all member activity: ${WATCHED_URL}`
 }
 
+// Copy for one page of buildDiaryPages. Never says "this week" or "recent":
+// pages deep in the stack are months or years old, so the date range IS the
+// claim. Ratings are the club average (see buildDiaryPages) and appear only
+// where there's room — bluesky/x drop them, since every character saved buys
+// another title before the "+ N more" truncation kicks in.
+function diaryCopy(platform, { films = [], from, to, page = 1, pageCount = 1 } = {}) {
+  const half = (n) => Math.round(n * 2) / 2
+  const named = (f, withStars) => {
+    const base = f.title + (f.year ? ` (${f.year})` : '')
+    if (!withStars || !(f.avgRating > 0)) return base
+    const stars = starsOf(half(f.avgRating))
+    if (!stars) return base
+    return `${base} ${stars}` + (f.ratedCount > 1 ? ` (${f.avgRating.toFixed(1)} avg, ${f.ratedCount} members)` : '')
+  }
+  const names = films.map(f => named(f, true))
+  const range = fmtDiaryRange(from, to)
+  const lead = range ? `From the club's Letterboxd diary, ${range}` : "From the club's Letterboxd diary"
+  const pageTag = pageCount > 1 ? ` (${page}/${pageCount})` : ''
+
+  if (platform === 'instagram') {
+    return `📖 ${lead.toUpperCase()}${pageTag}\n\n${names.join('\n')}\n\nFollow along at the link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `📖 **${lead}**${pageTag}\n${names.map(n => `- ${n}`).join('\n')}\n\n${WATCHED_URL}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    const limit = PLATFORM_LIMITS[platform]
+    const short = films.map(f => named(f, false))
+    const wrap = (l) => `📖 ${lead}${pageTag}: ${l}\n\n${WATCHED_URL}`
+    let used = short.length
+    let list = short.join(' · ')
+    while (used > 1 && wrap(list).length > limit) {
+      used--
+      list = short.slice(0, used).join(' · ') + ` + ${short.length - used} more`
+    }
+    return wrap(list)
+  }
+  // facebook
+  return `📖 ${lead}${pageTag}\n\n${names.join('\n')}\n\nSee all member activity: ${WATCHED_URL}`
+}
+
 // Aggregate a /watched handle-keyed map into public-safe roundup data.
 // Member identity is dropped HERE — nothing downstream ever sees a handle
 // or name. Films watched by several members appear once; `total` counts the
@@ -522,6 +579,93 @@ export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}
     films.push(out)
   }
   return { films: films.slice(0, limit), total: entries.length }
+}
+
+// Page the club's Letterboxd diary into fixed-size, public-safe cards.
+//
+// Identity is dropped HERE, same contract as buildRoundupData above — and one
+// step further: `link` is deliberately NOT carried through. A diary-entry link
+// is https://letterboxd.com/<handle>/film/<slug>/, so it *is* the handle. With
+// it omitted, "no diary page output contains a member handle" is provable by
+// inspection of the returned shape.
+//
+// Unlike buildRoundupData there is no day window: every dated entry in the map
+// is paged, newest first. That makes the deep pages genuinely old — feed depth
+// is capped per member, not by date, so an inactive member's twelve entries can
+// reach back years. Each page therefore carries its own `from`/`to` so callers
+// can state the real range instead of implying recency.
+//
+// `rating` is one member's opinion, so a deduped row must never show it as if
+// it were the club's. Instead every rating for the film is averaged:
+// `avgRating` is the mean over `ratedCount` raters, which is <= `count`, the
+// number of members who logged it (some log without rating).
+//
+// watched_date is a bare YYYY-MM-DD compared lexically, never via Date.
+export function buildDiaryPages(watchedMap, { perPage = 10 } = {}) {
+  const dated = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))
+  const entries = []
+  for (const films of Object.values(watchedMap || {})) {
+    for (const f of (films || [])) {
+      if (f && f.title && dated(f.watched_date)) entries.push(f)
+    }
+  }
+
+  // Newest first. Same-day order is undefined in the source (per-member feeds
+  // are merged, and Letterboxd gives no intra-day time), so the tiebreak is the
+  // title|year key ascending: total, stable across reloads, independent of
+  // member iteration order, and locale-independent (plain < / >, not
+  // localeCompare, whose collation is ICU-dependent). Without a total order the
+  // page boundaries drift between renders and a batch export isn't reproducible.
+  const keyOf = (f) => `${String(f.title).toLowerCase()}|${f.year == null ? '' : String(f.year)}`
+  entries.sort((a, b) => {
+    const d = String(b.watched_date).localeCompare(String(a.watched_date))
+    if (d) return d
+    const ka = keyOf(a), kb = keyOf(b)
+    return ka < kb ? -1 : ka > kb ? 1 : 0
+  })
+
+  // First occurrence wins = newest watched_date, by the sort above. Map
+  // preserves insertion order, so the deduped list stays sorted.
+  const byKey = new Map()
+  for (const f of entries) {
+    const k = keyOf(f)
+    let row = byKey.get(k)
+    if (!row) {
+      row = {
+        title: String(f.title),
+        ...(f.year == null || f.year === '' ? {} : { year: String(f.year) }),
+        ...(f.poster ? { poster: f.poster } : {}),
+        watched_date: String(f.watched_date),
+        count: 0,
+        ratedCount: 0,
+      }
+      row._sum = 0
+      byKey.set(k, row)
+    }
+    row.count++
+    if (f.liked) row.liked = true
+    const r = Number(f.rating)
+    if (r > 0) { row.ratedCount++; row._sum += r }
+  }
+
+  const films = []
+  for (const row of byKey.values()) {
+    if (row.ratedCount > 0) row.avgRating = row._sum / row.ratedCount
+    delete row._sum
+    films.push(row)
+  }
+
+  const size = Math.max(1, Math.floor(Number(perPage)) || 10)
+  const pages = []
+  for (let i = 0; i < films.length; i += size) {
+    const chunk = films.slice(i, i + size)
+    pages.push({
+      films: chunk,
+      to: chunk[0].watched_date,
+      from: chunk[chunk.length - 1].watched_date,
+    })
+  }
+  return { pages, films, total: films.length, entries: entries.length, pageCount: pages.length }
 }
 
 // 'jfc-announce-2026-06-12-passion-ig-post.png'

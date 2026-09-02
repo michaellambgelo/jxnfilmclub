@@ -3,8 +3,11 @@
 //
 // Privacy: everything rendered here is destined for PUBLIC social posts.
 // Events flow through socialEventView() (no address/notes/capacity) and
-// member watches through buildRoundupData() (no names or handles) — both
-// enforced in lib.js, not here. Attendance contributes a count only.
+// member watches through buildRoundupData()/buildDiaryPages() (no names or
+// handles — and buildDiaryPages also drops the diary `link`, which embeds
+// the handle) — all enforced in lib.js, not here. Attendance contributes a
+// count only, and a diary row's rating is the club average, never one
+// member's score.
 //
 // Rendering is hand-rolled canvas (the admin SPA is buildless). Poster
 // images load through the same-origin /api/img proxy so the canvas is never
@@ -13,8 +16,8 @@
 
 import {
   escapeHtml, attr, tryParse, qs,
-  socialEventView, buildSocialCopy, buildRoundupData, socialFileName,
-  fmtSocialDate, fmtShowtime, fmtMonth, daysUntil, countdownLead,
+  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, socialFileName,
+  fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange, daysUntil, countdownLead,
   PLATFORM_LIMITS, PLATFORM_LABELS,
 } from './lib.js'
 
@@ -50,14 +53,27 @@ function loadFonts() {
 
 // Same-origin proxy load — resolves null on any failure so cards render
 // without the image instead of breaking.
+//
+// Memoized on the URL: a "download all pages" run redraws every diary page,
+// and each size-button click redraws again, so an uncached load would refetch
+// the same ~130 posters through /api/img on every pass. Failures are evicted
+// so one transient proxy hiccup doesn't blank a poster for the whole session.
+const imgCache = new Map()
 function loadImage(url) {
-  return new Promise((resolve) => {
-    if (!url) return resolve(null)
+  if (!url) return Promise.resolve(null)
+  const hit = imgCache.get(url)
+  if (hit) return hit
+  const p = new Promise((resolve) => {
     const img = new Image()
     img.onload = () => resolve(img)
     img.onerror = () => resolve(null)
     img.src = `/api/img?${qs({ url })}`
+  }).then((img) => {
+    if (!img) imgCache.delete(url)
+    return img
   })
+  imgCache.set(url, p)
+  return p
 }
 
 const SIZES = {
@@ -76,6 +92,7 @@ const KINDS = {
   episode: 'New podcast episode',
   milestone: 'Milestone',
   roundup: 'Member watches roundup',
+  diary: 'Member diary (paged)',
 }
 
 const EPISODES_URL = 'https://jxnfilm.club/data/episodes.json'
@@ -90,6 +107,10 @@ const centralToday = () =>
 
 const PLATFORMS = ['instagram', 'facebook', 'discord', 'bluesky', 'x']
 
+// Films per diary card. The 2x5 grid in drawDiaryCard is built around this
+// number — changing it means re-deriving that layout, not just this constant.
+const DIARY_PER_PAGE = 10
+
 // --- Module state (survives tab switches, same pattern as the Events tab) ---
 
 let cg = {
@@ -100,6 +121,9 @@ let cg = {
   events: [],          // public views, sorted upcoming-first
   attendCounts: {},    // event id -> attendee count
   roundup: null,       // { films, total } from buildRoundupData
+  diary: null,         // { pages, total, entries, pageCount } from buildDiaryPages
+  diaryPage: 0,        // index into cg.diary.pages
+  batching: false,     // a "download all pages" run is in flight
   episodes: null,      // [{ title, date, url }] from the public site
   episodeIdx: 0,
   wrapMonth: null,     // 'YYYY-MM' selected for the monthly wrap
@@ -142,6 +166,22 @@ async function loadEvents() {
 async function loadRoundup() {
   const map = await ctx.api('GET', `/api/watched?${qs({ env: ctx.env() })}`)
   cg.roundup = buildRoundupData(map, { limit: cg.limit })
+}
+
+// Same source as the roundup, paged instead of windowed. Note the pages are
+// held in module state and the batch export reads them from there — never
+// re-fetching mid-run, since /watched is live behind a 15-minute cache and a
+// refresh between pages would shift the boundaries and duplicate or skip films
+// across the series.
+async function loadDiary() {
+  const map = await ctx.api('GET', `/api/watched?${qs({ env: ctx.env() })}`)
+  cg.diary = buildDiaryPages(map, { perPage: DIARY_PER_PAGE })
+}
+
+const diaryPageData = () => {
+  const pages = (cg.diary && cg.diary.pages) || []
+  const page = pages[cg.diaryPage] || { films: [] }
+  return { ...page, page: cg.diaryPage + 1, pageCount: pages.length }
 }
 
 // Episodes source, KV first: the operator override `config:podcast` in
@@ -206,6 +246,7 @@ function milestoneValue(stat) {
 
 function copyData() {
   if (cg.kind === 'roundup') return cg.roundup || { films: [], total: 0 }
+  if (cg.kind === 'diary') return diaryPageData()
   if (cg.kind === 'episode') return { episode: (cg.episodes || [])[cg.episodeIdx] || null }
   if (cg.kind === 'lineup') return { events: upcomingEvents().slice(0, 4) }
   if (cg.kind === 'monthwrap') return monthwrapData()
@@ -231,6 +272,80 @@ function wrapText(c, text, maxWidth) {
   }
   if (line) lines.push(line)
   return lines
+}
+
+// Single-line truncation for grid cells too tight to wrap.
+function ellipsize(c, text, maxWidth) {
+  let s = String(text || '')
+  if (c.measureText(s).width <= maxWidth) return s
+  while (s.length > 1 && c.measureText(s + '…').width > maxWidth) s = s.slice(0, -1)
+  return s.replace(/[\s.,;:—–-]+$/, '') + '…'
+}
+
+// One five-pointed star as a path, centred on (cx, cy) with circumradius r.
+function starPath(c, cx, cy, r) {
+  c.beginPath()
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5
+    const rad = i % 2 ? r * 0.42 : r
+    const x = cx + Math.cos(a) * rad
+    const y = cy + Math.sin(a) * rad
+    i ? c.lineTo(x, y) : c.moveTo(x, y)
+  }
+  c.closePath()
+}
+
+// Advance width drawStars() will consume for a rating — same arithmetic, no
+// drawing, so a layout pass can measure a row before committing to it.
+function starsWidth(rating, px) {
+  const n = Number(rating) || 0
+  if (!(n > 0)) return 0
+  const drawn = Math.floor(n) + (n - Math.floor(n) >= 0.5 ? 1 : 0)
+  return drawn * Math.round(px * 1.15)
+}
+
+// Letterboxd half-star rating drawn as VECTOR stars, not text. '★' (U+2605)
+// is in neither Oswald nor Playfair, so a text star falls back per-glyph to
+// whatever symbol font the machine has — which moves the baseline and the
+// measureText width out from under the layout, and makes the same card render
+// differently in headless QA than in the operator's browser. starsOf() in
+// lib.js stays the formatter for the copy panel, where that doesn't matter.
+//
+// `y` is the TOP of the star box (paths ignore textBaseline). Only filled
+// stars are drawn — no empty outlines — matching starsOf()'s text form.
+// Returns the drawn width; a missing or zero rating draws nothing, returns 0.
+function drawStars(c, rating, x, y, px, color = BRAND) {
+  const n = Number(rating) || 0
+  if (!(n > 0)) return 0
+  const full = Math.floor(n)
+  const half = n - full >= 0.5
+  const r = px / 2
+  const step = Math.round(px * 1.15)
+  c.fillStyle = color
+  let cx = x + r
+  for (let i = 0; i < full; i++) {
+    starPath(c, cx, y + r, r)
+    c.fill()
+    cx += step
+  }
+  if (half) {
+    // A bare left-half star reads as a clipping artifact at row size, so the
+    // full outline is ghosted behind it — the glyph still says "star", the
+    // solid half still says "half". starsOf() renders the same value as '½'.
+    c.save()
+    c.globalAlpha = 0.3
+    starPath(c, cx, y + r, r)
+    c.fill()
+    c.globalAlpha = 1
+    c.beginPath()
+    c.rect(cx - r, y, r, px)
+    c.clip()
+    starPath(c, cx, y + r, r)
+    c.fill()
+    c.restore()
+    cx += step
+  }
+  return cx - r - x
 }
 
 // object-fit: cover crop into the destination rect.
@@ -530,6 +645,183 @@ async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
   })
 }
 
+// One page of the club diary: two columns of five poster+title+stars rows.
+// `films` is a page from buildDiaryPages (<= 10, already newest-first).
+//
+// 2x5 at every size, including the landscape ones. Transposing to 5x2 on
+// 1200x630 looks like the obvious fix for the short grid and isn't: five
+// columns makes each cell ~190px wide, and a 2:3 poster at that width wants
+// to be 285px tall against a ~350px grid — it doesn't fit even one row, and
+// shrinking it to fit two gives a smaller thumb AND a narrower title column
+// than 2x5 does. What actually buys the vertical budget is dropping the big
+// display heading on landscape (two compact label lines instead), which frees
+// ~65px and lands ~70px rows.
+async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCount = 1 } = {}) {
+  // The grid follows the page's actual film count. A full page is 2x5, but
+  // the last page is whatever's left over — 121 films over 10 leaves ONE on
+  // page 13, and a lone thumbnail parked in the top-left of an empty 2x5 is
+  // not a postable card. Collapsing to a single column (and only as many rows
+  // as there are films) lets the pitch cap scale the poster up and centre it.
+  const shown = films.slice(0, DIARY_PER_PAGE)
+  const cols = shown.length > 5 ? 2 : 1
+  const rows = Math.max(1, Math.ceil(shown.length / cols))
+  const landscape = W > H
+  const tall = H >= W * 1.5
+  const pad = Math.round(W * 0.055)
+  const footReserve = pad + Math.round(W * 0.045)   // matches drawWallCard's reserve
+
+  c.fillStyle = INK
+  c.fillRect(0, 0, W, H)
+
+  const labelPx = Math.round(W * (landscape ? 0.018 : tall ? 0.022 : 0.020))
+  const headPx = landscape ? 0 : Math.round(W * (tall ? 0.058 : 0.050))
+  const metaPx = Math.round(W * (landscape ? 0.016 : tall ? 0.022 : 0.019))
+  const range = fmtDiaryRange(from, to)
+  const pageStr = `Page ${page} of ${pageCount}`
+  const headGap = Math.round((headPx || labelPx) * 0.45)
+
+  c.textBaseline = 'top'
+  let hy = pad
+  label(c, landscape ? 'Jackson Film Club · From the club diary' : 'Jackson Film Club', pad, hy, labelPx)
+  hy += labelPx + headGap
+  if (headPx) {
+    c.font = `800 ${headPx}px ${DISPLAY}`
+    c.fillStyle = PAPER
+    c.fillText('From the club diary', pad, hy)
+    hy += Math.round(headPx * 1.05) + Math.round(headGap * 0.5)
+  }
+  // The range is the honest claim: feed depth is capped per member, not by
+  // date, so a deep page can be years old. Never imply recency here.
+  c.font = `500 ${metaPx}px ${LABEL}`
+  c.fillStyle = PAPER_2
+  c.fillText(range ? `${range} · ${pageStr}` : pageStr, pad, hy)
+  hy += metaPx
+
+  const grid = { x: pad, y: hy + Math.round(pad * (landscape ? 0.3 : 0.5)), w: W - pad * 2 }
+  grid.h = H - footReserve - grid.y
+
+  const gut = Math.round(W * 0.022)
+  const colW = Math.round((grid.w - gut) / cols)
+  // Cap the row pitch so five rows don't stretch to 313px each on the story;
+  // the block is then centred in the slack, as drawWallCard does with text.
+  const pitchMax = Math.round(colW * (tall ? 0.62 : 0.34))
+  const rowH = Math.min(Math.floor(grid.h / rows), pitchMax)
+  const gridTop = grid.y + Math.max(0, Math.round((grid.h - rowH * rows) / 2))
+
+  // The colW cap keeps the poster from crowding the title column. The story
+  // gets a looser cap: its rows are tall enough that the 0.33 used elsewhere
+  // leaves the posters stranded in the middle of a lot of empty row.
+  const posterH = Math.min(Math.round(rowH * 0.84), Math.round(colW * (tall ? 0.42 : 0.33)))
+  const posterW = Math.round(posterH * 2 / 3)
+  const gapX = Math.round(W * 0.016)
+  const textW = colW - posterW - gapX
+  // Floor keeps the title from dropping below the footer's own size
+  // (footer() hardcodes W*0.024) — smaller type there reads as a bug.
+  const titlePx = Math.max(
+    Math.round(W * 0.024),
+    Math.min(Math.round(W * (tall ? 0.040 : 0.034)), Math.round(rowH * 0.38)),
+  )
+  const subPx = Math.round(titlePx * 0.66)
+  const starPx = Math.round(titlePx * 0.56)
+  const subH = Math.max(subPx, starPx)
+  const maxLines = landscape ? 1 : 2
+
+  // Pick ONE annotation form for the whole card, sized to the tightest row
+  // that needs it. Choosing per row instead makes a single card carry both
+  // "4.6 avg · 8 members" and "1.8 · 2", which reads as a glitch.
+  const NOTE_FORMS = [
+    (a, n) => `${a} avg · ${n} members`,
+    (a, n) => `${a} avg · ${n}`,
+    (a, n) => `${a} · ${n}`,
+  ]
+  let noteForm = 0
+  c.font = `500 ${subPx}px ${LABEL}`
+  for (const f of shown) {
+    if (!(f.ratedCount > 1) || !(f.avgRating > 0)) continue
+    let used = f.year ? c.measureText(String(f.year)).width + Math.round(titlePx * 0.35) : 0
+    used += starsWidth(Math.round(f.avgRating * 2) / 2, starPx) + Math.round(titlePx * 0.28)
+    const room = textW - used
+    while (noteForm < NOTE_FORMS.length - 1
+           && c.measureText(NOTE_FORMS[noteForm](f.avgRating.toFixed(1), f.ratedCount)).width > room) {
+      noteForm++
+    }
+  }
+
+  // Load every poster up front: loadImage is memoized and resolves null on
+  // failure, so a dead URL just leaves the surface block behind the tile.
+  const posters = await Promise.all(shown.map(f => loadImage(f.poster)))
+
+  for (let i = 0; i < shown.length; i++) {
+    const f = shown[i]
+    const col = Math.floor(i / rows)          // column-major: 1-5 left, 6-10 right
+    const rx = grid.x + col * (colW + gut)
+    const ry = gridTop + (i % rows) * rowH
+
+    const py = ry + Math.round((rowH - posterH) / 2)
+    c.save()
+    if (c.roundRect) {
+      c.beginPath()
+      c.roundRect(rx, py, posterW, posterH, Math.round(posterW * 0.06))
+      c.clip()
+    }
+    c.fillStyle = SURFACE
+    c.fillRect(rx, py, posterW, posterH)
+    if (posters[i]) drawCover(c, posters[i], rx, py, posterW, posterH)
+    c.restore()
+
+    const tx = rx + posterW + gapX
+    c.textBaseline = 'top'
+    c.font = `700 ${titlePx}px ${DISPLAY}`
+    let lines = wrapText(c, f.title, textW)
+    if (lines.length > maxLines) {
+      lines = lines.slice(0, maxLines)
+      lines[maxLines - 1] = ellipsize(c, lines[maxLines - 1] + ' …', textW)
+    } else if (lines.length === 1) {
+      lines[0] = ellipsize(c, lines[0], textW)   // one unbreakable long word
+    }
+    const lineH = Math.round(titlePx * 1.14)
+    const hasSub = !!(f.year || f.avgRating > 0)
+    const blockH = lines.length * lineH + (hasSub ? Math.round(titlePx * 0.30) + subH : 0)
+    let ty = ry + Math.max(0, Math.round((rowH - blockH) / 2))
+
+    c.fillStyle = PAPER
+    for (const line of lines) {
+      c.fillText(line, tx, ty)
+      ty += lineH
+    }
+
+    if (hasSub) {
+      ty += Math.round(titlePx * 0.30)
+      let sx = tx
+      const midY = (px) => ty + Math.round((subH - px) / 2)
+      if (f.year) {
+        c.font = `500 ${subPx}px ${LABEL}`
+        c.fillStyle = PAPER_4
+        c.fillText(String(f.year), sx, midY(subPx))
+        sx += c.measureText(String(f.year)).width + Math.round(titlePx * 0.35)
+      }
+      // Club average, rounded to Letterboxd's own half-star granularity.
+      if (f.avgRating > 0) {
+        sx += drawStars(c, Math.round(f.avgRating * 2) / 2, sx, midY(starPx), starPx)
+        // Multi-rater films show the exact mean and the sample size, so a
+        // rounded 4.5 never passes for a unanimous one. The bare pair
+        // "4.6 · 8" doesn't say what either number is, so spell it out and
+        // fall back only when the row genuinely can't hold it.
+        if (f.ratedCount > 1) {
+          c.font = `500 ${subPx}px ${LABEL}`
+          c.fillStyle = PAPER_4
+          const nx = sx + Math.round(titlePx * 0.28)
+          const note = NOTE_FORMS[noteForm](f.avgRating.toFixed(1), f.ratedCount)
+          if (c.measureText(note).width <= tx + textW - nx) c.fillText(note, nx, midY(subPx))
+        }
+      }
+    }
+  }
+
+  c.textBaseline = 'alphabetic'
+  footer(c, W, H, pad, 'jxnfilm.club/watched')
+}
+
 async function drawLineupCard(c, W, H, { events = [] } = {}) {
   return drawWallCard(c, W, H, {
     posterUrls: events.map(e => e.poster),
@@ -652,6 +944,7 @@ async function renderCanvas() {
   c.textBaseline = 'alphabetic'
   const data = copyData()
   if (cg.kind === 'roundup') await drawRoundupCard(c, w, h, data)
+  else if (cg.kind === 'diary') await drawDiaryCard(c, w, h, data)
   else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data)
   else if (cg.kind === 'monthwrap') await drawMonthwrapCard(c, w, h, data)
   else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data)
@@ -659,6 +952,70 @@ async function renderCanvas() {
   else if (cg.kind === 'recap') await drawRecapCard(c, w, h, data.event, data.count)
   else if (cg.kind === 'countdown') await drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)))
   else await drawEventCard(c, w, h, data.event, 'Next screening')
+}
+
+const toBlobAsync = (canvas) => new Promise(r => canvas.toBlob(r, 'image/png'))
+
+function saveBlob(blob, name) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+}
+
+const diaryFileTag = (i) => ({ title: `page-${String(i + 1).padStart(2, '0')}` })
+
+// Render every diary page and hand them to the browser one at a time.
+//
+// Draws to a DETACHED canvas so the on-screen preview never flickers, and
+// reads cg.diary.pages rather than re-fetching, so the page boundaries can't
+// shift mid-run. Size is snapshotted up front — otherwise clicking a size
+// button mid-batch would silently change the dimensions of later pages.
+//
+// Browsers gate rapid programmatic downloads: Chrome prompts once on the
+// second file, and if that prompt is dismissed the remaining clicks fail
+// silently and undetectably. Hence the spacing, and hence the closing toast
+// naming that failure mode rather than claiming success.
+async function downloadAllDiaryPages(btn) {
+  const pages = (cg.diary && cg.diary.pages) || []
+  if (cg.batching || !pages.length) return
+  cg.batching = true
+  const restore = btn.textContent
+  const alive = () => document.contains(btn)   // a kind change rebuilds innerHTML mid-loop
+  btn.disabled = true
+  document.querySelectorAll('.cg-size').forEach(b => { b.disabled = true })
+
+  const { w, h } = SIZES[cg.size]
+  const off = document.createElement('canvas')
+  off.width = w
+  off.height = h
+  const c = off.getContext('2d')
+  await loadFonts()
+
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      if (alive()) btn.textContent = `Generating ${i + 1} / ${pages.length}…`
+      c.setTransform(1, 0, 0, 1, 0, 0)
+      c.clearRect(0, 0, w, h)
+      c.textBaseline = 'alphabetic'
+      await drawDiaryCard(c, w, h, { ...pages[i], page: i + 1, pageCount: pages.length })
+      const blob = await toBlobAsync(off)
+      if (!blob) throw new Error(`page ${i + 1} failed to encode`)
+      saveBlob(blob, socialFileName('diary', cg.size, diaryFileTag(i)))
+      await new Promise(r => setTimeout(r, 350))
+    }
+    ctx.toast(`${pages.length} cards sent — if only the first arrived, allow multiple downloads for this site.`)
+  } catch (e) {
+    ctx.toast(e.message || String(e), true)
+  } finally {
+    cg.batching = false
+    if (alive()) {
+      btn.textContent = restore
+      btn.disabled = false
+    }
+    document.querySelectorAll('.cg-size').forEach(b => { b.disabled = false })
+  }
 }
 
 // --- Copy panel ---
@@ -704,16 +1061,21 @@ export async function renderContentGen(context) {
   ctx = context
   await loadEvents()
   if (cg.kind === 'roundup') await loadRoundup()
+  if (cg.kind === 'diary') await loadDiary()
   if (cg.kind === 'episode') await loadEpisodes()
   if (cg.kind === 'milestone') await loadMembersCount()
   if (!cg.events.some(e => e.id === cg.eventId)) cg.eventId = cg.events[0]?.id || null
   if (!wrapMonths().includes(cg.wrapMonth)) cg.wrapMonth = wrapMonths()[0] || null
   if (cg.episodes && cg.episodeIdx >= cg.episodes.length) cg.episodeIdx = 0
+  // Switching env (prod <-> staging) or a data refresh can shrink pageCount
+  // below a stored index, same hazard episodeIdx has above.
+  if (!cg.diary || cg.diaryPage >= cg.diary.pageCount) cg.diaryPage = 0
 
   const needsEvent = ['announce', 'countdown', 'recap'].includes(cg.kind)
   const emptyMsg =
     needsEvent && !cg.events.length ? 'No events in KV — create one on the Events tab first.'
     : cg.kind === 'roundup' && !(cg.roundup && cg.roundup.films.length) ? 'No member watches logged in the last 7 days — nothing to round up.'
+    : cg.kind === 'diary' && !(cg.diary && cg.diary.pageCount) ? 'No dated member watches — nothing to page.'
     : cg.kind === 'lineup' && !upcomingEvents().length ? 'No upcoming events — the lineup needs at least one.'
     : cg.kind === 'monthwrap' && !cg.wrapMonth ? 'No past events yet — nothing to wrap.'
     : cg.kind === 'episode' && !(cg.episodes && cg.episodes.length) ? 'Could not load episodes from jxnfilm.club/data/episodes.json.'
@@ -730,6 +1092,21 @@ export async function renderContentGen(context) {
       <label>Films in collage
         <input id="cg-limit" type="number" min="1" max="8" value="${attr(cg.limit)}" style="width:64px">
       </label>`,
+    diaryPage: () => {
+      const pages = (cg.diary && cg.diary.pages) || []
+      // Label every option with its real date range, so the operator sees a
+      // stale page BEFORE generating it rather than after posting it.
+      return `
+      <label>Page
+        <select id="cg-diary-page">
+          ${pages.map((p, i) => {
+            const range = fmtDiaryRange(p.from, p.to)
+            return `<option value="${i}" ${i === cg.diaryPage ? 'selected' : ''}>${escapeHtml(`Page ${i + 1}${range ? ` · ${range}` : ''}`)}</option>`
+          }).join('')}
+        </select>
+      </label>
+      <span class="cg-diary-count muted">${escapeHtml(`${cg.diary.total} films · ${cg.diary.entries} entries`)}</span>`
+    },
     episode: () => `
       <label>Episode
         <select id="cg-episode">
@@ -752,6 +1129,7 @@ export async function renderContentGen(context) {
   const kindControls =
     needsEvent ? controls.event()
     : cg.kind === 'roundup' ? controls.limit()
+    : cg.kind === 'diary' && cg.diary && cg.diary.pageCount ? controls.diaryPage()
     : cg.kind === 'episode' && cg.episodes && cg.episodes.length ? controls.episode()
     : cg.kind === 'monthwrap' && cg.wrapMonth ? controls.month()
     : cg.kind === 'milestone' ? controls.stat()
@@ -760,8 +1138,10 @@ export async function renderContentGen(context) {
   ctx.content().innerHTML = `
     <h2>Content Gen</h2>
     <p class="section-hint">Social media copy + downloadable cards from live ${escapeHtml(ctx.env())} data.
-      Output is public-safe by construction: host addresses/notes never leave KV, and member watches
-      are aggregated over the last 7 days — film titles and posters only, no names or handles.</p>
+      Output is public-safe by construction: host addresses/notes never leave KV, and member watches carry
+      film titles and posters only — no names, no handles. The roundup aggregates the last 7 days; the diary
+      pages the whole feed newest-first, labelling each page with its real date range, and shows the club's
+      average rating rather than any one member's.</p>
 
     <section class="cg-controls">
       <label>Post type
@@ -782,6 +1162,9 @@ export async function renderContentGen(context) {
         <div class="cg-canvas-wrap"><canvas id="cg-canvas"></canvas></div>
         <div class="toolbar">
           <button type="button" class="primary" id="cg-download">Download PNG</button>
+          ${cg.kind === 'diary' && cg.diary && cg.diary.pageCount > 1
+            ? `<button type="button" id="cg-download-all">Download all ${cg.diary.pageCount} pages</button>`
+            : ''}
         </div>
       </section>
       <section class="cg-copy-panel">
@@ -812,6 +1195,13 @@ export async function renderContentGen(context) {
     await loadRoundup()
     refresh()
   })
+  const diarySel = document.querySelector('#cg-diary-page')
+  if (diarySel) diarySel.addEventListener('change', () => {
+    cg.diaryPage = Number(diarySel.value) || 0
+    refresh()
+  })
+  const dlAll = document.querySelector('#cg-download-all')
+  if (dlAll) dlAll.addEventListener('click', () => downloadAllDiaryPages(dlAll))
   const epSel = document.querySelector('#cg-episode')
   if (epSel) epSel.addEventListener('change', () => {
     cg.episodeIdx = Number(epSel.value) || 0
@@ -846,6 +1236,7 @@ export async function renderContentGen(context) {
         : cg.kind === 'episode' ? { title: ((cg.episodes || [])[cg.episodeIdx] || {}).title }
         : cg.kind === 'monthwrap' ? { title: cg.wrapMonth }
         : cg.kind === 'milestone' ? { title: cg.stat }
+        : cg.kind === 'diary' ? diaryFileTag(cg.diaryPage)
         : null
       a.download = socialFileName(cg.kind, cg.size, fileTag)
       a.click()
@@ -862,6 +1253,6 @@ export async function renderContentGen(context) {
 // Exported for the headless visual-QA harness and future tests; admin.js
 // only uses renderContentGen.
 export {
-  loadFonts, drawEventCard, drawRecapCard, drawRoundupCard,
+  loadFonts, drawEventCard, drawRecapCard, drawRoundupCard, drawDiaryCard,
   drawLineupCard, drawMonthwrapCard, drawEpisodeCard, drawMilestoneCard,
 }

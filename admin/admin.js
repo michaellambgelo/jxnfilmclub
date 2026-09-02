@@ -18,7 +18,7 @@ import {
   appendHtmlChunk, appendTextChunk,
   moveItem, normalizeStringList, buildCopyOverrides, sanitizePodcastConfig,
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
-  buildStatsContext, computeMemberStats, normalizeAttendees,
+  buildStatsContext, computeMemberStats, normalizeAttendees, fitBox,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
   newsletterSendBlocker, newsletterSizeReport } from './lib.js'
 import { renderContentGen } from './contentgen.js'
@@ -290,7 +290,16 @@ async function renderNewsletter() {
         <div class="nl-group">
           <h4>Flyer</h4>
           <div class="toolbar nl-flyer-bar">
-            <label class="grow">Image URL<input id="nl-flyer-src" type="url" placeholder="https://… (must be publicly reachable)"></label>
+            <label>Image file<input id="nl-flyer-file" type="file" accept="image/png,image/jpeg"></label>
+            <span class="muted">or paste one into the preview</span>
+          </div>
+          <div class="nl-flyer-stage" id="nl-flyer-stage" hidden>
+            <img id="nl-flyer-thumb" alt="">
+            <span class="muted" id="nl-flyer-meta"></span>
+            <button type="button" data-action="nl-flyer-discard">Discard</button>
+          </div>
+          <div class="toolbar nl-flyer-bar">
+            <label class="grow">Image URL <span class="muted">— or host it yourself</span><input id="nl-flyer-src" type="url" placeholder="https://… (must be publicly reachable)"></label>
             <label class="grow">Link URL <span class="muted">— optional</span><input id="nl-flyer-link" type="url" placeholder="where the flyer points"></label>
           </div>
           <div class="toolbar nl-flyer-bar">
@@ -366,6 +375,12 @@ async function renderNewsletter() {
   for (const id of ['#nl-flyer-src', '#nl-flyer-link', '#nl-flyer-alt', '#nl-flyer-details']) {
     $(id)?.addEventListener('input', nlUpdateFlyer)
   }
+  $('#nl-flyer-file')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0]
+    if (file) nlStageImage(file)
+    e.target.value = ''      // so re-picking the same file fires again
+  })
+  nlStaged = null            // the previous mount's stage is gone with its DOM
   nlUpdateSize()
   wireFilter($('#nl-filter'), '#nl-table tbody tr')
 }
@@ -396,8 +411,98 @@ function nlUpdateSize() {
   nlUpdateFlyer()
 }
 
+// --- Flyer staging: decode, downscale, upload on insert ---
+//
+// A pasted or picked image is STAGED, never inserted as-is. The browser's
+// native paste would embed a data: URI — 4.7MB of base64 for a typical flyer,
+// which Gmail strips at render time anyway — so the bytes are re-encoded here
+// and only become a URL when the operator inserts.
+let nlStaged = null   // { blob, displayWidth, note } or null
+
+const NL_TARGET_BYTES = 400 * 1024
+const NL_QUALITY_WALK = [0.82, 0.72, 0.6]
+
+function nlClearStage() {
+  if (nlStaged?.objectUrl) URL.revokeObjectURL(nlStaged.objectUrl)
+  nlStaged = null
+  const wrap = $('#nl-flyer-stage')
+  if (wrap) wrap.hidden = true
+  nlUpdateFlyer()
+}
+
+// Decode → fit → re-encode as JPEG, walking quality down to a size an email
+// can carry. JPEG unconditionally: Outlook Windows does not render WebP, and
+// re-encoding also strips EXIF, including GPS from a phone-shot flyer.
+async function nlStageImage(file) {
+  if (!file || !/^image\/(png|jpeg)$/.test(file.type)) {
+    toast('Flyer must be a PNG or JPEG', true)
+    return
+  }
+  let bitmap
+  try {
+    // from-image so a phone photo is not stored sideways.
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch {
+    toast('Could not read that image', true)
+    return
+  }
+  if (bitmap.width * bitmap.height > 40e6) {
+    bitmap.close?.()
+    toast('That image is enormous — resize it before pasting', true)
+    return
+  }
+  const { width, height, displayWidth } = fitBox(bitmap.width, bitmap.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const c = canvas.getContext('2d')
+  // PNG alpha would otherwise flatten to black in most mail clients.
+  c.fillStyle = '#ffffff'
+  c.fillRect(0, 0, width, height)
+  c.drawImage(bitmap, 0, 0, width, height)
+  bitmap.close?.()
+
+  let blob = null
+  for (const q of NL_QUALITY_WALK) {
+    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q))
+    if (blob && blob.size <= NL_TARGET_BYTES) break
+  }
+  if (!blob) { toast('Could not encode that image', true); return }
+
+  nlClearStage()
+  const objectUrl = URL.createObjectURL(blob)
+  nlStaged = { blob, displayWidth, objectUrl }
+  const wrap = $('#nl-flyer-stage')
+  if (wrap) {
+    wrap.hidden = false
+    $('#nl-flyer-thumb').src = objectUrl
+    // Disclose the transform rather than silently changing their file.
+    $('#nl-flyer-meta').textContent =
+      `${width}×${height} JPEG · ${(blob.size / 1024).toFixed(0)}KB · shown ${displayWidth}px wide`
+  }
+  // A staged image satisfies the src requirement; the URL appears on insert.
+  $('#nl-flyer-src').value = ''
+  nlUpdateFlyer()
+}
+
+// Upload the staged blob and return its hosted URL.
+async function nlUploadStaged() {
+  const buf = await nlStaged.blob.arrayBuffer()
+  let bin = ''
+  const bytes = new Uint8Array(buf)
+  // Chunked: String.fromCharCode(...bytes) blows the call stack past ~100KB.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+  }
+  const r = await api('POST', `/api/newsletter/image?${qs({ env: env() })}`,
+    JSON.stringify({ contentType: 'image/jpeg', b64: btoa(bin) }))
+  return r.url
+}
+
 const nlFlyerDraft = () => ({
-  src: ($('#nl-flyer-src')?.value || '').trim(),
+  // A staged blob has no URL until insert, so it stands in as a valid source
+  // for gating — the real URL replaces it after upload.
+  src: nlStaged ? 'https://staged.local/pending.jpg' : ($('#nl-flyer-src')?.value || '').trim(),
   link: ($('#nl-flyer-link')?.value || '').trim(),
   alt: ($('#nl-flyer-alt')?.value || '').trim(),
   details: ($('#nl-flyer-details')?.value || '').trim(),
@@ -536,6 +641,24 @@ function wireNewsletterPreview(htmlField, textField, preview, toolbar) {
       nlUpdateSize()
     })
     doc.addEventListener('keydown', onUndoKey)
+    // Intercept ONLY a pasted image file. Everything else — text, rich HTML —
+    // goes through the browser's native paste, whose sanitizer is what strips
+    // <script>, <style> and on* handlers out of copied web content. The input
+    // listener above still scrubs any data:/blob: <img> that slips through.
+    doc.addEventListener('paste', (e) => {
+      const file = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith('image/'))
+      if (!file) return
+      e.preventDefault()
+      nlStageImage(file)
+      toast('Flyer staged — add alt text and details, then Insert flyer')
+    })
+    doc.addEventListener('drop', (e) => {
+      const file = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith('image/'))
+      if (!file) return
+      e.preventDefault()
+      nlStageImage(file)
+      toast('Flyer staged — add alt text and details, then Insert flyer')
+    })
   })
 
   // mousedown would move focus out of the iframe and drop its text
@@ -1664,12 +1787,26 @@ document.addEventListener('click', async (e) => {
     else if (a === 'nl-undo') {
       nlUndoInsert()
     }
+    else if (a === 'nl-flyer-discard') {
+      nlClearStage()
+    }
     else if (a === 'nl-insert-flyer') {
       const draft = nlFlyerDraft()
       const issues = imageBlockIssues(draft)
       if (issues.length) { toast(issues[0], true); return }
+      if (nlStaged) {
+        try {
+          draft.src = await nlUploadStaged()
+          draft.width = nlStaged.displayWidth
+        } catch (err) {
+          // Keep the stage so the operator can retry rather than re-paste.
+          toast(`Upload failed: ${err.message || err}`, true)
+          return
+        }
+      }
       nlInsert(buildImageBlockHtml(draft), buildImageBlockText(draft), 'flyer',
         'Flyer inserted — the details are real text, so it reads with images off')
+      nlClearStage()
       nlUpdateSize()
     }
     else if (a === 'nl-poster-search') {

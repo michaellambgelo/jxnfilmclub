@@ -30,6 +30,17 @@ id = "6d5a467495fb47fcb9514e0a85bb3b20"
 binding = "VOICE"
 bucket_name = "jxnfilm-voice"
 
+# Newsletter flyer images. Deliberately a SEPARATE bucket from VOICE, and
+# deliberately with NO lifecycle rule: Apple Mail and Outlook re-fetch from
+# origin on every open, so an expiring object silently breaks flyers in
+# newsletters delivered months ago. Putting these under jxnfilm-voice would
+# inherit its bucket-wide 60-day expiry and do exactly that, on a delay.
+# Bucket must exist before deploy:
+#   npx wrangler r2 bucket create jxnfilm-news
+[[r2_buckets]]
+binding = "NEWS"
+bucket_name = "jxnfilm-news"
+
 [vars]
 ENVIRONMENT = "production"
 GITHUB_OWNER = "michaellambgelo"
@@ -72,6 +83,14 @@ id = "f6f23b3e546646d28a3a80f71ef35715"
 [[env.staging.r2_buckets]]
 binding = "VOICE"
 bucket_name = "jxnfilm-voice-staging"
+
+# Per-env, like VOICE: one bucket bound as production in both env blocks would
+# let the staging Worker write production storage — the first binding here to
+# break env isolation.
+#   npx wrangler r2 bucket create jxnfilm-news-staging
+[[env.staging.r2_buckets]]
+binding = "NEWS"
+bucket_name = "jxnfilm-news-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"                 # staging writes KV only; no repository_dispatch (prod JSON stays clean)

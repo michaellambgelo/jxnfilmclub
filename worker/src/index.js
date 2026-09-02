@@ -177,6 +177,7 @@ async function route(request, env) {
     if (request.method === 'GET'    && pathname === '/voice/audio')   return handleVoiceAudio(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
+    if (request.method === 'POST' && pathname === '/admin/newsletter/image') return handleNewsletterImageUpload(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
@@ -194,6 +195,9 @@ async function route(request, env) {
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(request, env)
+    if ((request.method === 'GET' || request.method === 'HEAD') && pathname.startsWith('/nl/img/')) {
+      return handleNewsletterImageGet(request, env, pathname.slice('/nl/img/'.length))
+    }
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
     // Operator-editable config (admin portal writes config:* keys in
@@ -3513,6 +3517,114 @@ async function handleUnsubscribe(request, env) {
     "You've been unsubscribed from Jackson Film Club announcements. " +
     "You'll still receive one-time login codes when you sign in.",
   ))
+}
+
+// --- Newsletter flyer images (R2 bucket NEWS) ---
+//
+// Email clients send no cookies and no bearer token, and Gmail fetches through
+// its own image proxy, so the read route below is necessarily PUBLIC. That is
+// the whole reason this exists rather than reusing the Access-gated /api/img
+// on the admin Worker.
+//
+// Retention is deliberately INDEFINITE, unlike voice clips. Apple Mail and
+// Outlook re-fetch from origin on every open, so an expiring object silently
+// breaks flyers in newsletters that were delivered months ago. These are club
+// marketing assets, not personal data — the 60-day promise does not apply, and
+// reusing jxnfilm-voice would inherit its bucket-wide expiry and do exactly
+// that damage on a delay.
+
+const NEWSLETTER_IMG_MAX_BYTES = 1.5 * 1024 * 1024
+const NEWSLETTER_IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png' }
+// Content-addressed: 64 hex of SHA-256 plus an allowlisted extension. Nothing
+// else can be spelled, so the route cannot be walked into another prefix.
+const NEWSLETTER_IMG_KEY = /^([a-f0-9]{64})\.(jpg|png)$/
+
+const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+
+// POST /admin/newsletter/image — bearer ADMIN_TOKEN.
+// Body: { contentType, b64 }. JSON rather than raw bytes so the admin Worker's
+// existing proxyJoinAdmin (which forwards `await request.text()` re-headed as
+// application/json) carries it verbatim — no new proxy code.
+async function handleNewsletterImageUpload(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  // Without this the missing binding throws into the top-level catch and reads
+  // as "internal server error" — the same trap the VOICE comment in
+  // wrangler.toml exists because of.
+  if (!env.NEWS) {
+    return json(env, { error: 'newsletter image storage is not configured for this environment' }, 503)
+  }
+
+  const { contentType, b64 } = await request.json().catch(() => ({}))
+  const ext = NEWSLETTER_IMG_TYPES[String(contentType || '').toLowerCase()]
+  if (!ext) return json(env, { error: 'unsupported image type — jpeg or png only' }, 415)
+
+  const raw = String(b64 || '')
+  if (!raw) return json(env, { error: 'empty image' }, 400)
+  // Cheap reject on the encoded length before decoding: base64 is 4/3 of the
+  // bytes it carries, so this bounds the allocation below.
+  if (raw.length * 3 / 4 > NEWSLETTER_IMG_MAX_BYTES) {
+    return json(env, { error: 'image too large (1.5MB max)' }, 413)
+  }
+  let bytes
+  try {
+    const bin = atob(raw)
+    bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  } catch {
+    return json(env, { error: 'image is not valid base64' }, 400)
+  }
+  // …and again on what actually decoded, since the length above is a claim.
+  if (bytes.byteLength > NEWSLETTER_IMG_MAX_BYTES) {
+    return json(env, { error: 'image too large (1.5MB max)' }, 413)
+  }
+  if (!bytes.byteLength) return json(env, { error: 'empty image' }, 400)
+
+  // Content addressing makes re-inserting the same flyer idempotent, and means
+  // an undone insert leaves an orphan that the next identical upload reuses
+  // rather than duplicating.
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const name = `${hex(digest)}.${ext}`
+  await env.NEWS.put(`newsletter/${name}`, bytes, {
+    httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+  })
+  return json(env, { url: `${new URL(request.url).origin}/nl/img/${name}`, key: name })
+}
+
+// GET|HEAD /nl/img/{sha256}.{jpg|png} — PUBLIC, no auth. This is what an email
+// client fetches. HEAD is accepted because some clients and link scanners
+// probe before fetching, and Workers does not derive it from GET.
+async function handleNewsletterImageGet(request, env, name) {
+  // Validate BEFORE touching R2: a malformed name must not become a bucket
+  // read, and there is no listing endpoint.
+  const m = NEWSLETTER_IMG_KEY.exec(name || '')
+  if (!m) return new Response('not found', { status: 404 })
+  if (!env.NEWS) return new Response('not configured', { status: 503 })
+
+  // A Worker-constructed Response is not edge-cached by Cache-Control alone,
+  // so without this every open by a non-Gmail client is a Worker invocation
+  // and an R2 read. The route is public and unrate-limited; this is the only
+  // thing bounding read volume.
+  const cache = caches.default
+  const hit = await cache.match(request)
+  if (hit) return hit
+
+  const obj = await env.NEWS.get(`newsletter/${name}`)
+  if (!obj) return new Response('not found', { status: 404 })
+
+  const headers = new Headers({
+    // From the extension we validated, never from stored metadata a future
+    // writer might get wrong.
+    'Content-Type': m[2] === 'png' ? 'image/png' : 'image/jpeg',
+    'Cache-Control': 'public, max-age=31536000, immutable',
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
+  })
+  const res = new Response(request.method === 'HEAD' ? null : obj.body, { headers })
+  if (request.method === 'GET') await cache.put(request, res.clone())
+  return res
 }
 
 // Deliberately looser than the admin's own 92KB block: the operator should

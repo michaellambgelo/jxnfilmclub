@@ -169,6 +169,30 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
 </table>`
 }
 
+// Fit a source image into a box, preserving aspect and NEVER upscaling.
+// Returns the drawn pixel size plus the display width the email should use.
+//
+// The height cap is why this is not a one-liner: a 2:3 portrait flyer at the
+// full 536px content width renders ~804px tall and swallows the whole email,
+// so the height binds first and the width follows from it.
+export function fitBox(srcW, srcH, { maxW = 1072, maxH = 1440, displayMax = IMAGE_BLOCK_MAX_WIDTH } = {}) {
+  const w = Math.max(0, Math.round(Number(srcW) || 0))
+  const h = Math.max(0, Math.round(Number(srcH) || 0))
+  if (!w || !h) return { width: 0, height: 0, displayWidth: 0 }
+  // <= 1 always: scale down to fit, or leave alone.
+  const scale = Math.min(1, maxW / w, maxH / h)
+  const width = Math.max(1, Math.round(w * scale))
+  const height = Math.max(1, Math.round(h * scale))
+  // The rendered slot is half the drawn pixels (2x for retina), capped by the
+  // card's content box and by a portrait height budget.
+  const displayW = Math.min(displayMax, Math.round(width / 2))
+  const displayH = Math.round(displayW * (height / width))
+  const displayWidth = displayH > 720
+    ? Math.max(1, Math.round(displayW * (720 / displayH)))
+    : displayW
+  return { width, height, displayWidth }
+}
+
 // --- Newsletter body size + safety guards ---
 //
 // Three independent failure modes live on this one path, and two of them are

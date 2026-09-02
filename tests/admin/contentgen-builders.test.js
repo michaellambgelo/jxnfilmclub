@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
-  newsletterSendBlocker, newsletterSizeReport, utf8Bytes,
+  newsletterSendBlocker, newsletterSizeReport, utf8Bytes, fitBox,
   NL_HTML_WARN_BYTES, NL_HTML_BLOCK_BYTES, NL_TEXT_BLOCK_BYTES,
   fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
@@ -833,5 +833,41 @@ describe('newsletterSendBlocker', () => {
 
   it('works without an expectedOrigin', () => {
     expect(newsletterSendBlocker('<img src="https://anywhere/nl/img/a.jpg">', '', {})).toBeNull()
+  })
+})
+
+describe('fitBox', () => {
+  it('scales the real flyer down to a display width the card can hold', () => {
+    // 1024x1536 is the actual flyer. The 720px HEIGHT budget binds before the
+    // 536px width does — a 2:3 portrait at full width renders ~804px tall and
+    // swallows the whole email.
+    const r = fitBox(1024, 1536)
+    expect(r.width).toBe(960)
+    expect(r.height).toBe(1440)
+    expect(r.displayWidth).toBe(480)
+    expect(Math.round(r.displayWidth * (r.height / r.width))).toBeLessThanOrEqual(720)
+  })
+
+  it('lets a landscape image use the full content width', () => {
+    expect(fitBox(3000, 2000).displayWidth).toBe(536)
+  })
+
+  it('never upscales a small source', () => {
+    const r = fitBox(400, 300)
+    expect(r.width).toBe(400)
+    expect(r.height).toBe(300)
+    expect(r.displayWidth).toBeLessThanOrEqual(400)
+  })
+
+  it('caps display width at the card content box', () => {
+    for (const [w, h] of [[4000, 3000], [8000, 1000], [1072, 1440]]) {
+      expect(fitBox(w, h).displayWidth).toBeLessThanOrEqual(536)
+    }
+  })
+
+  it('is safe on degenerate input', () => {
+    for (const [w, h] of [[0, 0], [NaN, 100], [-5, -5], [undefined, undefined]]) {
+      expect(fitBox(w, h)).toEqual({ width: 0, height: 0, displayWidth: 0 })
+    }
   })
 })

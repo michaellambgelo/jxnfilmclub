@@ -518,3 +518,5 @@ dialog pre.rich {
 .nl-flyer-bar { align-items: flex-end }
 .nl-flyer-why { font-size: 0.8rem; color: var(--danger) }
 .nl-group textarea { width: 100%; font-size: 0.85rem }
+.nl-flyer-stage { display: flex; align-items: center; gap: 0.7rem; margin: 0.5rem 0 }
+.nl-flyer-stage img { width: 56px; height: auto; border: 1px solid var(--border) }

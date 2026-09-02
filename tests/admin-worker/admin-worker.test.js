@@ -430,6 +430,43 @@ describe('/api/rsvp/guest', () => {
   })
 })
 
+describe('/api/newsletter/image', () => {
+  it('proxies the upload to the join Worker with ADMIN_TOKEN', async () => {
+    const { service, calls } = stubService({ url: 'https://join.jxnfilm.club/nl/img/abc.jpg', key: 'abc.jpg' })
+    const res = await call('/api/newsletter/image?env=production', {
+      method: 'POST',
+      body: JSON.stringify({ contentType: 'image/jpeg', b64: 'AAAA' }),
+      token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/newsletter/image')
+    expect(calls[0].init?.headers?.Authorization).toBe('Bearer test-admin-token')
+    // The JSON body is why this reuses proxyJoinAdmin unchanged — it forwards
+    // request.text() re-headed as application/json, so it carries verbatim.
+    expect(JSON.parse(calls[0].init.body)).toEqual({ contentType: 'image/jpeg', b64: 'AAAA' })
+  })
+
+  it('uses the staging binding and token for staging', async () => {
+    const { service, calls } = stubService({})
+    await call('/api/newsletter/image?env=staging', {
+      method: 'POST',
+      body: JSON.stringify({ contentType: 'image/png', b64: 'AA' }),
+      token: await signToken(),
+      envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/newsletter/image')
+    expect(calls[0].init?.headers?.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('400s on an invalid env', async () => {
+    const res = await call('/api/newsletter/image?env=nope', {
+      method: 'POST', body: '{}', token: await signToken(),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
 // --- Watched proxy: full-depth read over the service binding ---
 //
 // The admin asks for ?depth=full so Content Gen's paged diary cards and the

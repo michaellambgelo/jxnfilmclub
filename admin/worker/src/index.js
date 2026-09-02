@@ -409,6 +409,12 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/newsletter/send') {
     return proxyJoinAdmin(request, env, q, '/admin/newsletter/send')
   }
+  // POST /api/newsletter/image?env=  body = JSON { contentType, b64 }
+  // JSON rather than raw bytes precisely so proxyJoinAdmin carries it verbatim
+  // — it forwards `await request.text()` re-headed as application/json.
+  if (method === 'POST' && url.pathname === '/api/newsletter/image') {
+    return proxyJoinAdmin(request, env, q, '/admin/newsletter/image')
+  }
   // POST /api/member/unlink?env=  body = JSON { email } — force-unlink a
   // member's Letterboxd handle via the join Worker's canonical cascade
   // (member row + reverse indices + members:all + session + update-member

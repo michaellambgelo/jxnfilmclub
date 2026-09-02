@@ -1,5 +1,57 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/how-to-make-a-killing-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/9/5/0/4/399504-how-to-make-a-killing-2026-0-600-0-900-crop.jpg?v=be2948f44a",
+    "rating": "3.0",
+    "review": "i think some folks hate-watched this and i get it. at the same time, i don't hate seeing Glen Powell or Margaret Qualley on my screen. i pretty much knew what this was in the first 10 seconds, but I'm glad I stuck around for the whole thing. I'll probably never watch it again.",
+    "title": "How to Make a Killing",
+    "watched_date": "2026-09-02",
+    "year": "2026"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/texas-chainsaw-3d/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/6/3/0/9/0/63090-texas-chainsaw-3d-0-600-0-900-crop.jpg?v=004e672ce6",
+    "rating": "3.0",
+    "review": "y'know what it's not the WORST",
+    "title": "Texas Chainsaw 3D",
+    "watched_date": "2026-09-02",
+    "year": "2013"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/coyote-vs-acme/1/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
+    "rating": "4.0",
+    "review": "Theater rewatch with Jon Nolan, Faith, Eric, Mary, Ben, Elizabeth, Anna, and Drake",
+    "title": "Coyote vs. Acme",
+    "watched_date": "2026-09-01",
+    "year": "2026"
+  },
+  {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/buddy-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
+    "rating": "4.5",
+    "review": "Best comedy of the year",
+    "title": "Buddy",
+    "watched_date": "2026-09-01",
+    "year": "2026"
+  },
+  {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/coyote-vs-acme/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
+    "rating": "5.0",
+    "review": "Im so glad I taw this movie And Robert Pattinson was so great as Wiley Coyote",
+    "title": "Coyote vs. Acme",
+    "watched_date": "2026-09-01",
+    "year": "2026"
+  },
+  {
     "handle": "Crockett1848",
     "link": "https://letterboxd.com/crockett1848/film/prince-of-darkness/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/6/9/47569-prince-of-darkness-0-600-0-900-crop.jpg?v=eb511413db",
@@ -8,6 +60,16 @@
     "title": "Prince of Darkness",
     "watched_date": "2026-09-01",
     "year": "1987"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/the-ministry-of-ungentlemanly-warfare/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/7/1/7/1/2/6/717126-the-ministry-of-ungentlemanly-warfare-0-600-0-900-crop.jpg?v=63fba9c252",
+    "rating": "4.5",
+    "review": "they explored each other's bodies and i really think that",
+    "title": "The Ministry of Ungentlemanly Warfare",
+    "watched_date": "2026-09-01",
+    "year": "2024"
   },
   {
     "handle": "bearleebooks",
@@ -81,26 +143,6 @@
     "year": "1975"
   },
   {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/buddy-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
-    "rating": "4.5",
-    "review": "The Truman Show but you're watching it on an iPad covered in Spaghetti-Os",
-    "title": "Buddy",
-    "watched_date": "2026-08-30",
-    "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/teenage-sex-and-death-at-camp-miasma/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
-    "rating": "5.0",
-    "review": "This hit a really specific place for me because so many of my projects have been labeled as \"not horror\" or \"something wearing a horror skin\" when I'm taking genre conventions and twisting them into whatever fucked up beautiful little queer story is in my brain at the moment also goddamn I would\u2026",
-    "title": "Teenage Sex and Death at Camp Miasma",
-    "watched_date": "2026-08-30",
-    "year": "2026"
-  },
-  {
     "handle": "badmov1eenjoyer",
     "liked": true,
     "link": "https://letterboxd.com/badmov1eenjoyer/film/13-going-on-30-3/",
@@ -110,27 +152,6 @@
     "title": "13 Going on 30",
     "watched_date": "2026-08-29",
     "year": "2004"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/disclosure-day/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/5/9/2/5/1/1159251-disclosure-day-0-600-0-900-crop.jpg?v=9ae810e4bb",
-    "rating": "3.0",
-    "review": "okay, so, i've been getting asked about this film in particular a lot more recently (a handful of times in the past 48 hours alone) so it seems the rewatch i owe this film is now due, and here we are. i am dropping this film from 3.5 to 3.0 stars. For me, the difference is simple: I no longer\u2026",
-    "title": "Disclosure Day",
-    "watched_date": "2026-08-28",
-    "year": "2026"
-  },
-  {
-    "handle": "michaellamb",
-    "link": "https://letterboxd.com/michaellamb/film/grand-theft-auto-vi-an-extended-look/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/9/8/9/0/1609890-grand-theft-auto-vi-an-extended-look-0-600-0-900-crop.jpg?v=467b6becd6",
-    "rating": "1.5",
-    "review": "why the fuck is this on Letterboxd",
-    "title": "Grand Theft Auto VI: An Extended Look",
-    "watched_date": "2026-08-28",
-    "year": "2026"
   },
   {
     "handle": "calissippi",
@@ -182,26 +203,6 @@
     "title": "Teenage Sex and Death at Camp Miasma",
     "watched_date": "2026-08-24",
     "year": "2026"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/a-fistful-of-dollars/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/9/8/51698-a-fistful-of-dollars-0-600-0-900-crop.jpg?v=616ebad024",
-    "rating": "4.0",
-    "review": "Eh Yojimbo's better",
-    "title": "A Fistful of Dollars",
-    "watched_date": "2026-08-23",
-    "year": "1964"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/rebel-without-a-cause/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/3/5/51835-rebel-without-a-cause-0-600-0-900-crop.jpg?v=a260a5a896",
-    "rating": "3.5",
-    "review": "First off. It makes so much sense that everyone in this movie wants to have sex with James Dean. But I just didnt get it. Maybe I outgrew my teenage angst.",
-    "title": "Rebel Without a Cause",
-    "watched_date": "2026-08-21",
-    "year": "1955"
   },
   {
     "handle": "heath_walt",

@@ -705,6 +705,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/a-cat-in-paris/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/bj/wo/mj/6d/lYt6VAP26Eu9vOl5OmfwHDp9arg-0-600-0-900-crop.jpg?v=f25f72edff",
+      "rating": "4.0",
+      "title": "A Cat in Paris",
+      "watched_date": "2026-09-02",
+      "year": "2010"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/texas-chainsaw-3d/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/3/0/9/0/63090-texas-chainsaw-3d-0-600-0-900-crop.jpg?v=004e672ce6",
       "rating": "3.0",
@@ -790,14 +798,6 @@
       "rating": "2.0",
       "title": "Wuthering Heights",
       "watched_date": "2026-08-21",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/water-park-shark/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/8/0/6/6/6/1580666-water-park-shark-0-600-0-900-crop.jpg?v=5831a9634d",
-      "rating": "2.0",
-      "title": "Water Park Shark",
-      "watched_date": "2026-08-20",
       "year": "2026"
     }
   ],
@@ -1315,6 +1315,24 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/smart-house/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/8/6/7/5/28675-smart-house-0-600-0-900-crop.jpg?v=fceb6e3c84",
+      "rating": "4.0",
+      "title": "Smart House",
+      "watched_date": "2026-09-02",
+      "year": "1999"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/the-scooby-doo-project/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/5/6/9/0/8/356908-the-scooby-doo-project-0-600-0-900-crop.jpg?v=01949a336f",
+      "rating": "5.0",
+      "title": "The Scooby-Doo Project",
+      "watched_date": "2026-09-02",
+      "year": "1999"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/how-to-make-a-killing-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/9/5/0/4/399504-how-to-make-a-killing-2026-0-600-0-900-crop.jpg?v=be2948f44a",
       "rating": "3.0",
@@ -1403,25 +1421,6 @@
       "title": "Escape from Tomorrow",
       "watched_date": "2026-08-23",
       "year": "2013"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/her/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/au/nb/i6/lq/fsoTLnUXEUTNuVCBxAJMY0HPPd-0-600-0-900-crop.jpg?v=16789732be",
-      "rating": "4.5",
-      "rewatch": true,
-      "title": "Her",
-      "watched_date": "2026-08-22",
-      "year": "2013"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/blade/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/7/3/0/27730-blade-0-600-0-900-crop.jpg?v=c6c4275ae2",
-      "rating": "3.5",
-      "title": "Blade",
-      "watched_date": "2026-08-22",
-      "year": "1998"
     }
   ],
   "witch21": [

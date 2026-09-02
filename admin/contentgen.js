@@ -16,7 +16,7 @@
 
 import {
   escapeHtml, attr, tryParse, qs,
-  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, socialFileName,
+  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange, daysUntil, countdownLead,
   PLATFORM_LIMITS, PLATFORM_LABELS,
 } from './lib.js'
@@ -127,6 +127,8 @@ let cg = {
   diaryDays: null,     // null = whole feed; 7 / 30 = trailing window
   diaryMaxPages: null, // null = every page; N = stop after N
   batching: false,     // a "download all pages" run is in flight
+  rendering: false,    // a canvas paint is outstanding (downloads are unsafe)
+  renderSeq: 0,        // monotonic token; only the newest paint may land
   episodes: null,      // [{ title, date, url }] from the public site
   episodeIdx: 0,
   wrapMonth: null,     // 'YYYY-MM' selected for the monthly wrap
@@ -201,6 +203,73 @@ const DIARY_RANGES = [
   { value: '30', label: 'Last 30 days', days: 30 },
   { value: 'all', label: 'All time', days: null },
 ]
+
+// The pager is a SIBLING of #cg-copy, not part of it: renderCopyPanel()
+// replaces that node's innerHTML wholesale, which would destroy the very
+// button being clicked and force a refocus dance on every step. Updating text
+// and disabled flags in place instead keeps focus on the arrow, so holding
+// Enter walks the series.
+//
+// syncPager is the SOLE formatter for these strings — the template emits them
+// empty — so there is no second copy free to drift.
+function syncPager() {
+  const d = cg.diary
+  if (!d || !d.pageCount) return
+  const now = document.querySelector('#cg-page-now')
+  const range = document.querySelector('#cg-page-range')
+  const prev = document.querySelector('#cg-page-prev')
+  const next = document.querySelector('#cg-page-next')
+  const page = d.pages[cg.diaryPage]
+  if (now) now.textContent = `Page ${cg.diaryPage + 1} / ${d.pageCount}`
+  if (range) range.textContent = page ? fmtDiaryRange(page.from, page.to) : ''
+  // Ends disable rather than wrap: wrapping from the last page to the first is
+  // indistinguishable from a mis-click, and this tool's whole job is not
+  // posting the wrong page.
+  if (prev) prev.disabled = cg.diaryPage <= 0
+  if (next) next.disabled = cg.diaryPage >= d.pageCount - 1
+  // The jump list is the same state seen another way; keep it honest.
+  const sel = document.querySelector('#cg-diary-page')
+  if (sel && Number(sel.value) !== cg.diaryPage) sel.value = String(cg.diaryPage)
+  const badge = `${cg.diaryPage + 1}/${d.pageCount}`
+  document.querySelectorAll('.cg-copy-page').forEach(el => { el.textContent = badge })
+}
+
+// Left/right step the pager. Bound once at module scope behind a latch: this
+// module's render function runs on every tab visit, and binding per render
+// would fire the handler N times after N visits.
+//
+// `diaryRefresh` is the current render's refresh closure, restamped each
+// render — the listener outlives any one of them.
+let keysBound = false
+let diaryRefresh = null
+function bindDiaryKeys() {
+  if (keysBound) return
+  keysBound = true
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+    // Arrow keys move a caret in a textarea and change a <select>'s value —
+    // five textareas and three selects live on this tab.
+    const tag = (document.activeElement && document.activeElement.tagName) || ''
+    if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return
+    // The pager only exists on the diary kind with pages, so its presence
+    // covers every other tab, kind, and the single-page and empty states.
+    if (!document.querySelector('#cg-pager') || !diaryRefresh) return
+    e.preventDefault()
+    gotoDiaryPage(cg.diaryPage + (e.key === 'ArrowRight' ? 1 : -1), diaryRefresh)
+  })
+}
+
+// Single entry point for every page change — arrows, jump list, keyboard.
+function gotoDiaryPage(n, refresh) {
+  const d = cg.diary
+  if (!d || !d.pageCount) return
+  const next = Math.max(0, Math.min(d.pageCount - 1, n))
+  if (next === cg.diaryPage) return
+  cg.diaryPage = next
+  syncPager()
+  refresh()
+}
 
 const diaryPageData = () => {
   const pages = (cg.diary && cg.diary.pages) || []
@@ -304,6 +373,43 @@ function ellipsize(c, text, maxWidth) {
   if (c.measureText(s).width <= maxWidth) return s
   while (s.length > 1 && c.measureText(s + '…').width > maxWidth) s = s.slice(0, -1)
   return s.replace(/[\s.,;:—–-]+$/, '') + '…'
+}
+
+// Largest type size at or below `px` whose wrap of `text` fits inside the
+// row. Returns { px, lines }.
+//
+// Titles vary enormously ("M" vs "Dr. Strangelove or: How I Learned to Stop
+// Worrying and Love the Bomb") and a fixed size can only serve one of them.
+// Scanning down 1px at a time is ~20 iterations over a handful of words —
+// trivial beside the poster fetches, and it keeps the search obvious.
+//
+// `softMaxLines` is the line count a full-size title is expected to use. A
+// SHRINKING title may exceed it, but only while the block still fits `budgetH`
+// — the row's vertical space once the year/stars line is reserved. That's what
+// lets a very long title take a third line instead of losing its ending, while
+// still never pushing its row taller or shifting the column beside it.
+function fitTitle(c, text, maxWidth, px, softMaxLines, budgetH) {
+  const floor = Math.round(px * 0.6)
+  for (let size = px; size >= floor; size--) {
+    c.font = `700 ${size}px ${DISPLAY}`
+    const lines = wrapText(c, text, maxWidth)
+    // A single unbreakable word can still overflow at any size.
+    if (lines.some(l => c.measureText(l).width > maxWidth)) continue
+    const lineH = Math.round(size * 1.14)
+    const allowed = Math.max(softMaxLines, Math.floor(budgetH / lineH))
+    if (lines.length <= allowed) return { px: size, lines }
+  }
+  // Genuinely unfittable — an unbreakable word wider than the column, or a
+  // title longer than the row can hold at any legible size. Clip it, and make
+  // the clip VISIBLE: ellipsize() only trims a line that overflows, so the
+  // ' …' is appended first to force it over and guarantee the mark survives.
+  // Without that the title just stops mid-phrase with no sign it was cut.
+  c.font = `700 ${floor}px ${DISPLAY}`
+  const lineH = Math.round(floor * 1.14)
+  const allowed = Math.max(softMaxLines, Math.floor(budgetH / lineH))
+  const lines = wrapText(c, text, maxWidth).slice(0, allowed)
+  lines[lines.length - 1] = ellipsize(c, lines[lines.length - 1] + ' …', maxWidth)
+  return { px: floor, lines }
 }
 
 // One five-pointed star as a path, centred on (cx, cy) with circumradius r.
@@ -795,21 +901,27 @@ async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCoun
 
     const tx = rx + posterW + gapX
     c.textBaseline = 'top'
-    c.font = `700 ${titlePx}px ${DISPLAY}`
-    let lines = wrapText(c, f.title, textW)
-    if (lines.length > maxLines) {
-      lines = lines.slice(0, maxLines)
-      lines[maxLines - 1] = ellipsize(c, lines[maxLines - 1] + ' …', textW)
-    } else if (lines.length === 1) {
-      lines[0] = ellipsize(c, lines[0], textW)   // one unbreakable long word
-    }
-    const lineH = Math.round(titlePx * 1.14)
+    // Fit the title by SHRINKING, not truncating — a clipped title is worse
+    // than a slightly smaller one, and "The Ministry of Ungentlemanly …" tells
+    // the reader nothing. Row geometry is untouched: the block is centred in a
+    // fixed rowH beside a fixed poster, so a long title costs type size only
+    // and never shifts its neighbours or its column.
     const hasSub = !!(f.year || f.avgRating > 0)
-    const blockH = lines.length * lineH + (hasSub ? Math.round(titlePx * 0.30) + subH : 0)
+    // Gaps and the sub-line stay keyed to the ORIGINAL titlePx so a shrunk
+    // title doesn't drag its year/stars out of line with the rows around it.
+    const subReserve = hasSub ? Math.round(titlePx * 0.30) + subH : 0
+    // Keep a gutter so a title that grows into an extra line stops short of
+    // the row boundary. Without it a 3-line title fills rowH exactly and the
+    // rows read as touching even though nothing actually overlaps.
+    const gutter = Math.round(titlePx * 0.32)
+    const fitted = fitTitle(c, f.title, textW, titlePx, maxLines, rowH - subReserve - gutter)
+    const lineH = Math.round(fitted.px * 1.14)
+    const blockH = fitted.lines.length * lineH + subReserve
     let ty = ry + Math.max(0, Math.round((rowH - blockH) / 2))
 
+    c.font = `700 ${fitted.px}px ${DISPLAY}`
     c.fillStyle = PAPER
-    for (const line of lines) {
+    for (const line of fitted.lines) {
       c.fillText(line, tx, ty)
       ty += lineH
     }
@@ -957,16 +1069,65 @@ async function drawEpisodeCard(c, W, H, { episode } = {}) {
   footer(c, W, H, pad, 'jxnfilm.club')
 }
 
+// Renders are async (fonts, then posters through /api/img) and the prev/next
+// pager makes overlapping renders the NORMAL interaction, not a rarity — a
+// dropdown produced one every so often, arrows produce one per click. Without
+// a token the slower of two interleaved paints wins and the canvas ends up
+// showing a page the operator already stepped past.
+//
+// The posters are warmed BEFORE the canvas is resized (resizing clears the
+// bitmap synchronously). Two things fall out of that order: a superseded
+// render bails without ever having touched the visible canvas, and the
+// previous page stays up instead of flashing empty checkerboard. Because
+// loadImage is memoized, drawDiaryCard's own await then resolves from cache in
+// the same macrotask, so the page swaps atomically.
+//
+// The catch, and why cg.rendering exists: the copy panel repaints
+// SYNCHRONOUSLY while this is still awaiting, so for a moment every text
+// artifact says page N while the canvas still shows N-1. #cg-download names
+// its file from cg.diaryPage, which is already N — so a download landing in
+// that window would save the PREVIOUS page's card under the NEW page's name.
+// Silent, plausible, and exactly the mis-post this feature guards against
+// everywhere else. The download buttons are therefore disabled while a render
+// is outstanding.
 async function renderCanvas() {
+  const seq = ++cg.renderSeq
   const canvas = document.querySelector('#cg-canvas')
   if (!canvas) return
   const { w, h } = SIZES[cg.size]
-  canvas.width = w
-  canvas.height = h
-  const c = canvas.getContext('2d')
-  await loadFonts()
-  c.textBaseline = 'alphabetic'
   const data = copyData()
+  setRenderBusy(true)
+  try {
+    await loadFonts()
+    if (cg.kind === 'diary') await Promise.all((data.films || []).map(f => loadImage(f.poster)))
+    if (seq !== cg.renderSeq) return          // superseded — leave the bitmap alone
+    canvas.width = w
+    canvas.height = h
+    const c = canvas.getContext('2d')
+    c.textBaseline = 'alphabetic'
+    await drawForKind(c, w, h, data)
+  } finally {
+    // Only the newest render clears the flag; an older one finishing late must
+    // not re-enable the buttons while the current paint is still in flight.
+    if (seq === cg.renderSeq) setRenderBusy(false)
+  }
+}
+
+// Downloads read cg.diaryPage/cg.size at click time, so they are only honest
+// once the canvas matches. Batch export drives its own detached canvas and
+// manages these buttons itself, so it is left alone while batching.
+function setRenderBusy(on) {
+  cg.rendering = on
+  const wrap = document.querySelector('.cg-canvas-wrap')
+  if (wrap) wrap.classList.toggle('loading', on)
+  if (cg.batching) return
+  for (const id of ['#cg-download', '#cg-download-all']) {
+    const b = document.querySelector(id)
+    if (b) b.disabled = on
+  }
+}
+
+async function drawForKind(c, w, h, data) {
   if (cg.kind === 'roundup') await drawRoundupCard(c, w, h, data)
   else if (cg.kind === 'diary') await drawDiaryCard(c, w, h, data)
   else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data)
@@ -1008,7 +1169,8 @@ async function downloadAllDiaryPages(btn) {
   const restore = btn.textContent
   const alive = () => document.contains(btn)   // a kind change rebuilds innerHTML mid-loop
   btn.disabled = true
-  document.querySelectorAll('.cg-size').forEach(b => { b.disabled = true })
+  document.querySelectorAll('.cg-size, #cg-pager button, .cg-copy-all, #cg-diary-page, #cg-download')
+    .forEach(b => { b.disabled = true })
 
   const { w, h } = SIZES[cg.size]
   const off = document.createElement('canvas')
@@ -1038,7 +1200,13 @@ async function downloadAllDiaryPages(btn) {
       btn.textContent = restore
       btn.disabled = false
     }
-    document.querySelectorAll('.cg-size').forEach(b => { b.disabled = false })
+    document.querySelectorAll('.cg-size, #cg-pager button, .cg-copy-all, #cg-diary-page, #cg-download')
+      .forEach(b => { b.disabled = false })
+    // The blanket re-enable above would resurrect an arrow that syncPager had
+    // correctly disabled at an end of the range, leaving a live-looking
+    // control that does nothing. Restore the real end-state.
+    syncPager()
+    if (cg.rendering) setRenderBusy(true)
   }
 }
 
@@ -1047,6 +1215,12 @@ async function downloadAllDiaryPages(btn) {
 function renderCopyPanel() {
   const data = copyData()
   const wrap = document.querySelector('#cg-copy')
+  // renderCopyPanel is reachable from a hoisted refresh() and a document-level
+  // key handler, either of which can fire after a tab switch has torn this
+  // node out mid-async.
+  if (!wrap) return
+  const d = cg.diary
+  const paged = cg.kind === 'diary' && d && d.pageCount > 1
   wrap.innerHTML = PLATFORMS.map(p => {
     const text = buildSocialCopy(cg.kind, p, data)
     const limit = PLATFORM_LIMITS[p]
@@ -1054,8 +1228,10 @@ function renderCopyPanel() {
       <div class="cg-copy-card" data-platform="${attr(p)}">
         <div class="cg-copy-head">
           <strong>${escapeHtml(PLATFORM_LABELS[p])}</strong>
+          ${paged ? `<span class="cg-copy-page">${escapeHtml(`${cg.diaryPage + 1}/${d.pageCount}`)}</span>` : ''}
           <span class="cg-count ${limit && text.length > limit ? 'over' : ''}">${text.length}${limit ? ` / ${limit}` : ''}</span>
           <button type="button" class="cg-copy-btn">copy</button>
+          ${paged ? `<button type="button" class="cg-copy-all" title="Copies all ${attr(d.pageCount)} pages as generated — not your edits">all ${escapeHtml(String(d.pageCount))}</button>` : ''}
         </div>
         <textarea rows="${p === 'bluesky' || p === 'x' ? 4 : 8}" data-limit="${limit || ''}">${escapeHtml(text)}</textarea>
       </div>`
@@ -1068,6 +1244,11 @@ function renderCopyPanel() {
       const limit = Number(ta.dataset.limit) || 0
       count.textContent = `${ta.value.length}${limit ? ` / ${limit}` : ''}`
       count.classList.toggle('over', !!limit && ta.value.length > limit)
+      // Every post type discards edits on the next refresh and always has.
+      // Mark the card so that loss is visible rather than silent — applied to
+      // all nine kinds, since scoping it to diary would invent a new
+      // inconsistency rather than remove one.
+      card.classList.add('dirty')
     })
   })
   wrap.querySelectorAll('.cg-copy-btn').forEach(btn => {
@@ -1075,6 +1256,17 @@ function renderCopyPanel() {
       const card = btn.closest('.cg-copy-card')
       await navigator.clipboard.writeText(card.querySelector('textarea').value)
       ctx.toast(`${PLATFORM_LABELS[card.dataset.platform]} copy copied to clipboard`)
+    })
+  })
+  // Deliberately NOT .cg-copy-btn: that selector above would bind the
+  // single-page handler to this button too, and its clipboard write would
+  // immediately overwrite the series with one page.
+  wrap.querySelectorAll('.cg-copy-all').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.cg-copy-card')
+      const platform = card.dataset.platform
+      await navigator.clipboard.writeText(diarySeriesCopy(platform, cg.diary.pages))
+      ctx.toast(`${PLATFORM_LABELS[platform]} · all ${cg.diary.pageCount} pages copied — split on the ───── page lines`)
     })
   })
 }
@@ -1139,11 +1331,11 @@ export async function renderContentGen(context) {
       </label>`
       if (!d.pageCount) return range
       return `${range}
-      <label>Pages
+      <label>Max pages
         <input id="cg-diary-pages" type="number" min="1" max="${attr(d.availablePages)}"
                value="${attr(cg.diaryMaxPages || d.availablePages)}" style="width:64px">
       </label>
-      <label>Page
+      <label>Jump to page
         <select id="cg-diary-page">
           ${pages.map((p, i) => {
             // Label every option with its real date range, so a stale page is
@@ -1217,6 +1409,13 @@ export async function renderContentGen(context) {
       </section>
       <section class="cg-copy-panel">
         <h3>Copy</h3>
+        ${cg.kind === 'diary' && cg.diary && cg.diary.pageCount ? `
+        <div class="cg-pager" id="cg-pager">
+          <button type="button" id="cg-page-prev" aria-label="Previous page" title="Previous page">&lsaquo;</button>
+          <strong id="cg-page-now" aria-live="polite"></strong>
+          <span class="muted" id="cg-page-range"></span>
+          <button type="button" id="cg-page-next" aria-label="Next page" title="Next page">&rsaquo;</button>
+        </div>` : ''}
         <div id="cg-copy"></div>
       </section>
     </div>`}
@@ -1263,9 +1462,15 @@ export async function renderContentGen(context) {
   })
   const diarySel = document.querySelector('#cg-diary-page')
   if (diarySel) diarySel.addEventListener('change', () => {
-    cg.diaryPage = Number(diarySel.value) || 0
-    refresh()
+    gotoDiaryPage(Number(diarySel.value) || 0, refresh)
   })
+  const prevBtn = document.querySelector('#cg-page-prev')
+  if (prevBtn) prevBtn.addEventListener('click', () => gotoDiaryPage(cg.diaryPage - 1, refresh))
+  const nextBtn = document.querySelector('#cg-page-next')
+  if (nextBtn) nextBtn.addEventListener('click', () => gotoDiaryPage(cg.diaryPage + 1, refresh))
+  diaryRefresh = refresh
+  bindDiaryKeys()
+  syncPager()
   const dlAll = document.querySelector('#cg-download-all')
   if (dlAll) dlAll.addEventListener('click', () => downloadAllDiaryPages(dlAll))
   const epSel = document.querySelector('#cg-episode')

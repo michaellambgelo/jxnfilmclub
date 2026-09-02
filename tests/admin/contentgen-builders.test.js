@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, socialFileName,
+  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
@@ -574,5 +574,60 @@ describe('buildDiaryPages — scoping', () => {
     const all = buildDiaryPages(map, { today: TODAY })
     expect(all.films[0].avgRating).toBe(3)   // (5 + 1) / 2
     expect(all.films[0].count).toBe(2)
+  })
+})
+
+describe('diarySeriesCopy', () => {
+  const TODAY = '2026-08-23'
+  const built = () => buildDiaryPages(DIARY_MAP, { perPage: 2, today: TODAY })
+
+  it('emits every page, in order, each with its own page tag', () => {
+    const { pages, pageCount } = built()
+    const text = diarySeriesCopy('discord', pages)
+    for (let i = 1; i <= pageCount; i++) expect(text).toContain(`(${i}/${pageCount})`)
+    // Order matters: the operator pastes this and posts top to bottom.
+    expect(text.indexOf('(1/')).toBeLessThan(text.indexOf(`(${pageCount}/`))
+  })
+
+  it('separates pages with a splittable marker carrying the page and range', () => {
+    const { pages, pageCount } = built()
+    const text = diarySeriesCopy('facebook', pages)
+    const marks = text.match(/───── page \d+\/\d+ · [^─]+─────/g) || []
+    expect(marks).toHaveLength(pageCount)
+    expect(marks[0]).toContain('page 1/' + pageCount)
+  })
+
+  it('matches buildSocialCopy page for page — it is a transport, not a rewrite', () => {
+    const { pages, pageCount } = built()
+    const series = diarySeriesCopy('x', pages)
+    pages.forEach((p, i) => {
+      const single = buildSocialCopy('diary', 'x', { ...p, page: i + 1, pageCount })
+      expect(series).toContain(single)
+    })
+  })
+
+  it('never leaks a member handle, even across the whole series', () => {
+    const text = diarySeriesCopy('discord', built().pages)
+    for (const handle of Object.keys(DIARY_MAP)) {
+      expect(text).not.toContain(`letterboxd.com/${handle}`)
+    }
+    expect(text).not.toContain('/film/')
+  })
+
+  it('survives an empty or missing page list', () => {
+    expect(diarySeriesCopy('discord', [])).toBe('')
+    expect(diarySeriesCopy('discord')).toBe('')
+  })
+
+  it('is not bound by PLATFORM_LIMITS — each page is its own post', () => {
+    // The blob carries N posts; only the per-page copy has to fit a ceiling.
+    const { pages, pageCount } = built()
+    expect(pageCount).toBeGreaterThan(1)
+    const series = diarySeriesCopy('x', pages)
+    expect(series.length).toBeGreaterThan(PLATFORM_LIMITS.x)
+    pages.forEach((p, i) => {
+      expect(buildSocialCopy('diary', 'x', { ...p, page: i + 1, pageCount }).length)
+        .toBeLessThanOrEqual(PLATFORM_LIMITS.x)
+    })
   })
 })

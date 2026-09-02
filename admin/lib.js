@@ -169,6 +169,93 @@ export function buildPosterBlockHtml({ poster, link, title, year }) {
 </table>`
 }
 
+// --- Newsletter body size + safety guards ---
+//
+// Three independent failure modes live on this one path, and two of them are
+// silent:
+//
+//   Gmail strips data: image sources at RENDER time — the message arrives
+//   intact and looks correct in the preview, in Resend's dashboard, and in a
+//   test send to an Apple Mail address, then shows most of the club a blank
+//   gap. That is why a data: URI is refused outright rather than warned about.
+//
+//   Gmail clips the text/html part around 102KB, at an arbitrary byte offset,
+//   hiding the unsubscribe footer behind "View entire message".
+//
+//   sendBatch JSON.stringify's a chunk of 100 messages, and stringify flattens
+//   each .html in place while the flat copies stay reachable — peak heap is
+//   roughly twice the stringified length, so a ~640KB body already approaches
+//   the 128MB isolate ceiling. That failure surfaces as "internal server
+//   error" after the whole newsletter has been composed.
+
+// UTF-8 bytes, not .length — .length undercounts every non-ASCII character,
+// and these bodies carry curly quotes, em dashes and emoji.
+export function utf8Bytes(s) {
+  return new TextEncoder().encode(String(s || '')).length
+}
+
+// 92KB is a deliberate margin under Gmail's ~102KB clip, not a derivation: the
+// per-recipient unsubscribe footer is concatenated AFTER any check here, and
+// transfer encoding expands the body further.
+export const NL_HTML_WARN_BYTES = 72 * 1024
+export const NL_HTML_BLOCK_BYTES = 92 * 1024
+export const NL_TEXT_BLOCK_BYTES = 32 * 1024
+
+export function newsletterSizeReport(html, text) {
+  const htmlBytes = utf8Bytes(html)
+  const textBytes = utf8Bytes(text)
+  const level = htmlBytes >= NL_HTML_BLOCK_BYTES || textBytes >= NL_TEXT_BLOCK_BYTES ? 'over'
+    : htmlBytes >= NL_HTML_WARN_BYTES ? 'warn'
+    : 'ok'
+  return { htmlBytes, textBytes, level }
+}
+
+const DATA_SRC = /src\s*=\s*["']?\s*data:/i
+const HOSTED_IMG = /https?:\/\/[^"'\s>]*\/nl\/img\/[^"'\s>]*/gi
+
+// The single highest-priority reason this body must not be sent, or null.
+// Returns a reason rather than a boolean so the UI can say WHY rather than a
+// button merely refusing.
+//
+// `expectedOrigin` is the join Worker origin for the selected env; a body
+// composed against staging carries staging image URLs that 404 for every
+// recipient once it is sent from production.
+export function newsletterSendBlocker(html, text, { expectedOrigin } = {}) {
+  const body = String(html || '')
+  if (DATA_SRC.test(body)) {
+    return {
+      code: 'data_uri',
+      message: 'This body has an embedded image. Gmail strips those, so most members would see nothing — host the image and insert it as a flyer instead.',
+    }
+  }
+  if (expectedOrigin) {
+    const wrong = (body.match(HOSTED_IMG) || []).find(u => !u.startsWith(expectedOrigin + '/'))
+    if (wrong) {
+      return {
+        code: 'cross_env',
+        message: `This body references an image on another environment (${wrong}). Recompose the flyer with the environment you are sending from.`,
+      }
+    }
+  }
+  const { htmlBytes, textBytes, level } = newsletterSizeReport(html, text)
+  if (level === 'over') {
+    const over = htmlBytes >= NL_HTML_BLOCK_BYTES
+      ? `The HTML body is ${Math.round(htmlBytes / 1024)}KB`
+      : `The plain-text body is ${Math.round(textBytes / 1024)}KB`
+    return {
+      code: 'too_large',
+      message: `${over}. Gmail clips messages over about 102KB, cutting off the unsubscribe footer — trim it before sending.`,
+    }
+  }
+  if ((body + String(text || '')).includes('[Write your review or announcement here')) {
+    return {
+      code: 'placeholder',
+      message: 'The poster block still has its placeholder text — replace it in the preview before sending.',
+    }
+  }
+  return null
+}
+
 // --- Pasted/uploaded image announcement block ---
 //
 // A flyer is a COMPLEX IMAGE in the WCAG sense: the one the club actually gets

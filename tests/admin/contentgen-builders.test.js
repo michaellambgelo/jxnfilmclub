@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
+  newsletterSendBlocker, newsletterSizeReport, utf8Bytes,
+  NL_HTML_WARN_BYTES, NL_HTML_BLOCK_BYTES, NL_TEXT_BLOCK_BYTES,
   fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
@@ -757,5 +759,79 @@ describe('buildImageBlockHtml / buildImageBlockText', () => {
     const html = buildImageBlockHtml({ ...BLOCK, link: 'https://jxnfilm.club/events' })
     expect(html).toMatch(/<a href="https:\/\/jxnfilm\.club\/events"><img/)
     expect(buildImageBlockText({ ...BLOCK, link: 'https://jxnfilm.club/events' })).toContain('https://jxnfilm.club/events')
+  })
+})
+
+// --- Newsletter send guards -------------------------------------------------
+describe('utf8Bytes / newsletterSizeReport', () => {
+  it('counts UTF-8 bytes, not code units', () => {
+    // Curly quotes, em dashes and emoji all appear in real newsletter copy,
+    // and .length undercounts every one of them.
+    expect(utf8Bytes('café—')).toBeGreaterThan('café—'.length)
+    expect(utf8Bytes('abc')).toBe(3)
+    expect(utf8Bytes(null)).toBe(0)
+  })
+
+  it('grades ok / warn / over on the byte thresholds', () => {
+    expect(newsletterSizeReport('x'.repeat(1000), '').level).toBe('ok')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_WARN_BYTES), '').level).toBe('warn')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_BLOCK_BYTES), '').level).toBe('over')
+    expect(newsletterSizeReport('x'.repeat(NL_HTML_WARN_BYTES - 1), '').level).toBe('ok')
+  })
+
+  it('grades the plain-text body too, independently of the HTML', () => {
+    expect(newsletterSizeReport('', 'x'.repeat(NL_TEXT_BLOCK_BYTES)).level).toBe('over')
+  })
+})
+
+describe('newsletterSendBlocker', () => {
+  const ORIGIN = 'https://join.jxnfilm.club'
+  const opts = { expectedOrigin: ORIGIN }
+
+  it('passes a clean body', () => {
+    expect(newsletterSendBlocker('<p>Hello</p>', 'Hello', opts)).toBeNull()
+  })
+
+  it('blocks an embedded data: image at any size', () => {
+    // Gmail's sanitizer is size-blind, so a small inline image is exactly as
+    // invisible as a huge one — there is no threshold that makes this safe.
+    const tiny = '<img src="data:image/png;base64,iVBORw0KGgo=">'
+    expect(newsletterSendBlocker(tiny, '', opts).code).toBe('data_uri')
+    expect(newsletterSendBlocker(tiny, '', opts).message).toMatch(/gmail/i)
+  })
+
+  it('catches data: however the attribute is written', () => {
+    for (const body of ["<img src='data:image/png;base64,AA'>", '<img src = "data:image/gif;base64,AA">', '<img SRC="DATA:image/png;base64,AA">']) {
+      expect(newsletterSendBlocker(body, '', opts)?.code).toBe('data_uri')
+    }
+  })
+
+  it('blocks an image hosted on another environment', () => {
+    const staging = '<img src="https://join-staging.jxnfilm.club/nl/img/abc.jpg">'
+    expect(newsletterSendBlocker(staging, '', opts).code).toBe('cross_env')
+    // ...and allows the matching one.
+    expect(newsletterSendBlocker(`<img src="${ORIGIN}/nl/img/abc.jpg">`, '', opts)).toBeNull()
+  })
+
+  it('blocks a body over the size ceiling, naming which body', () => {
+    const big = newsletterSendBlocker('x'.repeat(NL_HTML_BLOCK_BYTES), '', opts)
+    expect(big.code).toBe('too_large')
+    expect(big.message).toMatch(/HTML body/)
+    expect(newsletterSendBlocker('', 'x'.repeat(NL_TEXT_BLOCK_BYTES), opts).message).toMatch(/plain-text body/)
+  })
+
+  it('still catches the poster placeholder', () => {
+    expect(newsletterSendBlocker('<p>[Write your review or announcement here — x]</p>', '', opts).code).toBe('placeholder')
+  })
+
+  it('reports the most serious reason when several apply', () => {
+    // A data URI is both oversized AND unrenderable; the unrenderable half is
+    // what the operator needs to hear, because trimming will not fix it.
+    const both = '<img src="data:image/png;base64,AA">' + 'x'.repeat(NL_HTML_BLOCK_BYTES)
+    expect(newsletterSendBlocker(both, '', opts).code).toBe('data_uri')
+  })
+
+  it('works without an expectedOrigin', () => {
+    expect(newsletterSendBlocker('<img src="https://anywhere/nl/img/a.jpg">', '', {})).toBeNull()
   })
 })

@@ -238,3 +238,101 @@ describe('/unsubscribe', () => {
     expect(postRes.status).toBe(400)
   })
 })
+
+// --- Send guards ------------------------------------------------------------
+//
+// Three failure modes converge on this handler, two of them silent: Gmail
+// strips data: images at render time, Gmail clips the html part near 102KB,
+// and sendBatch's JSON.stringify flattens each body in place so a large one
+// approaches the isolate memory ceiling while fanning out per recipient.
+describe('POST /admin/newsletter/send — body guards', () => {
+  const OK = { subject: 'S', html: '<p>hi</p>', text: 'hi' }
+
+  it('413s an oversized html body without reaching Resend', async () => {
+    const { res, batch } = await captureSend({ ...OK, html: 'x'.repeat(200 * 1024) })
+    expect(res.status).toBe(413)
+    expect((await res.json()).error).toMatch(/over the .*KB limit/)
+    expect(batch).toBeNull()          // never got as far as sending
+  })
+
+  it('413s an oversized plain-text body', async () => {
+    const { res } = await captureSend({ ...OK, text: 'x'.repeat(80 * 1024) })
+    expect(res.status).toBe(413)
+  })
+
+  it('accepts a body just under the ceiling', async () => {
+    await seedMember('under@example.com', { newsletter: true })
+    const { res } = await captureSend({ ...OK, html: '<p>' + 'x'.repeat(100 * 1024) + '</p>' })
+    expect(res.status).toBe(200)
+  })
+
+  it('400s an embedded data: image', async () => {
+    const { res, batch } = await captureSend({ ...OK, html: '<img src="data:image/png;base64,iVBORw0KGgo=">' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/gmail strips those/i)
+    expect(batch).toBeNull()
+  })
+
+  it('400s an image hosted on another environment', async () => {
+    const { res } = await captureSend({ ...OK, html: '<img src="https://join-staging.jxnfilm.club/nl/img/a.jpg">' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/another environment/)
+  })
+
+  it('allows an image on this environment', async () => {
+    await seedMember('same@example.com', { newsletter: true })
+    const { res } = await captureSend({ ...OK, html: '<img src="https://join.jxnfilm.club/nl/img/a.jpg">' })
+    expect(res.status).toBe(200)
+  })
+
+  // The guards sit BEFORE the testTo branch on purpose. A test send is the one
+  // path that makes a broken body look correct — a data: URI renders perfectly
+  // in a test to an Apple Mail address and is stripped by Gmail for the real
+  // list — so leaving it unguarded manufactures false confidence.
+  it('guards a TEST send on identical terms', async () => {
+    const dataUri = await captureSend({ ...OK, html: '<img src="data:image/png;base64,AA">', testTo: 'me@example.com' })
+    expect(dataUri.res.status).toBe(400)
+    expect(dataUri.batch).toBeNull()
+
+    const tooBig = await captureSend({ ...OK, html: 'x'.repeat(200 * 1024), testTo: 'me@example.com' })
+    expect(tooBig.res.status).toBe(413)
+    expect(tooBig.batch).toBeNull()
+  })
+})
+
+describe('POST /admin/newsletter/send — upstream failures are legible', () => {
+  it('502s with the Resend message instead of "internal server error"', async () => {
+    await seedMember('a@example.com', { newsletter: true })
+    mockFetch(async (url) => String(url).includes('resend')
+      ? new Response('{"message":"validation failed"}', { status: 422 })
+      : new Response('', { status: 200 }))
+    const res = await req('/admin/newsletter/send', {
+      method: 'POST', token: 'test-admin-token', body: { subject: 'S', html: '<p>hi</p>' },
+    })
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toMatch(/Resend batch 422/)
+    expect(body.error).toMatch(/validation failed/)
+    expect(body.error).not.toMatch(/internal server error/i)
+  })
+
+  it('reports a partial broadcast as partial, so a retry is not a double-send', async () => {
+    // 150 recipients = two chunks. Fail the second: 100 people already have it.
+    for (let i = 0; i < 150; i++) await seedMember(`p${i}@example.com`, { newsletter: true })
+    let n = 0
+    mockFetch(async (url) => {
+      if (!String(url).includes('resend')) return new Response('', { status: 200 })
+      n++
+      return n === 1
+        ? new Response(JSON.stringify({ data: [] }), { status: 200 })
+        : new Response('{"message":"rate limited"}', { status: 429 })
+    })
+    const res = await req('/admin/newsletter/send', {
+      method: 'POST', token: 'test-admin-token', body: { subject: 'S', html: '<p>hi</p>' },
+    })
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.sent).toBe(100)
+    expect(body.partial).toBe(true)
+  })
+})

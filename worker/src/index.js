@@ -194,7 +194,7 @@ async function route(request, env) {
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(request, env)
-    if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(env)
+    if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
     // Operator-editable config (admin portal writes config:* keys in
     // MEMBERS_KV). Public projection only — config:newsletter_template is
@@ -2046,6 +2046,25 @@ async function fetchEventsBaseline(env) {
 const WATCHED_CACHE_TTL = 900 // seconds; freshness window (checked in code, not a KV TTL)
 const WATCHED_MISS_TTL = 120  // total-miss backoff before retrying upstream
 
+// What an unauthenticated caller gets per handle. The cache holds
+// WATCHED_FEED_DEPTH (the RSS ceiling); this is the slice the public site
+// needs — sections render 4 and the weekly strip only reaches back 7 days,
+// so shipping the full depth to every visitor would multiply the payload for
+// data no page renders. `?depth=full` (ADMIN_TOKEN) opts into the whole
+// cached map for the admin's paged diary cards.
+const WATCHED_PUBLIC_DEPTH = 12
+
+// Slice each handle's films to `depth`. The map is already newest-first per
+// handle (RSS order), so a head slice is the recent window.
+function projectWatched(map, depth) {
+  if (!Number.isFinite(depth)) return map || {}
+  const out = {}
+  for (const [handle, films] of Object.entries(map || {})) {
+    out[handle] = (films || []).slice(0, depth)
+  }
+  return out
+}
+
 // Tolerates the pre-stale-while-error record shape (the bare map): it reads
 // as stale-but-present and upgrades on the next successful rebuild.
 function readWatchedRecord(raw) {
@@ -2071,19 +2090,35 @@ function watchedResponse(env, data) {
 // one upstream fan-out instead of each hitting every member's RSS feed.
 let watchedInflight = null
 
-async function handleWatchedGet(env) {
+async function handleWatchedGet(request, env) {
   if (env.E2E_MODE === 'true') return watchedResponse(env, {})
+
+  // Full depth is admin-only — not because the films are secret (they're
+  // public on the site and on Letterboxd) but because it's a 4x payload that
+  // only the admin's paged diary cards consume. The `env.ADMIN_TOKEN &&`
+  // guard is load-bearing: without it an unset var would let a request with
+  // no Authorization header through, as authorizeGuestManager notes.
+  const wantsFull = new URL(request.url).searchParams.get('depth') === 'full'
+  let depth = WATCHED_PUBLIC_DEPTH
+  if (wantsFull) {
+    const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+    if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+      return json(env, { error: 'unauthorized' }, 401)
+    }
+    depth = Infinity
+  }
+
   const rec = readWatchedRecord(await env.MEMBERS_KV.get('watched:cache'))
   const now = Date.now()
   if (rec) {
     const fresh = now - (rec.fetchedAt || 0) < WATCHED_CACHE_TTL * 1000
     const backoff = rec.missAt && now - rec.missAt < WATCHED_MISS_TTL * 1000
-    if (fresh || backoff) return watchedResponse(env, rec.map)
+    if (fresh || backoff) return watchedResponse(env, projectWatched(rec.map, depth))
   }
   if (!watchedInflight) {
     watchedInflight = buildWatched(env, rec).finally(() => { watchedInflight = null })
   }
-  return watchedResponse(env, await watchedInflight)
+  return watchedResponse(env, projectWatched(await watchedInflight, depth))
 }
 
 async function buildWatched(env, prevRec) {
@@ -2128,9 +2163,16 @@ async function buildWatched(env, prevRec) {
 // last four, but the weekly club strip clusters over everything in its
 // window — an active member can push a film out of their last four within a
 // day (8 diary entries in a week is real data), which silently dropped their
-// name from a shared-watch cluster. 12 covers a heavy week with headroom;
-// bump the constant if a member ever out-logs it.
-const WATCHED_FEED_DEPTH = 12
+// name from a shared-watch cluster.
+//
+// 50 is the ceiling Letterboxd's RSS actually serves: an active member's feed
+// carries exactly 50 diary entries (100 items, half of them other activity),
+// so this takes everything on offer and costs no extra request — we already
+// download the whole feed. It is a ROLLING window, not an archive: at ~21
+// films/month the busiest member's 50 span ~12 weeks, and anything older is
+// gone from the feed for good. Letterboxd is the archive; we only mirror what
+// it still serves. The public projection is WATCHED_PUBLIC_DEPTH.
+const WATCHED_FEED_DEPTH = 50
 
 function parseLetterboxdRss(xml) {
   const films = []

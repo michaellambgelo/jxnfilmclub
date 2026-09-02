@@ -270,16 +270,25 @@ async function handleTmdbProxy(env, q) {
   return json(workerRes.status, data)
 }
 
-// GET /api/watched?env= — proxy the join Worker's public /watched endpoint
-// over the service binding. The join Worker's CORS allowlist only names the
-// public site origin, so the admin UI can't fetch it directly; the binding
-// also keeps the hop off the public internet.
+// GET /api/watched?env= — proxy the join Worker's /watched endpoint over the
+// service binding. The join Worker's CORS allowlist only names the public
+// site origin, so the admin UI can't fetch it directly; the binding also
+// keeps the hop off the public internet.
+//
+// Asks for `?depth=full` (the whole cached feed, not the public 12-per-handle
+// slice) so the Content Gen diary pager and the Stats film counts see every
+// entry Letterboxd still serves. Without an admin token it falls back to the
+// public request rather than failing: a shallower map degrades the diary
+// pager, an error would break the whole tab.
 async function handleWatchedProxy(env, q) {
   if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
   const staging = q.env === 'staging'
   const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
+  const token = staging ? (env.ADMIN_TOKEN_STAGING || env.ADMIN_TOKEN) : env.ADMIN_TOKEN
   const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
-  const workerRes = await service.fetch(`${origin}/watched`)
+  const workerRes = await service.fetch(
+    `${origin}/watched${token ? '?depth=full' : ''}`,
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
   const text = await workerRes.text()
   let data
   try { data = text ? JSON.parse(text) : {} } catch { data = {} }

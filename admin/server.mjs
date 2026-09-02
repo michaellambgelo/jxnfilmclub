@@ -383,11 +383,18 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
-  // GET /api/watched?env=  → proxies the join Worker's public /watched map
+  // GET /api/watched?env=  → proxies the join Worker's /watched map
   // (server-side fetch — the browser can't call it cross-origin itself).
+  // Mirrors the hosted admin worker: asks for full depth when a token is
+  // available, falls back to the public slice when it isn't.
   if (method === 'GET' && url.pathname === '/api/watched') {
     if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
-    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/watched`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    const workerRes = await fetch(
+      `${WORKER_ORIGINS[q.env]}/watched${token ? '?depth=full' : ''}`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
     const text = await workerRes.text()
     let data
     try { data = text ? JSON.parse(text) : {} } catch { data = {} }

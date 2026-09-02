@@ -72,10 +72,15 @@ def extract_review(entry) -> str | None:
     return truncate(text) if text else None
 
 
-# Mirror of the Worker's WATCHED_FEED_DEPTH: sections render the last four,
-# but the weekly strip clusters over everything in its window, so the
-# snapshot must carry the same depth or a fallback page-load would drop
-# names from shared-watch clusters.
+# Mirror of the Worker's WATCHED_PUBLIC_DEPTH — NOT its WATCHED_FEED_DEPTH.
+# This file is the SPA's offline fallback, so it has to match what the public
+# GET /watched actually serves: sections render the last four, but the weekly
+# strip clusters over everything in its window, and a shallower snapshot would
+# drop names from shared-watch clusters on a fallback page-load.
+#
+# The Worker caches deeper (50, the RSS ceiling) and serves that only to the
+# admin via ?depth=full. Committing 50 here would quadruple this file and the
+# cron's diff for data no public page renders.
 FILMS_PER_MEMBER = 12
 
 

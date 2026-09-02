@@ -203,3 +203,82 @@ describe('GET /watched — live Last Four via the Worker', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 })
+
+// --- Depth projection -------------------------------------------------------
+//
+// The cache holds WATCHED_FEED_DEPTH (50, the RSS ceiling) so the admin's
+// paged diary cards see everything Letterboxd still serves. The public
+// response is sliced to WATCHED_PUBLIC_DEPTH (12) — the site renders 4 per
+// member plus a 7-day strip, so shipping 50 to every visitor would multiply
+// the payload for data no page draws.
+describe('GET /watched — depth projection', () => {
+  const ADMIN_TOKEN = 'test-admin-token'
+  const PUBLIC_DEPTH = 12
+  const FEED_DEPTH = 50
+
+  // 60 diary entries: more than the RSS ceiling, so the parser cap is what
+  // lands in the cache, and far more than the public slice.
+  const DEEP_FEED = rssFeed(Array.from({ length: 60 }, (_, i) => rssItem({
+    guid: `letterboxd-watch-${i}`,
+    title: `Film ${i}`,
+    link: `https://letterboxd.com/qa/film/film-${i}/`,
+    film: `Film ${i}`,
+    year: '2026',
+    date: `2026-07-${String(28 - (i % 28)).padStart(2, '0')}`,
+  })))
+
+  const watched = (query = '', token) => SELF.fetch(
+    `https://join.jxnfilm.club/watched${query}`,
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+  )
+
+  beforeEach(async () => {
+    await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])
+    mockFetch(async () => new Response(DEEP_FEED, { status: 200 }))
+  })
+
+  it('caps the cache at the RSS ceiling, not at the public depth', async () => {
+    await watched()
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(rec.map.qa).toHaveLength(FEED_DEPTH)
+  })
+
+  it('serves the public slice to an unauthenticated caller', async () => {
+    const body = await (await watched()).json()
+    expect(body.qa).toHaveLength(PUBLIC_DEPTH)
+    // Newest-first head slice, so the public window is the RECENT one.
+    expect(body.qa[0].title).toBe('Film 0')
+  })
+
+  it('serves the full cached depth to an admin asking for it', async () => {
+    const body = await (await watched('?depth=full', ADMIN_TOKEN)).json()
+    expect(body.qa).toHaveLength(FEED_DEPTH)
+    // A superset of the public slice, same order.
+    const pub = await (await watched()).json()
+    expect(body.qa.slice(0, PUBLIC_DEPTH)).toEqual(pub.qa)
+  })
+
+  it('rejects depth=full without a valid admin token', async () => {
+    for (const token of [undefined, 'wrong-token', '']) {
+      const res = await watched('?depth=full', token)
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: 'unauthorized' })
+    }
+  })
+
+  it('ignores an unrecognised depth rather than leaking the full map', async () => {
+    for (const q of ['?depth=all', '?depth=999', '?depth=', '?depth=FULL']) {
+      const body = await (await watched(q)).json()
+      expect(body.qa).toHaveLength(PUBLIC_DEPTH)
+    }
+  })
+
+  it('projects the cached map on a cache hit too, not just a rebuild', async () => {
+    await watched()                                   // populate
+    mockFetch(async () => { throw new Error('upstream must not be hit') })
+    const pub = await (await watched()).json()        // served from cache
+    const full = await (await watched('?depth=full', ADMIN_TOKEN)).json()
+    expect(pub.qa).toHaveLength(PUBLIC_DEPTH)
+    expect(full.qa).toHaveLength(FEED_DEPTH)
+  })
+})

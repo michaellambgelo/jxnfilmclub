@@ -362,5 +362,16 @@ test.describe('admin dashboard', () => {
     await page.locator('#cg-kind').selectOption('roundup')
     await expect(page.locator('#cg-limit')).toBeVisible()
     await expect(page.locator('#content .empty')).toHaveText(/No member watches logged in the last 7 days/)
+
+    // Diary mode reads the same empty /watched, so it shows its own empty
+    // state rather than a pager. The paging itself is unit-tested against
+    // buildDiaryPages — that's why the logic lives in pure lib.js.
+    await page.locator('#cg-kind').selectOption('diary')
+    await expect(page.locator('#content .empty')).toHaveText(/No dated member watches/)
+    await expect(page.locator('#cg-diary-page')).toHaveCount(0)
+    await expect(page.locator('#cg-download-all')).toHaveCount(0)
+    // The Range select survives an empty result — it's the only way back out
+    // of a window that returned nothing.
+    await expect(page.locator('#cg-diary-range')).toBeVisible()
   })
 })

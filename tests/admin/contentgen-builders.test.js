@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  socialEventView, buildSocialCopy, buildRoundupData, socialFileName,
-  fmtSocialDate, fmtMonth, daysUntil, countdownLead, PLATFORM_LIMITS,
+  socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, socialFileName,
+  fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
 // A canonical hosted-event KV row — includes every private field that must
@@ -296,5 +296,283 @@ describe('fmtSocialDate / socialFileName', () => {
   it('builds a slugged filename', () => {
     expect(socialFileName('announce', 'ig-post', HOSTED_EVENT)).toBe('jfc-announce-2026-06-12-passion-ig-post.png')
     expect(socialFileName('roundup', 'x', null)).toBe('jfc-roundup-x.png')
+  })
+})
+
+// --- Diary pages -----------------------------------------------------------
+//
+// A handle-keyed /watched map. Handles and diary links are the identity this
+// feature must never emit, so they're deliberately realistic here.
+const DIARY_MAP = {
+  Ada: [
+    { title: 'The Odyssey', year: '2026', rating: '5', poster: 'p/odyssey.jpg',
+      watched_date: '2026-08-07', link: 'https://letterboxd.com/ada/film/the-odyssey-2026/' },
+    { title: 'Blade', year: '1998', rating: '3.5', watched_date: '2026-08-05',
+      link: 'https://letterboxd.com/ada/film/blade/' },
+    { title: 'No Date Here', year: '1999', rating: '4' },
+    { title: 'Bad Date', year: '1999', watched_date: '08/11/2026' },
+    { year: '2001', watched_date: '2026-08-04' },
+  ],
+  Bo: [
+    // Same film as Ada's, logged a day earlier and rated lower — the dedupe
+    // must keep Ada's newer date but average both ratings.
+    { title: 'The Odyssey', year: '2026', rating: '4', poster: 'p/odyssey.jpg',
+      watched_date: '2026-08-06', link: 'https://letterboxd.com/bo/film/the-odyssey-2026/' },
+    // Logged but never rated: counts toward `count`, not `ratedCount`.
+    { title: 'Warfare', year: '2025', watched_date: '2026-08-03', liked: true },
+  ],
+  Cy: [
+    { title: 'Warfare', year: '2025', rating: '2', watched_date: '2026-08-02' },
+    // Same title, different year — a different film, never deduped together.
+    { title: 'The Odyssey', year: '1997', rating: '3.5', watched_date: '2026-08-05' },
+  ],
+}
+
+describe('buildDiaryPages', () => {
+  it('drops undated, malformed-date and untitled entries', () => {
+    const { films, entries } = buildDiaryPages(DIARY_MAP)
+    expect(entries).toBe(6)   // 9 raw, minus no-date, bad-date and no-title
+    expect(films.map(f => f.title)).not.toContain('No Date Here')
+    expect(films.map(f => f.title)).not.toContain('Bad Date')
+  })
+
+  it('never emits a handle, name or diary link', () => {
+    // The diary link embeds the member handle, so its absence is the whole
+    // privacy contract — assert on the serialized output, not just the keys.
+    const { films } = buildDiaryPages(DIARY_MAP)
+    const json = JSON.stringify(films)
+    for (const handle of Object.keys(DIARY_MAP)) expect(json).not.toContain(handle)
+    expect(json).not.toContain('letterboxd.com')
+    for (const f of films) {
+      expect(f).not.toHaveProperty('link')
+      expect(f).not.toHaveProperty('handle')
+      expect(f).not.toHaveProperty('name')
+    }
+  })
+
+  it('dedupes on title|year, keeping the newest date and counting members', () => {
+    const { films, total } = buildDiaryPages(DIARY_MAP)
+    const odyssey = films.filter(f => f.title === 'The Odyssey')
+    expect(odyssey).toHaveLength(2)                    // 2026 and 1997 stay apart
+    const nolan = odyssey.find(f => f.year === '2026')
+    expect(nolan.count).toBe(2)
+    expect(nolan.watched_date).toBe('2026-08-07')      // Ada's, the newer one
+    expect(total).toBe(4)
+  })
+
+  it('averages the rating over raters, not loggers', () => {
+    const { films } = buildDiaryPages(DIARY_MAP)
+    const nolan = films.find(f => f.title === 'The Odyssey' && f.year === '2026')
+    expect(nolan.avgRating).toBe(4.5)                  // (5 + 4) / 2
+    expect(nolan.ratedCount).toBe(2)
+
+    // Two members logged Warfare; only one rated it. The average is that one
+    // rating, and ratedCount says so rather than implying a 2-person consensus.
+    const warfare = films.find(f => f.title === 'Warfare')
+    expect(warfare.count).toBe(2)
+    expect(warfare.ratedCount).toBe(1)
+    expect(warfare.avgRating).toBe(2)
+  })
+
+  it('leaves avgRating absent when nobody rated the film', () => {
+    const { films } = buildDiaryPages({ Ada: [{ title: 'Unrated', watched_date: '2026-08-01' }] })
+    expect(films[0]).not.toHaveProperty('avgRating')
+    expect(films[0].ratedCount).toBe(0)
+    expect(films[0].count).toBe(1)
+  })
+
+  it('orders newest-first with a deterministic same-day tiebreak', () => {
+    // Same date across every entry: order must come from the title|year key,
+    // not from member iteration order, or paging isn't reproducible.
+    const d = '2026-08-08'
+    const a = buildDiaryPages({ X: [{ title: 'Zodiac', watched_date: d }, { title: 'Amelie', watched_date: d }],
+                                Y: [{ title: 'Mulholland Drive', watched_date: d }] })
+    const b = buildDiaryPages({ Y: [{ title: 'Mulholland Drive', watched_date: d }],
+                                X: [{ title: 'Amelie', watched_date: d }, { title: 'Zodiac', watched_date: d }] })
+    expect(a.films.map(f => f.title)).toEqual(['Amelie', 'Mulholland Drive', 'Zodiac'])
+    expect(b.films.map(f => f.title)).toEqual(a.films.map(f => f.title))
+  })
+
+  it('chunks into pages carrying their own date range', () => {
+    const { pages, pageCount } = buildDiaryPages(DIARY_MAP, { perPage: 2 })
+    expect(pageCount).toBe(2)
+    expect(pages[0].films).toHaveLength(2)
+    expect(pages[0].to).toBe('2026-08-07')     // newest on the page
+    expect(pages[0].from).toBe('2026-08-05')   // oldest on the page
+    for (const p of pages) expect(p.from <= p.to).toBe(true)
+  })
+
+  it('survives empty and malformed input', () => {
+    for (const bad of [null, undefined, {}, { A: null }, { A: [null, undefined] }]) {
+      expect(buildDiaryPages(bad)).toEqual({
+        pages: [], films: [], total: 0, entries: 0, pageCount: 0, availablePages: 0, days: null,
+      })
+    }
+  })
+
+  it('clamps a nonsense perPage instead of dividing by zero', () => {
+    expect(buildDiaryPages(DIARY_MAP, { perPage: 0 }).pageCount).toBe(1)     // falls back to 10
+    expect(buildDiaryPages(DIARY_MAP, { perPage: -3 }).pageCount).toBe(4)    // clamps to 1 per page
+    expect(buildDiaryPages(DIARY_MAP, { perPage: 2.7 }).pageCount).toBe(2)   // floors to 2
+  })
+})
+
+describe('fmtDiaryRange', () => {
+  it('omits the year on the left half within one year', () => {
+    expect(fmtDiaryRange('2026-03-12', '2026-04-03')).toBe('Mar 12 – Apr 3, 2026')
+  })
+
+  it('carries both years across a year boundary', () => {
+    expect(fmtDiaryRange('2025-12-28', '2026-01-04')).toBe('Dec 28, 2025 – Jan 4, 2026')
+  })
+
+  it('collapses a single-day range', () => {
+    expect(fmtDiaryRange('2026-04-03', '2026-04-03')).toBe('Apr 3, 2026')
+  })
+
+  it('returns empty for anything that is not a bare date', () => {
+    for (const [a, b] of [['', '2026-01-01'], ['nope', '2026-01-01'], ['2026-01-01', null],
+                          ['2026-1-1', '2026-01-02']]) {
+      expect(fmtDiaryRange(a, b)).toBe('')
+    }
+  })
+})
+
+describe('buildSocialCopy — diary', () => {
+  const page = (perPage = 10) => {
+    const built = buildDiaryPages(DIARY_MAP, { perPage })
+    return { ...built.pages[0], page: 1, pageCount: built.pageCount }
+  }
+
+  it('leads with the real date range and never claims recency', () => {
+    for (const p of PLATFORMS) {
+      const text = buildSocialCopy('diary', p, page())
+      // Aug 3, not Cy's Aug 2: the dedupe keeps Warfare's NEWEST log date, so
+      // the range describes the rows actually on the card. Case-insensitive
+      // because Instagram uppercases its whole lead line, as the roundup does.
+      expect(text.toLowerCase()).toContain('aug 3 – aug 7, 2026')
+      // Deep pages are years old, so any "this week"/"recent" phrasing lies.
+      expect(text).not.toMatch(/this week|recent/i)
+    }
+  })
+
+  it('shows the club average with its sample size, not a lone score', () => {
+    const text = buildSocialCopy('diary', 'discord', page())
+    expect(text).toContain('The Odyssey (2026)')
+    expect(text).toContain('4.5 avg, 2 members')
+    // A single rater gets stars only — no misleading "1 members" annotation.
+    expect(text).not.toContain('1 members')
+  })
+
+  it('stays under every platform ceiling with ten long titles', () => {
+    const long = {}
+    for (let i = 0; i < 10; i++) {
+      long['m' + i] = [{
+        title: `The Assassination of Jesse James by the Coward Robert Ford ${i}`,
+        year: '2007', rating: '4.5', watched_date: `2026-08-${String(10 + i).padStart(2, '0')}`,
+      }]
+    }
+    const built = buildDiaryPages(long)
+    const data = { ...built.pages[0], page: 1, pageCount: built.pageCount }
+    for (const p of PLATFORMS) {
+      const limit = PLATFORM_LIMITS[p]
+      if (limit) expect(buildSocialCopy('diary', p, data).length).toBeLessThanOrEqual(limit)
+    }
+  })
+
+  it('drops the page tag when there is only one page', () => {
+    const one = buildDiaryPages(DIARY_MAP, { perPage: 100 })
+    const text = buildSocialCopy('diary', 'facebook', { ...one.pages[0], page: 1, pageCount: 1 })
+    expect(text).not.toContain('(1/1)')
+  })
+})
+
+describe('buildDiaryPages — scoping', () => {
+  // Dates are pinned via `today` so the Central-time window never makes this
+  // suite time-dependent.
+  const TODAY = '2026-08-23'
+  // A 7-day window ending 2026-08-23 floors at 2026-08-17 (day 7 counting the
+  // end date), so 08-17 is the last day IN and 08-16 the first day OUT.
+  const SCOPED = {
+    Ada: [
+      { title: 'Today', watched_date: '2026-08-23' },
+      { title: 'Window Edge', watched_date: '2026-08-17' },
+      { title: 'Well Outside', watched_date: '2026-08-10' },
+      { title: 'Last Year', watched_date: '2025-08-23' },
+    ],
+    Bo: [
+      { title: 'Just Outside', watched_date: '2026-08-16' },
+      { title: 'Ancient', watched_date: '2023-01-01' },
+    ],
+  }
+
+  it('windows to a trailing N days, inclusive of the boundary day', () => {
+    const week = buildDiaryPages(SCOPED, { days: 7, today: TODAY })
+    expect(week.films.map(f => f.title)).toEqual(['Today', 'Window Edge'])
+    expect(week.films.map(f => f.title)).not.toContain('Just Outside')
+    expect(week.days).toBe(7)
+  })
+
+  it('pages the whole feed when no window is given', () => {
+    const all = buildDiaryPages(SCOPED, { today: TODAY })
+    expect(all.total).toBe(6)
+    expect(all.days).toBeNull()
+  })
+
+  it('shares its cutoff with buildRoundupData, so the two windows cannot drift', () => {
+    const week = buildDiaryPages(SCOPED, { days: 7, today: TODAY })
+    const roundup = buildRoundupData(SCOPED, { days: 7, today: TODAY, limit: 99 })
+    expect(week.films.map(f => f.title).sort()).toEqual(roundup.films.map(f => f.title).sort())
+    expect(centralCutoff(7, TODAY)).toBe('2026-08-17')
+  })
+
+  it('caps the page count while still reporting what was available', () => {
+    const capped = buildDiaryPages(SCOPED, { perPage: 2, maxPages: 2, today: TODAY })
+    expect(capped.pageCount).toBe(2)
+    expect(capped.availablePages).toBe(3)
+    expect(capped.films).toHaveLength(4)     // trimmed to the kept pages
+    expect(capped.total).toBe(6)             // scope size, before the cut
+  })
+
+  it('is a no-op when the cap meets or exceeds the pages available', () => {
+    const uncapped = buildDiaryPages(SCOPED, { perPage: 2, today: TODAY })
+    for (const maxPages of [3, 99, null, 0, -1]) {
+      const r = buildDiaryPages(SCOPED, { perPage: 2, maxPages, today: TODAY })
+      expect(r.pageCount).toBe(uncapped.pageCount)
+      expect(r.availablePages).toBe(uncapped.availablePages)
+    }
+  })
+
+  it('composes the window and the cap', () => {
+    const r = buildDiaryPages(SCOPED, { perPage: 1, days: 7, maxPages: 1, today: TODAY })
+    expect(r.total).toBe(2)              // two films in the window
+    expect(r.availablePages).toBe(2)     // one per page
+    expect(r.pageCount).toBe(1)          // capped to one
+    expect(r.films.map(f => f.title)).toEqual(['Today'])
+  })
+
+  it('returns an empty result for a window with nothing in it', () => {
+    const r = buildDiaryPages({ Ada: [{ title: 'Old', watched_date: '2020-01-01' }] }, { days: 7, today: TODAY })
+    expect(r.pageCount).toBe(0)
+    expect(r.availablePages).toBe(0)
+    expect(r.pages).toEqual([])
+  })
+
+  it('keeps the club average scoped to the window', () => {
+    // Two members logged the same film, one inside the window and one outside.
+    // Only the in-window rating counts, or the card would average a score the
+    // page never shows.
+    const map = {
+      Ada: [{ title: 'Split', year: '2026', rating: '5', watched_date: '2026-08-22' }],
+      Bo: [{ title: 'Split', year: '2026', rating: '1', watched_date: '2026-01-01' }],
+    }
+    const week = buildDiaryPages(map, { days: 7, today: TODAY })
+    expect(week.films[0].avgRating).toBe(5)
+    expect(week.films[0].ratedCount).toBe(1)
+    expect(week.films[0].count).toBe(1)
+
+    const all = buildDiaryPages(map, { today: TODAY })
+    expect(all.films[0].avgRating).toBe(3)   // (5 + 1) / 2
+    expect(all.films[0].count).toBe(2)
   })
 })

@@ -470,10 +470,10 @@ describe('computeMemberStats', () => {
 
   // NOTE: this count is a capped RSS window, never a films-logged total. It is
   // admin-only for newsletter sourcing; the member card does not show it.
-  it('flags a count sitting at the feed cap so it can render as 12+, not a total', () => {
+  it('flags a count sitting at the feed cap so it renders as "N+", not a total', () => {
     const ctx = ctxFor({ watched: { atCap: new Array(WATCHED_FEED_DEPTH).fill(1), under: new Array(6).fill(1) } })
     const capped = computeMemberStats({ id: 'x', name: 'X', handle: 'atCap' }, ctx)
-    expect(capped.logged).toBe(12)
+    expect(capped.logged).toBe(WATCHED_FEED_DEPTH)
     expect(capped.atFilmCap).toBe(true)
 
     const under = computeMemberStats({ id: 'y', name: 'Y', handle: 'under' }, ctx)

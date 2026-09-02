@@ -601,6 +601,15 @@
   "badmov1eenjoyer": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/coyote-vs-acme/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
+      "rating": "4.0",
+      "title": "Coyote vs. Acme",
+      "watched_date": "2026-09-01",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/13-going-on-30-3/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/um/45/8m/or/t0c3qxcKSaO4iBYVAzIeyPbC8I1-0-600-0-900-crop.jpg?v=72ab2e2ec7",
       "rating": "5.0",
@@ -692,15 +701,6 @@
       "title": "The Color of Money",
       "watched_date": "2026-07-29",
       "year": "1986"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/how-to-make-a-killing-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/9/5/0/4/399504-how-to-make-a-killing-2026-0-600-0-900-crop.jpg?v=be2948f44a",
-      "rating": "3.0",
-      "title": "How to Make a Killing",
-      "watched_date": "2026-07-28",
-      "year": "2026"
     }
   ],
   "bearleebooks": [

@@ -959,8 +959,8 @@ export function computeMemberStats(member, ctx) {
   // case, and watched-view on the public site does not normalize either.
   //
   // This is NOT a films-logged total and must never be shown as one. The feed
-  // parser stops at WATCHED_FEED_DEPTH (12) per handle, so an active member
-  // reads exactly 12 no matter how much they log. It stays here because the
+  // parser stops at WATCHED_FEED_DEPTH (50 — the RSS ceiling) per handle, so a
+  // member who has logged more than that still reads exactly 50. It stays here because the
   // admin uses it to source newsletter content, and atFilmCap lets the table
   // render 12+ rather than lie. The member-facing card does not show it at all.
   const logged = (m.handle && ctx.watched[m.handle]) ? ctx.watched[m.handle].length : 0
@@ -985,7 +985,9 @@ export function computeMemberStats(member, ctx) {
 
 // Mirrors WATCHED_FEED_DEPTH in worker/src/index.js — the point at which the
 // RSS parser stops, and therefore the point at which a count becomes "or more".
-export const WATCHED_FEED_DEPTH = 12
+// The admin reads /api/watched at full depth, so this is the cache depth (50),
+// NOT the public projection (WATCHED_PUBLIC_DEPTH = 12).
+export const WATCHED_FEED_DEPTH = 50
 
 export function ordinal(n) {
   const tens = n % 100

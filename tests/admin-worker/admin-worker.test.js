@@ -430,26 +430,43 @@ describe('/api/rsvp/guest', () => {
   })
 })
 
-// --- Watched proxy: unauthenticated pass-through over the service binding ---
+// --- Watched proxy: full-depth read over the service binding ---
+//
+// The admin asks for ?depth=full so Content Gen's paged diary cards and the
+// Stats film counts see the whole cached feed, not the public 12-per-handle
+// slice the site needs. That read is bearer-gated on the join Worker.
 
 describe('/api/watched', () => {
-  it('production proxies JOIN_WORKER /watched with no Authorization header', async () => {
+  it('production asks JOIN_WORKER for full depth with ADMIN_TOKEN', async () => {
     const { service, calls } = stubService({ modhandle: [{ title: 'Film' }] })
     const res = await call('/api/watched?env=production', {
       token: await signToken(), envOverrides: { JOIN_WORKER: service },
     })
     expect(await res.json()).toEqual({ modhandle: [{ title: 'Film' }] })
-    expect(calls[0].url).toBe('https://join.jxnfilm.club/watched')
-    expect(calls[0].init?.headers?.Authorization).toBeUndefined()
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/watched?depth=full')
+    expect(calls[0].init?.headers?.Authorization).toBe('Bearer test-admin-token')
   })
 
-  it('staging proxies JOIN_WORKER_STAGING against join-staging', async () => {
+  it('staging uses JOIN_WORKER_STAGING and ADMIN_TOKEN_STAGING against join-staging', async () => {
     const { service, calls } = stubService({})
     const res = await call('/api/watched?env=staging', {
       token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
     })
     expect(res.status).toBe(200)
-    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/watched')
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/watched?depth=full')
+    expect(calls[0].init?.headers?.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('falls back to the public read when no admin token is configured', async () => {
+    // Degrade, don't fail: a shallower map makes the diary pager thinner,
+    // but erroring would take out the whole Content Gen tab.
+    const { service, calls } = stubService({ modhandle: [{ title: 'Film' }] })
+    const res = await call('/api/watched?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service, ADMIN_TOKEN: '' },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/watched')
+    expect(calls[0].init?.headers?.Authorization).toBeUndefined()
   })
 
   it('400s on an invalid env', async () => {

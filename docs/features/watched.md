@@ -54,7 +54,7 @@ flowchart LR
     B --> C[Read data/members.json]
     C --> D{For each member<br/>with handle}
     D --> E[Fetch letterboxd.com/{handle}/rss/]
-    E --> F[Extract last 12 entries:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
+    E --> F[Extract last 12 entries<br/>FILMS_PER_MEMBER, mirrors the public depth:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
     F --> G[Write data/watched.json]
     G --> H{Data changed?}
     H -->|Yes| I[Commit + push]
@@ -70,7 +70,8 @@ home page's Hot Takes section — see [home.md](home.md).
 The SPA no longer reads `data/watched.json` first: `getWatched()` in
 `model/index.ts` calls the Worker's public `GET /watched`, which fetches each
 linked member's RSS on demand and caches the aggregate at `watched:cache` in
-`MEMBERS_KV` for 15 minutes (per-feed fetches are additionally edge-cached).
+`MEMBERS_KV`, treated as fresh for 15 minutes — a code-checked window, not a
+KV TTL (per-feed fetches are additionally edge-cached).
 That keeps diaries minutes-fresh instead of up to 6 hours stale, while
 Letterboxd sees at most one fetch per feed per window. A total upstream miss
 is deliberately not cached so an outage never gets pinned for a full TTL.
@@ -114,14 +115,41 @@ Per-film shape (both parsers, optional fields omitted when absent):
 (the Worker's `parseLetterboxdRss` and the Python scraper's
 `letterboxd_rewatch` feedparser key both read it).
 
-**Feed depth is 12 per member** (`WATCHED_FEED_DEPTH` in the Worker,
-`FILMS_PER_MEMBER` in the Python scraper), not 4: member sections and the
-host panel's diary quick-picks slice to the last four, but the weekly club
-strip clusters over the full depth. An active member can push a film out of
-their last four within a day, which used to silently drop their name from a
-shared-watch cluster ("watched it together, only one name shown"). Dates in
-the window math are bare `YYYY-MM-DD` diary dates (Letterboxd RSS carries no
-times); the 7-day cutoff is computed in America/Chicago.
+**Two depths.** The Worker caches `WATCHED_FEED_DEPTH = 50` per member and
+serves `WATCHED_PUBLIC_DEPTH = 12` to unauthenticated callers.
+
+- **50** is the ceiling Letterboxd's RSS actually serves — an active member's
+  feed carries exactly 50 diary entries (100 items, the rest other activity).
+  Taking all of them costs no extra request, since the whole feed is
+  downloaded either way.
+- **12** is what any public caller gets. Member sections and the host panel's
+  diary quick-picks slice to the last four, and the weekly strip only reaches
+  back 7 days, so the site renders nothing below 12; shipping 50 to every
+  visitor would multiply the payload for data no page draws.
+- `?depth=full` on `GET /watched`, bearer-authenticated with `ADMIN_TOKEN`,
+  returns the whole cached map. Only the admin uses it — Content Gen's paged
+  diary cards and the Stats tab's film counts. It is gated on payload, not
+  secrecy: the films are public on the site and on Letterboxd.
+- `FILMS_PER_MEMBER = 12` in the Python scraper mirrors the **public** depth,
+  not the cache depth: `data/watched.json` is the SPA's offline fallback, so
+  it has to match what the public endpoint serves. Committing 50 would
+  quadruple the file and the 6-hourly cron diff for nothing.
+
+Depth is not 4 because an active member can push a film out of their last
+four within a day, which used to silently drop their name from a shared-watch
+cluster ("watched it together, only one name shown").
+
+**The feed is a rolling window, not an archive.** Depth is capped per member,
+never by date, so how much history 50 entries buys depends entirely on how
+often that member logs: at ~21 films/month the busiest member's 50 span about
+12 weeks, while a member who last logged in 2023 keeps their entries
+indefinitely. Anything that falls out of the RSS window is gone for good —
+Letterboxd is the archive, this only mirrors what it still serves. Nothing
+here accumulates: both the KV cache and `data/watched.json` are full
+replacements on every refresh.
+
+Dates in the window math are bare `YYYY-MM-DD` diary dates (Letterboxd RSS
+carries no times); the 7-day cutoff is computed in America/Chicago.
 
 ## Key Files
 

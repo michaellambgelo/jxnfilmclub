@@ -306,6 +306,43 @@ function ellipsize(c, text, maxWidth) {
   return s.replace(/[\s.,;:—–-]+$/, '') + '…'
 }
 
+// Largest type size at or below `px` whose wrap of `text` fits inside the
+// row. Returns { px, lines }.
+//
+// Titles vary enormously ("M" vs "Dr. Strangelove or: How I Learned to Stop
+// Worrying and Love the Bomb") and a fixed size can only serve one of them.
+// Scanning down 1px at a time is ~20 iterations over a handful of words —
+// trivial beside the poster fetches, and it keeps the search obvious.
+//
+// `softMaxLines` is the line count a full-size title is expected to use. A
+// SHRINKING title may exceed it, but only while the block still fits `budgetH`
+// — the row's vertical space once the year/stars line is reserved. That's what
+// lets a very long title take a third line instead of losing its ending, while
+// still never pushing its row taller or shifting the column beside it.
+function fitTitle(c, text, maxWidth, px, softMaxLines, budgetH) {
+  const floor = Math.round(px * 0.6)
+  for (let size = px; size >= floor; size--) {
+    c.font = `700 ${size}px ${DISPLAY}`
+    const lines = wrapText(c, text, maxWidth)
+    // A single unbreakable word can still overflow at any size.
+    if (lines.some(l => c.measureText(l).width > maxWidth)) continue
+    const lineH = Math.round(size * 1.14)
+    const allowed = Math.max(softMaxLines, Math.floor(budgetH / lineH))
+    if (lines.length <= allowed) return { px: size, lines }
+  }
+  // Genuinely unfittable — an unbreakable word wider than the column, or a
+  // title longer than the row can hold at any legible size. Clip it, and make
+  // the clip VISIBLE: ellipsize() only trims a line that overflows, so the
+  // ' …' is appended first to force it over and guarantee the mark survives.
+  // Without that the title just stops mid-phrase with no sign it was cut.
+  c.font = `700 ${floor}px ${DISPLAY}`
+  const lineH = Math.round(floor * 1.14)
+  const allowed = Math.max(softMaxLines, Math.floor(budgetH / lineH))
+  const lines = wrapText(c, text, maxWidth).slice(0, allowed)
+  lines[lines.length - 1] = ellipsize(c, lines[lines.length - 1] + ' …', maxWidth)
+  return { px: floor, lines }
+}
+
 // One five-pointed star as a path, centred on (cx, cy) with circumradius r.
 function starPath(c, cx, cy, r) {
   c.beginPath()
@@ -795,21 +832,27 @@ async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCoun
 
     const tx = rx + posterW + gapX
     c.textBaseline = 'top'
-    c.font = `700 ${titlePx}px ${DISPLAY}`
-    let lines = wrapText(c, f.title, textW)
-    if (lines.length > maxLines) {
-      lines = lines.slice(0, maxLines)
-      lines[maxLines - 1] = ellipsize(c, lines[maxLines - 1] + ' …', textW)
-    } else if (lines.length === 1) {
-      lines[0] = ellipsize(c, lines[0], textW)   // one unbreakable long word
-    }
-    const lineH = Math.round(titlePx * 1.14)
+    // Fit the title by SHRINKING, not truncating — a clipped title is worse
+    // than a slightly smaller one, and "The Ministry of Ungentlemanly …" tells
+    // the reader nothing. Row geometry is untouched: the block is centred in a
+    // fixed rowH beside a fixed poster, so a long title costs type size only
+    // and never shifts its neighbours or its column.
     const hasSub = !!(f.year || f.avgRating > 0)
-    const blockH = lines.length * lineH + (hasSub ? Math.round(titlePx * 0.30) + subH : 0)
+    // Gaps and the sub-line stay keyed to the ORIGINAL titlePx so a shrunk
+    // title doesn't drag its year/stars out of line with the rows around it.
+    const subReserve = hasSub ? Math.round(titlePx * 0.30) + subH : 0
+    // Keep a gutter so a title that grows into an extra line stops short of
+    // the row boundary. Without it a 3-line title fills rowH exactly and the
+    // rows read as touching even though nothing actually overlaps.
+    const gutter = Math.round(titlePx * 0.32)
+    const fitted = fitTitle(c, f.title, textW, titlePx, maxLines, rowH - subReserve - gutter)
+    const lineH = Math.round(fitted.px * 1.14)
+    const blockH = fitted.lines.length * lineH + subReserve
     let ty = ry + Math.max(0, Math.round((rowH - blockH) / 2))
 
+    c.font = `700 ${fitted.px}px ${DISPLAY}`
     c.fillStyle = PAPER
-    for (const line of lines) {
+    for (const line of fitted.lines) {
       c.fillText(line, tx, ty)
       ty += lineH
     }

@@ -539,6 +539,25 @@ function diaryCopy(platform, { films = [], from, to, page = 1, pageCount = 1 } =
   return `📖 ${lead}${pageTag}\n\n${names.join('\n')}\n\nSee all member activity: ${WATCHED_URL}`
 }
 
+// Every diary page's copy for one platform, as a single clipboard payload.
+//
+// The counterpart to "Download all N pages" on the PNG side: preparing a
+// series otherwise costs N x 5 copy-button presses. One clipboard write is
+// instant and ungated, unlike the N spaced downloads.
+//
+// Per-page character counts are what matter (each page is its own post), so
+// this deliberately does NOT respect PLATFORM_LIMITS as a total — the blob is
+// a transport for N separate posts, not one. The separator carries the page
+// number and its date range so a paste can be split without recounting.
+export function diarySeriesCopy(platform, pages = []) {
+  return (pages || []).map((p, i) => {
+    const range = fmtDiaryRange(p.from, p.to)
+    const head = `\u2500\u2500\u2500\u2500\u2500 page ${i + 1}/${pages.length}${range ? ` \u00b7 ${range}` : ''} \u2500\u2500\u2500\u2500\u2500`
+    const body = buildSocialCopy('diary', platform, { ...p, page: i + 1, pageCount: pages.length })
+    return `${head}\n${body}`
+  }).join('\n\n')
+}
+
 // Aggregate a /watched handle-keyed map into public-safe roundup data.
 // Member identity is dropped HERE — nothing downstream ever sees a handle
 // or name. Films watched by several members appear once; `total` counts the

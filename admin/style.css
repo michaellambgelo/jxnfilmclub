@@ -483,3 +483,30 @@ dialog pre.rich {
   tab-size: 2;
   resize: vertical;
 }
+
+/* Diary pager — sits between the Copy heading and the platform cards. */
+.cg-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+.cg-pager button {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.15rem 0.6rem;
+}
+.cg-pager #cg-page-range { font-size: 0.85rem }
+/* Which page this platform's text belongs to, at the point of action — the
+   mis-post risk is at the copy button, not at the panel heading. */
+.cg-copy-page {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+/* Edits are discarded on the next refresh, in every post type. Say so. */
+.cg-copy-card.dirty textarea { border-left: 3px solid var(--brand, #d7321f) }
+/* A paint is in flight; the canvas below may still be the previous page. */
+.cg-canvas-wrap.loading { opacity: 0.55 }

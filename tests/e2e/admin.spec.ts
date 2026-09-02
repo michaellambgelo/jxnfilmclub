@@ -373,5 +373,9 @@ test.describe('admin dashboard', () => {
     // The Range select survives an empty result — it's the only way back out
     // of a window that returned nothing.
     await expect(page.locator('#cg-diary-range')).toBeVisible()
+    // Everything page-scoped stays absent in the empty state.
+    await expect(page.locator('#cg-pager')).toHaveCount(0)
+    await expect(page.locator('.cg-copy-all')).toHaveCount(0)
+    await expect(page.locator('.cg-copy-page')).toHaveCount(0)
   })
 })

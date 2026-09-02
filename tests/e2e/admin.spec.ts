@@ -367,7 +367,9 @@ test.describe('admin dashboard', () => {
     // state rather than a pager. The paging itself is unit-tested against
     // buildDiaryPages — that's why the logic lives in pure lib.js.
     await page.locator('#cg-kind').selectOption('diary')
-    await expect(page.locator('#content .empty')).toHaveText(/No dated member watches/)
+    // The diary defaults to the trailing week, so the empty state names that
+    // window rather than the whole-feed one.
+    await expect(page.locator('#content .empty')).toHaveText(/No member watches logged in the last 7 days/)
     await expect(page.locator('#cg-diary-page')).toHaveCount(0)
     await expect(page.locator('#cg-download-all')).toHaveCount(0)
     // The Range select survives an empty result — it's the only way back out

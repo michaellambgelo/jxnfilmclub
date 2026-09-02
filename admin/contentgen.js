@@ -124,7 +124,10 @@ let cg = {
   diary: null,         // { pages, total, entries, pageCount, availablePages }
   diaryMap: null,      // raw /watched map, cached per env so re-scoping never refetches
   diaryPage: 0,        // index into cg.diary.pages
-  diaryDays: null,     // null = whole feed; 7 / 30 = trailing window
+  // Defaults to the trailing week: the weekly post is the job, and the deep
+  // pages reach back years, so opening on the whole feed starts the operator
+  // somewhere they almost never want to post from.
+  diaryDays: 7,        // null = whole feed; 7 / 30 = trailing window
   diaryMaxPages: null, // null = every page; N = stop after N
   batching: false,     // a "download all pages" run is in flight
   rendering: false,    // a canvas paint is outstanding (downloads are unsafe)

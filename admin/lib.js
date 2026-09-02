@@ -206,12 +206,20 @@ export function imageBlockIssues({ src, alt, details } = {}) {
   return issues
 }
 
-export function buildImageBlockHtml({ src, alt, details, link, width = 600 } = {}) {
+// 536, not 600: the card is <table width="600"> with td padding 28px 32px, so
+// the content box is 600 - 32 - 32. Word-engine Outlook honours the width
+// ATTRIBUTE and ignores max-width, so a 600 here renders 64px wider than its
+// own cell — reproducing the overflow this block exists to fix.
+export const IMAGE_BLOCK_MAX_WIDTH = 536
+
+export function buildImageBlockHtml({ src, alt, details, link, width = IMAGE_BLOCK_MAX_WIDTH } = {}) {
   const safeAlt = String(alt || '').trim()
-  // width attribute for Outlook's Word engine (it ignores max-width); the CSS
-  // pair keeps it fluid everywhere else. height:auto stops a scaled image
-  // from distorting.
-  const img = `<img src="${attr(src)}" width="${attr(width)}" alt="${attr(safeAlt)}" style="display:block;border:0;width:100%;max-width:${attr(width)}px;height:auto">`
+  // The width attribute is what actually sizes an image in Outlook's Word
+  // engine, and it reserves layout space when images are blocked. max-width
+  // only ever SHRINKS — width:100% would stretch a narrow source to fill the
+  // slot, upscaling and blurring it. height:auto stops a scaled image from
+  // distorting.
+  const img = `<img src="${attr(src)}" width="${attr(width)}" alt="${attr(safeAlt)}" style="display:block;border:0;max-width:100%;height:auto">`
   const inner = link ? `<a href="${attr(link)}">${img}</a>` : img
   const detailHtml = String(details || '').trim()
     .split(/\n{2,}/)

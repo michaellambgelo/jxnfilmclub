@@ -694,13 +694,34 @@ describe('buildImageBlockHtml / buildImageBlockText', () => {
     expect(buildImageBlockHtml(BLOCK)).toContain('alt="Men With No Names double feature poster"')
   })
 
-  it('sizes for Outlook and for everything else', () => {
-    const html = buildImageBlockHtml(BLOCK)
-    // Word's engine ignores max-width, so the width ATTRIBUTE is load-bearing.
-    expect(html).toMatch(/width="600"/)
-    expect(html).toContain('max-width:600px')
-    // Without height:auto a fluid image distorts when scaled down.
-    expect(html).toContain('height:auto')
+  // Assert on the <img> alone — the surrounding shell legitimately carries
+  // width="600" and width:100%, and matching the whole document would pass
+  // on those instead of on the image.
+  const imgTag = (html) => (html.match(/<img\b[^>]*>/) || [''])[0]
+
+  it('sizes to the card content box, not the card', () => {
+    const img = imgTag(buildImageBlockHtml(BLOCK))
+    // The shell is width="600" with 32px td padding either side, so anything
+    // wider than 536 overflows its own cell in Outlook — which honours the
+    // width ATTRIBUTE and ignores max-width. 600 here would reproduce the very
+    // overflow this block exists to fix.
+    expect(img).toMatch(/width="536"/)
+    expect(img).not.toMatch(/width="600"/)
+  })
+
+  it('shrinks but never stretches', () => {
+    const img = imgTag(buildImageBlockHtml(BLOCK))
+    // width:100% would scale a narrow source UP to fill the slot, blurring it.
+    expect(img).toContain('max-width:100%')
+    expect(img).not.toMatch(/[;"]width:100%/)
+    expect(img).toContain('height:auto')            // else a fluid image distorts
+    expect(img).not.toMatch(/\sheight="/)           // fixed height + fluid width distorts
+  })
+
+  it('honours an explicit narrower width', () => {
+    // A 2:3 portrait at 536 wide renders ~804px tall and swallows the email,
+    // so callers cap on height and pass the resulting width down.
+    expect(imgTag(buildImageBlockHtml({ ...BLOCK, width: 480 }))).toMatch(/width="480"/)
   })
 
   it('renders the details as real text, not as part of the image', () => {

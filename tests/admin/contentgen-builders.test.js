@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, socialFileName,
-  fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, PLATFORM_LIMITS,
+  fmtSocialDate, fmtDiaryRange, fmtMonth, daysUntil, countdownLead, centralCutoff, PLATFORM_LIMITS,
 } from '../../admin/lib.js'
 
 // A canonical hosted-event KV row — includes every private field that must
@@ -404,7 +404,9 @@ describe('buildDiaryPages', () => {
 
   it('survives empty and malformed input', () => {
     for (const bad of [null, undefined, {}, { A: null }, { A: [null, undefined] }]) {
-      expect(buildDiaryPages(bad)).toEqual({ pages: [], films: [], total: 0, entries: 0, pageCount: 0 })
+      expect(buildDiaryPages(bad)).toEqual({
+        pages: [], films: [], total: 0, entries: 0, pageCount: 0, availablePages: 0, days: null,
+      })
     }
   })
 
@@ -482,5 +484,95 @@ describe('buildSocialCopy — diary', () => {
     const one = buildDiaryPages(DIARY_MAP, { perPage: 100 })
     const text = buildSocialCopy('diary', 'facebook', { ...one.pages[0], page: 1, pageCount: 1 })
     expect(text).not.toContain('(1/1)')
+  })
+})
+
+describe('buildDiaryPages — scoping', () => {
+  // Dates are pinned via `today` so the Central-time window never makes this
+  // suite time-dependent.
+  const TODAY = '2026-08-23'
+  // A 7-day window ending 2026-08-23 floors at 2026-08-17 (day 7 counting the
+  // end date), so 08-17 is the last day IN and 08-16 the first day OUT.
+  const SCOPED = {
+    Ada: [
+      { title: 'Today', watched_date: '2026-08-23' },
+      { title: 'Window Edge', watched_date: '2026-08-17' },
+      { title: 'Well Outside', watched_date: '2026-08-10' },
+      { title: 'Last Year', watched_date: '2025-08-23' },
+    ],
+    Bo: [
+      { title: 'Just Outside', watched_date: '2026-08-16' },
+      { title: 'Ancient', watched_date: '2023-01-01' },
+    ],
+  }
+
+  it('windows to a trailing N days, inclusive of the boundary day', () => {
+    const week = buildDiaryPages(SCOPED, { days: 7, today: TODAY })
+    expect(week.films.map(f => f.title)).toEqual(['Today', 'Window Edge'])
+    expect(week.films.map(f => f.title)).not.toContain('Just Outside')
+    expect(week.days).toBe(7)
+  })
+
+  it('pages the whole feed when no window is given', () => {
+    const all = buildDiaryPages(SCOPED, { today: TODAY })
+    expect(all.total).toBe(6)
+    expect(all.days).toBeNull()
+  })
+
+  it('shares its cutoff with buildRoundupData, so the two windows cannot drift', () => {
+    const week = buildDiaryPages(SCOPED, { days: 7, today: TODAY })
+    const roundup = buildRoundupData(SCOPED, { days: 7, today: TODAY, limit: 99 })
+    expect(week.films.map(f => f.title).sort()).toEqual(roundup.films.map(f => f.title).sort())
+    expect(centralCutoff(7, TODAY)).toBe('2026-08-17')
+  })
+
+  it('caps the page count while still reporting what was available', () => {
+    const capped = buildDiaryPages(SCOPED, { perPage: 2, maxPages: 2, today: TODAY })
+    expect(capped.pageCount).toBe(2)
+    expect(capped.availablePages).toBe(3)
+    expect(capped.films).toHaveLength(4)     // trimmed to the kept pages
+    expect(capped.total).toBe(6)             // scope size, before the cut
+  })
+
+  it('is a no-op when the cap meets or exceeds the pages available', () => {
+    const uncapped = buildDiaryPages(SCOPED, { perPage: 2, today: TODAY })
+    for (const maxPages of [3, 99, null, 0, -1]) {
+      const r = buildDiaryPages(SCOPED, { perPage: 2, maxPages, today: TODAY })
+      expect(r.pageCount).toBe(uncapped.pageCount)
+      expect(r.availablePages).toBe(uncapped.availablePages)
+    }
+  })
+
+  it('composes the window and the cap', () => {
+    const r = buildDiaryPages(SCOPED, { perPage: 1, days: 7, maxPages: 1, today: TODAY })
+    expect(r.total).toBe(2)              // two films in the window
+    expect(r.availablePages).toBe(2)     // one per page
+    expect(r.pageCount).toBe(1)          // capped to one
+    expect(r.films.map(f => f.title)).toEqual(['Today'])
+  })
+
+  it('returns an empty result for a window with nothing in it', () => {
+    const r = buildDiaryPages({ Ada: [{ title: 'Old', watched_date: '2020-01-01' }] }, { days: 7, today: TODAY })
+    expect(r.pageCount).toBe(0)
+    expect(r.availablePages).toBe(0)
+    expect(r.pages).toEqual([])
+  })
+
+  it('keeps the club average scoped to the window', () => {
+    // Two members logged the same film, one inside the window and one outside.
+    // Only the in-window rating counts, or the card would average a score the
+    // page never shows.
+    const map = {
+      Ada: [{ title: 'Split', year: '2026', rating: '5', watched_date: '2026-08-22' }],
+      Bo: [{ title: 'Split', year: '2026', rating: '1', watched_date: '2026-01-01' }],
+    }
+    const week = buildDiaryPages(map, { days: 7, today: TODAY })
+    expect(week.films[0].avgRating).toBe(5)
+    expect(week.films[0].ratedCount).toBe(1)
+    expect(week.films[0].count).toBe(1)
+
+    const all = buildDiaryPages(map, { today: TODAY })
+    expect(all.films[0].avgRating).toBe(3)   // (5 + 1) / 2
+    expect(all.films[0].count).toBe(2)
   })
 })

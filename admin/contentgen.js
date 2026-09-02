@@ -121,8 +121,11 @@ let cg = {
   events: [],          // public views, sorted upcoming-first
   attendCounts: {},    // event id -> attendee count
   roundup: null,       // { films, total } from buildRoundupData
-  diary: null,         // { pages, total, entries, pageCount } from buildDiaryPages
+  diary: null,         // { pages, total, entries, pageCount, availablePages }
+  diaryMap: null,      // raw /watched map, cached per env so re-scoping never refetches
   diaryPage: 0,        // index into cg.diary.pages
+  diaryDays: null,     // null = whole feed; 7 / 30 = trailing window
+  diaryMaxPages: null, // null = every page; N = stop after N
   batching: false,     // a "download all pages" run is in flight
   episodes: null,      // [{ title, date, url }] from the public site
   episodeIdx: 0,
@@ -174,9 +177,30 @@ async function loadRoundup() {
 // refresh between pages would shift the boundaries and duplicate or skip films
 // across the series.
 async function loadDiary() {
-  const map = await ctx.api('GET', `/api/watched?${qs({ env: ctx.env() })}`)
-  cg.diary = buildDiaryPages(map, { perPage: DIARY_PER_PAGE })
+  // The map is cached per env (same pattern as loadEpisodes): re-scoping to a
+  // different window or page cap is a local rebuild, not another round trip.
+  if (!cg.diaryMap || cg.diaryMapEnv !== ctx.env()) {
+    cg.diaryMap = await ctx.api('GET', `/api/watched?${qs({ env: ctx.env() })}`)
+    cg.diaryMapEnv = ctx.env()
+  }
+  rebuildDiary()
 }
+
+function rebuildDiary() {
+  cg.diary = buildDiaryPages(cg.diaryMap, {
+    perPage: DIARY_PER_PAGE,
+    days: cg.diaryDays,
+    maxPages: cg.diaryMaxPages,
+  })
+  // A narrower window or a lower cap can strand the selected page.
+  if (cg.diaryPage >= cg.diary.pageCount) cg.diaryPage = 0
+}
+
+const DIARY_RANGES = [
+  { value: '7', label: 'Last 7 days', days: 7 },
+  { value: '30', label: 'Last 30 days', days: 30 },
+  { value: 'all', label: 'All time', days: null },
+]
 
 const diaryPageData = () => {
   const pages = (cg.diary && cg.diary.pages) || []
@@ -1075,7 +1099,10 @@ export async function renderContentGen(context) {
   const emptyMsg =
     needsEvent && !cg.events.length ? 'No events in KV — create one on the Events tab first.'
     : cg.kind === 'roundup' && !(cg.roundup && cg.roundup.films.length) ? 'No member watches logged in the last 7 days — nothing to round up.'
-    : cg.kind === 'diary' && !(cg.diary && cg.diary.pageCount) ? 'No dated member watches — nothing to page.'
+    : cg.kind === 'diary' && !(cg.diary && cg.diary.pageCount)
+      ? (cg.diaryDays
+          ? `No member watches logged in the last ${cg.diaryDays} days — widen the range to page the whole feed.`
+          : 'No dated member watches — nothing to page.')
     : cg.kind === 'lineup' && !upcomingEvents().length ? 'No upcoming events — the lineup needs at least one.'
     : cg.kind === 'monthwrap' && !cg.wrapMonth ? 'No past events yet — nothing to wrap.'
     : cg.kind === 'episode' && !(cg.episodes && cg.episodes.length) ? 'Could not load episodes from jxnfilm.club/data/episodes.json.'
@@ -1092,20 +1119,41 @@ export async function renderContentGen(context) {
       <label>Films in collage
         <input id="cg-limit" type="number" min="1" max="8" value="${attr(cg.limit)}" style="width:64px">
       </label>`,
-    diaryPage: () => {
-      const pages = (cg.diary && cg.diary.pages) || []
-      // Label every option with its real date range, so the operator sees a
-      // stale page BEFORE generating it rather than after posting it.
-      return `
+    diary: () => {
+      const d = cg.diary
+      const pages = d.pages || []
+      const shownFilms = pages.reduce((n, p) => n + p.films.length, 0)
+      const capped = d.pageCount < d.availablePages
+      // "30 of 121 films" when capped — the count must describe what will
+      // actually be generated, not the scope it was drawn from.
+      const count = `${capped ? `${shownFilms} of ${d.total}` : d.total} film${d.total === 1 ? '' : 's'} · ${d.entries} entries`
+      const rangeSel = cg.diaryDays == null ? 'all' : String(cg.diaryDays)
+      // The Range select renders even when the window came back empty —
+      // otherwise picking "Last 7 days" in a quiet week hides the only
+      // control that could widen it again.
+      const range = `
+      <label>Range
+        <select id="cg-diary-range">
+          ${DIARY_RANGES.map(r => `<option value="${attr(r.value)}" ${r.value === rangeSel ? 'selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+        </select>
+      </label>`
+      if (!d.pageCount) return range
+      return `${range}
+      <label>Pages
+        <input id="cg-diary-pages" type="number" min="1" max="${attr(d.availablePages)}"
+               value="${attr(cg.diaryMaxPages || d.availablePages)}" style="width:64px">
+      </label>
       <label>Page
         <select id="cg-diary-page">
           ${pages.map((p, i) => {
+            // Label every option with its real date range, so a stale page is
+            // visible BEFORE it's generated rather than after it's posted.
             const range = fmtDiaryRange(p.from, p.to)
             return `<option value="${i}" ${i === cg.diaryPage ? 'selected' : ''}>${escapeHtml(`Page ${i + 1}${range ? ` · ${range}` : ''}`)}</option>`
           }).join('')}
         </select>
       </label>
-      <span class="cg-diary-count muted">${escapeHtml(`${cg.diary.total} films · ${cg.diary.entries} entries`)}</span>`
+      <span class="cg-diary-count muted">${escapeHtml(`${count}${capped ? ` · ${d.availablePages} pages available` : ''}`)}</span>`
     },
     episode: () => `
       <label>Episode
@@ -1129,7 +1177,7 @@ export async function renderContentGen(context) {
   const kindControls =
     needsEvent ? controls.event()
     : cg.kind === 'roundup' ? controls.limit()
-    : cg.kind === 'diary' && cg.diary && cg.diary.pageCount ? controls.diaryPage()
+    : cg.kind === 'diary' && cg.diary ? controls.diary()
     : cg.kind === 'episode' && cg.episodes && cg.episodes.length ? controls.episode()
     : cg.kind === 'monthwrap' && cg.wrapMonth ? controls.month()
     : cg.kind === 'milestone' ? controls.stat()
@@ -1194,6 +1242,24 @@ export async function renderContentGen(context) {
     limitInput.value = cg.limit
     await loadRoundup()
     refresh()
+  })
+  const diaryRange = document.querySelector('#cg-diary-range')
+  if (diaryRange) diaryRange.addEventListener('change', async () => {
+    const pick = DIARY_RANGES.find(r => r.value === diaryRange.value) || DIARY_RANGES[2]
+    cg.diaryDays = pick.days
+    cg.diaryPage = 0
+    // A new window changes how many pages exist, so an existing cap may now
+    // exceed them — drop it rather than silently clamping to a stale number.
+    cg.diaryMaxPages = null
+    await ctx.withBusy(() => renderContentGen(ctx))
+  })
+  const diaryPages = document.querySelector('#cg-diary-pages')
+  if (diaryPages) diaryPages.addEventListener('change', async () => {
+    const avail = cg.diary.availablePages
+    const n = Math.max(1, Math.min(avail, Math.floor(Number(diaryPages.value)) || avail))
+    cg.diaryMaxPages = n >= avail ? null : n
+    cg.diaryPage = 0
+    await ctx.withBusy(() => renderContentGen(ctx))
   })
   const diarySel = document.querySelector('#cg-diary-page')
   if (diarySel) diarySel.addEventListener('change', () => {

@@ -549,14 +549,21 @@ function diaryCopy(platform, { films = [], from, to, page = 1, pageCount = 1 } =
 // inclusive of today) so the copy's weekly claim is honest — /watched serves
 // each member's last-four entries regardless of age. Undated entries are
 // dropped: recency can't be verified, and this feeds public posts.
-export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}) {
+// Inclusive 'YYYY-MM-DD' floor for a `days`-long window ending on `today`
+// (Central time unless a test pins it). Shared by buildRoundupData and
+// buildDiaryPages so the two windows can never drift apart.
+export function centralCutoff(days, today) {
   const ref = /^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))
     ? today
     : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
   // Parse + reformat in the same (local) frame, so the day never shifts.
   const cut = new Date(ref + 'T00:00:00')
   cut.setDate(cut.getDate() - (days - 1))
-  const cutoff = cut.toLocaleDateString('en-CA')
+  return cut.toLocaleDateString('en-CA')
+}
+
+export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}) {
+  const cutoff = centralCutoff(days, today)
 
   const entries = []
   for (const films of Object.values(watchedMap || {})) {
@@ -589,11 +596,18 @@ export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}
 // it omitted, "no diary page output contains a member handle" is provable by
 // inspection of the returned shape.
 //
-// Unlike buildRoundupData there is no day window: every dated entry in the map
-// is paged, newest first. That makes the deep pages genuinely old — feed depth
-// is capped per member, not by date, so an inactive member's twelve entries can
-// reach back years. Each page therefore carries its own `from`/`to` so callers
-// can state the real range instead of implying recency.
+// `days` windows the pool like buildRoundupData does (null = no window, the
+// default). Unwindowed, the deep pages are genuinely old — feed depth is
+// capped per member, not by date, so a dormant member's entries can reach back
+// years while an active member's span weeks. Each page therefore carries its
+// own `from`/`to` so callers can state the real range instead of implying
+// recency.
+//
+// `maxPages` truncates the result. The full feed runs to ~40 pages, of which
+// only the first few are postable, so the cap is what keeps "download all"
+// from emitting a folder nobody wanted. It's applied HERE rather than in the
+// UI so pageCount, the picker, the batch button and the copy's "(3/5)" can't
+// disagree; `availablePages` still reports what was there before the cut.
 //
 // `rating` is one member's opinion, so a deduped row must never show it as if
 // it were the club's. Instead every rating for the film is averaged:
@@ -601,12 +615,17 @@ export function buildRoundupData(watchedMap, { limit = 8, days = 7, today } = {}
 // number of members who logged it (some log without rating).
 //
 // watched_date is a bare YYYY-MM-DD compared lexically, never via Date.
-export function buildDiaryPages(watchedMap, { perPage = 10 } = {}) {
+export function buildDiaryPages(watchedMap, { perPage = 10, days = null, today, maxPages = null } = {}) {
   const dated = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))
+  // Undated entries are dropped either way — unverifiable recency feeding a
+  // public post — so a window only ever tightens an already-dated floor.
+  const cutoff = days > 0 ? centralCutoff(days, today) : null
   const entries = []
   for (const films of Object.values(watchedMap || {})) {
     for (const f of (films || [])) {
-      if (f && f.title && dated(f.watched_date)) entries.push(f)
+      if (!f || !f.title || !dated(f.watched_date)) continue
+      if (cutoff && String(f.watched_date) < cutoff) continue
+      entries.push(f)
     }
   }
 
@@ -665,7 +684,19 @@ export function buildDiaryPages(watchedMap, { perPage = 10 } = {}) {
       from: chunk[chunk.length - 1].watched_date,
     })
   }
-  return { pages, films, total: films.length, entries: entries.length, pageCount: pages.length }
+  const availablePages = pages.length
+  const cap = maxPages > 0 ? Math.floor(maxPages) : null
+  const kept = cap ? pages.slice(0, cap) : pages
+
+  return {
+    pages: kept,
+    films: cap ? films.slice(0, cap * size) : films,
+    total: films.length,          // unique films in scope, before the page cap
+    entries: entries.length,      // diary entries behind them
+    pageCount: kept.length,
+    availablePages,
+    days: days > 0 ? days : null,
+  }
 }
 
 // 'jfc-announce-2026-06-12-passion-ig-post.png'

@@ -370,5 +370,8 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#content .empty')).toHaveText(/No dated member watches/)
     await expect(page.locator('#cg-diary-page')).toHaveCount(0)
     await expect(page.locator('#cg-download-all')).toHaveCount(0)
+    // The Range select survives an empty result — it's the only way back out
+    // of a window that returned nothing.
+    await expect(page.locator('#cg-diary-range')).toBeVisible()
   })
 })

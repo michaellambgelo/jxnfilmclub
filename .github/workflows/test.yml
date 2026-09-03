@@ -45,12 +45,22 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - run: npm run test:e2e
+      # Tee'd because the failures worth diagnosing are the ones where the
+      # local Worker DIES mid-run: Playwright aborts before writing its HTML
+      # report, so the upload below finds nothing and the only record of why
+      # the process went away is this stdout. GitHub's default shell sets
+      # pipefail, so the step still fails on a non-zero exit.
+      - name: e2e
+        run: npm run test:e2e 2>&1 | tee e2e.log
 
-      - name: Upload Playwright report on failure
+      - name: Upload e2e diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: .playwright-report/
+          name: e2e-diagnostics
+          path: |
+            e2e.log
+            .playwright-report/
+            .test-results/
+          if-no-files-found: warn
           retention-days: 7

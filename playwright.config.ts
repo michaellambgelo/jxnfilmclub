@@ -25,7 +25,13 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${SITE_PORT}`,
-    trace: 'retain-on-failure',
+    // on-first-retry, not retain-on-failure. When the local Worker wobbles the
+    // failures CASCADE — a dozen tests fail in one run — and retain-on-failure
+    // keeps a full trace for every one of them. That is the "ever-growing
+    // traces until Node's string limit blew up" this file already warns about
+    // above, and it is what a JSON.stringify OOM in the Playwright worker
+    // looks like. A first-retry trace still captures anything reproducible.
+    trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: [

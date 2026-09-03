@@ -265,30 +265,31 @@
     "id": "jt9bb2hqth",
     "name": "Vesper Johnson",
     "joined": "2026-09-02T23:35:41.134Z",
-    "pronouns": "He/him"
+    "pronouns": "He/him",
+    "handle": "VesperEvensong"
   },
   {
     "id": "cv1twoexrr",
     "name": "Madison",
-    "joined": "2026-09-02T23:45:53.235Z",
-    "pronouns": ""
+    "joined": "2026-09-02T23:45:53.235Z"
   },
   {
     "id": "6sx2uqw8d7",
     "name": "Mike Bienkowski",
     "joined": "2026-09-03T01:12:24.322Z",
-    "pronouns": "He/Him"
+    "pronouns": "He/Him",
+    "handle": "mrbienkowski"
   },
   {
     "id": "eb2p9idccr",
     "name": "Drake",
     "joined": "2026-09-03T01:42:53.599Z",
-    "pronouns": ""
+    "handle": "draketerry"
   },
   {
     "id": "xmij6l7r1d",
     "name": "Alex Coats",
     "joined": "2026-09-03T04:14:42.838Z",
-    "pronouns": ""
+    "handle": "dacoats"
   }
 ]

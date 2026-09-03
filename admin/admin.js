@@ -1118,6 +1118,27 @@ async function renderConfig() {
       defaults; <b>deleting the key (reset) restores them automatically</b> — nothing stored means
       "use the defaults". All reads/writes follow the env toggle above.</p>
 
+    <section class="cfg-section" id="cfg-voice-prompt">
+      <h3>Voice prompt ${cfgBadge(!!vp)}</h3>
+      <p class="section-hint"><code>config:voice_prompt</code> — the question members answer when they
+        record a podcast voice clip. Submissions are keyed by the prompt id, so changing the id starts
+        a fresh collection (the Voice tab groups by it). Reset deletes the key; the site falls back to
+        the generic default prompt (<code>${escapeHtml(DEFAULT_VOICE_PROMPT.id)}</code> —
+        “${escapeHtml(DEFAULT_VOICE_PROMPT.text)}”).</p>
+      <label class="cfg-label">Prompt id <span class="muted">— slug; groups the submissions and names the compiled segment</span>
+        <input id="cfg-vp-id" type="text" value="${attr(vp?.id || '')}" placeholder="${attr(DEFAULT_VOICE_PROMPT.id)}" style="max-width:260px">
+      </label>
+      <label class="cfg-label">Prompt text
+        <textarea id="cfg-vp-text" rows="2" placeholder="${attr(DEFAULT_VOICE_PROMPT.text)}">${escapeHtml(vp?.text || '')}</textarea>
+      </label>
+      <label class="cfg-label">Deadline <span class="muted">— optional YYYY-MM-DD shown to members; submissions stay open regardless</span>
+        <input id="cfg-vp-deadline" type="date" value="${attr(vp?.deadline || '')}" style="max-width:200px">
+      </label>
+      <div class="toolbar">
+        <button class="primary" data-action="cfg-vp-save">save prompt</button>
+        <button class="danger" data-action="cfg-vp-reset">reset to defaults</button>
+      </div>
+    </section>
     <section class="cfg-section" id="cfg-theaters">
       <h3>Theaters ${cfgBadge(cfgTheatersKv)}</h3>
       <p class="section-hint"><code>config:theaters</code> — the venue allowlist/dropdown for theater
@@ -1188,27 +1209,6 @@ async function renderConfig() {
       </div>
     </section>
 
-    <section class="cfg-section" id="cfg-voice-prompt">
-      <h3>Voice prompt ${cfgBadge(!!vp)}</h3>
-      <p class="section-hint"><code>config:voice_prompt</code> — the question members answer when they
-        record a podcast voice clip. Submissions are keyed by the prompt id, so changing the id starts
-        a fresh collection (the Voice tab groups by it). Reset deletes the key; the site falls back to
-        the generic default prompt (<code>${escapeHtml(DEFAULT_VOICE_PROMPT.id)}</code> —
-        “${escapeHtml(DEFAULT_VOICE_PROMPT.text)}”).</p>
-      <label class="cfg-label">Prompt id <span class="muted">— slug; groups the submissions and names the compiled segment</span>
-        <input id="cfg-vp-id" type="text" value="${attr(vp?.id || '')}" placeholder="${attr(DEFAULT_VOICE_PROMPT.id)}" style="max-width:260px">
-      </label>
-      <label class="cfg-label">Prompt text
-        <textarea id="cfg-vp-text" rows="2" placeholder="${attr(DEFAULT_VOICE_PROMPT.text)}">${escapeHtml(vp?.text || '')}</textarea>
-      </label>
-      <label class="cfg-label">Deadline <span class="muted">— optional YYYY-MM-DD shown to members; submissions stay open regardless</span>
-        <input id="cfg-vp-deadline" type="date" value="${attr(vp?.deadline || '')}" style="max-width:200px">
-      </label>
-      <div class="toolbar">
-        <button class="primary" data-action="cfg-vp-save">save prompt</button>
-        <button class="danger" data-action="cfg-vp-reset">reset to defaults</button>
-      </div>
-    </section>
   `
 
   // Featured-episode radios live inside the re-renderable episodes list, so

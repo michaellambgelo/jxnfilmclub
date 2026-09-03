@@ -871,3 +871,57 @@ describe('fitBox', () => {
     }
   })
 })
+
+// --- Voice prompt card ------------------------------------------------------
+describe('buildSocialCopy — voice prompt', () => {
+  const PROMPT = { id: 'sept-2026', text: 'What film made you fall in love with movies?', deadline: '2026-09-30' }
+
+  it('quotes the prompt and links to /speak on every platform', () => {
+    for (const p of PLATFORMS) {
+      const text = buildSocialCopy('voice', p, { prompt: PROMPT })
+      expect(text).toContain(PROMPT.text)
+      // Instagram says "Link in bio" instead — it does not allow links.
+      expect(text).toMatch(/jxnfilm\.club\/speak|link in bio/i)
+    }
+  })
+
+  it('names the deadline when there is one, and stays quiet when there is not', () => {
+    expect(buildSocialCopy('voice', 'facebook', { prompt: PROMPT })).toMatch(/by .*September 30/)
+    const noDeadline = buildSocialCopy('voice', 'facebook', { prompt: { id: 'g', text: 'Anything?' } })
+    expect(noDeadline).not.toMatch(/\bby\b.*\d/)
+  })
+
+  it('fits every platform ceiling', () => {
+    for (const p of PLATFORMS) {
+      const limit = PLATFORM_LIMITS[p]
+      if (limit) expect(buildSocialCopy('voice', p, { prompt: PROMPT }).length).toBeLessThanOrEqual(limit)
+    }
+  })
+
+  it('sheds the invitation before the question when space runs out', () => {
+    // A post that trims the prompt is asking members to answer nothing, so the
+    // surrounding copy gives way first.
+    const long = { id: 'x', text: 'If you could put one film in front of every single person in Jackson exactly once, which would it be?' }
+    for (const p of ['bluesky', 'x']) {
+      const text = buildSocialCopy('voice', p, { prompt: long })
+      expect(text.length).toBeLessThanOrEqual(PLATFORM_LIMITS[p])
+      expect(text).toContain(long.text)          // the question survives intact
+      expect(text).toContain('jxnfilm.club/speak')
+    }
+  })
+
+  it('truncates the prompt only as a last resort, and marks it', () => {
+    const absurd = { id: 'x', text: 'W'.repeat(400) }
+    for (const p of ['bluesky', 'x']) {
+      const text = buildSocialCopy('voice', p, { prompt: absurd })
+      expect(text.length).toBeLessThanOrEqual(PLATFORM_LIMITS[p])
+      expect(text).toContain('…')
+    }
+  })
+
+  it('survives a missing or empty prompt', () => {
+    for (const data of [{}, { prompt: null }, { prompt: { id: 'x', text: '' } }]) {
+      expect(() => buildSocialCopy('voice', 'facebook', data)).not.toThrow()
+    }
+  })
+})

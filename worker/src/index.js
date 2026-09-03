@@ -195,6 +195,9 @@ async function route(request, env) {
     // `data/{members,events}.json` are cron-snapshotted archives + fallbacks.
     if (request.method === 'GET' && pathname === '/members') return handleMembersGet(env)
     if (request.method === 'GET' && pathname === '/events')  return handleEventsGet(request, env)
+    if (request.method === 'GET' && pathname.startsWith('/n/')) {
+      return handleNewsletterArchiveGet(env, pathname.slice('/n/'.length))
+    }
     if ((request.method === 'GET' || request.method === 'HEAD') && pathname.startsWith('/nl/img/')) {
       return handleNewsletterImageGet(request, env, pathname.slice('/nl/img/'.length))
     }
@@ -3519,6 +3522,72 @@ async function handleUnsubscribe(request, env) {
   ))
 }
 
+// --- Newsletter web archive (shareable permalink) ---
+//
+// Every broadcast is also published at a stable URL, linked from the footer as
+// "view this in your browser". That is the conventional escape hatch and it
+// covers four things at once: forwarding a newsletter to someone who is not a
+// member, Gmail clipping a long body, a client blocking images, and any mail
+// app that mangles the table layout.
+//
+// What gets archived is the PRE-FOOTER body. buildNewsletterMessage signs a
+// per-recipient unsubscribe token into each copy, so archiving a rendered
+// message would publish one member's signed token on a public page — anyone
+// opening the link could unsubscribe them. The archive holds only the shared
+// body every recipient saw identically.
+
+const ARCHIVE_ID = /^[a-z0-9][a-z0-9-]{0,80}$/
+
+// Readable enough to recognise in a shared link, random enough not to be
+// enumerable: anyone with the URL can read it, and nothing lists them.
+function newsletterArchiveId(subject, iso) {
+  const slug = String(subject || '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+    .replace(/-+$/, '')
+  const rand = [...crypto.getRandomValues(new Uint8Array(5))]
+    .map(b => b.toString(16).padStart(2, '0')).join('')
+  return [iso.slice(0, 7), slug, rand].filter(Boolean).join('-')
+}
+
+async function putNewsletterArchive(env, id, record) {
+  // No TTL: a permalink that expires is worse than one that never existed,
+  // because it is already sitting in delivered mail.
+  await env.MEMBERS_KV.put(`newsletter:archive:${id}`, JSON.stringify(record))
+}
+
+// GET /n/:id — PUBLIC. The shared copy of a sent newsletter.
+async function handleNewsletterArchiveGet(env, id) {
+  if (!ARCHIVE_ID.test(id || '')) return html(page(env, { title: 'Not found', body: NEWSLETTER_ARCHIVE_404 }), 404)
+  const raw = await env.MEMBERS_KV.get(`newsletter:archive:${id}`)
+  const rec = raw ? JSON.parse(raw) : null
+  if (!rec) return html(page(env, { title: 'Not found', body: NEWSLETTER_ARCHIVE_404 }), 404)
+
+  const body =
+    `<main class="prose"><p class="hint">Jackson Film Club newsletter · ${escapeHtml(String(rec.at || '').slice(0, 10))}</p>` +
+    `<h1>${escapeHtml(rec.subject || 'Newsletter')}</h1>` +
+    `<div class="nl-archive">${rec.html || `<pre>${escapeHtml(rec.text || '')}</pre>`}</div>` +
+    `<p class="hint"><a href="${siteOrigin(env)}/">← Jackson Film Club</a></p></main>`
+
+  // The body is operator-authored HTML rendered on OUR origin, which is a step
+  // up from rendering in a mail client's sandbox. A locked-down CSP means a
+  // script that ever reached a newsletter cannot execute here: styles and
+  // images still work, nothing else does.
+  return new Response(page(env, { title: rec.subject || 'Newsletter', body }), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300',
+      'Content-Security-Policy':
+        "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https:; base-uri 'none'; form-action 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+    },
+  })
+}
+
+const NEWSLETTER_ARCHIVE_404 =
+  '<main class="prose"><h1>Newsletter not found</h1>' +
+  '<p>That link may be mistyped, or the newsletter was never published.</p></main>'
+
 // --- Newsletter flyer images (R2 bucket NEWS) ---
 //
 // Email clients send no cookies and no bearer token, and Gmail fetches through
@@ -3687,7 +3756,16 @@ async function handleNewsletterSend(request, env) {
   const postal = env.NEWSLETTER_POSTAL_ADDRESS || ''
   const from = env.NEWSLETTER_FROM || 'Jackson Film Club <noreply@join.jxnfilm.club>'
   const origin = new URL(request.url).origin
-  const opts = { from, subject, bodyHtml, bodyText, postal, origin }
+  // Archived before any message is built, because the footer has to carry the
+  // link. What is stored is bodyHtml/bodyText as composed — never a rendered
+  // message, whose footer holds a per-recipient signed unsubscribe token.
+  const at = new Date().toISOString()
+  const archiveId = newsletterArchiveId(subject, at)
+  const permalink = `${new URL(request.url).origin}/n/${archiveId}`
+  await putNewsletterArchive(env, archiveId, {
+    subject, html: bodyHtml || '', text: bodyText || '', at, test: !!testTo,
+  })
+  const opts = { from, subject, bodyHtml, bodyText, postal, origin, permalink }
 
   // Test send: one faithful preview to a single address (full unsubscribe link,
   // headers, and footer), bypassing the opt-in list. No audit row — a test
@@ -3696,7 +3774,7 @@ async function handleNewsletterSend(request, env) {
     if (!isValidEmail(testTo)) return json(env, { error: 'invalid testTo' }, 400)
     try {
       const sent = await sendBatch(env, [await buildNewsletterMessage(env, testTo, opts)])
-      return json(env, { ok: true, sent, test: true })
+      return json(env, { ok: true, sent, test: true, permalink })
     } catch (err) {
       // Without this, a `Resend batch 422: ...` throw funnels through the
       // top-level catch and reaches the operator as "internal server error",
@@ -3744,17 +3822,17 @@ async function handleNewsletterSend(request, env) {
   // newsletter history. Tiny and kept indefinitely (no TTL).
   if (sent > 0) {
     await env.MEMBERS_KV.put(
-      `newsletter:sent:${new Date().toISOString()}`,
-      JSON.stringify({ subject, count: sent, at: Date.now() }),
+      `newsletter:sent:${at}`,
+      JSON.stringify({ subject, count: sent, at: Date.now(), archiveId }),
     )
   }
-  return json(env, { ok: true, sent })
+  return json(env, { ok: true, sent, permalink })
 }
 
 // One Resend message for a single recipient: personalized unsubscribe link +
 // List-Unsubscribe headers (RFC 8058) + CAN-SPAM footer. Shared by the real
 // broadcast loop and the test send so they can't drift.
-async function buildNewsletterMessage(env, email, { from, subject, bodyHtml, bodyText, postal, origin }) {
+async function buildNewsletterMessage(env, email, { from, subject, bodyHtml, bodyText, postal, origin, permalink }) {
   const token = await signUnsubToken(env, email)
   const unsubUrl = `${origin}/unsubscribe?token=${encodeURIComponent(token)}`
   const msg = {
@@ -3766,8 +3844,8 @@ async function buildNewsletterMessage(env, email, { from, subject, bodyHtml, bod
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   }
-  if (bodyHtml) msg.html = appendFooterHtml(bodyHtml, unsubUrl, postal)
-  if (bodyText) msg.text = appendFooterText(bodyText, unsubUrl, postal)
+  if (bodyHtml) msg.html = appendFooterHtml(bodyHtml, unsubUrl, postal, permalink)
+  if (bodyText) msg.text = appendFooterText(bodyText, unsubUrl, postal, permalink)
   return msg
 }
 
@@ -3804,18 +3882,22 @@ async function sendBatch(env, messages) {
   return sent
 }
 
-function appendFooterText(body, unsubUrl, postal) {
-  const lines = [
-    body, '', '—',
+function appendFooterText(body, unsubUrl, postal, permalink) {
+  const lines = [body, '', '—']
+  if (permalink) lines.push(`Share this: ${permalink}`)
+  lines.push(
     'You received this because you opted in to Jackson Film Club announcements.',
     `Unsubscribe: ${unsubUrl}`,
-  ]
+  )
   if (postal) lines.push(postal)
   return lines.join('\n')
 }
 
-function appendFooterHtml(body, unsubUrl, postal) {
+function appendFooterHtml(body, unsubUrl, postal, permalink) {
   return `${body}<hr><p style="font-size:12px;color:#888">` +
+    (permalink
+      ? `Want to share this with someone? <a href="${permalink}">View it in your browser</a>.<br>`
+      : '') +
     'You received this because you opted in to Jackson Film Club announcements.<br>' +
     `<a href="${unsubUrl}">Unsubscribe</a>` +
     (postal ? `<br>${escapeHtml(postal)}` : '') + '</p>'

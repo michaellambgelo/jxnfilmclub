@@ -336,3 +336,72 @@ describe('POST /admin/newsletter/send — upstream failures are legible', () => 
     expect(body.partial).toBe(true)
   })
 })
+
+// --- Shareable permalink -----------------------------------------------------
+describe('newsletter web archive', () => {
+  const OK = { subject: 'This month at the club', html: '<p>Sherlock Jr. on Friday</p>', text: 'Sherlock Jr. on Friday' }
+
+  it('archives the PRE-FOOTER body, never a rendered message', async () => {
+    // buildNewsletterMessage signs a per-recipient unsubscribe token into each
+    // copy's footer. Archiving a rendered message would publish one member's
+    // signed token at a public URL, letting anyone unsubscribe them.
+    await seedMember('arch@example.com', { newsletter: true })
+    const { res, batch } = await captureSend(OK)
+    expect(res.status).toBe(200)
+    const { permalink } = await res.json()
+    expect(permalink).toMatch(/^https:\/\/join\.jxnfilm\.club\/n\/\d{4}-\d{2}-this-month-at-the-club-[a-f0-9]{10}$/)
+
+    // The delivered copy DOES carry a token; the archive must not.
+    expect(batch[0].html).toMatch(/unsubscribe\?token=/)
+    const page = await (await SELF.fetch(permalink)).text()
+    expect(page).not.toMatch(/unsubscribe\?token=/)
+    expect(page).toContain('Sherlock Jr. on Friday')
+  })
+
+  it('puts a share link in both the html and text footers', async () => {
+    await seedMember('foot@example.com', { newsletter: true })
+    const { res, batch } = await captureSend(OK)
+    const { permalink } = await res.json()
+    expect(batch[0].html).toContain(permalink)
+    expect(batch[0].html).toMatch(/View it in your browser/)
+    expect(batch[0].text).toContain(`Share this: ${permalink}`)
+  })
+
+  it('renders the archive with a script-blocking CSP', async () => {
+    // The body is operator-authored HTML on our own origin — a step up from a
+    // mail client's sandbox — so nothing but styles and images may run.
+    await seedMember('csp@example.com', { newsletter: true })
+    const { res } = await captureSend(OK)
+    const { permalink } = await res.json()
+    const page = await SELF.fetch(permalink)
+    expect(page.status).toBe(200)
+    const csp = page.headers.get('Content-Security-Policy')
+    expect(csp).toMatch(/default-src 'none'/)
+    expect(csp).not.toMatch(/script-src/)      // nothing re-enables scripts
+    expect(page.headers.get('X-Content-Type-Options')).toBe('nosniff')
+  })
+
+  it('404s an unknown or malformed id without throwing', async () => {
+    for (const id of ['nope', '../admin', 'A'.repeat(200), '']) {
+      const res = await SELF.fetch(`https://join.jxnfilm.club/n/${id}`)
+      expect(res.status).toBe(404)
+    }
+  })
+
+  it('gives a test send a working permalink too', async () => {
+    // A "view in browser" link that 404s would make the test send a liar.
+    const { res } = await captureSend({ ...OK, testTo: 'me@example.com' })
+    const { permalink, test } = await res.json()
+    expect(test).toBe(true)
+    expect((await SELF.fetch(permalink)).status).toBe(200)
+  })
+
+  it('records the archive id on the broadcast audit row', async () => {
+    await seedMember('audit@example.com', { newsletter: true })
+    const { res } = await captureSend(OK)
+    const { permalink } = await res.json()
+    const list = await env.MEMBERS_KV.list({ prefix: 'newsletter:sent:' })
+    const row = JSON.parse(await env.MEMBERS_KV.get(list.keys.at(-1).name))
+    expect(permalink).toContain(row.archiveId)
+  })
+})

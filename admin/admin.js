@@ -1851,7 +1851,7 @@ document.addEventListener('click', async (e) => {
       if (nlBlockedSend()) return
       const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined, testTo })
       const r = await api('POST', `/api/newsletter/send?${qs({ env: env() })}`, body)
-      toast(`Test sent to ${testTo} (${r.sent})`)
+      toast(r.permalink ? `Test sent to ${testTo} — shareable link: ${r.permalink}` : `Test sent to ${testTo} (${r.sent})`)
     }
     else if (a === 'nl-send') {
       const subject = $('#nl-subject').value.trim()
@@ -1866,7 +1866,7 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Send "${subject}" to ${count} opted-in member(s) on ${env()}?\n\nThis emails real people.`)) return
       const body = JSON.stringify({ subject, html: html || undefined, text: text || undefined })
       const r = await api('POST', `/api/newsletter/send?${qs({ env: env() })}`, body)
-      toast(`Sent to ${r.sent} member(s)`)
+      toast(r.permalink ? `Sent to ${r.sent} member(s) — shareable link: ${r.permalink}` : `Sent to ${r.sent} member(s)`)
       await switchTab(currentTab)
     }
     else if (a === 'event-save') {

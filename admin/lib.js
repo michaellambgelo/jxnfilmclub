@@ -504,6 +504,7 @@ export const PLATFORM_LABELS = {
 const EVENTS_URL = 'https://jxnfilm.club/events'
 const WATCHED_URL = 'https://jxnfilm.club/watched'
 const SITE_URL = 'https://jxnfilm.club'
+const SPEAK_URL = 'https://jxnfilm.club/speak'
 const IG_TAGS = '#JacksonFilmClub #JXN #FilmClub'
 
 // Whole days from `today` until `date` — both bare YYYY-MM-DD strings,
@@ -538,7 +539,7 @@ function eventBits(event) {
   return { e, name, titled, when, whenShort, venue }
 }
 
-// kind: announce | countdown | recap | roundup | diary | episode | lineup | monthwrap | milestone
+// kind: announce | countdown | recap | roundup | diary | episode | voice | lineup | monthwrap | milestone
 // platform: instagram | facebook | discord | bluesky | x
 // data by kind:
 //   announce/recap — { event, count? }        (count = attendance, recap only)
@@ -546,6 +547,7 @@ function eventBits(event) {
 //   roundup        — { films, total }         (from buildRoundupData)
 //   diary          — { films, from, to, page, pageCount }  (one buildDiaryPages page)
 //   episode        — { episode: { title, date?, url } }
+//   voice          — { prompt: { id, text, deadline? } }  (config:voice_prompt)
 //   lineup         — { events: [...] }        (upcoming, already sorted)
 //   monthwrap      — { monthLabel, films: [names], screenings, attendees }
 //   milestone      — { stat: members|screenings|attendance, value }
@@ -553,6 +555,7 @@ export function buildSocialCopy(kind, platform, data = {}) {
   if (kind === 'roundup') return roundupCopy(platform, data)
   if (kind === 'diary') return diaryCopy(platform, data)
   if (kind === 'episode') return episodeCopy(platform, data.episode || {})
+  if (kind === 'voice') return voicePromptCopy(platform, data)
   if (kind === 'lineup') return lineupCopy(platform, data.events || [])
   if (kind === 'monthwrap') return monthwrapCopy(platform, data)
   if (kind === 'milestone') return milestoneCopy(platform, data)
@@ -751,6 +754,47 @@ export function diarySeriesCopy(platform, pages = []) {
     const body = buildSocialCopy('diary', platform, { ...p, page: i + 1, pageCount: pages.length })
     return `${head}\n${body}`
   }).join('\n\n')
+}
+
+// Social copy for the current voice prompt — the podcast call-out, driven by
+// whatever config:voice_prompt holds (or the generic default the site falls
+// back to). The newsletter equivalent is buildVoiceCtaHtml above; this is the
+// same invitation shaped for a social post rather than an email.
+//
+// The prompt TEXT is the payload, so it survives the per-platform truncation
+// while the surrounding invitation gives way first — a post that trims the
+// question is asking members to answer nothing.
+function voicePromptCopy(platform, { prompt } = {}) {
+  const text = String((prompt && prompt.text) || '').trim()
+  const deadline = (prompt && prompt.deadline) || ''
+  const by = deadline ? ` by ${fmtSocialDate(deadline)}` : ''
+  const quoted = `\u201c${text}\u201d`
+
+  if (platform === 'instagram') {
+    return `\ud83c\udf99\ufe0f THIS ROUND'S PROMPT\n\n${quoted}\n\n` +
+      `Record up to three minutes${by} and the best clips air on the show. Link in bio.\n\n${IG_TAGS}`
+  }
+  if (platform === 'discord') {
+    return `\ud83c\udf99\ufe0f **This round's prompt**\n> ${text}\n\n` +
+      `Record or upload up to three minutes${by} — the best clips get aired.\n${SPEAK_URL}`
+  }
+  if (platform === 'bluesky' || platform === 'x') {
+    const limit = PLATFORM_LIMITS[platform]
+    // Shed the invitation before the question. If even the bare prompt plus
+    // the link will not fit, the prompt itself is trimmed last.
+    const forms = [
+      `\ud83c\udf99\ufe0f This round's prompt: ${quoted}\n\nRecord up to three minutes${by}: ${SPEAK_URL}`,
+      `\ud83c\udf99\ufe0f This round's prompt: ${quoted}\n\n${SPEAK_URL}`,
+      `${quoted}\n\n${SPEAK_URL}`,
+    ]
+    const fits = forms.find(f => f.length <= limit)
+    if (fits) return fits
+    const room = limit - `\u201c\u2026\u201d\n\n${SPEAK_URL}`.length
+    return `\u201c${text.slice(0, Math.max(0, room))}\u2026\u201d\n\n${SPEAK_URL}`
+  }
+  // facebook
+  return `\ud83c\udf99\ufe0f This round's prompt: ${quoted}\n\n` +
+    `Members can record or upload up to three minutes${by} — the best clips get aired on the podcast.\n\n${SPEAK_URL}`
 }
 
 // Aggregate a /watched handle-keyed map into public-safe roundup data.

@@ -90,6 +90,7 @@ const KINDS = {
   lineup: 'Season lineup',
   monthwrap: 'Monthly wrap',
   episode: 'New podcast episode',
+  voice: 'Voice prompt',
   milestone: 'Milestone',
   roundup: 'Member watches roundup',
   diary: 'Member diary (paged)',
@@ -137,6 +138,7 @@ let cg = {
   wrapMonth: null,     // 'YYYY-MM' selected for the monthly wrap
   stat: 'members',     // selected milestone stat
   membersCount: 0,
+  voicePrompt: null,   // config:voice_prompt, or the site's generic default
 }
 
 let ctx = null         // { api, env, content, toast } injected by admin.js
@@ -306,6 +308,21 @@ async function loadEpisodes() {
   cg.episodesEnv = envName
 }
 
+// The prompt members answer when they record a clip. Same source the site and
+// the newsletter's voice CTA read, so a card can never quote a stale prompt:
+// config:voice_prompt when it carries both id and text, else the generic
+// default the Worker falls back to.
+const DEFAULT_VOICE_PROMPT = { id: 'general', text: "Tell us what you're watching" }
+
+async function loadVoicePrompt() {
+  const envName = ctx.env()
+  if (cg.voicePrompt && cg.voicePromptEnv === envName) return
+  const raw = await ctx.api('GET', `/api/kv?${qs({ env: envName, binding: 'MEMBERS_KV', prefix: 'config:voice_prompt' })}`)
+  const cfg = tryParse(raw.values['config:voice_prompt'])
+  cg.voicePrompt = (cfg && cfg.id && cfg.text) ? cfg : DEFAULT_VOICE_PROMPT
+  cg.voicePromptEnv = envName
+}
+
 // members:all length — only needed for the milestone card.
 async function loadMembersCount() {
   const raw = await ctx.api('GET', `/api/kv?${qs({ env: ctx.env(), binding: 'MEMBERS_KV', prefix: 'members:all' })}`)
@@ -344,6 +361,7 @@ function copyData() {
   if (cg.kind === 'roundup') return cg.roundup || { films: [], total: 0 }
   if (cg.kind === 'diary') return diaryPageData()
   if (cg.kind === 'episode') return { episode: (cg.episodes || [])[cg.episodeIdx] || null }
+  if (cg.kind === 'voice') return { prompt: cg.voicePrompt || DEFAULT_VOICE_PROMPT }
   if (cg.kind === 'lineup') return { events: upcomingEvents().slice(0, 4) }
   if (cg.kind === 'monthwrap') return monthwrapData()
   if (cg.kind === 'milestone') return { stat: cg.stat, value: milestoneValue(cg.stat) }
@@ -981,6 +999,66 @@ async function drawMonthwrapCard(c, W, H, d) {
   })
 }
 
+// The current voice prompt as a card. Typographic like the episode card — the
+// prompt IS the artwork, so it gets the display face at the largest size that
+// still fits, with the invitation and deadline as supporting lines.
+async function drawVoicePromptCard(c, W, H, { prompt } = {}) {
+  const p = prompt || {}
+  const text = String(p.text || '').trim() || 'What are you watching?'
+  const pad = Math.round(W * 0.065)
+  const landscape = W > H
+  const tall = H >= W * 1.5
+  c.fillStyle = INK
+  c.fillRect(0, 0, W, H)
+
+  const labelPx = Math.round(W * 0.021)
+  const metaPx = Math.round(W * (landscape ? 0.022 : 0.027))
+  const tw = W - pad * 2
+
+  // Shrink to fit rather than clip: a truncated question cannot be answered,
+  // which is the entire purpose of the card.
+  let quotePx = Math.round(W * (landscape ? 0.055 : tall ? 0.072 : 0.064))
+  const floor = Math.round(quotePx * 0.55)
+  const maxLines = landscape ? 3 : 5
+  let lines
+  for (;;) {
+    c.font = `800 ${quotePx}px ${DISPLAY}`
+    lines = wrapText(c, `“${text}”`, tw)
+    if (lines.length <= maxLines || quotePx <= floor) break
+    quotePx = Math.round(quotePx * 0.92)
+  }
+
+  const gap = Math.round(quotePx * 0.55)
+  const lineH = Math.round(quotePx * 1.14)
+  const subLines = [
+    `Record or upload up to three minutes${p.deadline ? ` by ${fmtSocialDate(p.deadline, { short: true })}` : ''}.`,
+    'The best clips get aired on the podcast.',
+  ]
+  const blockH = labelPx + gap + lines.length * lineH + gap + subLines.length * Math.round(metaPx * 1.5)
+  let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
+
+  c.textBaseline = 'top'
+  label(c, 'Jackson Film Club · Podcast', pad, ty, labelPx)
+  ty += labelPx + gap
+
+  c.font = `800 ${quotePx}px ${DISPLAY}`
+  c.fillStyle = PAPER
+  for (const line of lines) {
+    c.fillText(line, pad, ty)
+    ty += lineH
+  }
+  ty += gap
+
+  c.font = `500 ${metaPx}px ${LABEL}`
+  for (let i = 0; i < subLines.length; i++) {
+    c.fillStyle = i === 0 ? PAPER_2 : PAPER_4
+    c.fillText(subLines[i], pad, ty)
+    ty += Math.round(metaPx * 1.5)
+  }
+
+  footer(c, W, H, pad, 'jxnfilm.club/speak')
+}
+
 // Big-numeral stat card, recap-style: brand-red value + stacked unit words.
 const MILESTONE_UNITS = {
   members: ['MEMBERS', 'STRONG'],
@@ -1136,6 +1214,7 @@ async function drawForKind(c, w, h, data) {
   else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data)
   else if (cg.kind === 'monthwrap') await drawMonthwrapCard(c, w, h, data)
   else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data)
+  else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data)
   else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data)
   else if (cg.kind === 'recap') await drawRecapCard(c, w, h, data.event, data.count)
   else if (cg.kind === 'countdown') await drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)))
@@ -1282,6 +1361,7 @@ export async function renderContentGen(context) {
   if (cg.kind === 'roundup') await loadRoundup()
   if (cg.kind === 'diary') await loadDiary()
   if (cg.kind === 'episode') await loadEpisodes()
+  if (cg.kind === 'voice') await loadVoicePrompt()
   if (cg.kind === 'milestone') await loadMembersCount()
   if (!cg.events.some(e => e.id === cg.eventId)) cg.eventId = cg.events[0]?.id || null
   if (!wrapMonths().includes(cg.wrapMonth)) cg.wrapMonth = wrapMonths()[0] || null
@@ -1350,6 +1430,14 @@ export async function renderContentGen(context) {
       </label>
       <span class="cg-diary-count muted">${escapeHtml(`${count}${capped ? ` · ${d.availablePages} pages available` : ''}`)}</span>`
     },
+    voice: () => {
+      const p = cg.voicePrompt || DEFAULT_VOICE_PROMPT
+      const isDefault = p.id === DEFAULT_VOICE_PROMPT.id && p.text === DEFAULT_VOICE_PROMPT.text
+      // Read-only on purpose: one prompt is live at a time and the site, the
+      // newsletter CTA and this card must all quote the same one. Editing it
+      // here would fork that.
+      return `<span class="cg-voice-prompt muted">Prompt <code>${escapeHtml(p.id)}</code>${isDefault ? ' (site default)' : ''}${p.deadline ? ` · due ${escapeHtml(fmtSocialDate(p.deadline, { short: true }))}` : ''} — change it on the Config tab</span>`
+    },
     episode: () => `
       <label>Episode
         <select id="cg-episode">
@@ -1373,6 +1461,7 @@ export async function renderContentGen(context) {
     needsEvent ? controls.event()
     : cg.kind === 'roundup' ? controls.limit()
     : cg.kind === 'diary' && cg.diary ? controls.diary()
+    : cg.kind === 'voice' ? controls.voice()
     : cg.kind === 'episode' && cg.episodes && cg.episodes.length ? controls.episode()
     : cg.kind === 'monthwrap' && cg.wrapMonth ? controls.month()
     : cg.kind === 'milestone' ? controls.stat()
@@ -1384,7 +1473,7 @@ export async function renderContentGen(context) {
       Output is public-safe by construction: host addresses/notes never leave KV, and member watches carry
       film titles and posters only — no names, no handles. The roundup aggregates the last 7 days; the diary
       pages the whole feed newest-first, labelling each page with its real date range, and shows the club's
-      average rating rather than any one member's.</p>
+      average rating rather than any one member's. The voice prompt card quotes whatever is live in Config.</p>
 
     <section class="cg-controls">
       <label>Post type
@@ -1509,6 +1598,7 @@ export async function renderContentGen(context) {
         needsEvent ? currentEvent()
         : cg.kind === 'episode' ? { title: ((cg.episodes || [])[cg.episodeIdx] || {}).title }
         : cg.kind === 'monthwrap' ? { title: cg.wrapMonth }
+        : cg.kind === 'voice' ? { title: (cg.voicePrompt || DEFAULT_VOICE_PROMPT).id }
         : cg.kind === 'milestone' ? { title: cg.stat }
         : cg.kind === 'diary' ? diaryFileTag(cg.diaryPage)
         : null
@@ -1527,6 +1617,6 @@ export async function renderContentGen(context) {
 // Exported for the headless visual-QA harness and future tests; admin.js
 // only uses renderContentGen.
 export {
-  loadFonts, drawEventCard, drawRecapCard, drawRoundupCard, drawDiaryCard,
+  loadFonts, drawEventCard, drawRecapCard, drawRoundupCard, drawDiaryCard, drawVoicePromptCard,
   drawLineupCard, drawMonthwrapCard, drawEpisodeCard, drawMilestoneCard,
 }

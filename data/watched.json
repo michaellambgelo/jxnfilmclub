@@ -601,6 +601,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/deep-cover/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/8/5/7/38857-deep-cover-0-600-0-900-crop.jpg?v=8ada747a67",
+      "rating": "5.0",
+      "title": "Deep Cover",
+      "watched_date": "2026-09-03",
+      "year": "1992"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/pariah/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/0/3/2/8/60328-pariah-0-600-0-900-crop.jpg?v=d667d3dbe9",
       "rating": "5.0",
@@ -697,15 +706,6 @@
       "title": "American History X",
       "watched_date": "2026-08-28",
       "year": "1998"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/eyes-wide-shut/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/1/7/51717-eyes-wide-shut-0-600-0-900-crop.jpg?v=7010402aeb",
-      "rating": "5.0",
-      "title": "Eyes Wide Shut",
-      "watched_date": "2026-08-27",
-      "year": "1999"
     }
   ],
   "badmov1eenjoyer": [

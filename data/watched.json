@@ -603,7 +603,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/deep-cover/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/8/5/7/38857-deep-cover-0-600-0-900-crop.jpg?v=8ada747a67",
-      "rating": "5.0",
+      "rating": "4.5",
       "title": "Deep Cover",
       "watched_date": "2026-09-03",
       "year": "1992"
@@ -621,7 +621,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/picnic-at-hanging-rock/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/3k/2b/j9/o8/R1C3mLnyC7LbWoH3mhT3ZZZobv-0-600-0-900-crop.jpg?v=facefec0d5",
-      "rating": "4.0",
+      "rating": "3.5",
       "title": "Picnic at Hanging Rock",
       "watched_date": "2026-09-02",
       "year": "1975"
@@ -630,7 +630,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/being-john-malkovich/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/1/8/51618-being-john-malkovich-0-600-0-900-crop.jpg?v=aecbc04013",
-      "rating": "4.5",
+      "rating": "4.0",
       "title": "Being John Malkovich",
       "watched_date": "2026-09-01",
       "year": "1999"
@@ -639,7 +639,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/in-the-heat-of-the-night/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/0/4/1/46041-in-the-heat-of-the-night-0-600-0-900-crop.jpg?v=7b3f8c5287",
-      "rating": "4.0",
+      "rating": "4.5",
       "title": "In the Heat of the Night",
       "watched_date": "2026-09-01",
       "year": "1967"
@@ -666,7 +666,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/drive-2011/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/6d/6l/r3/e9/nu7XIa67cXc2t7frXCE5voXUJcN.jpg-0-600-0-900-crop.jpg?v=58a476ae28",
-      "rating": "5.0",
+      "rating": "4.0",
       "title": "Drive",
       "watched_date": "2026-08-31",
       "year": "2011"
@@ -675,7 +675,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/heat-1995/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/9/9/4/51994-heat-0-600-0-900-crop.jpg?v=54dce97dc6",
-      "rating": "4.0",
+      "rating": "4.5",
       "title": "Heat",
       "watched_date": "2026-08-29",
       "year": "1995"
@@ -684,7 +684,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/killers-of-the-flower-moon/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/8/0/0/9/398009-killers-of-the-flower-moon-0-600-0-900-crop.jpg?v=49b577149d",
-      "rating": "4.5",
+      "rating": "4.0",
       "title": "Killers of the Flower Moon",
       "watched_date": "2026-08-29",
       "year": "2023"
@@ -913,6 +913,22 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/flying-padre/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/9/3/2/4/19324-flying-padre-0-600-0-900-crop.jpg?v=7df44537d1",
+      "rating": "3.0",
+      "title": "Flying Padre",
+      "watched_date": "2026-09-03",
+      "year": "1951"
+    },
+    {
+      "link": "https://letterboxd.com/calissippi/film/the-killing/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/0/9/51809-the-killing-0-600-0-900-crop.jpg?v=e5e7dfa2a2",
+      "rating": "4.0",
+      "title": "The Killing",
+      "watched_date": "2026-09-03",
+      "year": "1956"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/the-uninvited/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/6/0/7/41607-the-uninvited-0-600-0-900-crop.jpg?v=2903726521",
       "rating": "2.5",
@@ -991,22 +1007,6 @@
       "title": "Spider-Man: Homecoming",
       "watched_date": "2026-08-19",
       "year": "2017"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/godzilla-vs-biollante/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/0/4/5/0/40450-godzilla-vs-biollante-0-600-0-900-crop.jpg?v=26c5f20c86",
-      "rating": "2.5",
-      "title": "Godzilla vs. Biollante",
-      "watched_date": "2026-08-18",
-      "year": "1989"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/mortal-kombat-ii/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/3/6/5/7/1/836571-mortal-kombat-ii-0-600-0-900-crop.jpg?v=6fea3b13de",
-      "rating": "2.0",
-      "title": "Mortal Kombat II",
-      "watched_date": "2026-08-18",
-      "year": "2026"
     }
   ],
   "dacoats": [
@@ -1640,6 +1640,15 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/dragonheart/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/37/b0/96/yz/dragonheart-0-600-0-900-crop.jpg?v=b8e6fdcf49",
+      "rating": "4.0",
+      "title": "DragonHeart",
+      "watched_date": "2026-09-03",
+      "year": "1996"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/smart-house/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/8/6/7/5/28675-smart-house-0-600-0-900-crop.jpg?v=fceb6e3c84",
       "rating": "4.0",
@@ -1738,14 +1747,6 @@
       "title": "Teenage Sex and Death at Camp Miasma",
       "watched_date": "2026-08-24",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/escape-from-tomorrow/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/8/4/0/6/118406-escape-from-tomorrow-0-600-0-900-crop.jpg?v=db0e7e46ae",
-      "rating": "1.0",
-      "title": "Escape from Tomorrow",
-      "watched_date": "2026-08-23",
-      "year": "2013"
     }
   ],
   "mrbienkowski": [

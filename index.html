@@ -7,11 +7,44 @@
 <script>
   import { state } from 'state'
 
+  // Shared with the same-route link guard below.
+  const QUERY_KEYS = ['query', 'sort', 'venue', 'email', 'event', 'filter']
+
   state.setup({
     route: '/:type',
-    query: ['query', 'sort', 'venue', 'email', 'event', 'filter'],
+    query: QUERY_KEYS,
     autolink: true,
   })
+
+  // Clicking the nav link for the page you are already on used to land you
+  // on the site root with the view unchanged.
+  //
+  // nuestate's autolink turns any click whose pathname matches the SPA route
+  // into `state.set(getURLData(link))`. getURLData spells absent query params
+  // as null, while state.data has had its nulls stripped, so `undefined !==
+  // null` registers a phantom change on every one of them. That marks the
+  // change as `query`-only, and the query-only branch writes the URL as
+  // `replaceState('./')` — which resolves against /watched to `/`, dropping
+  // the path. No path param changed, so no view ever re-renders.
+  //
+  // Handle those clicks before autolink sees them: it bails on
+  // defaultPrevented. Capture phase, so this does not depend on which
+  // listener was registered first.
+  addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href]')
+    if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return
+    // Cross-origin (Join), another page, or an in-page anchor: not ours.
+    if (a.origin !== location.origin || a.pathname !== location.pathname || a.hash) return
+    e.preventDefault()
+    // A bare link to the page you are on is a no-op. One clicked while the
+    // URL carries filter/sort state means "give me the clean view", so drop
+    // that state — then repair the path, since clearing it walks straight
+    // back into the './' branch above.
+    if (location.search) {
+      for (const key of QUERY_KEYS) if (state[key] != null) state[key] = null
+      history.replaceState(true, 0, a.pathname)
+    }
+  }, true)
 
   function resolveWorkerOrigin() {
     if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN

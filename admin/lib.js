@@ -1287,3 +1287,30 @@ export function ordinal(n) {
   if (ones === 3) return `${n}rd`
   return `${n}th`
 }
+
+// --- Review badge counts (the Voice / Feedback pills on the tab strip) ---
+//
+// "Needs review" is derived, never stored. A voice clip is pending until it
+// is approved or rejected; a feedback row exists until it is deleted
+// ("delete = handled"). Nothing records what an operator has already looked
+// at, on purpose — a seen-marker would live in one browser's localStorage
+// and would quietly clear the badge on items nobody actually dealt with.
+//
+// Both helpers mirror the filter their tab renders with, so the badge and
+// the heading count can never disagree.
+
+// Voice rows ({ keyName, ...value }) still awaiting moderation. Anything
+// that isn't approved/rejected counts — including a row with no status at
+// all, which is exactly what voiceStatusPill renders as "pending".
+export function countPendingVoice(rows) {
+  return (rows || []).filter(r =>
+    r && r.promptId && r.r2Key && r.status !== 'approved' && r.status !== 'rejected'
+  ).length
+}
+
+// Open feedback = every row the tab would render. Counted off the parsed
+// values rather than the raw key list so an unparseable row (which the tab
+// drops) doesn't inflate the badge.
+export function countOpenFeedback(keys, values) {
+  return (keys || []).filter(k => k && tryParse((values || {})[k.name])).length
+}

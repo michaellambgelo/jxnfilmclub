@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
+  countPendingVoice, countOpenFeedback,
 } from '../../admin/lib.js'
 
 afterEach(() => {
@@ -126,5 +127,56 @@ describe('sanitizeVoicePrompt', () => {
     expect(sanitizeVoicePrompt({ id: 'x', text: 'y', deadline: 'Sept 30' })).toBeNull()
     expect(sanitizeVoicePrompt(null)).toBeNull()
     expect(sanitizeVoicePrompt(undefined)).toBeNull()
+  })
+})
+
+// --- Tab-strip review badges ---
+
+describe('countPendingVoice', () => {
+  const clip = (o) => ({ promptId: 'p', r2Key: 'voice/x.webm', ...o })
+
+  it('counts anything not approved/rejected, including a status-less row', () => {
+    expect(countPendingVoice([
+      clip({ status: 'approved' }),
+      clip({ status: 'rejected' }),
+      clip({ status: 'pending' }),
+      clip({}),               // never moderated — the tab pills this "pending"
+      clip({ status: null }),
+    ])).toBe(3)
+  })
+
+  it('ignores rows the Voice tab itself drops (no promptId / no r2Key)', () => {
+    expect(countPendingVoice([
+      clip({}),
+      { r2Key: 'voice/y.webm' },        // no promptId
+      { promptId: 'p' },                // no r2Key
+      null,
+    ])).toBe(1)
+  })
+
+  it('is 0 for empty/missing input', () => {
+    expect(countPendingVoice([])).toBe(0)
+    expect(countPendingVoice(null)).toBe(0)
+    expect(countPendingVoice(undefined)).toBe(0)
+  })
+})
+
+describe('countOpenFeedback', () => {
+  it('counts every parseable row — a present row IS an unhandled one', () => {
+    const keys = [{ name: 'feedback:1' }, { name: 'feedback:2' }]
+    const values = { 'feedback:1': '{"message":"a"}', 'feedback:2': '{"message":"b"}' }
+    expect(countOpenFeedback(keys, values)).toBe(2)
+  })
+
+  it('skips unparseable or missing values, as the tab does', () => {
+    const keys = [{ name: 'feedback:1' }, { name: 'feedback:2' }, { name: 'feedback:3' }]
+    const values = { 'feedback:1': '{"message":"a"}', 'feedback:2': 'not json' }
+    expect(countOpenFeedback(keys, values)).toBe(1)
+  })
+
+  it('is 0 for empty/missing input', () => {
+    expect(countOpenFeedback([], {})).toBe(0)
+    expect(countOpenFeedback(null, null)).toBe(0)
+    expect(countOpenFeedback(undefined, undefined)).toBe(0)
   })
 })

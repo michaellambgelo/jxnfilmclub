@@ -1,4 +1,4 @@
-import { test, expect, seedKv, WORKER_ORIGIN } from './fixtures'
+import { test, expect, seedKv, wipeKv, WORKER_ORIGIN } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // Admin dashboard e2e — the SPA served by admin/server.mjs in E2E mode
@@ -306,6 +306,94 @@ test.describe('admin dashboard', () => {
     await page.evaluate(() => { localStorage.jxnfc_admin_tab = 'sessions' })
     await page.reload()
     await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'auth')
+  })
+
+  // --- Review badges on the tab strip ---
+  //
+  // The whole point of the badge is that it is legible from a DIFFERENT tab,
+  // so every count here is asserted while Members is the open tab.
+
+  function badgeCount(page: Page, tab: string) {
+    return page.locator(`#tabs button[data-tab="${tab}"] .badge`)
+  }
+
+  // A badge asserts an absolute count, so these two tests need the queues
+  // genuinely empty first. The shared beforeEach wipe fires 21 unchecked
+  // DELETEs and has been observed to miss one under a full-suite run — so
+  // wipe again here (wipeKv checks the response) and poll the listing until
+  // it is actually empty rather than trusting the call.
+  async function resetQueues(page: Page) {
+    for (const prefix of ['voice:', 'feedback:']) {
+      await wipeKv(page, prefix)
+      await expect.poll(async () => {
+        const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?prefix=${prefix}`)
+        return (await res.json()).keys.length
+      }).toBe(0)
+    }
+  }
+
+  function voiceClip(memberId: string, overrides: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      memberId, name: 'Badge ' + memberId, promptId: 'badge-round',
+      promptText: 'Why badges?', r2Key: `voice/badge-round/${memberId}.webm`,
+      contentType: 'audio/webm', size: 1024, consent: true,
+      at: '2026-09-01T12:00:00.000Z',
+      expiresAt: Math.floor(Date.now() / 1000) + 60 * 86400,
+      status: 'pending', ...overrides,
+    })
+  }
+
+  function feedbackRow(i: number) {
+    return JSON.stringify({
+      at: `2026-09-0${i}T12:00:00.000Z`, category: 'bug',
+      page: '/events', message: `badge feedback ${i}`,
+    })
+  }
+
+  test('voice + feedback badges count what is waiting, from any tab', async ({ page }) => {
+    acceptDialogs(page)
+    await resetQueues(page)
+    // Two pending clips and one already moderated — approved is not waiting.
+    await seedKv(page, 'voice:badge-round:m1', voiceClip('m1'))
+    await seedKv(page, 'voice:badge-round:m2', voiceClip('m2'))
+    await seedKv(page, 'voice:badge-round:m3', voiceClip('m3', { status: 'approved' }))
+    await seedKv(page, 'feedback:1', feedbackRow(1))
+    await seedKv(page, 'feedback:2', feedbackRow(2))
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')
+    await expect(badgeCount(page, 'voice')).toHaveText('2')
+    await expect(badgeCount(page, 'feedback')).toHaveText('2')
+
+    // The label the operator reads must survive the badge being appended.
+    await expect(page.locator('#tabs button[data-tab="voice"]')).toContainText('Voice')
+
+    // Handling an item clears it from the count.
+    await page.locator('#tabs button[data-tab="feedback"]').click()
+    await page.locator('tr', { hasText: 'badge feedback 1' })
+      .getByRole('button', { name: 'handled' }).click()
+    await expect(badgeCount(page, 'feedback')).toHaveText('1')
+  })
+
+  test('the badge disappears entirely once the queue is empty', async ({ page }) => {
+    acceptDialogs(page)
+    await resetQueues(page)
+    // Moderated clips still have KV rows, but nothing is waiting on a
+    // verdict — the Voice tab must look untouched rather than show a 0.
+    await seedKv(page, 'voice:badge-round:done1', voiceClip('done1', { status: 'approved' }))
+    await seedKv(page, 'voice:badge-round:done2', voiceClip('done2', { status: 'rejected' }))
+    await seedKv(page, 'feedback:solo', feedbackRow(1))
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    // The feedback badge appearing is the sync point that proves the counts
+    // have run — without it, "no voice badge" would pass on an empty page.
+    await expect(badgeCount(page, 'feedback')).toHaveText('1')
+    await expect(badgeCount(page, 'voice')).toHaveCount(0)
+
+    await page.locator('#tabs button[data-tab="feedback"]').click()
+    await page.locator('tr', { hasText: 'badge feedback 1' })
+      .getByRole('button', { name: 'handled' }).click()
+    await expect(badgeCount(page, 'feedback')).toHaveCount(0)
   })
 
   test('revoke device deletes the refresh token', async ({ page }) => {

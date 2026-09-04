@@ -20,7 +20,8 @@ import {
   fmtDuration, fmtBytes, voiceDaysLeft, groupVoiceClips, sanitizeVoicePrompt,
   buildStatsContext, computeMemberStats, normalizeAttendees, fitBox,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
-  newsletterSendBlocker, newsletterSizeReport } from './lib.js'
+  newsletterSendBlocker, newsletterSizeReport,
+  countPendingVoice, countOpenFeedback } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -91,6 +92,64 @@ function showModalHtml(title, html) {
   $('#modal').showModal()
 }
 
+// --- Review badges ---
+//
+// Voice and Feedback are the two tabs with an inbox behind them: clips
+// waiting on approve/reject, feedback rows waiting to be handled. The count
+// rides on the tab button so it is visible from whichever tab you are
+// actually on — the whole point is not having to go look.
+//
+// The counts are derived state (see countPendingVoice/countOpenFeedback in
+// lib.js), so a badge clears when the work is done, not when you glance at
+// it.
+
+const BADGE_TITLE = {
+  voice: (n) => `${n} voice clip${n === 1 ? '' : 's'} awaiting approve/reject`,
+  feedback: (n) => `${n} feedback item${n === 1 ? '' : 's'} to handle`,
+}
+
+// The badge is a sibling <span>, never a rewrite of the button's label text
+// node — the label is what a human reads and what the e2e specs match on.
+function setBadge(tab, n) {
+  const btn = document.querySelector(`#tabs button[data-tab="${tab}"]`)
+  if (!btn) return
+  let el = btn.querySelector('.badge')
+  if (!n) {
+    el?.remove()
+    btn.removeAttribute('title')
+    return
+  }
+  if (!el) {
+    el = document.createElement('span')
+    el.className = 'badge'
+    btn.append(el)
+  }
+  el.textContent = String(n)
+  btn.title = BADGE_TITLE[tab](n)
+}
+
+// Load both counts irrespective of the open tab. Failures stay silent: a
+// badge is a hint layered on the dashboard, and a failed count must not
+// toast over whatever tab the operator is working in.
+//
+// Always chained AFTER the tab render (loadThen), never alongside it. In
+// local mode every KV read is a `wrangler kv key get` subprocess — eight at
+// a time, one per key — and a bursty run of those draws spurious 401s. The
+// badge absorbing one is fine (it's swallowed); the tab the operator is
+// actually looking at absorbing one is a toast in their face. Costing the
+// badge one tab-load of latency is the cheaper side of that trade.
+async function refreshBadges() {
+  const at = env()
+  try {
+    const [voiceRes, fbRes] = await Promise.all([loadKv('voice:'), loadKv('feedback:')])
+    // An env switch mid-flight would stamp production counts under the
+    // staging header — same reason statsCache is dropped on the toggle.
+    if (env() !== at) return
+    setBadge('voice', countPendingVoice(voiceRes.keys.map(k => tryParse(voiceRes.values[k.name]))))
+    setBadge('feedback', countOpenFeedback(fbRes.keys, fbRes.values))
+  } catch { /* hint only — never surface */ }
+}
+
 // --- Tab dispatch ---
 
 const TABS = {
@@ -111,6 +170,11 @@ const TABS = {
 const LEGACY_AUTH_TABS = ['pending', 'sessions', 'revoked', 'rate']
 
 let currentTab = 'members'
+
+// Render a tab, then top up the review badges. switchTab always resolves —
+// withBusy turns a failed render into a toast — so the badge pass runs
+// either way.
+const loadThen = (tab) => switchTab(tab).then(refreshBadges)
 
 async function switchTab(tab) {
   currentTab = tab
@@ -821,6 +885,8 @@ async function revokedSection() {
 
 async function renderFeedback() {
   const { keys, values } = await loadKv('feedback:')
+  // Before the early return: clearing the last row must clear the badge too.
+  setBadge('feedback', countOpenFeedback(keys, values))
   if (!keys.length) return content().innerHTML = '<p class="empty">No feedback.</p>'
 
   // Every field here is site-visitor-controlled free text — the message
@@ -941,6 +1007,8 @@ async function renderVoice() {
   const rows = voiceRes.keys
     .map(k => ({ keyName: k.name, ...(tryParse(voiceRes.values[k.name]) || {}) }))
     .filter(r => r.promptId && r.r2Key)
+  // The tab already has the rows — no second read just to badge them.
+  setBadge('voice', countPendingVoice(rows))
   const groups = groupVoiceClips(rows, prompt.id)
 
   content().innerHTML = `
@@ -2136,11 +2204,11 @@ $('#env').addEventListener('change', () => {
   // Stats are derived from whichever namespace was read — never show
   // production numbers under a staging header, or vice versa.
   statsCache = null
-  switchTab(currentTab)
+  loadThen(currentTab)
 })
 $('#refresh').addEventListener('click', () => {
   statsCache = null
-  switchTab(currentTab)
+  loadThen(currentTab)
 })
 document.querySelectorAll('#tabs button').forEach(b => {
   b.addEventListener('click', () => switchTab(b.dataset.tab))
@@ -2157,4 +2225,4 @@ api('GET', '/api/whoami').then(({ wrangler, email }) => {
 // Reopen on the tab from the last visit; pre-collapse auth tab names map to
 // the merged Auth tab, other unknown/stale names fall back to members.
 const storedTab = localStorage.jxnfc_admin_tab
-switchTab(TABS[storedTab] ? storedTab : LEGACY_AUTH_TABS.includes(storedTab) ? 'auth' : 'members')
+loadThen(TABS[storedTab] ? storedTab : LEGACY_AUTH_TABS.includes(storedTab) ? 'auth' : 'members')

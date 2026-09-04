@@ -73,7 +73,11 @@ change and bumping its `Last updated:` date.
 ## Admin triage
 
 The Feedback tab lists newest-first with expiry countdown. **Delete =
-handled** — there is no status field. Every rendered field goes through
+handled** — there is no status field. That is also what the red count badge
+on the tab counts: every undeleted row, visible from whatever tab the
+operator has open, so a submission isn't waiting on someone thinking to
+click Feedback. It is derived from KV rather than a per-browser "seen"
+marker, so it clears when a row is handled, not when it is glanced at. Every rendered field goes through
 `escapeHtml` (feedback messages are attacker-controlled free text; this is
 the first place site visitors' prose reaches the admin SPA).
 

@@ -47,6 +47,15 @@ The active tab is remembered per browser (`localStorage.jxnfc_admin_tab`),
 so a refresh reopens where you left off; unknown stored names fall back to
 Members.
 
+**Voice** and **Feedback** carry a red count badge when something is waiting
+on you — pending voice clips (anything not yet approved or rejected) and
+undeleted feedback rows. Both counts are derived from KV, not from a
+"seen" marker: the badge clears when the work is done, not when you glance
+at it, and it says the same thing in every browser you open the dashboard
+in. They load at boot and follow the env toggle and ⟳ refresh, so the queue
+for a tab you are not on is still visible from the one you are. Nothing
+waiting means no badge at all, rather than a zero.
+
 ### Sending newsletters
 
 Recipient toggles are plain KV writes. **Sending** goes through the join

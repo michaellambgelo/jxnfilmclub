@@ -36,10 +36,14 @@
     // Cross-origin (Join), another page, or an in-page anchor: not ours.
     if (a.origin !== location.origin || a.pathname !== location.pathname || a.hash) return
     e.preventDefault()
-    // A bare link to the page you are on is a no-op. One clicked while the
-    // URL carries filter/sort state means "give me the clean view", so drop
-    // that state — then repair the path, since clearing it walks straight
-    // back into the './' branch above.
+    // Clicking through to where you already are should still read as a
+    // navigation, so go back to the top — what the browser itself does for
+    // a link to the current page. (The four scrollIntoView calls in
+    // ui/views.html predate this and do not check reduced motion.)
+    scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    // A link clicked while the URL carries filter/sort state means "give me
+    // the clean view", so drop that state — then repair the path, since
+    // clearing it walks straight back into the './' branch above.
     if (location.search) {
       for (const key of QUERY_KEYS) if (state[key] != null) state[key] = null
       history.replaceState(true, 0, a.pathname)

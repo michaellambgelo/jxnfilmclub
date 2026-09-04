@@ -34,6 +34,17 @@ test.describe('same-route nav links', () => {
     await expect(page.locator('.watched-filter[data-tok="liked"]')).not.toHaveClass(/-on/)
   })
 
+  test('a self-link scrolls back to the top', async ({ page }) => {
+    await page.goto('/members')
+    await page.locator('h1').waitFor()
+    await page.evaluate(() => scrollTo(0, 2000))
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0)
+
+    await page.locator('.mastnav-links a[href="/members"]').click()
+    await expect.poll(() => page.evaluate(() => scrollY), { timeout: 5000 }).toBe(0)
+    expect(new URL(page.url()).pathname).toBe('/members')
+  })
+
   test('the cross-origin Join link is left alone', async ({ page }) => {
     await page.goto('/watched')
     await page.locator('.mastnav-links a[href^="https://join."]').click()

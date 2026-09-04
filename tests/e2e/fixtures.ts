@@ -48,7 +48,60 @@ export async function signInAs(page: Page, email: string, memberOverrides: Recor
 // into 30s action timeouts. Localhost (site + wrangler + LB stub) stays
 // reachable; everything else aborts instantly and the UI falls back the
 // same way it does offline.
-export const test = base.extend({
+export const test = base.extend<{ cleanKv: void }>({
+  // Reset Worker KV before every test.
+  //
+  // This MUST be an auto fixture, not a `test.beforeEach` at module scope.
+  // A hook declared in a shared file is registered against whichever spec
+  // file happens to be loading when this module first executes; Node's
+  // module cache means it never re-executes for the other files in the same
+  // worker, so the other twelve specs silently ran with no isolation at all.
+  // That is what made site.spec's first test fail on a full run and pass
+  // alone: 55 unwiped tests had piled E2E members into `members:all` by the
+  // time it looked. Playwright then restarted the worker, this module
+  // re-executed, the hook landed on site.spec — and its other 19 tests
+  // passed. CI only ever went green on `retries: 1`.
+  cleanKv: [async ({ request }, use) => {
+    const wipe = async (prefix: string, ns?: string) => {
+      const q = new URLSearchParams(ns ? { ns, prefix } : { prefix })
+      const res = await request.delete(`${WORKER_ORIGIN}/__test/kv?${q}`)
+      // Checked, unlike the hook this replaces: a silently-dropped wipe is
+      // indistinguishable from a test that leaks state.
+      expect(res.ok()).toBeTruthy()
+    }
+
+    for (const prefix of ['pending:', 'member:', 'members:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', 'refresh:', 'watched:', 'feedback:', 'config:', 'voice:', '__last_']) {
+      await wipe(prefix)
+    }
+    // ATTENDANCE_KV (separate namespace) — wipe attend:* + attendance:* +
+    // event:* + events:* + rsvp:* so anonymize / unattend / events / hosted
+    // screening tests don't see stale entries between runs.
+    for (const prefix of ['attend:', 'attendance:', 'event:', 'events:', 'rsvp:']) {
+      await wipe(prefix, 'ATTENDANCE_KV')
+    }
+
+    // Seed the live read aggregates from the static JSON snapshots so SPA
+    // tests that expect the production directory contents work the same way
+    // they did when the SPA fetched /data/*.json directly. Tests that need a
+    // clean state can wipe `members:all` / `events:all` themselves after this.
+    const [membersRes, eventsRes] = await Promise.all([
+      request.get(`http://localhost:8083/data/members.json`),
+      request.get(`http://localhost:8083/data/events.json`),
+    ])
+    if (membersRes.ok()) {
+      await request.post(`${WORKER_ORIGIN}/__test/kv`, {
+        data: { key: 'members:all', value: await membersRes.text() },
+      })
+    }
+    if (eventsRes.ok()) {
+      await request.post(`${WORKER_ORIGIN}/__test/kv`, {
+        data: { ns: 'ATTENDANCE_KV', key: 'events:all', value: await eventsRes.text() },
+      })
+    }
+
+    await use()
+  }, { auto: true }],
+
   page: async ({ page }, use) => {
     await page.addInitScript((origin) => {
       // @ts-expect-error - injected into page context
@@ -69,40 +122,6 @@ export const test = base.extend({
 base.beforeAll(async ({ request }) => {
   await request.get('/')
   await request.get('/data/members.json')
-})
-
-// Wipe all Worker KV state before every test so reused wrangler-dev
-// instances don't leak pending/member/otp entries between runs.
-// In CI (fresh server), this is a no-op.
-test.beforeEach(async ({ request }) => {
-  for (const prefix of ['pending:', 'member:', 'members:', 'otp:', 'lb_token:', 'email:', 'handle:', 'session:', 'rate:', 'revoked:', 'refresh:', 'watched:', 'feedback:', 'config:', 'voice:', '__last_']) {
-    await request.delete(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(prefix)}`)
-  }
-  // ATTENDANCE_KV (separate namespace) — wipe attend:* + attendance:* +
-  // event:* + events:* + rsvp:* so anonymize / unattend / events / hosted
-  // screening tests don't see stale entries between runs.
-  for (const prefix of ['attend:', 'attendance:', 'event:', 'events:', 'rsvp:']) {
-    await request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent(prefix)}`)
-  }
-
-  // Seed the live read aggregates from the static JSON snapshots so SPA
-  // tests that expect the production directory contents work the same way
-  // they did when the SPA fetched /data/*.json directly. Tests that need a
-  // clean state can wipe `members:all` / `events:all` themselves after this.
-  const [membersRes, eventsRes] = await Promise.all([
-    request.get(`http://localhost:8083/data/members.json`),
-    request.get(`http://localhost:8083/data/events.json`),
-  ])
-  if (membersRes.ok()) {
-    await request.post(`${WORKER_ORIGIN}/__test/kv`, {
-      data: { key: 'members:all', value: await membersRes.text() },
-    })
-  }
-  if (eventsRes.ok()) {
-    await request.post(`${WORKER_ORIGIN}/__test/kv`, {
-      data: { ns: 'ATTENDANCE_KV', key: 'events:all', value: await eventsRes.text() },
-    })
-  }
 })
 
 export { expect }

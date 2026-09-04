@@ -1,4 +1,4 @@
-import { test, expect, seedKv, wipeKv, WORKER_ORIGIN } from './fixtures'
+import { test, expect, seedKv, WORKER_ORIGIN } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // Admin dashboard e2e — the SPA served by admin/server.mjs in E2E mode
@@ -317,21 +317,6 @@ test.describe('admin dashboard', () => {
     return page.locator(`#tabs button[data-tab="${tab}"] .badge`)
   }
 
-  // A badge asserts an absolute count, so these two tests need the queues
-  // genuinely empty first. The shared beforeEach wipe fires 21 unchecked
-  // DELETEs and has been observed to miss one under a full-suite run — so
-  // wipe again here (wipeKv checks the response) and poll the listing until
-  // it is actually empty rather than trusting the call.
-  async function resetQueues(page: Page) {
-    for (const prefix of ['voice:', 'feedback:']) {
-      await wipeKv(page, prefix)
-      await expect.poll(async () => {
-        const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?prefix=${prefix}`)
-        return (await res.json()).keys.length
-      }).toBe(0)
-    }
-  }
-
   function voiceClip(memberId: string, overrides: Record<string, unknown> = {}) {
     return JSON.stringify({
       memberId, name: 'Badge ' + memberId, promptId: 'badge-round',
@@ -352,7 +337,6 @@ test.describe('admin dashboard', () => {
 
   test('voice + feedback badges count what is waiting, from any tab', async ({ page }) => {
     acceptDialogs(page)
-    await resetQueues(page)
     // Two pending clips and one already moderated — approved is not waiting.
     await seedKv(page, 'voice:badge-round:m1', voiceClip('m1'))
     await seedKv(page, 'voice:badge-round:m2', voiceClip('m2'))
@@ -377,7 +361,6 @@ test.describe('admin dashboard', () => {
 
   test('the badge disappears entirely once the queue is empty', async ({ page }) => {
     acceptDialogs(page)
-    await resetQueues(page)
     // Moderated clips still have KV rows, but nothing is waiting on a
     // verdict — the Voice tab must look untouched rather than show a 0.
     await seedKv(page, 'voice:badge-round:done1', voiceClip('done1', { status: 'approved' }))

@@ -1,5 +1,16 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/dragonheart-a-new-beginning/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/1/9/6/46196-dragonheart-a-new-beginning-0-600-0-900-crop.jpg?v=e6f9c0969e",
+    "rating": "2.0",
+    "review": "what a fumble!",
+    "title": "DragonHeart: A New Beginning",
+    "watched_date": "2026-09-04",
+    "year": "2000"
+  },
+  {
     "handle": "calissippi",
     "liked": true,
     "link": "https://letterboxd.com/calissippi/film/mayday-2026/",
@@ -61,6 +72,28 @@
     "title": "Deep Cover",
     "watched_date": "2026-09-03",
     "year": "1992"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/smart-house/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/2/8/6/7/5/28675-smart-house-0-600-0-900-crop.jpg?v=fceb6e3c84",
+    "rating": "4.0",
+    "review": "82 minutes of the best the 90s Disney Original writing you can find",
+    "title": "Smart House",
+    "watched_date": "2026-09-02",
+    "year": "1999"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/the-scooby-doo-project/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/5/6/9/0/8/356908-the-scooby-doo-project-0-600-0-900-crop.jpg?v=01949a336f",
+    "rating": "5.0",
+    "review": "I remember this happening",
+    "title": "The Scooby-Doo Project",
+    "watched_date": "2026-09-02",
+    "year": "1999"
   },
   {
     "handle": "bearleebooks",

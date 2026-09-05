@@ -1,14 +1,66 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/dragonheart-a-new-beginning/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/1/9/6/46196-dragonheart-a-new-beginning-0-600-0-900-crop.jpg?v=e6f9c0969e",
+    "rating": "2.0",
+    "review": "what a fumble!",
+    "title": "DragonHeart: A New Beginning",
+    "watched_date": "2026-09-04",
+    "year": "2000"
+  },
+  {
     "handle": "calissippi",
     "liked": true,
     "link": "https://letterboxd.com/calissippi/film/mayday-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/5/2/0/3/1025203-mayday-2026-0-600-0-900-crop.jpg?v=0d10df8bd8",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/5/2/0/3/1025203-mayday-2026-0-600-0-900-crop.jpg?v=ef55ebe359",
     "rating": "4.5",
     "review": "WAY better than I was expecting.",
     "title": "Mayday",
     "watched_date": "2026-09-04",
     "year": "2026"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/harold-and-maude/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/1/9/51719-harold-and-maude-0-600-0-900-crop.jpg?v=6a2f175ab5",
+    "rating": "4.5",
+    "review": "How far I take trolling",
+    "title": "Harold and Maude",
+    "watched_date": "2026-09-04",
+    "year": "1971"
+  },
+  {
+    "handle": "Chrisbutbetter",
+    "link": "https://letterboxd.com/chrisbutbetter/film/speed/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/9/0/4/50904-speed-0-600-0-900-crop.jpg?v=08424df13d",
+    "rating": "3.0",
+    "review": "A nostalgia classic. My personal into to Keanu. Very 1994 acting type of feel.",
+    "title": "Speed",
+    "watched_date": "2026-09-04",
+    "year": "1994"
+  },
+  {
+    "handle": "Chrisbutbetter",
+    "link": "https://letterboxd.com/chrisbutbetter/film/the-shawshank-redemption/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/7l/hn/46/uz/zGINvGjdlO6TJRu9wESQvWlOKVT-0-600-0-900-crop.jpg?v=8736d1c395",
+    "rating": "3.5",
+    "review": "I really don\u2019t understand why this is typically rated the best movie ever. It is good, yes but it is not the best ever. I will rewatch it to see if my mind is changed",
+    "title": "The Shawshank Redemption",
+    "watched_date": "2026-09-04",
+    "year": "1994"
+  },
+  {
+    "handle": "Chrisbutbetter",
+    "link": "https://letterboxd.com/chrisbutbetter/film/the-french-dispatch-of-the-liberty-kansas/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/1/2/0/7/471207-the-french-dispatch-of-the-liberty-kansas-0-600-0-900-crop.jpg?v=e344a82574",
+    "rating": "4.0",
+    "review": "Something about this movie draws me in. It\u2019s hard to explain but I can\u2019t look away. The quirks keep my mind on it from start to finish",
+    "title": "The French Dispatch of the Liberty, Kansas Evening Sun",
+    "watched_date": "2026-09-04",
+    "year": "2021"
   },
   {
     "handle": "VesperEvensong",
@@ -44,17 +96,6 @@
     "year": "1999"
   },
   {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/how-to-make-a-killing-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/9/5/0/4/399504-how-to-make-a-killing-2026-0-600-0-900-crop.jpg?v=be2948f44a",
-    "rating": "3.0",
-    "review": "i think some folks hate-watched this and i get it. at the same time, i don't hate seeing Glen Powell or Margaret Qualley on my screen. i pretty much knew what this was in the first 10 seconds, but I'm glad I stuck around for the whole thing. the ending being what it is earns this film 3 solid\u2026",
-    "title": "How to Make a Killing",
-    "watched_date": "2026-09-02",
-    "year": "2026"
-  },
-  {
     "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/a-cat-in-paris/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/bj/wo/mj/6d/lYt6VAP26Eu9vOl5OmfwHDp9arg-0-600-0-900-crop.jpg?v=f25f72edff",
@@ -84,17 +125,6 @@
     "title": "Pariah",
     "watched_date": "2026-09-02",
     "year": "2011"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/picnic-at-hanging-rock/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/3k/2b/j9/o8/R1C3mLnyC7LbWoH3mhT3ZZZobv-0-600-0-900-crop.jpg?v=facefec0d5",
-    "rating": "3.5",
-    "review": "On a streak of strange movies",
-    "title": "Picnic at Hanging Rock",
-    "watched_date": "2026-09-02",
-    "year": "1975"
   },
   {
     "handle": "jon_knowledge",

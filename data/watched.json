@@ -892,6 +892,15 @@
   ],
   "bearleebooks": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/coyote-vs-acme/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
+      "rating": "5.0",
+      "title": "Coyote vs. Acme",
+      "watched_date": "2026-09-06",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/a-cat-in-paris/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/bj/wo/mj/6d/lYt6VAP26Eu9vOl5OmfwHDp9arg-0-600-0-900-crop.jpg?v=f25f72edff",
       "rating": "4.0",
@@ -976,14 +985,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/6/8/4/0/1606840-simon-says-2026-0-600-0-900-crop.jpg?v=f66fc1d26a",
       "rating": "1.0",
       "title": "Simon Says",
-      "watched_date": "2026-08-21",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/wuthering-heights-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/6/9/1/1/1196911-wuthering-heights-2026-0-600-0-900-crop.jpg?v=7d02cf3bdc",
-      "rating": "2.0",
-      "title": "Wuthering Heights",
       "watched_date": "2026-08-21",
       "year": "2026"
     }

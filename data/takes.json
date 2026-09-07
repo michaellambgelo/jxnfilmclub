@@ -1,5 +1,25 @@
 [
   {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/the-banana-splits-movie/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/3/5/7/3/3/535733-the-banana-splits-movie-0-600-0-900-crop.jpg?v=93dfc821bf",
+    "rating": "3.0",
+    "review": "I know I was this annoying about Pok\u00e9mon as a little gay kid and that's why my father and I had such a strained relationship",
+    "title": "The Banana Splits Movie",
+    "watched_date": "2026-09-07",
+    "year": "2019"
+  },
+  {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/king-of-new-york/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/0/4/2/47042-king-of-new-york-0-600-0-900-crop.jpg?v=ef72bff72d",
+    "rating": "4.0",
+    "review": "All Lawrence Fishburn wanted was some root beer man. Was that too much to ask for??",
+    "title": "King of New York",
+    "watched_date": "2026-09-06",
+    "year": "1990"
+  },
+  {
     "handle": "jon_knowledge",
     "link": "https://letterboxd.com/jon_knowledge/film/they-live/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/7/9/8/47798-they-live-0-600-0-900-crop.jpg?v=816bf826a0",
@@ -31,6 +51,37 @@
     "year": "2026"
   },
   {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/badlands/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/8/4/4/49844-badlands-0-600-0-900-crop.jpg?v=d57e83e76f",
+    "rating": "3.5",
+    "review": "Badlands more like Chadlands the way everybody was fucking with kit at the end",
+    "title": "Badlands",
+    "watched_date": "2026-09-06",
+    "year": "1973"
+  },
+  {
+    "handle": "Chrisbutbetter",
+    "link": "https://letterboxd.com/chrisbutbetter/film/voicemails-for-isabelle/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/4/1/9/7/5/541975-voicemails-for-isabelle-0-600-0-900-crop.jpg?v=1a9f45496a",
+    "rating": "4.0",
+    "review": "Smiled. Cried.",
+    "title": "Voicemails for Isabelle",
+    "watched_date": "2026-09-06",
+    "year": "2026"
+  },
+  {
+    "handle": "Chrisbutbetter",
+    "link": "https://letterboxd.com/chrisbutbetter/film/17-again/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/2/7/6/41276-17-again-0-600-0-900-crop.jpg?v=6b6f2344f2",
+    "rating": "3.0",
+    "review": "4th hottest Efron has ever been. 1st is obviously baywatch",
+    "title": "17 Again",
+    "watched_date": "2026-09-06",
+    "year": "2009"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/dragonheart-3-the-sorcerers-curse/",
@@ -48,16 +99,6 @@
     "poster": "https://a.ltrbxd.com/resized/sm/upload/xk/25/lu/0m/mi2Axov7Hy20wieoGfrbqDWLjSr-0-600-0-900-crop.jpg?v=dd1e90619a",
     "rating": "5.0",
     "review": "I\u2019ll write more thoughts later but this was crazy to see on the big screen. watched with Jon-Nolan and Lindsay --- Ok, so this was my first time seeing this film in a theater and I honestly couldn't tell you whether this was really 4K but it still looked and felt so damn good! The absolute SCALE of\u2026",
-    "title": "Akira",
-    "watched_date": "2026-09-05",
-    "year": "1988"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/akira/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/xk/25/lu/0m/mi2Axov7Hy20wieoGfrbqDWLjSr-0-600-0-900-crop.jpg?v=dd1e90619a",
-    "rating": "5.0",
-    "review": "This was amazing on the big screen. Do yourself a favor and get to your local cinemark right now!!!",
     "title": "Akira",
     "watched_date": "2026-09-05",
     "year": "1988"
@@ -100,7 +141,7 @@
     "liked": true,
     "link": "https://letterboxd.com/vesperevensong/film/harold-and-maude/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/1/9/51719-harold-and-maude-0-600-0-900-crop.jpg?v=6a2f175ab5",
-    "rating": "4.5",
+    "rating": "4.0",
     "review": "How far I take trolling",
     "title": "Harold and Maude",
     "watched_date": "2026-09-04",
@@ -117,37 +158,6 @@
     "year": "1994"
   },
   {
-    "handle": "Chrisbutbetter",
-    "link": "https://letterboxd.com/chrisbutbetter/film/the-shawshank-redemption/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/7l/hn/46/uz/zGINvGjdlO6TJRu9wESQvWlOKVT-0-600-0-900-crop.jpg?v=8736d1c395",
-    "rating": "3.5",
-    "review": "I really don\u2019t understand why this is typically rated the best movie ever. It is good, yes but it is not the best ever. I will rewatch it to see if my mind is changed",
-    "title": "The Shawshank Redemption",
-    "watched_date": "2026-09-04",
-    "year": "1994"
-  },
-  {
-    "handle": "Chrisbutbetter",
-    "link": "https://letterboxd.com/chrisbutbetter/film/the-french-dispatch-of-the-liberty-kansas/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/1/2/0/7/471207-the-french-dispatch-of-the-liberty-kansas-0-600-0-900-crop.jpg?v=e344a82574",
-    "rating": "4.0",
-    "review": "Something about this movie draws me in. It\u2019s hard to explain but I can\u2019t look away. The quirks keep my mind on it from start to finish",
-    "title": "The French Dispatch of the Liberty, Kansas Evening Sun",
-    "watched_date": "2026-09-04",
-    "year": "2021"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/deep-cover/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/8/5/7/38857-deep-cover-0-600-0-900-crop.jpg?v=8ada747a67",
-    "rating": "4.5",
-    "review": "Insanely good",
-    "title": "Deep Cover",
-    "watched_date": "2026-09-03",
-    "year": "1992"
-  },
-  {
     "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/a-cat-in-paris/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/bj/wo/mj/6d/lYt6VAP26Eu9vOl5OmfwHDp9arg-0-600-0-900-crop.jpg?v=f25f72edff",
@@ -156,16 +166,6 @@
     "title": "A Cat in Paris",
     "watched_date": "2026-09-02",
     "year": "2010"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/texas-chainsaw-3d/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/6/3/0/9/0/63090-texas-chainsaw-3d-0-600-0-900-crop.jpg?v=004e672ce6",
-    "rating": "3.0",
-    "review": "y'know what it's not the WORST",
-    "title": "Texas Chainsaw 3D",
-    "watched_date": "2026-09-02",
-    "year": "2013"
   },
   {
     "handle": "badmov1eenjoyer",

@@ -1,6 +1,22 @@
 {
   "Chrisbutbetter": [
     {
+      "link": "https://letterboxd.com/chrisbutbetter/film/voicemails-for-isabelle/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/4/1/9/7/5/541975-voicemails-for-isabelle-0-600-0-900-crop.jpg?v=1a9f45496a",
+      "rating": "4.0",
+      "title": "Voicemails for Isabelle",
+      "watched_date": "2026-09-06",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/chrisbutbetter/film/17-again/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/2/7/6/41276-17-again-0-600-0-900-crop.jpg?v=6b6f2344f2",
+      "rating": "3.0",
+      "title": "17 Again",
+      "watched_date": "2026-09-06",
+      "year": "2009"
+    },
+    {
       "link": "https://letterboxd.com/chrisbutbetter/film/speed/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/9/0/4/50904-speed-0-600-0-900-crop.jpg?v=08424df13d",
       "rating": "3.0",
@@ -678,6 +694,24 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/thelma-louise/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/wt/r4/hc/iz/pnzuLoE52EiTfjfqRex2uTkH7LB-0-600-0-900-crop.jpg?v=5c24b21874",
+      "rating": "4.0",
+      "title": "Thelma & Louise",
+      "watched_date": "2026-09-06",
+      "year": "1991"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/badlands/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/8/4/4/49844-badlands-0-600-0-900-crop.jpg?v=d57e83e76f",
+      "rating": "3.5",
+      "title": "Badlands",
+      "watched_date": "2026-09-06",
+      "year": "1973"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/do-the-right-thing/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/zm/fz/vn/ie/obNQLtdeJy3IiKnExWoWBJH8V67-0-600-0-900-crop.jpg?v=b4926532f8",
       "rating": "5.0",
@@ -689,7 +723,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/harold-and-maude/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/1/9/51719-harold-and-maude-0-600-0-900-crop.jpg?v=6a2f175ab5",
-      "rating": "4.5",
+      "rating": "4.0",
       "title": "Harold and Maude",
       "watched_date": "2026-09-04",
       "year": "1971"
@@ -698,7 +732,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/deep-cover/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/8/5/7/38857-deep-cover-0-600-0-900-crop.jpg?v=8ada747a67",
-      "rating": "4.5",
+      "rating": "5.0",
       "title": "Deep Cover",
       "watched_date": "2026-09-03",
       "year": "1992"
@@ -716,7 +750,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/picnic-at-hanging-rock/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/3k/2b/j9/o8/R1C3mLnyC7LbWoH3mhT3ZZZobv-0-600-0-900-crop.jpg?v=facefec0d5",
-      "rating": "3.5",
+      "rating": "3.0",
       "title": "Picnic at Hanging Rock",
       "watched_date": "2026-09-02",
       "year": "1975"
@@ -725,7 +759,7 @@
       "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/being-john-malkovich/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/1/8/51618-being-john-malkovich-0-600-0-900-crop.jpg?v=aecbc04013",
-      "rating": "4.0",
+      "rating": "3.5",
       "title": "Being John Malkovich",
       "watched_date": "2026-09-01",
       "year": "1999"
@@ -765,24 +799,6 @@
       "title": "Drive",
       "watched_date": "2026-08-31",
       "year": "2011"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/heat-1995/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/9/9/4/51994-heat-0-600-0-900-crop.jpg?v=54dce97dc6",
-      "rating": "4.5",
-      "title": "Heat",
-      "watched_date": "2026-08-29",
-      "year": "1995"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/killers-of-the-flower-moon/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/8/0/0/9/398009-killers-of-the-flower-moon-0-600-0-900-crop.jpg?v=49b577149d",
-      "rating": "4.0",
-      "title": "Killers of the Flower Moon",
-      "watched_date": "2026-08-29",
-      "year": "2023"
     }
   ],
   "badmov1eenjoyer": [
@@ -892,6 +908,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/the-banana-splits-movie/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/3/5/7/3/3/535733-the-banana-splits-movie-0-600-0-900-crop.jpg?v=93dfc821bf",
+      "rating": "3.0",
+      "title": "The Banana Splits Movie",
+      "watched_date": "2026-09-07",
+      "year": "2019"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/coyote-vs-acme/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
@@ -978,14 +1002,6 @@
       "rating": "4.0",
       "title": "The End of Oak Street",
       "watched_date": "2026-08-24",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/simon-says-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/6/8/4/0/1606840-simon-says-2026-0-600-0-900-crop.jpg?v=f66fc1d26a",
-      "rating": "1.0",
-      "title": "Simon Says",
-      "watched_date": "2026-08-21",
       "year": "2026"
     }
   ],
@@ -1615,6 +1631,14 @@
   ],
   "jon_knowledge": [
     {
+      "link": "https://letterboxd.com/jon_knowledge/film/king-of-new-york/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/0/4/2/47042-king-of-new-york-0-600-0-900-crop.jpg?v=ef72bff72d",
+      "rating": "4.0",
+      "title": "King of New York",
+      "watched_date": "2026-09-06",
+      "year": "1990"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/they-live/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/7/9/8/47798-they-live-0-600-0-900-crop.jpg?v=816bf826a0",
       "rating": "4.0",
@@ -1705,15 +1729,6 @@
       "title": "Stakeout",
       "watched_date": "2026-08-17",
       "year": "1987"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/crime-101/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/5/8/1/3/2/1058132-crime-101-0-600-0-900-crop.jpg?v=eaba4b3224",
-      "rating": "4.5",
-      "rewatch": true,
-      "title": "Crime 101",
-      "watched_date": "2026-08-09",
-      "year": "2026"
     }
   ],
   "michaellamb": [

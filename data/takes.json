@@ -1,5 +1,25 @@
 [
   {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/they-live/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/7/9/8/47798-they-live-0-600-0-900-crop.jpg?v=816bf826a0",
+    "rating": "4.0",
+    "review": "Youre either gonna put on these glasses. Or youre gonna start eating that trashcan\" \"Not this year\" I love how this implies that Keith David has eaten trashcans in the past",
+    "title": "They Live",
+    "watched_date": "2026-09-06",
+    "year": "1988"
+  },
+  {
+    "handle": "jon_knowledge",
+    "link": "https://letterboxd.com/jon_knowledge/film/watching-the-detectives/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/0/7/6/38076-watching-the-detectives-0-600-0-900-crop.jpg?v=74ccaf00e3",
+    "rating": "4.0",
+    "review": "Perfect movie to watch after getting dumped over text \ud83d\udc4c Softball scene is so perfect",
+    "title": "Watching the Detectives",
+    "watched_date": "2026-09-06",
+    "year": "2007"
+  },
+  {
     "handle": "bearleebooks",
     "liked": true,
     "link": "https://letterboxd.com/bearleebooks/film/coyote-vs-acme/",
@@ -146,26 +166,6 @@
     "title": "Texas Chainsaw 3D",
     "watched_date": "2026-09-02",
     "year": "2013"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/buddy-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
-    "rating": "4.5",
-    "review": "Best comedy of the year",
-    "title": "Buddy",
-    "watched_date": "2026-09-01",
-    "year": "2026"
-  },
-  {
-    "handle": "jon_knowledge",
-    "link": "https://letterboxd.com/jon_knowledge/film/coyote-vs-acme/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
-    "rating": "5.0",
-    "review": "Im so glad I taw this movie And Robert Pattinson was so great as Wiley Coyote",
-    "title": "Coyote vs. Acme",
-    "watched_date": "2026-09-01",
-    "year": "2026"
   },
   {
     "handle": "badmov1eenjoyer",

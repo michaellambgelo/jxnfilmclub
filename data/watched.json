@@ -701,6 +701,24 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/capote/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/9/2/51692-capote-0-600-0-900-crop.jpg?v=0a8eb7477b",
+      "rating": "3.5",
+      "title": "Capote",
+      "watched_date": "2025-12-01",
+      "year": "2005"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/misery/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/8/4/6/50846-misery-0-600-0-900-crop.jpg?v=f079fc8138",
+      "rating": "4.5",
+      "title": "Misery",
+      "watched_date": "2026-09-08",
+      "year": "1990"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/thelma-louise/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/wt/r4/hc/iz/pnzuLoE52EiTfjfqRex2uTkH7LB-0-600-0-900-crop.jpg?v=5c24b21874",
       "rating": "4.0",
@@ -788,24 +806,6 @@
       "title": "American Fiction",
       "watched_date": "2025-01-01",
       "year": "2023"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/george-washington/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/54/8r/p6/60/9O4sWlRu98fM6B3Yl8Kf4OqBlw0-0-600-0-900-crop.jpg?v=d0bbc4dc13",
-      "rating": "5.0",
-      "title": "George Washington",
-      "watched_date": "2026-08-31",
-      "year": "2000"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/drive-2011/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/6d/6l/r3/e9/nu7XIa67cXc2t7frXCE5voXUJcN.jpg-0-600-0-900-crop.jpg?v=58a476ae28",
-      "rating": "4.0",
-      "title": "Drive",
-      "watched_date": "2026-08-31",
-      "year": "2011"
     }
   ],
   "badmov1eenjoyer": [
@@ -916,6 +916,15 @@
   "bearleebooks": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/walle/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/9/9/4/45994-walle-0-600-0-900-crop.jpg?v=ad27f0ceac",
+      "rating": "4.0",
+      "title": "WALL\u00b7E",
+      "watched_date": "2026-09-09",
+      "year": "2008"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/confessions/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/65/d4/n3/eq/confessions-0-600-0-900-crop.jpg?v=0e93a578c8",
       "rating": "5.0",
@@ -1002,15 +1011,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
       "rating": "4.5",
       "title": "Buddy",
-      "watched_date": "2026-08-30",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/teenage-sex-and-death-at-camp-miasma/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
-      "rating": "5.0",
-      "title": "Teenage Sex and Death at Camp Miasma",
       "watched_date": "2026-08-30",
       "year": "2026"
     }

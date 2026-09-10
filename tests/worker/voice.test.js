@@ -798,7 +798,14 @@ describe('free-form messages', () => {
     await clearMsgThrottle('msg4@example.com')
     const res = await postMessage(token, { subject: 'One too many' })
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toMatch(/up to 5 messages/)
+    const capError = (await res.json()).error
+    expect(capError).toMatch(/up to 5 messages/)
+    // The copy must not promise an immediate resend. The message throttle is
+    // still live from the submit that hit the cap, so a member who does exactly
+    // what an unqualified "delete one and send another" tells them gets a 429
+    // saying they have just submitted. The SPA overrides this string, but an
+    // API consumer reads it as written.
+    expect(capError).toMatch(/short wait/)
     expect(await listVoiceRows()).toHaveLength(5)
 
     // Deleting one frees a slot — the cap counts live rows, not lifetime sends.

@@ -308,6 +308,23 @@ test.describe('speak: free-form messages', () => {
     await expect(page.locator('.hrow')).toContainText('Kept my take across the switch')
   })
 
+  // The worker deliberately allows newlines in a note and the admin portal
+  // renders them, so the member's own history has to as well — otherwise they
+  // cannot see the shape of what the hosts will read.
+  test('a note keeps its line breaks in the history row', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'A message with a shaped note', 'One\nTwo\nThree\nFour')
+
+    const note = page.locator('.hrow-note').first()
+    await expect(note).toBeVisible()
+    await expect(note).toHaveCSS('white-space', 'pre-wrap')
+    // Four lines, not one: the collapsed version rendered at a single
+    // line-height regardless of how many the member typed.
+    const height = await note.evaluate(el => el.getBoundingClientRect().height)
+    expect(height).toBeGreaterThan(60)
+  })
+
   // A parent update() re-evaluates speak-recorder's script and wipes the
   // module-scope blob holding an unsubmitted take. Delete and Replace both
   // cause one, and both sit directly below the recorder — which in message

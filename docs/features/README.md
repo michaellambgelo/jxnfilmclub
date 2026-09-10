@@ -14,6 +14,7 @@ Detailed documentation of every user-facing feature in jxnfilm.club, including M
 | [Hosting](hosting.md) | Member-hosted house screenings + theater meetups with RSVP/waitlist |
 | [Members Directory](members-directory.md) | Public member listing with search and sort |
 | [Last Four Watched](watched.md) | Per-member film poster gallery from Letterboxd RSS |
+| [Voice / Speak](voice.md) | Podcast submissions: answer the round, or send the club a message you titled yourself |
 | [Home Page](home.md) | Landing page with podcast embed and episode list |
 | [Deployment](deployment.md) | CI/CD for the static site and Cloudflare Worker |
 | [Navigation](navigation.md) | SPA routing, auth state, session management |

@@ -1528,7 +1528,7 @@
         <div class="speak-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="speak-band-details">
           <div class="drow"><span class="dt">Length</span><span class="dd">3 min or less</span></div>
-          <div class="drow"><span class="dt">{ isMessage() ? 'Goes to' : 'Cutoff' }</span><span class="dd speak-deadline { !isMessage() && isClosed() ? '-closed' : '' }">{ isMessage() ? 'The hosts' : ((isClosed() ? 'Closed · ' : '') + (deadlineLabel || (prompt && prompt.deadline) || '—')) }</span></div>
+          <div class="drow"><span class="dt speak-cutoff-dt">{ isMessage() ? 'Goes to' : 'Cutoff' }</span><span class="dd speak-deadline { !isMessage() && isClosed() ? '-closed' : '' }">{ isMessage() ? 'The hosts' : cutoffLabel() }</span></div>
           <div class="drow"><span class="dt">Status</span><span class="dd speak-status-dd">{ railStatus() }</span></div>
         </div>
       </div>
@@ -1608,6 +1608,16 @@
     // repaints the rail imperatively — the child must NEVER trigger a
     // parent update(): every parent update re-evaluates the child script,
     // wiping its module scope and with it any unsubmitted take.
+    // Published for speak-compose's imperative repaint, which cannot call a
+    // parent method after a mode switch without triggering a parent update().
+    this.cutoffLabel = function() {
+      const closed = this.isClosed()
+      globalThis.jxnfcSpeakClosed = closed
+      const label = (closed ? 'Closed · ' : '') + (this.deadlineLabel || (this.prompt && this.prompt.deadline) || '—')
+      globalThis.jxnfcSpeakCutoff = label
+      return label
+    }
+
     this.railStatus = function() {
       let base = '—'
       // In message mode the rail describes the message being composed, not
@@ -1667,6 +1677,8 @@
       // and needs the round text to put back when the member switches away
       // from a message.
       globalThis.jxnfcSpeakPromptText = DEFAULT_PROMPT.text
+      globalThis.jxnfcSpeakCutoff = '—'
+      globalThis.jxnfcSpeakClosed = false
       // User-action-only bridges for the history rows (a bridge fired from
       // a child's mounted would remount-recurse; these fire on clicks only).
       globalThis.jxnfcSpeakStartReplace = function() { self.update({ replacing: true, err: '' }) }
@@ -2029,6 +2041,16 @@
       if (lm) lm.hidden = !message
       const rail = el('.speak-status-dd')
       if (rail && !globalThis.jxnfcSpeakStagedNow) rail.textContent = message ? 'New message' : (globalThis.jxnfcSpeakBase || '—')
+      // The cutoff belongs to the round. A message has none, and showing one
+      // beside it would read as a deadline the member does not actually have.
+      const cutT = el('.speak-cutoff-dt')
+      if (cutT) cutT.textContent = message ? 'Goes to' : 'Cutoff'
+      const cutV = el('.speak-deadline')
+      if (cutV) cutV.textContent = message ? 'The hosts' : (globalThis.jxnfcSpeakCutoff || '—')
+      if (cutV) cutV.classList.toggle('-closed', !message && !!globalThis.jxnfcSpeakClosed)
+      // The round's late-cutoff caution is equally irrelevant to a message.
+      const closed = el('.speak-band-closed')
+      if (closed) closed.hidden = message || !globalThis.jxnfcSpeakClosed
       // A member who already answered the round has the recorder hidden;
       // switching to a message has to bring it back.
       const wrap = el('.speak-rec-wrap')

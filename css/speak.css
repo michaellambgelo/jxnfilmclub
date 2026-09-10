@@ -538,6 +538,15 @@
 
 /* Two modes, one page. The chooser is a pair of segmented buttons rather than
    a radio group: it is a navigation between two composers, not a field. */
+/* An author display rule outranks the UA [hidden] default, so anything given
+   one here has to re-assert it or :hidden silently stops working. This has
+   bitten .policy-toast, .feedback-widget and the cards grid already. */
+.speak .speak-mode[hidden],
+.speak .speak-subject[hidden],
+.speak .speak-band-reassure[hidden] {
+  display: none;
+}
+
 .speak .speak-mode {
   display: flex;
   gap: 0;
@@ -575,7 +584,7 @@
 }
 
 .speak .speak-mode-hint {
-  margin: calc(var(--space-4) * -1) 0 var(--space-6);
+  margin: 0 0 var(--space-6);
 }
 
 .speak .speak-subject {
@@ -592,7 +601,7 @@
 }
 
 .speak .speak-subject .hint {
-  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+  margin: 0 0 var(--space-4);
 }
 
 .speak .speak-subject .hint:last-child {
@@ -622,4 +631,19 @@
   line-height: var(--lh-body);
   color: var(--ink-3);
   margin: 0 0 var(--space-2);
+}
+
+/* Inline links in the band and the flow inherit the browser default blue
+   otherwise, which is the one colour this palette does not contain. */
+.speak .speak-band-reassure a,
+.speak .lede a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.speak .speak-band-reassure a:hover,
+.speak .lede a:hover {
+  color: var(--ink-strong);
 }

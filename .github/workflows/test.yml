@@ -42,8 +42,13 @@ jobs:
         working-directory: worker
         run: npm ci
 
+      # Firefox as well as Chromium: the firefox-dist project runs a boot smoke
+      # against a built site, and it exists because a chromium-only suite could
+      # not see the whole site rendering blank in Firefox. Installing only
+      # chromium here would make that project fail on a missing executable —
+      # the exact gap it was added to close.
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       # Tee'd because the failures worth diagnosing are the ones where the
       # local Worker DIES mid-run: Playwright aborts before writing its HTML

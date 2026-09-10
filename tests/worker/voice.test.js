@@ -53,13 +53,31 @@ const WEBM_BYTES = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4])
 
 // Pass `consent: null` to omit the header entirely (undefined would just
 // re-trigger the destructuring default).
-function postVoice(token, { bytes = WEBM_BYTES, type = 'audio/webm', consent = 'yes', duration } = {}) {
+function postVoice(token, { bytes = WEBM_BYTES, type = 'audio/webm', consent = 'yes', duration, kind, subject, note, promptId } = {}) {
   const headers = {}
   if (token) headers.Authorization = `Bearer ${token}`
   if (type != null) headers['Content-Type'] = type
   if (consent != null) headers['X-Voice-Consent'] = consent
   if (duration !== undefined) headers['X-Voice-Duration'] = String(duration)
-  return SELF.fetch('https://join.jxnfilm.club/voice', { method: 'POST', headers, body: bytes })
+  // Free-form-message metadata rides in query params, never headers: fetch()
+  // throws on a non-Latin1 header value, so a subject with a curly apostrophe
+  // would fail in the browser before the request left.
+  const qs = new URLSearchParams()
+  if (kind !== undefined) qs.set('kind', kind)
+  if (subject !== undefined) qs.set('subject', subject)
+  if (note !== undefined) qs.set('note', note)
+  if (promptId !== undefined) qs.set('promptId', promptId)
+  const url = 'https://join.jxnfilm.club/voice' + (qs.toString() ? `?${qs}` : '')
+  return SELF.fetch(url, { method: 'POST', headers, body: bytes })
+}
+
+// A message: same call, with the mode and a subject.
+function postMessage(token, opts = {}) {
+  return postVoice(token, { kind: 'message', subject: 'The ending of Nope', ...opts })
+}
+
+function clearMsgThrottle(email) {
+  return env.MEMBERS_KV.delete(`rate:voice_msg:${email}`)
 }
 
 // The single-cell submit throttle is per email; clear it so multi-post tests
@@ -674,5 +692,275 @@ describe('mark reviewed without rewriting', () => {
   it('needs the admin token like everything else here', async () => {
     const { member } = await getTokenFor('mark-auth@example.com')
     expect((await mark(`voice:general:${member.id}`, null)).status).toBe(401)
+  })
+})
+
+
+// --- Free-form messages ------------------------------------------------------
+//
+// A message is a round of one: the member writes the subject, the server mints
+// a promptId in the reserved msg_ namespace, and the row is an ordinary voice
+// row. These tests pin the two things that make that safe — the reserved
+// namespace really is unreachable, and a stray subject can never be mistaken
+// for an answer to the current round.
+
+describe('free-form messages', () => {
+  it('mints a reserved msg_ id, stores the subject as promptText, and marks the kind', async () => {
+    const { token, member } = await getTokenFor('msg1@example.com')
+    const res = await postMessage(token, { subject: 'The ending of Nope, explained', note: 'about 2 min', duration: 90 })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.kind).toBe('message')
+    expect(body.note).toBe('about 2 min')
+    expect(body.promptText).toBe('The ending of Nope, explained')
+    expect(body.status).toBe('pending')
+    // Storage internals stay out of the member projection.
+    expect(body.r2Key).toBeUndefined()
+    expect(body.memberId).toBeUndefined()
+
+    const rows = await listVoiceRows()
+    expect(rows).toHaveLength(1)
+    const { key, value } = rows[0]
+    expect(key.name).toMatch(/^voice:msg_[a-z0-9]{8,24}:id-msg1@example[.]com$/)
+    // memberId stays the LAST key segment, which is what /voice/history's
+    // endsWith filter and the TUI's key parser both depend on.
+    expect(key.name.endsWith(':' + member.id)).toBe(true)
+    expect(value.kind).toBe('message')
+    expect(value.note).toBe('about 2 min')
+    expect(value.promptText).toBe('The ending of Nope, explained')
+    expect(value.r2Key).toBe('voice/' + value.promptId + '/' + member.id + '.webm')
+    // Retention is identical to a round clip — the privacy promise makes no
+    // distinction, so neither may the code.
+    const now = Math.floor(Date.now() / 1000)
+    expect(Math.abs(value.expiresAt - (now + SIXTY_DAYS))).toBeLessThan(120)
+    expect(Math.abs(key.expiration - (now + SIXTY_DAYS))).toBeLessThan(120)
+
+    expect(await env.VOICE.head(value.r2Key)).not.toBeNull()
+  })
+
+  it('a subject without kind=message is refused, and the round clip is untouched', async () => {
+    // The dangerous default: without this guard the request falls into the
+    // round branch and the replace path overwrites the member's answer to the
+    // current round, deleting its audio.
+    const { token, member } = await getTokenFor('msg2@example.com')
+    await postVoice(token, { duration: 30 })
+    const before = JSON.parse(await env.MEMBERS_KV.get('voice:general:' + member.id))
+    await clearThrottle('msg2@example.com')
+
+    const res = await postVoice(token, { subject: 'oops' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/kind=message/)
+
+    const after = JSON.parse(await env.MEMBERS_KV.get('voice:general:' + member.id))
+    expect(after).toEqual(before)
+    expect(await env.VOICE.head(before.r2Key)).not.toBeNull()
+    expect(await listVoiceRows()).toHaveLength(1)
+  })
+
+  it('one member holds many messages, and each is independently addressable', async () => {
+    const { token, member } = await getTokenFor('msg3@example.com')
+    const ids = []
+    for (let i = 0; i < 3; i++) {
+      await clearMsgThrottle('msg3@example.com')
+      const res = await postMessage(token, { subject: 'Message number ' + i })
+      expect(res.status).toBe(200)
+      ids.push((await res.json()).promptId)
+    }
+    expect(new Set(ids).size).toBe(3)
+    expect(await listVoiceRows()).toHaveLength(3)
+
+    // /voice/audio and DELETE /voice both take ?promptId= and both accept a
+    // minted id — the ownership check stays structural (key built from claims).
+    const audio = await SELF.fetch('https://join.jxnfilm.club/voice/audio?promptId=' + ids[1], {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    expect(audio.status).toBe(200)
+    expect(audio.headers.get('Content-Type')).toBe('audio/webm')
+    // Drain the body: an unread R2 stream outlives the test and the pool's
+    // isolated-storage teardown then cannot pop the R2 frame.
+    expect(new Uint8Array(await audio.arrayBuffer())).toEqual(WEBM_BYTES)
+
+    const del = await SELF.fetch('https://join.jxnfilm.club/voice?promptId=' + ids[1], {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+    })
+    expect(del.status).toBe(200)
+    expect(await env.MEMBERS_KV.get('voice:' + ids[1] + ':' + member.id)).toBeNull()
+    // Deleting one leaves the others alone.
+    expect(await listVoiceRows()).toHaveLength(2)
+  })
+
+  it('caps live messages and says how to make room', async () => {
+    const { token } = await getTokenFor('msg4@example.com')
+    for (let i = 0; i < 5; i++) {
+      await clearMsgThrottle('msg4@example.com')
+      expect((await postMessage(token, { subject: 'Filling slot ' + i })).status).toBe(200)
+    }
+    await clearMsgThrottle('msg4@example.com')
+    const res = await postMessage(token, { subject: 'One too many' })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/up to 5 messages/)
+    expect(await listVoiceRows()).toHaveLength(5)
+
+    // Deleting one frees a slot — the cap counts live rows, not lifetime sends.
+    const rows = await listVoiceRows()
+    await env.MEMBERS_KV.delete(rows[0].key.name)
+    await clearMsgThrottle('msg4@example.com')
+    expect((await postMessage(token, { subject: 'Room again now' })).status).toBe(200)
+  })
+
+  it('replacing a message reuses its id and does not consume a new slot', async () => {
+    const { token, member } = await getTokenFor('msg5@example.com')
+    const first = await (await postMessage(token, { subject: 'First take' })).json()
+    await clearMsgThrottle('msg5@example.com')
+    const again = await postMessage(token, { subject: 'Second take', promptId: first.promptId })
+    expect(again.status).toBe(200)
+    expect((await again.json()).promptId).toBe(first.promptId)
+    expect(await listVoiceRows()).toHaveLength(1)
+    const row = JSON.parse(await env.MEMBERS_KV.get('voice:' + first.promptId + ':' + member.id))
+    expect(row.promptText).toBe('Second take')
+  })
+
+  it('rejects a promptId outside the message namespace on a replace', async () => {
+    const { token } = await getTokenFor('msg6@example.com')
+    const res = await postMessage(token, { promptId: 'general' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/invalid promptId/)
+  })
+
+  it('validates the subject: required, bounded, and no control characters', async () => {
+    const { token } = await getTokenFor('msg7@example.com')
+    const cases = [
+      [{ subject: '' }, /required/],
+      [{ subject: 'no' }, /at least 3/],
+      [{ subject: 'x'.repeat(81) }, /80 characters or fewer/],
+      [{ subject: 'a line' + String.fromCharCode(10) + 'break' }, /control characters/],
+      [{ subject: 'a bell' + String.fromCharCode(7) + 'here' }, /control characters/],
+    ]
+    for (const [opts, expected] of cases) {
+      await clearMsgThrottle('msg7@example.com')
+      const res = await postMessage(token, opts)
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(expected)
+    }
+    expect(await listVoiceRows()).toHaveLength(0)
+  })
+
+  it('keeps unicode intact — the reason metadata is not in a header', async () => {
+    const { token } = await getTokenFor('msg8@example.com')
+    const subject = 'Almodóvar — “Volver”, revisited'
+    const res = await postMessage(token, { subject })
+    expect(res.status).toBe(200)
+    expect((await res.json()).promptText).toBe(subject)
+  })
+
+  it('bounds the note and keeps its line breaks', async () => {
+    const { token } = await getTokenFor('msg9@example.com')
+    const note = 'line one' + String.fromCharCode(10) + 'line two'
+    const res = await postMessage(token, { note })
+    expect(res.status).toBe(200)
+    expect((await res.json()).note).toBe(note)
+
+    await clearMsgThrottle('msg9@example.com')
+    const tooLong = await postMessage(token, { note: 'x'.repeat(501) })
+    expect(tooLong.status).toBe(400)
+    expect((await tooLong.json()).error).toMatch(/500 characters or fewer/)
+  })
+
+  it('throttles messages on their own cell, so sending one never blocks the round', async () => {
+    const { token } = await getTokenFor('msg10@example.com')
+    expect((await postMessage(token)).status).toBe(200)
+    // Second message, same window: throttled.
+    expect((await postMessage(token, { subject: 'Right behind it' })).status).toBe(429)
+    // …but answering the round still works — a different cell entirely.
+    expect((await postVoice(token, { duration: 12 })).status).toBe(200)
+  })
+
+  it('history mixes rounds and messages, with the current round still pinned first', async () => {
+    const { token } = await getTokenFor('msg11@example.com')
+    await postMessage(token, { subject: 'A message first' })
+    await clearThrottle('msg11@example.com')
+    await postVoice(token, { duration: 20 })
+
+    const res = await SELF.fetch('https://join.jxnfilm.club/voice/history', {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    const { currentPromptId, clips } = await res.json()
+    expect(currentPromptId).toBe('general')
+    expect(clips).toHaveLength(2)
+    expect(clips[0].promptId).toBe('general')
+    expect(clips[0].kind).toBeUndefined()
+    expect(clips[1].kind).toBe('message')
+  })
+
+  it('messages never leak into /voice/mine — that endpoint is the round', async () => {
+    const { token } = await getTokenFor('msg12@example.com')
+    await postMessage(token)
+    const res = await SELF.fetch('https://join.jxnfilm.club/voice/mine', {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    const body = await res.json()
+    expect(body.prompt.id).toBe('general')
+    expect(body.clip).toBeNull()
+  })
+
+  it('account deletion purges messages, their audio, and their transcripts', async () => {
+    const { token, member } = await getTokenFor('msg13@example.com')
+    const msg = await (await postMessage(token)).json()
+    await clearThrottle('msg13@example.com')
+    await postVoice(token, { duration: 15 })
+
+    // Give the message a reviewed transcript, the way an operator would.
+    const key = 'voice:' + msg.promptId + ':' + member.id
+    const srtBody = '1' + String.fromCharCode(10) + '00:00:00,000 --> 00:00:02,000' + String.fromCharCode(10) + 'hello' + String.fromCharCode(10)
+    const srt = await SELF.fetch('https://join.jxnfilm.club/admin/voice/transcript', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + ADMIN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, srt: srtBody }),
+    })
+    expect(srt.status).toBe(200)
+    const srtKey = 'voice/' + msg.promptId + '/' + member.id + '.srt'
+    expect(await env.VOICE.head(srtKey)).not.toBeNull()
+
+    mockFetch(async () => new Response('', { status: 200 }))
+    const del = await req('/member/delete', { method: 'POST', token })
+    expect(del.status).toBe(200)
+
+    expect(await listVoiceRows()).toHaveLength(0)
+    expect(await env.VOICE.head('voice/' + msg.promptId + '/' + member.id + '.webm')).toBeNull()
+    // The transcript is the member's words verbatim. The policy says deletion
+    // is immediate and complete, and the .srt key is derived rather than
+    // stored — so every delete path has to re-derive it.
+    expect(await env.VOICE.head(srtKey)).toBeNull()
+  })
+})
+
+describe('the msg_ namespace is reserved', () => {
+  it('a msg_ id in config:voice_prompt falls back to the default round', async () => {
+    // The admin form cannot produce one, but admin/server.mjs's raw PUT and the
+    // E2E KV shim both write arbitrary keys. A round aimed at the message
+    // keyspace would collide with members' own rows.
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'msg_deadbeef01', text: 'Sneaky' }))
+    const { token, member } = await getTokenFor('reserved@example.com')
+    const res = await postVoice(token)
+    expect(res.status).toBe(200)
+    expect((await res.json()).promptId).toBe('general')
+    expect(await env.MEMBERS_KV.get('voice:general:' + member.id)).not.toBeNull()
+
+    const mine = await SELF.fetch('https://join.jxnfilm.club/voice/mine', {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    expect((await mine.json()).prompt.id).toBe('general')
+  })
+
+  it('GET /config never hands the SPA a reserved id either', async () => {
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'msg_deadbeef01', text: 'Sneaky' }))
+    const res = await SELF.fetch('https://join.jxnfilm.club/config')
+    expect((await res.json()).voice_prompt).toBeNull()
+  })
+
+  it('a normal configured round is still served untouched', async () => {
+    await env.MEMBERS_KV.put('config:voice_prompt', JSON.stringify({ id: 'spring-rewatch', text: 'What did you rewatch?' }))
+    const res = await SELF.fetch('https://join.jxnfilm.club/config')
+    expect((await res.json()).voice_prompt).toEqual({ id: 'spring-rewatch', text: 'What did you rewatch?' })
   })
 })

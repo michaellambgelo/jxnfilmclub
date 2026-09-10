@@ -35,6 +35,16 @@ const VOICE_MAX_BYTES = 8 * 1024 * 1024
 const VOICE_THROTTLE = 60
 const VOICE_STATUSES = ['approved', 'rejected']
 
+// Free-form messages: a member records a clip under a subject THEY wrote,
+// rather than answering the round. Stored as an ordinary voice row under a
+// server-minted promptId in a reserved namespace, so a message is simply a
+// round of one and every promptId-keyed handler, script and TUI view keeps
+// working unchanged. See mintMessageId / isMessageId below.
+const VOICE_MESSAGE_CAP = 5
+const VOICE_MSG_THROTTLE = 60
+const VOICE_SUBJECT_MAX = 80
+const VOICE_NOTE_MAX = 500
+
 // Screening dates are calendar days in the club's home timezone (Jackson, MS).
 // Gating "today" off UTC instead would roll over 5-6 hours early each evening
 // Central time, blocking same-day event creation and cancelling/scrubbing
@@ -881,6 +891,12 @@ async function stripFeedbackIdentity(env, memberId) {
 // else the standing default. The deadline is display-only metadata.
 async function voicePrompt(env) {
   const v = await readConfig(env, 'voice_prompt')
+  // A msg_ id in config reads as malformed and falls through to the default.
+  // The admin form cannot produce one (sanitizeVoicePrompt's slugifier emits
+  // no underscore), but admin/server.mjs's raw PUT /api/kv and the E2E
+  // /__test/kv shim both write arbitrary keys and bypass it — and a round
+  // aimed at the message keyspace would collide with members' own rows.
+  if (v && isMessageId(v.id)) return { id: 'general', text: "Tell us what you're watching" }
   if (v && typeof v.id === 'string' && v.id && typeof v.text === 'string' && v.text) {
     const out = { id: v.id, text: v.text }
     if (typeof v.deadline === 'string' && v.deadline) out.deadline = v.deadline
@@ -942,7 +958,76 @@ function voiceClipProjection(row, published) {
     status: row.status,
   }
   if (row.duration != null) out.duration = row.duration
+  // Free-form messages. `kind` lets the UI say "your message" instead of
+  // quoting the member's own subject back at them as though the club had
+  // asked it; `note` is theirs and they should be able to see it. A round
+  // clip carries neither, so its projection stays byte-identical.
+  if (row.kind === 'message') {
+    out.kind = 'message'
+    if (row.note) out.note = row.note
+  }
   return out
+}
+
+// Member-authored text for a free-form message. It travels: KV row (JSON,
+// inert) -> admin portal (escapeHtml) -> audiogram frame (instantiateTemplate
+// HTML-escapes {{TITLE}}) -> the SPA (dhtml interpolation escapes) -> the TUI
+// (Textual markup, escaped at the widget). What it must NEVER reach is a
+// filesystem or R2 path, and it does not: those are built from the minted
+// promptId and the memberId only. That is the whole reason the subject is not
+// slugified into the id.
+//
+// Control characters are rejected rather than stripped — a subject carrying
+// one is a client bug or an attempt, and silently rewriting someone's words
+// is worse than refusing them. Returns { value } or { error }.
+function cleanVoiceText(raw, { max, required, label }) {
+  if (raw == null || raw === '') {
+    if (required) return { error: label + ' is required' }
+    return { value: '' }
+  }
+  const str = String(raw)
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i)
+    // Newlines are allowed in a note, never in a subject (it is a headline).
+    if (c === 10 && max === VOICE_NOTE_MAX) continue
+    if (c < 32 || c === 127) return { error: label + ' cannot contain control characters' }
+  }
+  const value = str.replace(/[ \t]+/g, ' ').trim()
+  if (required && value.length < 3) return { error: label + ' must be at least 3 characters' }
+  if (value.length > max) return { error: label + ' must be ' + max + ' characters or fewer' }
+  return { value }
+}
+
+// How many live messages this member already has. A list+get+parse scan over
+// the narrowed voice:msg_ prefix, NOT a keys-only count: a keys-only count
+// includes rows belonging to everyone else, and cannot tell a just-deleted
+// row from a live one.
+//
+// This is a SOFT bound and the copy says so ("up to five"). KV list is
+// eventually consistent — a just-put row may not be list-visible yet (see the
+// same caveat on the newsletter scan) — so two genuinely concurrent submits
+// can both pass a check at four. The rate:voice_msg throttle is what makes
+// that require concurrency rather than a loop, and the worst case is cap+1.
+// A per-member index would tighten it and reintroduce the members:all
+// read-modify-write clobber race; not worth it for a storage bound.
+async function countLiveMessages(env, memberId) {
+  const suffix = `:${memberId}`
+  let count = 0
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'voice:msg_', cursor })
+    for (const k of page.keys) {
+      if (!k.name.endsWith(suffix)) continue
+      const raw = await env.MEMBERS_KV.get(k.name)
+      if (!raw) continue
+      try {
+        const row = JSON.parse(raw)
+        if (row.memberId === memberId) count++
+      } catch { /* corrupt row does not hold a slot */ }
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+  return count
 }
 
 // POST /voice — authenticated. Raw body = audio bytes; metadata rides in
@@ -976,7 +1061,58 @@ async function handleVoiceSubmit(request, env) {
   }
   if (!bytes.byteLength) return json(env, { error: 'empty audio' }, 400)
 
-  const prompt = await voicePrompt(env)
+  // Mode. Metadata rides in QUERY PARAMS, not headers: fetch() throws a
+  // TypeError on a header value containing non-Latin1 characters, so the first
+  // member to type a curly apostrophe or an accented title would fail in the
+  // browser before the request left. Query params are percent-encoded and
+  // unicode-safe, which is also why Access-Control-Allow-Headers is unchanged.
+  const params = new URL(request.url).searchParams
+  const kind = params.get('kind') || 'prompt'
+  const rawSubject = params.get('subject')
+  const rawNote = params.get('note')
+
+  if (kind !== 'prompt' && kind !== 'message') {
+    return json(env, { error: 'unknown kind' }, 400)
+  }
+  // Refuse subject/note without an explicit kind=message rather than ignoring
+  // them. Falling through to the round branch here would run the replace path
+  // below and silently OVERWRITE the member's answer to the current round,
+  // deleting its audio — the loudest possible failure for a typo.
+  if (kind !== 'message' && (rawSubject != null || rawNote != null)) {
+    return json(env, { error: 'subject and note require kind=message' }, 400)
+  }
+
+  let prompt
+  let subject = ''
+  let note = ''
+  if (kind === 'message') {
+    const s = cleanVoiceText(rawSubject, { max: VOICE_SUBJECT_MAX, required: true, label: 'subject' })
+    if (s.error) return json(env, { error: s.error }, 400)
+    const n = cleanVoiceText(rawNote, { max: VOICE_NOTE_MAX, required: false, label: 'note' })
+    if (n.error) return json(env, { error: n.error }, 400)
+    subject = s.value
+    note = n.value
+
+    // Replacing a specific message: the caller owns the id or it does not
+    // exist for them, since the key is built from their own claims.
+    const replacing = params.get('promptId')
+    if (replacing != null && !isMessageId(replacing)) {
+      return json(env, { error: 'invalid promptId' }, 400)
+    }
+    if (!replacing && (await countLiveMessages(env, member.id)) >= VOICE_MESSAGE_CAP) {
+      return json(env, {
+        error: `you can have up to ${VOICE_MESSAGE_CAP} messages waiting on us — delete one and you can send another`,
+      }, 409)
+    }
+    // The subject IS promptText. Deliberately one field, not two: the audiogram
+    // headlines clips[0].promptText, and admin/lib.js groupVoiceClips and the
+    // TUI's group_rounds both label a group from it — so the member's own
+    // subject reaches all three with no downstream change and nothing to drift.
+    prompt = { id: replacing || mintMessageId(), text: subject }
+  } else {
+    prompt = await voicePrompt(env)
+  }
+
   const kvKey = `voice:${prompt.id}:${member.id}`
   const r2Key = `voice/${prompt.id}/${member.id}.${ext}`
 
@@ -993,13 +1129,23 @@ async function handleVoiceSubmit(request, env) {
   // slot (same discipline as /feedback) — and only for FIRST submissions:
   // replacing your own clip is bounded by one-clip-per-member-per-prompt, and
   // the Replace button legitimately arrives seconds after the first submit.
-  if (!previous && !(await throttle(env, `rate:voice_submit:${claims.email}`, VOICE_THROTTLE))) {
+  //
+  // Messages get their OWN cell. The exemption above is justified by
+  // one-clip-per-member-per-prompt, which does not bound a mailbox — and
+  // sharing the cell would make answering the round collateral damage of
+  // having just sent a message. It stays BEFORE the R2 put, because with
+  // minted ids a client retry would otherwise land a second stored message.
+  const rateKey = kind === 'message'
+    ? `rate:voice_msg:${claims.email}`
+    : `rate:voice_submit:${claims.email}`
+  const rateTtl = kind === 'message' ? VOICE_MSG_THROTTLE : VOICE_THROTTLE
+  if (!previous && !(await throttle(env, rateKey, rateTtl))) {
     return json(env, { error: 'please wait a moment before submitting again' }, 429)
   }
 
   await env.VOICE.put(r2Key, bytes, { httpMetadata: { contentType } })
   if (previous && previous.r2Key && previous.r2Key !== r2Key) {
-    await env.VOICE.delete(previous.r2Key)
+    await deleteClipObjects(env, previous.r2Key)
   }
 
   const durationHeader = request.headers.get('X-Voice-Duration')
@@ -1020,10 +1166,16 @@ async function handleVoiceSubmit(request, env) {
   }
   if (member.handle) row.handle = member.handle
   if (Number.isFinite(duration) && duration > 0) row.duration = duration
+  if (kind === 'message') {
+    row.kind = 'message'
+    if (note) row.note = note
+  }
   await env.MEMBERS_KV.put(kvKey, JSON.stringify(row), { expirationTtl: VOICE_TTL })
 
-  // Contract: the response IS the safe projection (no wrapper object).
-  return json(env, voiceClipProjection(row))
+  // Contract: the response IS the safe projection (no wrapper object). The
+  // published set is passed so a replace of a clip in an already-aired round
+  // does not report published:false and contradict the history row beside it.
+  return json(env, voiceClipProjection(row, await publishedPrompts(env)))
 }
 
 // GET /voice/mine — authenticated. The current prompt plus the caller's clip
@@ -1054,6 +1206,37 @@ function validPromptId(id) {
   return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id)
 }
 
+// The reserved namespace for free-form messages. The UNDERSCORE is the
+// reservation and it is not decoration: the admin Config form runs every
+// prompt id through sanitizeVoicePrompt (admin/lib.js), whose slugifier is
+// .replace(/[^a-z0-9]+/g, '-') — so an admin-authored id provably cannot
+// contain '_'. A 'msg-' prefix WOULD be reachable ("Msg 4" -> "msg-4").
+// msg_ ids are a strict subset of validPromptId, so that security boundary
+// is neither relaxed nor modified.
+function isMessageId(id) {
+  return typeof id === 'string' && /^msg_[a-z0-9]{8,24}$/.test(id)
+}
+
+// Minted server-side, never supplied by the client: a caller-chosen id would
+// put a fresh caller-controlled value into the voice:{promptId}:{memberId}
+// interpolation, and would let one member address another's key shape.
+function mintMessageId() {
+  const rand = Math.random().toString(36).slice(2, 6).padEnd(4, '0')
+  return 'msg_' + Date.now().toString(36) + rand
+}
+
+// The transcript sidecar sits at the audio's stem (handleAdminVoiceTranscript),
+// and that key is DERIVED, never stored on the row — so every path that
+// deletes a clip has to re-derive it or leave a transcript of the member's
+// words behind. R2 delete on a missing key is a no-op, so this is safe to
+// call unconditionally. Character class, not \., per the dhtml/backslash
+// discipline used repo-wide.
+async function deleteClipObjects(env, r2Key) {
+  if (!r2Key) return
+  await env.VOICE.delete(r2Key)
+  await env.VOICE.delete(r2Key.replace(/[.][^.]+$/, '.srt'))
+}
+
 // DELETE /voice — authenticated. Removes the caller's clip (R2 object + KV
 // row) for ?promptId=, defaulting to the current prompt so existing callers
 // are unchanged. Idempotent — 200 even when nothing existed (R2 delete on a
@@ -1071,7 +1254,7 @@ async function handleVoiceDelete(request, env) {
   if (raw) {
     try {
       const row = JSON.parse(raw)
-      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+      await deleteClipObjects(env, row.r2Key)
     } catch { /* unparseable row still gets deleted below */ }
     await env.MEMBERS_KV.delete(kvKey)
   }
@@ -1312,7 +1495,7 @@ async function handleAdminVoiceDelete(request, env) {
   if (raw) {
     try {
       const row = JSON.parse(raw)
-      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+      await deleteClipObjects(env, row.r2Key)
     } catch { /* unparseable row still gets deleted below */ }
     await env.MEMBERS_KV.delete(body.key)
   }
@@ -1335,7 +1518,7 @@ async function purgeVoiceClips(env, member) {
       let row
       try { row = JSON.parse(raw) } catch { continue }
       if (row.memberId !== member.id) continue
-      if (row.r2Key) await env.VOICE.delete(row.r2Key)
+      await deleteClipObjects(env, row.r2Key)
       await env.MEMBERS_KV.delete(k.name)
     }
     cursor = page.list_complete ? undefined : page.cursor
@@ -2606,8 +2789,12 @@ async function handleConfigGet(env) {
     readConfig(env, 'voice_prompt'),
   ])
   // voice_prompt is deliberately raw (parsed KV value or null): the SPA
-  // applies the same default voicePrompt() falls back to.
-  return json(env, { theaters: validTheaterList(theaters), podcast, copy, voice_prompt })
+  // applies the same default voicePrompt() falls back to. The one thing it is
+  // NOT allowed to carry is a reserved message id — the SPA would render it as
+  // the round and submit answers into the message keyspace. Same guard as
+  // voicePrompt(), so the two can never disagree about what the round is.
+  const prompt = voice_prompt && isMessageId(voice_prompt.id) ? null : voice_prompt
+  return json(env, { theaters: validTheaterList(theaters), podcast, copy, voice_prompt: prompt })
 }
 
 // Venue allowlist for theater meetups (kind: 'meetup'). Precedence: the KV

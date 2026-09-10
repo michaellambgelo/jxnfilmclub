@@ -1,5 +1,15 @@
 [
   {
+    "handle": "michaellamb",
+    "link": "https://letterboxd.com/michaellamb/film/world-trade-center/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/7/4/7/50747-world-trade-center-0-600-0-900-crop.jpg?v=6016d7d5ac",
+    "rating": "1.5",
+    "review": "Michael Shannon's character exists to perpetuate myths that support Christian Nationalism I said what I said",
+    "title": "World Trade Center",
+    "watched_date": "2026-09-09",
+    "year": "2006"
+  },
+  {
     "handle": "bearleebooks",
     "liked": true,
     "link": "https://letterboxd.com/bearleebooks/film/walle/",
@@ -9,6 +19,17 @@
     "title": "WALL\u00b7E",
     "watched_date": "2026-09-09",
     "year": "2008"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/angels-egg/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/9/9/0/41990-angel-s-egg-0-600-0-900-crop.jpg?v=98f9bf2def",
+    "rating": "4.5",
+    "review": "I loved the color palette",
+    "title": "Angel's Egg",
+    "watched_date": "2026-09-09",
+    "year": "1985"
   },
   {
     "handle": "michaellamb",
@@ -53,17 +74,6 @@
     "title": "Dragonheart: Vengeance",
     "watched_date": "2026-09-07",
     "year": "2020"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/dragonheart-battle-for-the-heartfire/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/3/7/8/3/383783-dragonheart-battle-for-the-heartfire-0-600-0-900-crop.jpg?v=411c3e097d",
-    "rating": "3.0",
-    "review": "How refreshing to finally have a good story with a decent production value! I loved the castle and I cried right at the end. This was edited by Chuck Norris! But maybe not the Chuck Norris you think of first? It's hard to tell based on IMDb, but the action was great!",
-    "title": "Dragonheart: Battle for the Heartfire",
-    "watched_date": "2026-09-07",
-    "year": "2017"
   },
   {
     "handle": "jon_knowledge",
@@ -155,17 +165,6 @@
     "title": "17 Again",
     "watched_date": "2026-09-06",
     "year": "2009"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/do-the-right-thing/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/zm/fz/vn/ie/obNQLtdeJy3IiKnExWoWBJH8V67-0-600-0-900-crop.jpg?v=b4926532f8",
-    "rating": "5.0",
-    "review": "News paper at the beginning said record high of 98 degrees Man they can\u2019t even imagine what\u2019s coming",
-    "title": "Do the Right Thing",
-    "watched_date": "2026-09-05",
-    "year": "1989"
   },
   {
     "handle": "calissippi",

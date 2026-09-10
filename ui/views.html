@@ -50,6 +50,21 @@
     }, true)
   }
 
+  // SPEAK_LOSE guards a staged take against NAVIGATION. Nothing guarded it
+  // against the destructive buttons sitting right below the recorder: Delete
+  // and Replace both cause a parent update(), which re-evaluates
+  // speak-recorder's script and wipes the module-scope blob. Message mode made
+  // this far easier to reach, because there the recorder stays visible even
+  // after the round is answered, with Delete directly beneath it.
+  //
+  // One dialog, never two stacked: when a take is staged the caller folds this
+  // sentence into its own question rather than asking twice.
+  function speakStagedWarning() {
+    return globalThis.jxnfcSpeakStagedNow
+      ? ' You also have a recording that has not been submitted yet, and it will be lost.'
+      : ''
+  }
+
   // Submit-error copy lives here, not in the recorder: that component is
   // within a few hundred chars of the 10k script cap. Read at click time,
   // so evaluation order doesn't matter.
@@ -2361,6 +2376,11 @@
     }
 
     this.replaceRow = function(id) {
+      // Replace re-opens the recorder, so an already-staged take is exactly
+      // what the member is about to destroy — and silently, since the preview
+      // simply disappears.
+      const warn = speakStagedWarning()
+      if (warn && !confirm('Record a new clip to replace this one?' + warn)) return
       if (globalThis.jxnfcSpeakStartReplace) globalThis.jxnfcSpeakStartReplace()
     }
 
@@ -2368,7 +2388,7 @@
       if (working) return
       const row = rows.find(function(c) { return c.promptId === id })
       if (!row) return
-      if (!confirm('Delete this clip? This cannot be undone.')) return
+      if (!confirm('Delete this clip? This cannot be undone.' + speakStagedWarning())) return
       working = true
       setErr('')
       try {

@@ -308,6 +308,73 @@ test.describe('speak: free-form messages', () => {
     await expect(page.locator('.hrow')).toContainText('Kept my take across the switch')
   })
 
+  // A parent update() re-evaluates speak-recorder's script and wipes the
+  // module-scope blob holding an unsubmitted take. Delete and Replace both
+  // cause one, and both sit directly below the recorder — which in message
+  // mode stays visible even after the round is answered. SPEAK_LOSE guarded
+  // navigation only, so these two destroyed a take in silence.
+  //
+  // The assertions check the dialog TEXT, not just that a dialog appeared:
+  // Delete has always confirmed, so dismissing that pre-existing prompt would
+  // cancel the delete and leave the preview on screen whether the take was
+  // guarded or not. Only the added sentence distinguishes the two.
+  test('deleting warns that it will also lose an unsubmitted recording', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'Something already on file')
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    // Stage a second take and leave it unsubmitted.
+    await stageAClip(page)
+    await expect(page.locator('.speak-preview')).toBeVisible()
+
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+
+    expect(asked).toContain('has not been submitted')
+    // Dismissed, so nothing happened on either side.
+    await expect(page.locator('.hrow')).toHaveCount(1)
+    await expect(page.locator('.speak-preview')).toBeVisible()
+  })
+
+  test('replacing warns before it discards an unsubmitted recording', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    // Record again without submitting, then try to Replace.
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await stageAClip(page)
+    await expect(page.locator('.speak-preview')).toBeVisible()
+
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="replace"]').first().click()
+
+    expect(asked).toContain('has not been submitted')
+    await expect(page.locator('.speak-preview')).toBeVisible()
+  })
+
+  // The guard must not nag when there is nothing to lose: Replace with no
+  // staged take asks nothing at all, and Delete keeps its original one-line
+  // question rather than growing a sentence about a recording that does not
+  // exist. Two stacked dialogs would also deadlock the page.
+  test('with nothing staged, the warning stays out of the way', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'Something already on file')
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+    expect(asked).toContain('cannot be undone')
+    expect(asked).not.toContain('has not been submitted')
+  })
+
   // The band lives in speak-view's template, so a parent update() repaints it
   // from the round-mode bindings and remounts speak-compose. mounted() restored
   // the mode but never repainted, leaving the two halves disagreeing: chooser

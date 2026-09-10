@@ -39,7 +39,15 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      // The Firefox smoke is excluded here, not merely targeted at firefox-dist:
+      // testMatch on one project does not stop another from collecting the file,
+      // and chromium runs against `nue serve`, which never goes through
+      // postbuild and so still emits the import map in the wrong order.
+      testIgnore: /firefox-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
     {
       // Deliberately ONE smoke file, not the whole suite. The rest of the
       // suite drives a fake microphone, which is a Chromium-only launch flag,

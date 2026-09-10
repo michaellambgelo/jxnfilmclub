@@ -1542,15 +1542,17 @@
         <h1 class="speak-band-head"><span class="q speak-q" :hidden="isMessage()">“</span><span class="speak-prompt-text">{ headText() }</span><span class="q speak-q" :hidden="isMessage()">”</span></h1>
         <p class="speak-band-lede speak-lede-prompt" :hidden="isMessage()">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
         <p class="speak-band-lede speak-lede-message" :hidden="!isMessage()">Tell us what it is about, then record. Three minutes or less, same as a prompt answer — a host listens to every one.</p>
-        <!-- One button whose LABEL is interpolated, rather than a signed-in
-             and signed-out pair: .speak-band-btn is display:inline-flex,
-             which outranks the UA [hidden] rule, and swapping nodes inside
-             the band shifts later siblings and crashes the nuedom diff. -->
-        <div class="speak-band-actions">
-          <button type="button" class="speak-band-btn" :onclick="toRecorder">{ session ? 'Record a clip' : 'Log in to record' }</button>
-          <button type="button" class="speak-band-btn -quiet" :onclick="toUpload">{ session ? 'Upload a file' : 'Join the club' }</button>
+        <!-- The two doors, and ONLY for someone standing outside: signed in,
+             these were scroll-to-the-recorder shortcuts pointing at a recorder
+             already visible directly below, so they were noise on the one page
+             where the member has already arrived. :hidden rather than :if —
+             removing nodes here shifts later siblings and crashes the nuedom
+             diff — with the [hidden] re-assertion in speak.css, since
+             .speak-band-actions is display:flex and outranks the UA rule. -->
+        <div class="speak-band-actions" :hidden="!!session">
+          <button type="button" class="speak-band-btn" :onclick="toSignin">Log in to record</button>
+          <button type="button" class="speak-band-btn -quiet" :onclick="toJoin">Join the club</button>
         </div>
-        <p class="speak-band-reassure" :hidden="!session">You can re-record or pull your clip any time before the episode drops.</p>
         <!-- Signed out, this used to be dead plain text saying "log in" with
              nothing to click, beside a red button that silently jumped to
              /signin. Both doors are real links now, and they are different
@@ -1706,22 +1708,10 @@
       state.type = 'signin'
     }
 
-    this.toRecorder = function() {
-      if (!this.session) { this.toSignin(); return }
-      const el = document.querySelector('.speak-flow')
-      if (el) el.scrollIntoView()
-    }
-
-    this.toUpload = function() {
-      // Signed out this button is the OTHER door — joining, not logging in.
-      if (!this.session) { location.href = 'https://join.jxnfilm.club/'; return }
-      // The upload input has no box when an existing clip hides the
-      // recorder — land on the clip card (Replace button) instead.
-      const input = document.querySelector('.speak-upload input[type="file"]')
-      const visible = input && input.offsetParent
-      const el = visible ? input : document.querySelector('.speak-flow')
-      if (el) el.scrollIntoView({ block: 'center' })
-      if (visible) input.focus({ preventScroll: true })
+    // The other door. Joining and logging in are not the same thing, which is
+    // why these stayed two buttons rather than one.
+    this.toJoin = function() {
+      location.href = 'https://join.jxnfilm.club/'
     }
 
     this.mounted = function() {

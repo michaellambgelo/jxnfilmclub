@@ -547,6 +547,7 @@
    bitten .policy-toast, .feedback-widget and the cards grid already. */
 .speak .speak-mode[hidden],
 .speak .speak-subject[hidden],
+.speak .speak-band-actions[hidden],
 .speak .speak-band-reassure[hidden] {
   display: none;
 }

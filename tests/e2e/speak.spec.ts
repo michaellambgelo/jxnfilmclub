@@ -505,6 +505,31 @@ test.describe('speak: the signed-out door', () => {
     const reassure = page.locator('.speak-band-reassure:visible')
     await expect(reassure.locator('a[href="/signin"]')).toHaveCount(1)
     await expect(reassure.locator('a[href="https://join.jxnfilm.club/"]')).toHaveCount(1)
+    // Visible, not merely present: .speak-band-actions is display:flex, which
+    // outranks the UA [hidden] rule, so the re-assertion in speak.css is what
+    // makes the signed-in half of this pair actually disappear. A test that
+    // only counted nodes would pass with the buttons on screen in both states.
+    await expect(page.locator('.speak-band-actions')).toBeVisible()
+  })
+
+  // Signed in, both buttons only scrolled to a recorder already visible
+  // directly below them, and the reassure line restated what every history row
+  // already shows. The doors matter to someone standing outside; to a member
+  // who has arrived they were noise on the page they came to use.
+  test('a signed-in member is not offered the doors they already walked through', async ({ page }) => {
+    await signInAs(page, 'doors-e2e@example.com', { name: 'Doors Member' })
+    await page.goto('/speak')
+    await expect(page.locator('.speak-band-head')).toBeVisible()
+
+    await expect(page.locator('.speak-band-actions')).toBeHidden()
+    // The signed-in reassure line is gone outright; the signed-out one is
+    // still in the DOM (:hidden, never :if — removing nodes here shifts later
+    // siblings and crashes the nuedom diff) and must not be showing.
+    await expect(page.locator('.speak-band-reassure')).toHaveCount(1)
+    await expect(page.locator('.speak-band-reassure')).toBeHidden()
+    await expect(page.locator('.speak-band-reassure:visible')).toHaveCount(0)
+    // The recorder those buttons pointed at is what the member sees instead.
+    await expect(page.locator('.speak-upload')).toBeVisible()
   })
 
   test('logging in from /speak comes back to /speak', async ({ page }) => {

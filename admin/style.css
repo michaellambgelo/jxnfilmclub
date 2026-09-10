@@ -547,6 +547,9 @@ dialog pre.rich {
 
 .voice-clip .voice-note {
   margin: 0 0 .5rem;
+  /* Same pairing as td.prewrap above: keep author line breaks, but break an
+     unbroken run rather than scrolling the triage table sideways. */
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   opacity: .8;
 }

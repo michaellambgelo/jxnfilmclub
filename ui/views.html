@@ -53,14 +53,33 @@
   // Submit-error copy lives here, not in the recorder: that component is
   // within a few hundred chars of the 10k script cap. Read at click time,
   // so evaluation order doesn't matter.
-  globalThis.jxnfcVoiceErr = function(status) {
-    if (status === 400) return 'The consent box must be checked first.'
+  // A 400 on this path has nine causes, only one of which is the consent box:
+  // subject missing, too short, too long, control characters (a PASTED TAB is
+  // enough), note too long, and so on. Collapsing them all to the consent line
+  // blamed the member for something they had already done and left them no way
+  // forward — so prefer the worker's own message, which is written for them.
+  globalThis.jxnfcVoiceErr = function(status, detail) {
+    if (status === 400) {
+      if (!detail) return 'The consent box must be checked first.'
+      return detail.charAt(0).toUpperCase() + detail.slice(1) + '.'
+    }
     if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
     if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
     if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
     if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-    if (status === 409) return 'You have up to five messages waiting on us. Delete one below and you can send another.'
+    // Do not promise an immediate resend: the message throttle is still live
+    // from the submit that hit the cap, so "delete one and send another" was
+    // answered by a 429 telling them they had just submitted.
+    if (status === 409) return 'You have up to five messages waiting on us. Delete one below, then you can send another — there is a short wait between messages.'
     return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
+  }
+
+  // Body of a failed submit, if it has one. Never throws: an error message is
+  // a courtesy and must not become a second failure.
+  function speakErrDetail(res) {
+    return res.json().then(function(body) {
+      return body && typeof body.error === 'string' ? body.error : ''
+    }).catch(function() { return '' })
   }
 
   // The one submit path, shared by the round recorder and the message
@@ -1985,7 +2004,10 @@
       self.update({ busy: true, err: '' })
       try {
         const res = await speakVoiceSubmit(this.session.token, clipBlob, clipType, clipSeconds, meta)
-        if (!res.ok) { const err = new Error(globalThis.jxnfcVoiceErr(res.status)); err.shown = true; throw err }
+        if (!res.ok) {
+          const detail = res.status === 400 ? await speakErrDetail(res) : ''
+          const err = new Error(globalThis.jxnfcVoiceErr(res.status, detail)); err.shown = true; throw err
+        }
         // Fresh route render: the parent refetches /voice/mine and shows
         // the submitted state (house mutation idiom).
         dropClip()
@@ -2100,7 +2122,21 @@
     }
 
     this.mounted = function() {
-      this.update({ mode: globalThis.jxnfcSpeakMode || 'prompt', left: SUBJECT_MAX })
+      const mode = globalThis.jxnfcSpeakMode || 'prompt'
+      this.update({ mode: mode, left: SUBJECT_MAX - (globalThis.jxnfcSpeakSubject || '').length })
+      // The band lives in the PARENT template, so a parent update() — which
+      // Delete and Replace both trigger — repaints it from the round-mode
+      // bindings and remounts this child. Restoring the mode here without
+      // repainting left the two halves disagreeing: chooser and fields still
+      // set to message, headline and lede reverted to the round.
+      paint(mode)
+      // The fields carry no value binding, so a remount blanks them while the
+      // globals still hold the text — which would submit a subject the member
+      // can no longer see. Restore both from the globals that outlive the node.
+      const subjectNode = el('.speak-subject-input')
+      if (subjectNode) subjectNode.value = globalThis.jxnfcSpeakSubject || ''
+      const noteNode = el('.speak-note-input')
+      if (noteNode) noteNode.value = globalThis.jxnfcSpeakNote || ''
       // Read at submit time by speak-recorder, which owns the audio. Returning
       // null keeps the round path byte-identical to what it was.
       globalThis.jxnfcSpeakMeta = function() {

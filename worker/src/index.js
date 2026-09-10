@@ -992,7 +992,17 @@ function cleanVoiceText(raw, { max, required, label }) {
     if (c === 10 && max === VOICE_NOTE_MAX) continue
     if (c < 32 || c === 127) return { error: label + ' cannot contain control characters' }
   }
-  const value = str.replace(/[ \t]+/g, ' ').trim()
+  // Strip the invisible formatting characters. They pass the control-character
+  // check above (all are >= 32) and then reach the admin list, the TUI and the
+  // audiogram frame, where a right-to-left override renders a subject reversed
+  // — 'Report\u202Egnp.exe' reads as a PNG to the operator triaging it. Zero-width
+  // characters are the same problem quietly: they pad the length bound and make
+  // two subjects that look identical compare unequal. None has any use in a
+  // line that will be read aloud, so drop them rather than refuse text the
+  // member cannot see. Stripped BEFORE the length checks, so the bound applies
+  // to what actually gets rendered.
+  const visible = str.replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+  const value = visible.replace(/[ \t]+/g, ' ').trim()
   if (required && value.length < 3) return { error: label + ' must be at least 3 characters' }
   if (value.length > max) return { error: label + ' must be ' + max + ' characters or fewer' }
   return { value }

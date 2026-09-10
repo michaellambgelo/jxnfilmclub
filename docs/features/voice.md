@@ -97,11 +97,25 @@ drift.
 
 | Field | Rule |
 |---|---|
-| `subject` | required for a message; 3–80 chars; no control characters |
-| `note` | optional; ≤ 500 chars; newlines allowed |
+| `subject` | required for a message; 3–80 **UTF-16 code units**; no control characters |
+| `note` | optional; ≤ 500 UTF-16 code units; newlines allowed |
+
+Invisible formatting characters — zero-width (`U+200B`–`U+200F`, `U+FEFF`) and the
+bidi overrides and isolates (`U+202A`–`U+202E`, `U+2066`–`U+2069`) — are **stripped**
+rather than refused, before the length bound is applied. They all pass the
+control-character check, and a right-to-left override renders a subject reversed in
+the admin list, the TUI and the audiogram frame (`Report\u202Egnp.exe` reads as a PNG
+to the operator triaging it). None has a use in a line that will be read aloud, and
+refusing text the member cannot see would be unactionable.
 
 80 rather than 120 because `scripts/assets/audiogram.html` clamps the frame title
 to three lines.
+
+The bound is **UTF-16 code units, not characters** — `String.length`. An emoji
+costs 2 (so 40 🎬 pass and 41 are refused) and an NFD accented letter costs 2 as
+well. That is the right unit for the reason the cap exists, since the audiogram's
+three-line clamp is about rendered width rather than codepoint count, but it does
+mean a subject can be refused while looking shorter than 80 to the member.
 
 Metadata rides in **query params, not headers**: `fetch()` throws a `TypeError`
 on a non-Latin1 header value, so the first member to type a curly apostrophe or

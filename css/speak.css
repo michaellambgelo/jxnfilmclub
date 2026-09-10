@@ -65,6 +65,9 @@
 
 .speak-band-head {
   margin: 0;
+  /* The subject is member-authored free text. One unbroken 80-char run here
+     scrolled the whole page sideways while they were still typing it. */
+  overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 900;
@@ -355,6 +358,7 @@
 }
 
 .speak .hrow-prompt {
+  overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 700;
@@ -627,6 +631,11 @@
 }
 
 .speak .hrow-note {
+  /* pre-wrap to match admin/style.css: the worker deliberately allows newlines
+     in a note, so the member's own history has to show the shape of what they
+     sent rather than flattening it to one line the host will not see. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: var(--fs-14);
   line-height: var(--lh-body);
   color: var(--ink-3);

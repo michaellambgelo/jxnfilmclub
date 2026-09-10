@@ -820,6 +820,29 @@ describe('free-form messages', () => {
     expect(row.promptText).toBe('Second take')
   })
 
+  // These all pass the control-character check (every one is >= 32) and would
+  // otherwise reach the admin list, the TUI and the audiogram frame verbatim.
+  it('strips invisible formatting characters from a subject and note', async () => {
+    const { token, member } = await getTokenFor('bidi@example.com')
+    const res = await postMessage(token, {
+      subject: 'Report\u202Egnp.exe',
+      note: 'zero\u200bwidth\ufeff joined',
+    })
+    expect(res.status).toBe(200)
+    const promptId = (await res.json()).promptId
+    const row = JSON.parse(await env.MEMBERS_KV.get('voice:' + promptId + ':' + member.id))
+    expect(row.promptText).toBe('Reportgnp.exe')
+    expect(row.note).toBe('zerowidth joined')
+  })
+
+  // The bound has to apply to what is actually rendered, or padding a subject
+  // with zero-width characters buys extra visible length in the audiogram.
+  it('the length bound is measured after stripping', async () => {
+    const { token } = await getTokenFor('pad@example.com')
+    const res = await postMessage(token, { subject: 'A'.repeat(80) + '\u200b'.repeat(20) })
+    expect(res.status).toBe(200)
+  })
+
   // The audio is overwritten in place when the extension does not change, so
   // the ext-changed branch never fires — but the .srt is a DERIVED key and is
   // not overwritten. It would outlive the audio it describes, and "mark

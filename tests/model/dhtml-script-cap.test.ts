@@ -19,7 +19,7 @@ const FILES = ['ui/views.html', 'ui/auth.html', 'ui/widgets.html', 'ui/feedback.
 
 function components(file: string) {
   const src = readFileSync(join(ROOT, file), 'utf8')
-  const out: { name: string; chars: number }[] = []
+  const out: { name: string; chars: number; body: string }[] = []
   const re = /:is="([a-z0-9-]+)"/g
   let m: RegExpExecArray | null
   while ((m = re.exec(src))) {
@@ -30,7 +30,8 @@ function components(file: string) {
     const nextIs = re.lastIndex === 0 ? -1 : src.indexOf(':is="', m.index + 1)
     if (nextIs !== -1 && nextIs < open) continue
     const close = src.indexOf('</script>', open)
-    out.push({ name: m[1], chars: close - open - '<script>'.length })
+    const body = src.slice(open + '<script>'.length, close)
+    out.push({ name: m[1], chars: body.length, body })
   }
   return out
 }
@@ -41,6 +42,31 @@ describe('dhtml component script cap', () => {
       const over = components(file).filter(c => c.chars >= CAP)
       expect(over, `split these into child components: ${over.map(c => `${c.name} (${c.chars})`).join(', ')}`)
         .toEqual([])
+    })
+  }
+
+  // The cap test measures LENGTH only, and length is not the only way to
+  // corrupt the bundle. A component script is serialized through util.inspect,
+  // which picks a quote character in the order single -> double -> backtick,
+  // choosing the first the string does not contain. Every one of these scripts
+  // contains an apostrophe, so a script carrying BOTH a double quote and a
+  // backtick leaves util.inspect no free delimiter; it falls back to escaping
+  // and emits a literal that breaks apart mid-string. The build still reports
+  // success, and vitest still passes because it imports source rather than the
+  // bundle — the shipped file simply does not parse, and the SyntaxError points
+  // at an unrelated line hundreds of characters away.
+  //
+  // Verified by bisection, not assumed: either character alone is fine, both
+  // together break, and the apostrophe makes no difference on its own.
+  for (const file of FILES) {
+    it(`${file}: no component script mixes backticks with double quotes`, () => {
+      const bad = components(file).filter(c => c.body.includes('`') && c.body.includes('"'))
+      expect(
+        bad.map(c => c.name),
+        'these scripts contain a backtick AND a double quote, which corrupts the ' +
+        'emitted bundle while the build reports success — drop one of the two, ' +
+        'in comments as much as in code: ' + bad.map(c => c.name).join(', '),
+      ).toEqual([])
     })
   }
 

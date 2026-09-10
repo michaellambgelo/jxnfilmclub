@@ -308,6 +308,53 @@ test.describe('speak: free-form messages', () => {
     await expect(page.locator('.hrow')).toContainText('Kept my take across the switch')
   })
 
+  // The subject and note are member-authored free text with no spaces
+  // guaranteed anywhere in them. Nothing in css/*.css wrapped long words, so a
+  // single unbroken run pushed the document wider than the viewport — while
+  // they were still typing it, in the band headline, and afterwards in history.
+  test('a long unbroken subject or note never scrolls the page sideways', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/speak')
+
+    const width = () => page.evaluate(() => document.documentElement.scrollWidth)
+    const viewport = () => page.evaluate(() => document.documentElement.clientWidth)
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await page.locator('.speak-subject-input').fill('W'.repeat(80))
+    // The headline mirrors the subject as it is typed, so the overflow is live.
+    await expect(page.locator('.speak-band-head')).toContainText('WWWW')
+    expect(await width()).toBeLessThanOrEqual(await viewport())
+
+    await page.locator('.speak-note-input').fill('N'.repeat(500))
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.hrow-prompt').first()).toContainText('WWWW')
+    expect(await width()).toBeLessThanOrEqual(await viewport())
+  })
+
+  // Every non-2xx used to be reported to the member as "The consent box must be
+  // checked first", including the eight other reasons the worker sends a 400
+  // for. A pasted tab is the easiest one to hit by accident: a single-line
+  // input strips CR/LF but keeps tabs, so the member was blamed for something
+  // they had already done, with nothing to act on.
+  test('a rejected subject says what is actually wrong with it', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await wipeKv(page, `rate:voice_msg:${EMAIL}`)
+    await page.goto('/speak')
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await page.locator('.speak-subject-input').fill('The ending\tof Nope, explained')
+    await stageAClip(page)
+    await expect(page.locator('.speak-consent input[type="checkbox"]')).toBeChecked()
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+
+    const err = page.locator('.speak .rsvp-err')
+    await expect(err).toBeVisible()
+    await expect(err).toContainText(/control characters/i)
+    await expect(err).not.toContainText(/consent/i)
+  })
+
   test('a member who already answered the round can still send a message', async ({ page }) => {
     // Answering hides the recorder behind the submitted state; the message
     // mode has to bring it back or the second door is unreachable.

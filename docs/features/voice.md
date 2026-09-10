@@ -159,6 +159,24 @@ more than the feature is worth, and per-message publication stays additive.
 
 ## Deletion
 
+Publication is a one-way door, and the copy says which side of it a member is
+on. Deletion is **never blocked** — there is no publication guard in
+`handleVoiceDelete` — because the two acts are genuinely different rather than
+one being forbidden:
+
+- **Before publication**, deleting *is* the retraction. R2 holds the raw audio as
+  working storage; removing it, the transcript and the row is a complete
+  withdrawal from consideration, and that boundary is the member's to draw.
+- **After publication**, the clip is third-party and non-secret. Deleting removes
+  the club's copy and nothing else — an aired episode cannot be recalled.
+
+So the confirmation branches on `row.published`. It used to read "Delete this
+clip? This cannot be undone." in both cases, which is true of each in ways that
+mean opposite things: on a published clip a member is most likely to read it as
+*last chance to pull it*, at the exact moment they are deciding what deletion
+buys them. The published branch says the episode is already out, and still says
+what deleting does accomplish, so the act does not read as pointless.
+
 - Member: `DELETE /voice?promptId=…` from the submissions list, per row.
 - Admin: `DELETE /admin/voice { key }`.
 - Account deletion: `purgeVoiceClips` walks the whole `voice:` prefix and matches

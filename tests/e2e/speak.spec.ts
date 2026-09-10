@@ -325,6 +325,54 @@ test.describe('speak: free-form messages', () => {
     expect(height).toBeGreaterThan(60)
   })
 
+  // Publication is the one-way door. Before it, deleting IS the retraction, and
+  // "this cannot be undone" describes the boundary working as intended. After
+  // it, deleting removes the club's copy and nothing else — the episode is
+  // third-party and already out. The same six words across both would be read
+  // as "last chance to pull it" at exactly the moment the member is deciding
+  // what deletion buys them.
+  test('the delete warning tells a member whether the clip has already aired', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    // Unpublished: the plain question, and no claim about an episode.
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+    expect(asked).toContain('cannot be undone')
+    expect(asked).not.toContain('aired')
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    // Now approve it and publish the round it belongs to. Publication is
+    // round-scoped, which is why the promptId is what goes in the config.
+    const promptId = await page.locator('.hrow-act[data-act="delete"]').first().getAttribute('data-prompt')
+    const key = 'voice:' + promptId + ':'
+    const listed = await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent(key)}`)).json()
+    const rowKey = listed.keys[0]
+    const stored = await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?key=${encodeURIComponent(rowKey)}`)).json()
+    const row = JSON.parse(stored.value)
+    row.status = 'approved'
+    await seedKv(page, rowKey, JSON.stringify(row))
+    await seedKv(page, 'config:voice_published', JSON.stringify({ promptIds: [promptId] }))
+
+    await page.reload()
+    await expect(page.locator('.hrow-meta').first()).toContainText('Published')
+
+    asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+    expect(asked).toContain('already aired')
+    expect(asked).toContain('cannot be recalled')
+    // And it still says what deleting DOES accomplish, so the member is not
+    // left thinking the act is pointless.
+    expect(asked).toContain('removes our copy')
+  })
+
   // A parent update() re-evaluates speak-recorder's script and wipes the
   // module-scope blob holding an unsubmitted take. Delete and Replace both
   // cause one, and both sit directly below the recorder — which in message

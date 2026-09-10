@@ -2378,7 +2378,16 @@
       if (working) return
       const row = rows.find(function(c) { return c.promptId === id })
       if (!row) return
-      if (!confirm('Delete this clip? This cannot be undone.' + speakStagedWarning())) return
+      // A published clip and an unsubmitted one are very different acts, and
+      // "this cannot be undone" is true of both in ways that mean the opposite.
+      // Before publication, deleting IS the retraction — the boundary working.
+      // After, it removes our copy and nothing more, and a member reading the
+      // same six words is most likely to hear "last chance to pull it" at the
+      // exact moment they are deciding. Say which one this is.
+      const gone = row.published
+        ? 'This clip has already aired. Deleting removes our copy — audio, transcript and record — but the episode is already published and cannot be recalled. Delete it anyway?'
+        : 'Delete this clip? This cannot be undone.'
+      if (!confirm(gone + speakStagedWarning())) return
       working = true
       setErr('')
       try {

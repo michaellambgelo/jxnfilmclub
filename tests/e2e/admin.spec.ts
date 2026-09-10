@@ -287,6 +287,54 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#cfg-theaters h3')).toContainText(/KV override/)
   })
 
+  // A message belongs to no round, so the round-level toggle never applied to
+  // it and an approved message had no way to ever read as aired. The toggle is
+  // per message now, on the card, writing its own config key.
+  test('Voice tab: publishing a message writes only the message set', async ({ page }) => {
+    acceptDialogs(page)
+    const promptId = 'msg_admine2e01'
+    const key = `voice:${promptId}:id-msgpub@example.com`
+    await seedKv(page, key, JSON.stringify({
+      memberId: 'id-msgpub@example.com', name: 'Msg Member', promptId,
+      promptText: 'Something I wanted to say', kind: 'message', note: 'a note',
+      r2Key: `voice/${promptId}/id-msgpub@example.com.webm`,
+      contentType: 'audio/webm', size: 1024, consent: true,
+      at: '2026-09-01T00:00:00.000Z', expiresAt: 4102444800, status: 'approved',
+    }))
+
+    await page.goto(ADMIN_ORIGIN)
+    await page.locator('#tabs button[data-tab="voice"]').click()
+    await expect(page.locator('.voice-group')).toContainText('Messages')
+
+    const toggle = page.locator('button[data-action="voice-publish"][data-kind="message"]')
+    await expect(toggle).toHaveText('publish message')
+    await toggle.click()
+    await expect(page.locator('button[data-action="voice-publish"][data-kind="message"]'))
+      .toHaveText('unpublish message')
+
+    // Its own key, and emphatically not the round key.
+    expect(JSON.parse((await getKv(page, 'config:message_published'))!).promptIds).toEqual([promptId])
+    expect(await getKv(page, 'config:voice_published')).toBeNull()
+  })
+
+  // The toggle inverts the ladder if it can publish something unapproved, so a
+  // pending message must not offer it at all.
+  test('Voice tab: a pending message offers no publish toggle', async ({ page }) => {
+    const promptId = 'msg_admine2e02'
+    await seedKv(page, `voice:${promptId}:id-msgpend@example.com`, JSON.stringify({
+      memberId: 'id-msgpend@example.com', name: 'Pending Member', promptId,
+      promptText: 'Not approved yet', kind: 'message',
+      r2Key: `voice/${promptId}/id-msgpend@example.com.webm`,
+      contentType: 'audio/webm', size: 1024, consent: true,
+      at: '2026-09-01T00:00:00.000Z', expiresAt: 4102444800,
+    }))
+
+    await page.goto(ADMIN_ORIGIN)
+    await page.locator('#tabs button[data-tab="voice"]').click()
+    await expect(page.locator('.voice-group')).toContainText('Messages')
+    await expect(page.locator('button[data-action="voice-publish"][data-kind="message"]')).toHaveCount(0)
+  })
+
   test('active tab survives a reload; a stale stored tab falls back to members', async ({ page }) => {
     await page.goto(`${ADMIN_ORIGIN}/`)
     await expect(page.locator('#tabs button.active')).toHaveAttribute('data-tab', 'members')

@@ -120,7 +120,7 @@ A running byte budget sits under the compose fields. Sends and **test sends** ar
 
 | **Auth** | The auth lifecycle in one view, four sections: `pending:{email}` signups with their OTP code; `session:{id}` cached snapshots + `refresh:{id}:{secret}` remembered devices; `revoked:{jti}` tombstones (read-only, auto-expire); all `rate:*` counters with lockouts (≥5) highlighted | delete a stuck pending signup; evict a snapshot (does NOT revoke the JWT — use the Worker's `/session/revoke` for that); revoke a remembered device (deletes the 30-day refresh record, forcing that browser back through the email-code flow); delete a rate counter to unblock a user |
 | **Events** | `event:{id}` rows + `events:all` aggregate from `ATTENDANCE_KV`, live attendance from `attend:{id}`; sortable (upcoming first / newest / oldest / title / most attended) | add / edit / delete events (writes KV directly; `GET /events` surfaces the change immediately on the public site), remove attendees (by row, not by name — two attendees can share one) |
-| **Voice** | Member-submitted podcast voice clips (≤3 min): `voice:{promptId}:{memberId}` metadata rows from `MEMBERS_KV`, grouped by prompt (current prompt first, then a **Messages** inbox, then older rounds), with an inline audio player + download streaming the R2 object through `GET /api/voice` (buckets `jxnfilm-voice` / `-staging`). Each clip shows submitter, submitted-at, duration, size, status pill, and a **prominent days-remaining countdown** from the row's `expiresAt` — everything auto-deletes 60 days after submission (see [the 60-day reality](#compiling-a-podcast-segment)). A clip whose audio has already aged out renders an inline "audio gone" note instead of a broken player (`/api/voice` 404s with `{ error: "expired" }` — an expected state, since the R2 lifecycle deletes on a daily cadence while the KV TTL is exact). Members can also send a message they titled themselves instead of answering the round; those collect under **Messages**, lead with the member's own subject and note, and carry no publish toggle. | approve / reject / delete — all proxied through the join Worker's `/admin/voice*` routes (never raw KV writes: a `/api/kv` PUT would rewrite the row without its TTL and make it persistent) |
+| **Voice** | Member-submitted podcast voice clips (≤3 min): `voice:{promptId}:{memberId}` metadata rows from `MEMBERS_KV`, grouped by prompt (current prompt first, then a **Messages** inbox, then older rounds), with an inline audio player + download streaming the R2 object through `GET /api/voice` (buckets `jxnfilm-voice` / `-staging`). Each clip shows submitter, submitted-at, duration, size, status pill, and a **prominent days-remaining countdown** from the row's `expiresAt` — everything auto-deletes 60 days after submission (see [the 60-day reality](#compiling-a-podcast-segment)). A clip whose audio has already aged out renders an inline "audio gone" note instead of a broken player (`/api/voice` 404s with `{ error: "expired" }` — an expected state, since the R2 lifecycle deletes on a daily cadence while the KV TTL is exact). Members can also send a message they titled themselves instead of answering the round; those collect under **Messages**, lead with the member's own subject and note, and carry a **per-message** publish toggle on the card (writing `config:message_published`, kept separate from the round set). | approve / reject / delete — all proxied through the join Worker's `/admin/voice*` routes (never raw KV writes: a `/api/kv` PUT would rewrite the row without its TTL and make it persistent) |
 | **Config** | Purpose-built editors for the operator overrides under `config:*` in `MEMBERS_KV` (see [Config tab](#config-tab)) | save/delete `config:voice_prompt` (first — it changes most often), `config:theaters`, `config:podcast`, `config:newsletter_template`, `config:copy` |
 | **Content Gen** | Social media content built from live KV data: per-platform copy (Instagram / Facebook / Discord / Bluesky / X, with character counters against each platform's limit) and canvas-rendered PNG cards (IG post/story, FB, Bluesky/X sizes) in the Night Shift brand. Post types: event announcement + countdown (dynamic tonight/tomorrow/N-days lead from the event date), post-event recap (`attend:{id}` count), season lineup (next ≤4 upcoming events, poster wall + date list), monthly wrap (screenings + summed attendance for a selected past month), voice prompt (typographic card quoting whatever `config:voice_prompt` holds, or the site's generic default — read-only here, since the site, the newsletter CTA and this card must all quote the same live prompt; shrink-to-fit so a long question is never clipped, and the per-platform copy sheds its invitation before it trims the question), new podcast episode (typographic card; episodes fetched from `jxnfilm.club/data/episodes.json`, which GitHub Pages serves with `ACAO:*`), milestone (big-numeral card: member count from `members:all`, screenings held, or total attendance), member-watches roundup (`GET /api/watched` poster collage, windowed to the last 7 days — undated entries dropped), member diary (the same feed **paged**: 10 films per card, newest first, as a 2×5 poster+title grid, with a Range scope (Last 7 days — the default, since the weekly post is the job — / Last 30 days / All time), a Pages cap so a 40-page feed doesn't have to be generated whole, and a page picker labelled with each page's real date range. Navigation is a prev/next pager in the Copy panel (with the page number and its date range, mirrored as a small badge on every platform card so the page is legible at the copy button, where the mis-post risk actually is); ←/→ step it when focus isn't in a field. Export parity: "Download all N pages" for PNGs, per-platform "all N" for text (one clipboard write, pages split on a `───── page i/N · <range> ─────` marker). Re-scoping rebuilds locally from a per-env cached map — it never refetches).  Public-safe by construction: events pass through `socialEventView` (no address/notes/capacity) and watches through `buildRoundupData`/`buildDiaryPages` (film titles/posters only — zero member names or handles; `buildDiaryPages` additionally drops the diary `link`, since a Letterboxd diary URL contains the handle). A diary row's stars are the **club average** over everyone who rated that film, annotated with the sample size — never one member's score. Feed depth is capped per member, not by date, so deep pages are genuinely old: every page states its own date range on the card, in the copy, and in the picker. Poster images load via the same-origin `GET /api/img` proxy (https-only host allowlist) so the canvas stays untainted and PNG export works. | read-only against KV — output is copy-to-clipboard text + downloaded PNGs |
 
@@ -292,9 +292,10 @@ These are two different facts and the Voice tab keeps them apart:
 
 - **approve / reject** is moderation on one clip — "we're using this in a
   segment". It sets `status` on the `voice:*` row.
-- **publish round** is an event on a whole prompt round — "the episode is
-  actually out". It writes `config:voice_published` (`{ promptIds: [...] }`,
-  no expiry) via the join Worker.
+- **publish round** / **publish message** is an event — "the episode is actually
+  out". Rounds write `config:voice_published`, messages write
+  `config:message_published` (both `{ promptIds: [...] }`, no expiry), via the
+  join Worker.
 
 A member's `/speak` page reads `Submitted` → `Approved` → `Published`, and it
 only reaches the last one when you publish the round. That matters because a
@@ -305,12 +306,25 @@ episode drops once. Unpublishing is supported (an episode can be pulled), and
 the key outlives the 60-day clip retention so a member asking months later
 still gets a truthful answer.
 
-**Messages have no publish step.** A free-form message is its own single-clip
-round under a minted `msg_` id, so there is no round to publish and the Messages
-group carries no toggle. Its member-facing ladder stops at `Approved — we plan
-to use this`, which is the honest thing to show: dangling an "Approved" that can
-never become "Published" sends someone looking for an episode that will never
-name them. Per-message publication stays additive if it is ever wanted.
+**Messages publish one at a time.** A free-form message is its own single-clip
+round under a minted `msg_` id, so there is no round to publish — the toggle is
+on the **card**, not the group header, and it writes a separate key. An approved
+message reads `Approved — we plan to use this` until you publish it, then
+`Published`.
+
+The two sets are deliberately independent, and enforced in both directions: a
+`msg_` id in `config:voice_published` is ignored, a round id in
+`config:message_published` is ignored, and un-publishing a round can never reach
+a message. The toggle only appears on an **approved** message — publishing
+something you have not approved inverts the ladder — but it stays visible once
+published, so an accidental publish can be taken back from the same screen.
+
+This shipped later than the rest of Messages. It first went out with no publish
+step at all, on the reasoning that publication was round-scoped and a message
+belonged to no round. That left an approved message watching for a state that
+could never arrive, and — once the delete warning learned to distinguish aired
+from retractable — meant a message that had actually aired still got the
+wording for something the member could still pull back.
 
 To pull one message into an episode:
 

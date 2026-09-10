@@ -2280,11 +2280,14 @@
     // publishing the round makes the second true.
     this.labelOf = function(c) {
       if (!c) return 'Submitted'
-      // Publication is round-scoped (config:voice_published) and a message
-      // belongs to no round, so an approved message can never turn into
-      // Published. Say what is actually true rather than leaving a member
-      // watching for a state that will not arrive.
-      if (c.status === 'approved' && c.kind === 'message') return 'Approved — we plan to use this'
+      // A message is published on its OWN (config:message_published), a round
+      // as an episode-level event (config:voice_published) — two independent
+      // sets, so both reach Published, just by different routes. Until a
+      // message actually airs, Approved alone would leave a member watching a
+      // state with no stated meaning, so it says what it means.
+      if (c.status === 'approved' && !c.published && c.kind === 'message') {
+        return 'Approved — we plan to use this'
+      }
       if (c.status === 'approved') return c.published ? 'Published' : 'Approved'
       if (c.status === 'rejected') return 'Not chosen for publication'
       return 'Submitted'

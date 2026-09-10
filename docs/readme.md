@@ -152,10 +152,12 @@ round of one under a server-minted `msg_` promptId, so nothing downstream
 needed a migration — see `docs/features/voice.md`.
 
 The member-facing status ladder is `Submitted` → `Approved` → `Published`:
-approving a clip clears it for a segment, publishing the **round** (admin
-portal → Voice) records that the episode actually aired
-(`config:voice_published`). A message belongs to no round, so it stops at
-`Approved — we plan to use this`. The prompt's cutoff is display-only —
+approving a clip clears it for a segment, publishing records that the episode
+actually aired. A round publishes as a whole (`config:voice_published`, from the
+group header); a message belongs to no round and publishes **on its own**
+(`config:message_published`, from its card). The two sets are independent in
+both directions, so un-publishing a round can never reach a message. An approved
+message reads `Approved — we plan to use this` until it airs. The prompt's cutoff is display-only —
 past it the page says so and keeps accepting. A clip whose audio has hit
 the 60-day lifecycle is marked "audio expired" on its row the first time
 playback is attempted.

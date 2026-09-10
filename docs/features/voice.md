@@ -148,14 +148,30 @@ storage bound. Say "up to five", never "exactly five".
 
 ## Status ladder
 
-`Submitted` → `Approved` → `Published`, and the last step is **round-scoped**:
-publishing writes `config:voice_published` and means "the episode actually
-aired". Approval can precede it by weeks.
+`Submitted` → `Approved` → `Published`. Approval clears a clip for a segment and
+can precede publication by weeks; publication means "the episode actually aired".
 
-A message belongs to no round, so it stops at `Approved — we plan to use this`.
-The Messages group in the admin portal has no publish toggle, deliberately:
-muddying the approval/publication distinction for a second content type costs
-more than the feature is worth, and per-message publication stays additive.
+Publication is tracked in **two independent sets**, because a round and a
+message are published as different events:
+
+| Key | Scope | Written by |
+|---|---|---|
+| `config:voice_published` | a whole round — every approved clip in it flips at once | the group header toggle |
+| `config:message_published` | one message | the toggle on that message's card |
+
+`POST /admin/voice/publish` routes on the id (`isMessageId`), so the client posts
+one shape and the worker picks the key. **The separation is enforced in both
+directions**: `publishedPrompts` filters `msg_` ids out and `publishedMessages`
+keeps only `msg_` ids, so an id in the wrong list is inert rather than quietly
+effective — and un-publishing a round can never reach a message. Neither key
+expires; both are operator config that must outlive the 60-day clip retention so
+a member asking later still gets a truthful answer.
+
+An approved message reads `Approved — we plan to use this` until it is published,
+then `Published`. It first shipped stopping at that interim state, on the
+reasoning that publication was round-scoped and a message belonged to no round —
+which left a member watching for a state that could never arrive, and meant a
+message that had aired still got the delete warning for something retractable.
 
 ## Deletion
 

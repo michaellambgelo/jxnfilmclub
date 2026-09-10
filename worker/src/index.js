@@ -916,7 +916,37 @@ async function voicePrompt(env) {
 async function publishedPrompts(env) {
   const v = await readConfig(env, 'voice_published')
   const ids = v && Array.isArray(v.promptIds) ? v.promptIds : []
-  return new Set(ids.filter(id => validPromptId(id)))
+  // msg_ ids are filtered OUT, not merely unused: publication is tracked in two
+  // independent sets, and the separation has to be real in both directions or
+  // it is only a convention. A message id sitting in the round set is inert.
+  return new Set(ids.filter(id => validPromptId(id) && !isMessageId(id)))
+}
+
+// config:message_published — the per-MESSAGE half. A round is published as an
+// episode-level event; a message belongs to no round and is published on its
+// own, so it gets its own set rather than a shared list. Un-publishing a round
+// can then never reach a message, and neither can a typo in the other list.
+// Same no-expiry discipline as the round set: operator config, not member
+// data, and it must outlive the 60-day clip retention so a member who asks
+// later still gets a truthful answer.
+async function publishedMessages(env) {
+  const v = await readConfig(env, 'message_published')
+  const ids = v && Array.isArray(v.promptIds) ? v.promptIds : []
+  return new Set(ids.filter(id => isMessageId(id)))
+}
+
+async function publishedSets(env) {
+  const [rounds, messages] = await Promise.all([publishedPrompts(env), publishedMessages(env)])
+  return { rounds, messages }
+}
+
+// Which set governs this row. Routing on the ID rather than on row.kind: the
+// id is what the key is built from and what the admin toggle sends, so it
+// cannot drift from the row it describes.
+function publishedFor(promptId, sets) {
+  if (!sets) return false
+  const set = isMessageId(promptId) ? sets.messages : sets.rounds
+  return set instanceof Set && set.has(promptId)
 }
 
 // Content-type allowlist → file extension. Prefix-matched, NOT exact:
@@ -942,12 +972,13 @@ function voiceExt(contentType) {
 }
 
 // What the member-facing endpoints return: the row minus storage internals.
-function voiceClipProjection(row, published) {
+function voiceClipProjection(row, sets) {
   if (!row) return null
   const out = {
-    // Whether the ROUND has aired. A clip can be approved for months before
-    // its episode drops, so the member UI must be able to tell those apart.
-    published: published instanceof Set ? published.has(row.promptId) : false,
+    // Whether this has actually aired — the round for a round clip, the message
+    // itself for a message. A clip can be approved for months before its
+    // episode drops, so the member UI must be able to tell those apart.
+    published: publishedFor(row.promptId, sets),
     promptId: row.promptId,
     promptText: row.promptText,
     contentType: row.contentType,
@@ -1206,7 +1237,7 @@ async function handleVoiceSubmit(request, env) {
   // Contract: the response IS the safe projection (no wrapper object). The
   // published set is passed so a replace of a clip in an already-aired round
   // does not report published:false and contradict the history row beside it.
-  return json(env, voiceClipProjection(row, await publishedPrompts(env)))
+  return json(env, voiceClipProjection(row, await publishedSets(env)))
 }
 
 // GET /voice/mine — authenticated. The current prompt plus the caller's clip
@@ -1226,7 +1257,7 @@ async function handleVoiceMine(request, env) {
   if (raw) {
     try { clip = JSON.parse(raw) } catch { clip = null }
   }
-  return json(env, { prompt, clip: voiceClipProjection(clip, await publishedPrompts(env)) })
+  return json(env, { prompt, clip: voiceClipProjection(clip, await publishedSets(env)) })
 }
 
 // Prompt ids are admin-set slugs. The pattern is a security boundary, not
@@ -1306,7 +1337,7 @@ async function handleVoiceHistory(request, env) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
   const prompt = await voicePrompt(env)
-  const published = await publishedPrompts(env)
+  const published = await publishedSets(env)
   const suffix = `:${claims.id}`
   const clips = []
   let cursor
@@ -1378,8 +1409,15 @@ async function handleAdminVoiceList(request, env) {
     }
     cursor = page.list_complete ? undefined : page.cursor
   } while (cursor)
-  // The admin UI needs the published set to render a per-round toggle.
-  return json(env, { clips, publishedPromptIds: [...(await publishedPrompts(env))].sort() })
+  // The admin UI needs both sets: a per-ROUND toggle on round groups, and a
+  // per-MESSAGE toggle on message cards. Two lists, because they are two
+  // different things being published.
+  const sets = await publishedSets(env)
+  return json(env, {
+    clips,
+    publishedPromptIds: [...sets.rounds].sort(),
+    publishedMessageIds: [...sets.messages].sort(),
+  })
 }
 
 // POST /admin/voice/publish — { promptId, published: boolean }.
@@ -1403,12 +1441,19 @@ async function handleAdminVoicePublish(request, env) {
   if (typeof body.published !== 'boolean') {
     return json(env, { error: 'published must be a boolean' }, 400)
   }
-  const current = await publishedPrompts(env)
+  // One endpoint, routed on the id: a msg_ id publishes that MESSAGE, anything
+  // else publishes that ROUND. The two sets never mix, so publishing a message
+  // cannot alter a round's state and un-publishing a round cannot reach a
+  // message. Routing here rather than in a second endpoint keeps the admin
+  // client posting one shape.
+  const isMsg = isMessageId(body.promptId)
+  const key = isMsg ? 'config:message_published' : 'config:voice_published'
+  const current = isMsg ? await publishedMessages(env) : await publishedPrompts(env)
   if (body.published) current.add(body.promptId)
   else current.delete(body.promptId)
   const promptIds = [...current].sort()
-  await env.MEMBERS_KV.put('config:voice_published', JSON.stringify({ promptIds }))
-  return json(env, { ok: true, promptIds })
+  await env.MEMBERS_KV.put(key, JSON.stringify({ promptIds }))
+  return json(env, { ok: true, kind: isMsg ? 'message' : 'round', promptIds })
 }
 
 // POST /admin/voice/status — { key, status: 'approved' | 'rejected' }.

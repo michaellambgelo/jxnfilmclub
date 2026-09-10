@@ -951,7 +951,24 @@ function voiceTranscriptPill(t) {
   return `<span class="pill on" title="Reviewed ${attr(t.reviewedAt)}">transcript reviewed</span>`
 }
 
-function voiceClipCard(c) {
+// `publishedMsgs` is the config:message_published set. Only messages consult
+// it — a round clip's publication is a property of its round, rendered on the
+// group header instead.
+// A message is published on its own, so the toggle lives on the card rather
+// than a group header. Gated on approved: publishing something you have not
+// approved inverts the ladder. Still rendered when already published, or an
+// accidental publish could never be taken back from this screen.
+function voiceMessagePublishBtn(c, publishedMsgs) {
+  if (c.kind !== 'message') return ''
+  const on = !!(publishedMsgs && publishedMsgs.has(c.promptId))
+  if (!on && c.status !== 'approved') return ''
+  return `<button data-action="voice-publish" data-prompt="${attr(c.promptId)}"
+    data-kind="message" data-published="${on ? '1' : '0'}"
+    title="Whether this message has actually aired — flips it from Approved to Published for its member"
+    >${on ? 'unpublish message' : 'publish message'}</button>`
+}
+
+function voiceClipCard(c, publishedMsgs) {
   const src = `/api/voice?${qs({ env: env(), key: c.r2Key })}`
   const srtKey = String(c.r2Key || '').replace(/\.[^.]+$/, '.srt')
   return `
@@ -988,16 +1005,18 @@ function voiceClipCard(c) {
         ${c.transcript?.reviewedAt ? '' : `<button data-action="voice-srt-review" data-key="${attr(c.keyName)}" title="Vouch for the transcript as it stands — use this when whisper got it right and there is nothing to fix">mark reviewed</button>`}
         ${c.status !== 'approved' ? `<button class="primary" data-action="voice-status" data-key="${attr(c.keyName)}" data-status="approved">approve</button>` : ''}
         ${c.status !== 'rejected' ? `<button data-action="voice-status" data-key="${attr(c.keyName)}" data-status="rejected">reject</button>` : ''}
+        ${voiceMessagePublishBtn(c, publishedMsgs)}
         <button class="danger" data-action="voice-delete" data-key="${attr(c.keyName)}">delete</button>
       </div>
     </div>`
 }
 
 async function renderVoice() {
-  const [voiceRes, promptRes, pubRes] = await Promise.all([
+  const [voiceRes, promptRes, pubRes, msgPubRes] = await Promise.all([
     loadKv('voice:'),
     loadKv('config:voice_prompt'),
     loadKv('config:voice_published'),
+    loadKv('config:message_published'),
   ])
   const prompt = tryParse(promptRes.values['config:voice_prompt']) || DEFAULT_VOICE_PROMPT
   // Published rounds — the member-facing difference between "Approved" and
@@ -1005,6 +1024,11 @@ async function renderVoice() {
   // key is written in one place.
   const pubVal = tryParse(pubRes.values['config:voice_published'])
   const published = new Set(pubVal && Array.isArray(pubVal.promptIds) ? pubVal.promptIds : [])
+  // The per-message half. Deliberately a second key rather than more ids in
+  // the first: publishing a message must not be able to disturb a round, and
+  // un-publishing a round must not be able to reach a message.
+  const msgPubVal = tryParse(msgPubRes.values['config:message_published'])
+  const publishedMsgs = new Set(msgPubVal && Array.isArray(msgPubVal.promptIds) ? msgPubVal.promptIds : [])
 
   const rows = voiceRes.keys
     .map(k => ({ keyName: k.name, ...(tryParse(voiceRes.values[k.name]) || {}) }))
@@ -1040,12 +1064,12 @@ async function renderVoice() {
             >${published.has(g.promptId) ? 'unpublish round' : 'publish round'}</button>`}</h3>
         ${g.messages
           ? `<p class="section-hint">Members writing their own prompt rather than answering the round —
-              each one is its own single-clip round under a minted <code>msg_</code> id. There is no
-              publish toggle because publication is round-scoped and these belong to no round; an
-              approved message reads “Approved — we plan to use this” to its member. Render one with
+              each one is its own single-clip round under a minted <code>msg_</code> id. Publication
+              here is <b>per message</b>, on the card, not per round: an approved message reads
+              “Approved — we plan to use this” until you publish it, then “Published”. Render one with
               <code>node scripts/make_audiogram.mjs --prompt &lt;msg_id&gt; --with-prompt --clips-only</code>.</p>`
           : (g.promptText ? `<p class="section-hint">“${escapeHtml(g.promptText)}”</p>` : '')}
-        ${g.clips.map(voiceClipCard).join('')}
+        ${g.clips.map(c => voiceClipCard(c, publishedMsgs)).join('')}
       </section>`).join('') : '<p class="empty">No voice clips yet.</p>'}
   `
 
@@ -2069,9 +2093,17 @@ document.addEventListener('click', async (e) => {
     else if (a === 'voice-publish') {
       const promptId = btn.dataset.prompt
       const next = btn.dataset.published !== '1'
-      if (next && !confirm(`Mark "${promptId}" as published?\n\nEvery approved clip in this round will tell its member the episode is out. Only do this once it actually is.`)) return
+      const isMsg = btn.dataset.kind === 'message'
+      // The worker routes on the id, so the payload shape is the same for
+      // both; only what the operator is being asked to vouch for differs.
+      const ask = isMsg
+        ? `Mark this message as published?\n\nIt will tell its member the episode carrying it is out. Only do this once it actually is.`
+        : `Mark "${promptId}" as published?\n\nEvery approved clip in this round will tell its member the episode is out. Only do this once it actually is.`
+      if (next && !confirm(ask)) return
       await api('POST', `/api/voice/publish?${qs({ env: env() })}`, JSON.stringify({ promptId, published: next }))
-      toast(next ? 'Round published' : 'Round unpublished')
+      toast(next
+        ? (isMsg ? 'Message published' : 'Round published')
+        : (isMsg ? 'Message unpublished' : 'Round unpublished'))
       await switchTab(currentTab)
     }
     else if (a === 'voice-delete') {

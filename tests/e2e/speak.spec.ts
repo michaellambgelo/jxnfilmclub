@@ -325,6 +325,54 @@ test.describe('speak: free-form messages', () => {
     expect(height).toBeGreaterThan(60)
   })
 
+  // A message belongs to no round, so it used to stop at "Approved — we plan to
+  // use this" with no way to ever say it aired. Publication is per-message now,
+  // through its own config key, and the member sees the same Published state a
+  // round answer reaches — which also arms the aired wording on delete.
+  test('an approved message reaches Published once it actually airs', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'Worth putting on the show')
+    await expect(page.locator('.hrow')).toHaveCount(1)
+
+    const promptId = await page.locator('.hrow-act[data-act="delete"]').first().getAttribute('data-prompt')
+    expect(promptId).toMatch(/^msg_/)
+
+    // Approved but not aired: the honest interim state, not a bare "Approved"
+    // that leaves a member watching for something with no stated meaning.
+    const listed = await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent('voice:' + promptId + ':')}`)).json()
+    const rowKey = listed.keys[0]
+    const stored = await (await page.request.get(
+      `${WORKER_ORIGIN}/__test/kv?key=${encodeURIComponent(rowKey)}`)).json()
+    const row = JSON.parse(stored.value)
+    row.status = 'approved'
+    await seedKv(page, rowKey, JSON.stringify(row))
+    await page.reload()
+    await expect(page.locator('.hrow-meta').first()).toContainText('we plan to use this')
+
+    // Publishing the ROUND set must do nothing to it — the separation is the
+    // point of the second key, so assert it from the member's side too.
+    await seedKv(page, 'config:voice_published', JSON.stringify({ promptIds: [promptId] }))
+    await page.reload()
+    await expect(page.locator('.hrow-meta').first()).toContainText('we plan to use this')
+
+    // The message's own set is what moves it.
+    await seedKv(page, 'config:message_published', JSON.stringify({ promptIds: [promptId] }))
+    await page.reload()
+    await expect(page.locator('.hrow-meta').first()).toContainText('Published')
+    await expect(page.locator('.hrow-meta').first()).not.toContainText('we plan to use this')
+
+    // ...and the delete warning follows from it, with no extra plumbing: the
+    // gap that started this was a published message getting the wording for
+    // something still retractable.
+    let asked = ''
+    page.once('dialog', d => { asked = d.message(); d.dismiss() })
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+    expect(asked).toContain('already aired')
+    expect(asked).toContain('cannot be recalled')
+  })
+
   // Publication is the one-way door. Before it, deleting IS the retraction, and
   // "this cannot be undone" describes the boundary working as intended. After
   // it, deleting removes the club's copy and nothing else — the episode is

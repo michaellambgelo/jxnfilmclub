@@ -827,6 +827,71 @@ describe('free-form messages', () => {
     expect(row.promptText).toBe('Second take')
   })
 
+  // Publication is two independent sets. The whole point of the second key is
+  // that neither list can reach the other, so these assert the separation in
+  // BOTH directions rather than only that the happy path works.
+  const pub = (promptId, published) =>
+    req('/admin/voice/publish', { method: 'POST', token: ADMIN, body: { promptId, published } })
+  const historyOf = async (token) => (await (await req('/voice/history', { token })).json()).clips
+  const rowFor = (clips, id) => clips.find(c => c.promptId === id)
+
+  it('publishes a message on its own, without touching the round set', async () => {
+    const { token } = await getTokenFor('pub1@example.com')
+    const promptId = (await (await postMessage(token, { subject: 'Air this one' })).json()).promptId
+
+    const res = await pub(promptId, true)
+    expect(res.status).toBe(200)
+    expect((await res.json()).kind).toBe('message')
+
+    expect(JSON.parse(await env.MEMBERS_KV.get('config:message_published')).promptIds).toEqual([promptId])
+    // The round set was never created, let alone modified.
+    expect(await env.MEMBERS_KV.get('config:voice_published')).toBeNull()
+    expect(rowFor(await historyOf(token), promptId).published).toBe(true)
+  })
+
+  it('a message id sitting in the round set is inert', async () => {
+    const { token } = await getTokenFor('pub2@example.com')
+    const promptId = (await (await postMessage(token, { subject: 'Not via that list' })).json()).promptId
+    // Hand-write the WRONG list, the way a stale client or a typo would.
+    await env.MEMBERS_KV.put('config:voice_published', JSON.stringify({ promptIds: [promptId] }))
+    expect(rowFor(await historyOf(token), promptId).published).toBe(false)
+  })
+
+  it('a round id sitting in the message set is inert', async () => {
+    const { token } = await getTokenFor('pub3@example.com')
+    expect((await postVoice(token)).status).toBe(200)
+    await env.MEMBERS_KV.put('config:message_published', JSON.stringify({ promptIds: ['general'] }))
+    expect(rowFor(await historyOf(token), 'general').published).toBe(false)
+  })
+
+  it('publishing and un-publishing a round leaves published messages alone', async () => {
+    const { token } = await getTokenFor('pub4@example.com')
+    const msgId = (await (await postMessage(token, { subject: 'Stays published' })).json()).promptId
+    await pub(msgId, true)
+    expect((await postVoice(token)).status).toBe(200)
+
+    await pub('general', true)
+    // Un-publishing is the operation most likely to clobber a shared list.
+    await pub('general', false)
+
+    expect(JSON.parse(await env.MEMBERS_KV.get('config:message_published')).promptIds).toEqual([msgId])
+    const clips = await historyOf(token)
+    expect(rowFor(clips, msgId).published).toBe(true)
+    expect(rowFor(clips, 'general').published).toBe(false)
+  })
+
+  it('the admin list hands back both sets', async () => {
+    const { token } = await getTokenFor('pub5@example.com')
+    const msgId = (await (await postMessage(token, { subject: 'Both lists' })).json()).promptId
+    await pub(msgId, true)
+    expect((await postVoice(token)).status).toBe(200)
+    await pub('general', true)
+
+    const body = await (await req('/admin/voice', { token: ADMIN })).json()
+    expect(body.publishedMessageIds).toEqual([msgId])
+    expect(body.publishedPromptIds).toEqual(['general'])
+  })
+
   // These all pass the control-character check (every one is >= 32) and would
   // otherwise reach the admin list, the TUI and the audiogram frame verbatim.
   it('strips invisible formatting characters from a subject and note', async () => {

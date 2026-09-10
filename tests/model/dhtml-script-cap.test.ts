@@ -46,7 +46,7 @@ describe('dhtml component script cap', () => {
 
   it('reports the /speak components, which sit closest to the cap', () => {
     const found = components('ui/views.html').filter(c => c.name.startsWith('speak'))
-    expect(found.map(c => c.name)).toEqual(['speak-view', 'speak-recorder', 'speak-history'])
+    expect(found.map(c => c.name)).toEqual(['speak-view', 'speak-recorder', 'speak-compose', 'speak-history'])
     // Not an assertion on the exact numbers — just proof the parser found
     // real scripts rather than silently matching nothing and passing.
     for (const c of found) expect(c.chars).toBeGreaterThan(1000)

@@ -149,8 +149,8 @@ test.describe('site footer', () => {
 })
 
 test.describe('signed-in nav', () => {
-  test('Account Actions click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
-    // Seed a session so the nav shows Account Actions instead of Join/Log in.
+  test('Account click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
+    // Seed a session so the nav shows Account instead of Join/Log in.
     await page.goto('/')
     await page.evaluate(() => {
       localStorage.jxnfc_session = JSON.stringify({
@@ -159,7 +159,7 @@ test.describe('signed-in nav', () => {
       })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Account Actions' }).click()
+    await page.getByRole('link', { name: 'Account' }).click()
     await page.waitForURL(/\/edit/, { timeout: 5_000 })
     expect(page.url()).toContain('/edit')
     expect(page.url()).not.toContain('join.jxnfilm.club')

@@ -1,4 +1,4 @@
-import { test, expect, seedKv, signInAs, WORKER_ORIGIN } from './fixtures'
+import { test, expect, seedKv, wipeKv, signInAs, WORKER_ORIGIN } from './fixtures'
 
 const ADMIN_ORIGIN = 'http://localhost:5175'
 
@@ -167,7 +167,7 @@ test.describe('speak page', () => {
     await recBtn.click()
 
     await expect(page.locator('.speak-preview')).toBeVisible()
-    await expect(page.locator('.speak-player audio')).toBeAttached()
+    await expect(page.locator('audio.speak-player')).toBeAttached()
     // Staged-but-unsubmitted take surfaces as Draft in the band's rail.
     await expect(page.locator('.speak-status-dd')).toHaveText('Draft')
     await page.locator('.speak-consent input[type="checkbox"]').check()
@@ -195,5 +195,183 @@ test.describe('speak page', () => {
     const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?prefix=${encodeURIComponent('voice:')}`)
     const { keys } = await res.json()
     expect((keys || []).filter((k: any) => String(k.name || k).includes('deleter'))).toHaveLength(0)
+  })
+})
+
+test.describe('speak: free-form messages', () => {
+  const EMAIL = 'msg-e2e@example.com'
+
+  // Staging a clip is the same in either mode — the recorder is shared. Only
+  // the subject fields and the submit metadata differ.
+  async function stageAClip(page) {
+    await page.locator('.speak-upload input[type="file"]').setInputFiles({
+      name: 'take.wav', mimeType: 'audio/wav', buffer: tinyWav(),
+    })
+    await expect(page.locator('.speak-preview')).toBeVisible()
+    await page.locator('.speak-consent input[type="checkbox"]').check()
+  }
+
+  async function sendMessage(page, subject: string, note = '') {
+    // Real members are held to one message a minute on purpose (the cap is a
+    // soft bound and this throttle is what makes beating it need concurrency
+    // rather than a loop). A test sending two back to back has to clear it.
+    await wipeKv(page, `rate:voice_msg:${EMAIL}`)
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await page.locator('.speak-subject-input').fill(subject)
+    if (note) await page.locator('.speak-note-input').fill(note)
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+  }
+
+  test('the member writes their own subject, and it becomes the headline', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    // The band stops calling it the round's prompt and stops quoting the
+    // member's own words back at them.
+    await expect(page.locator('.speak-eyebrow-text')).toHaveText('Your message')
+    await expect(page.locator('.speak-q').first()).toBeHidden()
+    await expect(page.locator('.speak-prompt-text')).toHaveText('What is on your mind?')
+
+    await page.locator('.speak-subject-input').fill('The ending of Nope, explained')
+    await expect(page.locator('.speak-prompt-text')).toHaveText('The ending of Nope, explained')
+    await expect(page.locator('.speak-subject-left')).toHaveText('51')
+
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+
+    const row = page.locator('.hrow').filter({ hasText: 'The ending of Nope, explained' })
+    await expect(row).toBeVisible()
+    await expect(row.locator('.hrow-badge')).toHaveText('Your message')
+    // The subject is NOT wrapped in the round's quote marks.
+    await expect(row.locator('.hrow-prompt')).toHaveText('The ending of Nope, explained')
+  })
+
+  test('a message and a round answer coexist, and the round stays pinned first', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'A thought about Sirk')
+
+    // Answering the round is a separate submission on a separate throttle.
+    await page.locator('.speak-mode-btn', { hasText: 'Answer this round' }).click()
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+
+    await expect(page.locator('.hrow')).toHaveCount(2)
+    await expect(page.locator('.hrow').first().locator('.hrow-badge')).toHaveText('This round')
+    await expect(page.locator('.hrow').nth(1).locator('.hrow-badge')).toHaveText('Your message')
+  })
+
+  test('several messages stack up, and deleting one leaves the rest', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await sendMessage(page, 'First thing on my mind')
+    await sendMessage(page, 'Second thing on my mind')
+    await expect(page.locator('.hrow')).toHaveCount(2)
+
+    page.once('dialog', d => d.accept())
+    await page.locator('.hrow').filter({ hasText: 'First thing on my mind' })
+      .getByRole('button', { name: 'Delete' }).click()
+
+    await expect(page.locator('.hrow')).toHaveCount(1)
+    await expect(page.locator('.hrow')).toContainText('Second thing on my mind')
+  })
+
+  test('the subject is required, and saying so costs no round trip', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+
+    await expect(page.locator('.speak-recorder .rsvp-err')).toContainText('subject')
+    // Nothing was sent, and the take is still staged for them.
+    await expect(page.locator('.speak-preview')).toBeVisible()
+    await expect(page.locator('.hrow')).toHaveCount(0)
+  })
+
+  test('switching modes does not destroy a staged recording', async ({ page }) => {
+    // The whole reason speak-compose is its own component: a parent update()
+    // re-evaluates speak-recorder's script and drops the module-scope blob.
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await stageAClip(page)
+    await expect(page.locator('.speak-status-dd')).toHaveText('Draft')
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await expect(page.locator('.speak-preview')).toBeVisible()
+    await expect(page.locator('audio.speak-player')).toHaveCount(1)
+
+    await page.locator('.speak-subject-input').fill('Kept my take across the switch')
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.hrow')).toContainText('Kept my take across the switch')
+  })
+
+  test('a member who already answered the round can still send a message', async ({ page }) => {
+    // Answering hides the recorder behind the submitted state; the message
+    // mode has to bring it back or the second door is unreachable.
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.speak-upload')).toBeHidden()
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    await expect(page.locator('.speak-upload')).toBeVisible()
+  })
+})
+
+test.describe('speak: the signed-out door', () => {
+  test('offers logging in and joining as the two different things they are', async ({ page }) => {
+    await page.goto('/speak')
+    // The primary action used to read "Record a clip" and silently jump to
+    // /signin — a full load, which GitHub Pages answers with a 404 document.
+    await expect(page.locator('.speak-band-btn').first()).toHaveText('Log in to record')
+    await expect(page.locator('.speak-band-btn').nth(1)).toHaveText('Join the club')
+    // The reassurance line is a real link now, not dead text saying "log in".
+    const reassure = page.locator('.speak-band-reassure:visible')
+    await expect(reassure.locator('a[href="/signin"]')).toHaveCount(1)
+    await expect(reassure.locator('a[href="https://join.jxnfilm.club/"]')).toHaveCount(1)
+  })
+
+  test('logging in from /speak comes back to /speak', async ({ page }) => {
+    await page.goto('/speak')
+    await page.locator('.speak-band-btn').first().click()
+    await page.waitForURL(/\/signin/)
+    await signInAs(page, 'return-e2e@example.com', { name: 'Return Member', skipGoto: true })
+    await page.waitForURL(/\/speak/, { timeout: 10_000 })
+    expect(page.url()).toContain('/speak')
+  })
+})
+
+test.describe('finding the way in', () => {
+  test('Log in is one tap on a phone, without opening the menu', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 })
+    await page.goto('/')
+    const login = page.locator('.mastnav-auth a.nav-login')
+    await expect(login).toBeVisible()
+    // The collapsed menu is still collapsed — this is the point.
+    await expect(page.locator('.mastnav-links')).toBeHidden()
+    // …and it sits on the logo row rather than wrapping under it.
+    const logo = await page.locator('.mastnav .logo').boundingBox()
+    const box = await login.boundingBox()
+    expect(Math.abs((box!.y + box!.height / 2) - (logo!.y + logo!.height / 2))).toBeLessThan(30)
+  })
+
+  test('Speak is in the nav — an open mic you can only find by email is not open', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('link', { name: 'Speak', exact: true }).click()
+    await page.waitForURL(/\/speak/)
+    await expect(page.locator('.speak-band')).toBeVisible()
+  })
+
+  test('a stashed return path is allowlisted, so it cannot be steered off-site', async ({ page }) => {
+    await page.goto('/signin')
+    await page.evaluate(() => { sessionStorage.jxnfc_next = '//evil.example' })
+    await signInAs(page, 'safe-e2e@example.com', { name: 'Safe Member', skipGoto: true })
+    await page.waitForURL(/\/edit/, { timeout: 10_000 })
+    expect(page.url()).toContain('/edit')
+    expect(page.url()).not.toContain('evil.example')
   })
 })

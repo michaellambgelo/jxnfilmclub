@@ -30,10 +30,10 @@ test.describe('account stats card', () => {
     await expect(page.locator('.acct-stats-grid')).toHaveClass(/-three/)
     await expect(page.locator('.acct-stat-label', { hasText: 'Hosted' })).toHaveCount(0)
 
-    // Voice clips is a tile now, not a meta footnote — we want every member
+    // Voice submissions is a tile now, not a meta footnote — we want every member
     // submitting one. At zero it keeps the count and wears the accent, because
     // zero is the state the tile exists to change.
-    await expect(page.locator('.acct-stat-label', { hasText: 'Voice clips' })).toHaveCount(1)
+    await expect(page.locator('.acct-stat-label', { hasText: 'Voice submissions' })).toHaveCount(1)
     await expect(page.locator('.acct-stat-value.-nudge')).toHaveText('0')
     await expect(page.locator('.acct-stats-meta')).not.toContainText('voice')
 
@@ -71,7 +71,7 @@ test.describe('account stats card', () => {
     await page.getByRole('link', { name: 'Members' }).click()
     await expect(page.locator('.acct-stats-grid')).toHaveCount(0)
 
-    await page.getByRole('link', { name: 'Account Actions' }).click()
+    await page.getByRole('link', { name: 'Account' }).click()
     await expect(page.locator('.acct-stats-grid')).toBeVisible()
 
     expect(hits.n).toBeGreaterThan(0)

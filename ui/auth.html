@@ -288,7 +288,7 @@
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
         setSession({ token, email, id, name, handle, exp: payload.exp, refresh })
         clearOtpInflight()
-        location.href = '/edit'
+        location.href = (globalThis.jxnfcNext && globalThis.jxnfcNext()) || '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })
       }
@@ -342,9 +342,15 @@
       this.update({ step: 'email', email: '', busy: false, error: '' })
       // ensureSession also covers a remembered device whose 1-hour token has
       // lapsed: it silently refreshes instead of making them log in again.
+      //
+      // The landing is jxnfcNext() (index.html) rather than a hard-coded
+      // /edit: a member who clicked Log in from /speak used to be dropped on
+      // Account Actions with no way back, which is most of why logging in
+      // felt like a dead end. The stash is an allowlisted path in
+      // sessionStorage, so this cannot be steered off-site.
       const s = await ensureSession()
       if (s) {
-        location.href = '/edit'
+        location.href = (globalThis.jxnfcNext && globalThis.jxnfcNext()) || '/edit'
         return
       }
       // Resume an in-flight OTP request so returning users don't have to
@@ -382,7 +388,7 @@
         const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
         setSession({ token, email: this.email, id, name, handle, exp: payload.exp, refresh })
         clearOtpInflight()
-        location.href = '/edit'
+        location.href = (globalThis.jxnfcNext && globalThis.jxnfcNext()) || '/edit'
       } catch (err) {
         this.update({ busy: false, error: err.message })
       }
@@ -759,13 +765,17 @@
         <b class="acct-stat-value">{ stats.hosted }</b>
         <span class="acct-stat-label">Hosted</span>
       </div>
-      <!-- Voice clips is promoted out of the meta line to a tile of its own:
-           we want every member submitting one, so the count is the ask, not a
-           footnote. At zero it wears the accent instead of hiding, because
-           zero is the state we are inviting them to change. -->
+      <!-- Promoted out of the meta line to a tile of its own: we want every
+           member submitting one, so the count is the ask, not a footnote. At
+           zero it wears the accent instead of hiding, because zero is the
+           state we are inviting them to change.
+           /voice/history returns round answers AND free-form messages, so the
+           label says "submissions" — a member seeing messages counted under
+           "Voice clips" would be looking at a number they cannot account
+           for. -->
       <div class="acct-stat">
         <b class="acct-stat-value { stats.clips ? '' : '-nudge' }">{ stats.clips }</b>
-        <span class="acct-stat-label { stats.clips ? '' : '-nudge' }">Voice { stats.clips === 1 ? 'clip' : 'clips' }</span>
+        <span class="acct-stat-label { stats.clips ? '' : '-nudge' }">Voice { stats.clips === 1 ? 'submission' : 'submissions' }</span>
       </div>
       <div class="acct-stat">
         <b class="acct-stat-value">{ stats.rsvps }</b>

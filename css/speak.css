@@ -496,7 +496,10 @@
   margin: var(--space-6) 0;
 }
 
-.speak .speak-player audio {
+/* The preview player is the <audio> element itself now, bound to clipSrc:
+   an imperatively-appended node was detached by nuedom's post-handler
+   re-render, which quietly removed the preview when consent was ticked. */
+.speak audio.speak-player {
   width: 100%;
   margin-bottom: var(--space-3);
 }
@@ -529,4 +532,94 @@
 .speak .speak-toolong {
   margin: 8px 0 0;
   color: var(--brand);
+}
+
+/* ---------- mode chooser + message subject (tokenized zone idiom) ---------- */
+
+/* Two modes, one page. The chooser is a pair of segmented buttons rather than
+   a radio group: it is a navigation between two composers, not a field. */
+.speak .speak-mode {
+  display: flex;
+  gap: 0;
+  margin: 0 0 var(--space-4);
+  border: 1px solid var(--line-2);
+}
+
+.speak button.speak-mode-btn {
+  flex: 1;
+  width: auto;
+  margin: 0;
+  background: transparent;
+  color: var(--ink-3);
+  border: 0;
+  border-right: 1px solid var(--line-2);
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: var(--space-3) var(--space-4);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.speak button.speak-mode-btn:last-child {
+  border-right: 0;
+}
+
+.speak button.speak-mode-btn:hover {
+  color: var(--ink-strong);
+}
+
+.speak button.speak-mode-btn.-on {
+  background: var(--brand);
+  color: #fff;
+}
+
+.speak .speak-mode-hint {
+  margin: calc(var(--space-4) * -1) 0 var(--space-6);
+}
+
+.speak .speak-subject {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+}
+
+.speak .speak-subject label {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.speak .speak-subject .hint {
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+}
+
+.speak .speak-subject .hint:last-child {
+  margin-bottom: 0;
+}
+
+/* Tabular figures so the countdown does not jitter the line as it ticks. */
+.speak .speak-subject-left {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.speak .speak-subject textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+/* The message badge reads as information, not as the live-round accent. */
+.speak .hrow-badge.-msg {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.speak .hrow-note {
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+  color: var(--ink-3);
+  margin: 0 0 var(--space-2);
 }

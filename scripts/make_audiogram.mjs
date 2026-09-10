@@ -279,7 +279,7 @@ try {
       // Default: pull straight into the archive, so the download is paid for
       // once per round ever. --no-keep-audio pulls to the temp dir instead but
       // still reuses an archive if one is already there.
-      const archived = archivePathFor(args.outDir, args.promptId, c)
+      const archived = archivePathFor(args.outDir, c.promptId || args.promptId, c)
       c.raw = args.keepAudio ? archived : join(tmp, `raw-${i}.${ext}`)
       c.norm = join(tmp, `norm-${i}.wav`)
       try {

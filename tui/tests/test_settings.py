@@ -108,3 +108,24 @@ def test_the_transcript_location_is_defined_identically_in_js(repo_root):
     source = (repo_root / "scripts" / "lib" / "voices.mjs").read_text()
     assert "export function transcriptPathFor(outDir, promptId, clip)" in source
     assert "export function transcriptKeyFor(clip)" in source
+
+
+def test_message_rounds_are_recognised_from_the_reserved_key_namespace():
+    """A message is a one-clip round under a minted msg_ id.
+
+    The worker owns that namespace (isMessageId) and refuses to let a
+    configured prompt use one, so the key alone tells the TUI what it is
+    looking at — no row field, no backfill for older rows.
+    """
+    from jxnfilm_tui.model.state import Round
+
+    assert Round(prompt_id="msg_m1kq4x8za7f3", prompt_text="The ending of Nope").is_message
+    assert not Round(prompt_id="spring-rewatch", prompt_text="What did you rewatch?").is_message
+    # 'msg-' with a hyphen is a legitimate admin-authored slug, not reserved.
+    assert not Round(prompt_id="msg-4", prompt_text="Msg 4").is_message
+
+
+def test_worker_reserves_the_same_namespace(repo_root):
+    """Guard the prefix the TUI copies from the worker, like BUCKETS and TTL."""
+    source = (repo_root / "worker" / "src" / "index.js").read_text()
+    assert "/^msg_[a-z0-9]{8,24}$/" in source, "isMessageId moved in worker/src/index.js"

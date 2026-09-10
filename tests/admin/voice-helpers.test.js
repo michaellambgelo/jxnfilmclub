@@ -180,3 +180,60 @@ describe('countOpenFeedback', () => {
     expect(countOpenFeedback(undefined, undefined)).toBe(0)
   })
 })
+
+describe('groupVoiceClips — free-form messages', () => {
+  const round = (promptId, at, promptText) => ({ promptId, at, promptText, r2Key: 'x' })
+  const msg = (promptId, at, promptText) => ({ promptId, at, promptText, r2Key: 'x', kind: 'message' })
+
+  it('collapses every message into one inbox instead of a round each', () => {
+    // Five messages carry five minted promptIds. Grouping them by promptId
+    // would bury the actual round under five one-clip "rounds".
+    const groups = groupVoiceClips([
+      round('spring', '2026-08-01T00:00:00Z', 'What did you rewatch?'),
+      msg('msg_a1', '2026-08-02T00:00:00Z', 'The ending of Nope'),
+      msg('msg_b2', '2026-08-03T00:00:00Z', 'Sirk, briefly'),
+    ], 'spring')
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].promptId).toBe('spring')
+    expect(groups[1].messages).toBe(true)
+    expect(groups[1].clips.map(c => c.promptId)).toEqual(['msg_b2', 'msg_a1'])
+  })
+
+  it('pins the current round first and the inbox second, above older rounds', () => {
+    const groups = groupVoiceClips([
+      round('older', '2026-07-01T00:00:00Z', 'Old one'),
+      msg('msg_a1', '2026-06-01T00:00:00Z', 'An old message'),
+      round('spring', '2026-08-01T00:00:00Z', 'Current'),
+    ], 'spring')
+    // The inbox outranks older rounds even when its newest clip is older:
+    // it is an inbox, and things in it are waiting on a human.
+    expect(groups.map(g => g.messages ? 'messages' : g.promptId)).toEqual(['spring', 'messages', 'older'])
+  })
+
+  it('carries no promptId on the inbox, because there is no round to publish', () => {
+    const groups = groupVoiceClips([msg('msg_a1', '2026-08-02T00:00:00Z', 'Subject')], 'spring')
+    expect(groups[0].promptId).toBe('')
+    expect(groups[0].promptText).toBe('Messages')
+  })
+
+  it('counts pending messages toward the review badge like any other clip', () => {
+    expect(countPendingVoice([
+      msg('msg_a1', '2026-08-02T00:00:00Z', 'Subject'),
+      { ...msg('msg_b2', '2026-08-03T00:00:00Z', 'Done'), status: 'approved' },
+    ])).toBe(1)
+  })
+})
+
+describe('sanitizeVoicePrompt — the msg_ namespace is reserved', () => {
+  it('refuses a prompt id in the message namespace', () => {
+    // Unreachable through the slugifier today (it cannot emit an underscore);
+    // the guard is here so the reservation survives someone loosening it.
+    expect(sanitizeVoicePrompt({ id: 'msg_deadbeef01', text: 'Sneaky' })).toBeNull()
+  })
+
+  it('still slugifies an ordinary prompt id', () => {
+    expect(sanitizeVoicePrompt({ id: '  Summer 2026! ', text: 'Best snack?' }))
+      .toEqual({ id: 'summer-2026', text: 'Best snack?' })
+  })
+})

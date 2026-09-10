@@ -96,7 +96,10 @@ try {
   // --- 2. pull the R2 objects ---
   clips.forEach((c, i) => {
     const ext = ((c.r2Key.split('.').pop() || '').replace(/[^a-z0-9]/gi, '')) || 'bin'
-    const archived = archivePathFor(outDir, promptId, c)
+    // c.promptId, not the argument: identical for a round, and it keeps the
+    // archive path unique when a member has more than one free-form message
+    // (archivePathFor keys on memberId WITHIN promptId).
+    const archived = archivePathFor(outDir, c.promptId || promptId, c)
     c.raw = keepAudio ? archived : join(tmp, `raw-${i}.${ext}`)
     pullClip(c, envName, c.raw, keepAudio ? {} : { reuseFrom: archived })
   })
@@ -117,7 +120,10 @@ try {
   console.log('\nManifest (segment order):')
   clips.forEach((c, i) => {
     const secs = Math.min(180, c.probedSec ?? (Number(c.duration) || 0))
-    console.log(`  ${i + 1}. ${c.name || c.memberId} — ${fmtDur(secs)}  (${c.key})`)
+    // Print the prompt text too: for a free-form message that IS the subject
+    // its member wrote, and a minted msg_ id says nothing on its own.
+    const subject = c.promptText ? `  “${c.promptText}”` : ''
+    console.log(`  ${i + 1}. ${c.name || c.memberId} — ${fmtDur(secs)}${subject}  (${c.key})`)
   })
   console.log('\nReminder: source clips auto-delete 60 days after submission (R2 lifecycle).')
 } catch (err) {

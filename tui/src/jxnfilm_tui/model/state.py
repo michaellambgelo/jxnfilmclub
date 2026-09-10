@@ -114,6 +114,17 @@ class Round:
     clips: tuple[Clip, ...] = ()
 
     @property
+    def is_message(self) -> bool:
+        """A member's own free-form message rather than an answer to a round.
+
+        Derived from the reserved key namespace rather than a row field: the
+        worker mints msg_ ids for exactly this and refuses to let a configured
+        prompt use one, so the key is authoritative and needs no backfill for
+        rows written before the feature existed.
+        """
+        return self.prompt_id.startswith("msg_")
+
+    @property
     def approved_clips(self) -> tuple[Clip, ...]:
         return tuple(c for c in self.clips if c.approved)
 

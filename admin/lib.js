@@ -1056,10 +1056,31 @@ export function voiceDaysLeft(unixSec, now = Date.now()) {
 // prompt's group sorts first, then groups by most-recent submission; clips
 // within a group are newest-first. promptText is taken from the first row
 // that carries one.
+// A free-form message carries a server-minted promptId of its own, so grouping
+// by promptId would turn five messages into five one-clip "rounds" and bury the
+// actual round in the noise. They collapse into one synthetic Messages group
+// instead — the inbox they are — sorted newest-first and pinned just under the
+// current round.
+//
+// The group is marked `messages: true` rather than detected by id prefix at
+// every call site, and it carries no publishable promptId, because publication
+// is round-scoped (config:voice_published) and a message belongs to no round.
+export const VOICE_MESSAGES_GROUP = 'Messages'
+
+export function isVoiceMessage(row) {
+  return !!row && row.kind === 'message'
+}
+
 export function groupVoiceClips(rows, currentPromptId) {
   const groups = new Map()
+  let messages = null
   for (const r of rows || []) {
     if (!r || !r.promptId) continue
+    if (isVoiceMessage(r)) {
+      if (!messages) messages = { promptId: '', promptText: VOICE_MESSAGES_GROUP, messages: true, clips: [] }
+      messages.clips.push(r)
+      continue
+    }
     if (!groups.has(r.promptId)) {
       groups.set(r.promptId, { promptId: r.promptId, promptText: '', clips: [] })
     }
@@ -1067,13 +1088,16 @@ export function groupVoiceClips(rows, currentPromptId) {
     if (!g.promptText && r.promptText) g.promptText = r.promptText
     g.clips.push(r)
   }
-  for (const g of groups.values()) {
+  const all = [...groups.values()]
+  if (messages) all.push(messages)
+  for (const g of all) {
     g.clips.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
   }
   const newest = (g) => String(g.clips[0]?.at || '')
-  return [...groups.values()].sort((a, b) => {
-    const cur = (a.promptId === currentPromptId ? 1 : 0) - (b.promptId === currentPromptId ? 1 : 0)
-    return cur !== 0 ? -cur : newest(b).localeCompare(newest(a))
+  const rank = (g) => (g.messages ? 1 : (g.promptId === currentPromptId ? 2 : 0))
+  return all.sort((a, b) => {
+    const r = rank(b) - rank(a)
+    return r !== 0 ? r : newest(b).localeCompare(newest(a))
   })
 }
 
@@ -1084,8 +1108,13 @@ export function groupVoiceClips(rows, currentPromptId) {
 // refuse the save instead of storing junk.
 export function sanitizeVoicePrompt(fields) {
   const src = fields || {}
-  const id = String(src.id ?? '').toLowerCase().trim()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const raw = String(src.id ?? '').toLowerCase().trim()
+  // msg_ is reserved for members' free-form messages (worker: isMessageId).
+  // Checked on the RAW input, not the slug: the slugifier would quietly turn
+  // msg_spring into msg-spring, and an operator who typed one thing and got
+  // another is worse off than one who was told no.
+  if (/^msg_/.test(raw)) return null
+  const id = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   const text = String(src.text ?? '').trim()
   if (!id || !text) return null
   const out = { id, text }

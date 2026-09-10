@@ -4,6 +4,72 @@
 <script>
   import { state } from 'state'
   import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally } from 'app'
+
+  // Shared by every component in this lib file. Lib-script scope is NOT subject
+  // to the 10k component-script truncation cap (Nue pushes the head script raw;
+  // only component scripts go through util.inspect), and these were previously
+  // copy-pasted byte for byte into events-view, events-new-view and speak-view.
+  //
+  // WARNING: a name declared here becomes a file-wide reserved word for every
+  // component template in this file — see docs/CLAUDE.md, dhtml gotchas.
+  const WORKER_ORIGIN = resolveWorkerOrigin()
+  // Published for the recorder child, which is within a few hundred chars
+  // of the 10k script cap and can't afford its own copy of this.
+  globalThis.jxnfcOrigin = WORKER_ORIGIN
+
+  function resolveWorkerOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+
+  // An unsubmitted take lives only in the recorder's module scope, and the
+  // recorder tears itself down on any route change — so without this a nav
+  // click silently destroys three minutes of recording. Page-lifetime and
+  // once-guarded: module scope re-evals on every parent update.
+  if (!globalThis.jxnfcSpeakNavGuard) {
+    globalThis.jxnfcSpeakNavGuard = true
+    const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
+    window.addEventListener('beforeunload', function(e) {
+      if (!globalThis.jxnfcSpeakStagedNow) return
+      e.preventDefault()
+      e.returnValue = ''
+    })
+    // Capture phase: the SPA router also listens for link clicks, and this
+    // has to win before it starts a route change.
+    document.addEventListener('click', function(e) {
+      if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
+      const a = e.target.closest ? e.target.closest('a[href]') : null
+      if (!a || a.target === '_blank') return
+      const url = new URL(a.getAttribute('href'), location.href)
+      if (url.origin !== location.origin || url.pathname === location.pathname) return
+      if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
+    }, true)
+  }
+
+  // Submit-error copy lives here, not in the recorder: that component is
+  // within a few hundred chars of the 10k script cap. Read at click time,
+  // so evaluation order doesn't matter.
+  globalThis.jxnfcVoiceErr = function(status) {
+    if (status === 400) return 'The consent box must be checked first.'
+    if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
+    if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+    if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+    if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+    return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
+  }
+
+  function getSession() {
+    try {
+      const raw = localStorage.jxnfc_session
+      const s = raw ? JSON.parse(raw) : null
+      return s?.token && s.exp > Date.now() ? s : null
+    } catch { return null }
+  }
+
 </script>
 
 
@@ -637,64 +703,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // The Worker already resolves each entry's name off its member id, so the
     // only work left here is tolerating a legacy [name] payload from a worker
     // that predates the id migration.
@@ -865,17 +873,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     this.busy = false
 
     this.mounted = async function() {
@@ -1115,17 +1112,6 @@
   <p :if="err" class="rsvp-err">{ err }</p>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     this.mounted = function() {
       this.update({ busy: false, err: '' })
     }
@@ -1281,64 +1267,6 @@
   </form>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // Strict venue allowlist for theater meetups. Precedence: the Worker
     // GET /config theaters list (admin-editable) wins when it is a non-empty
     // array; this literal is the availability fallback when the Worker or KV
@@ -1565,64 +1493,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // Fallback prompt: used when the worker config has no well-formed
     // voice_prompt or the config fetch fails entirely.
     const DEFAULT_PROMPT = { id: 'general', text: "Tell us what you're watching" }
@@ -2067,17 +1937,6 @@
   <p class="hrow-err"></p>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     // Refilled by every mounted() run — module scope resets on remount.
     let rows = []
     let sess = null

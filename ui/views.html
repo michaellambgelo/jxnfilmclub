@@ -1523,10 +1523,10 @@
   <section class="speak-band -page">
     <div class="speak-band-grid">
       <div class="speak-band-main">
-        <p class="speak-band-eyebrow"><span class="rule"></span><span class="speak-eyebrow-text">This round’s prompt</span></p>
-        <h1 class="speak-band-head"><span class="q speak-q">“</span><span class="speak-prompt-text">{ prompt ? prompt.text : '' }</span><span class="q speak-q">”</span></h1>
-        <p class="speak-band-lede speak-lede-prompt">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
-        <p class="speak-band-lede speak-lede-message" hidden>Tell us what it is about, then record. Three minutes or less, same as a prompt answer — a host listens to every one.</p>
+        <p class="speak-band-eyebrow"><span class="rule"></span><span class="speak-eyebrow-text">{ eyebrowText() }</span></p>
+        <h1 class="speak-band-head"><span class="q speak-q" :hidden="isMessage()">“</span><span class="speak-prompt-text">{ headText() }</span><span class="q speak-q" :hidden="isMessage()">”</span></h1>
+        <p class="speak-band-lede speak-lede-prompt" :hidden="isMessage()">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
+        <p class="speak-band-lede speak-lede-message" :hidden="!isMessage()">Tell us what it is about, then record. Three minutes or less, same as a prompt answer — a host listens to every one.</p>
         <!-- One button whose LABEL is interpolated, rather than a signed-in
              and signed-out pair: .speak-band-btn is display:inline-flex,
              which outranks the UA [hidden] rule, and swapping nodes inside
@@ -1655,6 +1655,19 @@
     // this component's state: a later parent re-render then re-derives it
     // instead of reverting to a stale copy. Same shape as railStatus().
     this.isMessage = function() { return globalThis.jxnfcSpeakMode === 'message' }
+
+    // The band is the PARENT template, so every parent update() — Delete and
+    // Replace both cause one — repaints it. Deriving these from the mode makes
+    // that repaint self-correcting; hard-coding the round copy meant a member
+    // composing a message watched the headline snap back to the round prompt
+    // the moment they deleted their round clip. speak-compose's paint() still
+    // handles the keystroke-by-keystroke case, which no re-render covers.
+    this.eyebrowText = function() { return this.isMessage() ? 'Your message' : 'This round’s prompt' }
+
+    this.headText = function() {
+      if (this.isMessage()) return globalThis.jxnfcSpeakSubject || 'What is on your mind?'
+      return this.prompt ? this.prompt.text : ''
+    }
 
     // The recorder's visibility, with the ROUND-mode answer published so that
     // speak-compose can restore it on the way back out of message mode. A

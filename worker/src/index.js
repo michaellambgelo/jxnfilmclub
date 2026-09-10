@@ -1112,7 +1112,11 @@ async function handleVoiceSubmit(request, env) {
     }
     if (!replacing && (await countLiveMessages(env, member.id)) >= VOICE_MESSAGE_CAP) {
       return json(env, {
-        error: `you can have up to ${VOICE_MESSAGE_CAP} messages waiting on us — delete one and you can send another`,
+        // Do not promise an immediate resend: the message throttle is still
+        // live from the submit that hit the cap, so a member who deletes one
+        // and retries straight away gets a 429. The SPA overrides this string,
+        // but an API consumer reading it should not be told otherwise.
+        error: `you can have up to ${VOICE_MESSAGE_CAP} messages waiting on us — delete one, then you can send another after a short wait`,
       }, 409)
     }
     // The subject IS promptText. Deliberately one field, not two: the audiogram

@@ -87,13 +87,18 @@ describe('dhtml lib-scope names cannot shadow template fields', () => {
   })
 
   it('the interpolation pass sees names no directive binds', () => {
-    // `prompt` is read as `{ prompt... }` in views.html and appears in no
-    // :each/:if/:hidden, so a directives-only scan would let a lib-scope
-    // `const prompt` through. Also pin what the pass must NOT bind, or it
-    // over-matches into uselessness.
-    expect(templateBindings('ui/views.html').has('prompt')).toBe(true)
+    // A directives-only scan misses a field that is only ever interpolated —
+    // which is most of them. Asserted against synthetic markup rather than a
+    // real identifier in views.html, so that refactoring a binding away cannot
+    // quietly turn this proof into a tautology.
     const bound = new Set<string>()
-    identsIn("session ? 'Record a clip' : mine.name", bound)
-    expect([...bound].sort()).toEqual(['mine', 'session'])
+    identsIn('subject ? subject.text : fallback', bound)
+    expect([...bound].sort()).toEqual(['fallback', 'subject'])
+
+    // ...and it must NOT bind property names or string contents, or it
+    // over-matches into uselessness and starts failing on unrelated names.
+    const narrow = new Set<string>()
+    identsIn("session ? 'Record a clip' : mine.name", narrow)
+    expect([...narrow].sort()).toEqual(['mine', 'session'])
   })
 })

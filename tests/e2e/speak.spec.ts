@@ -308,6 +308,40 @@ test.describe('speak: free-form messages', () => {
     await expect(page.locator('.hrow')).toContainText('Kept my take across the switch')
   })
 
+  // The band lives in speak-view's template, so a parent update() repaints it
+  // from the round-mode bindings and remounts speak-compose. mounted() restored
+  // the mode but never repainted, leaving the two halves disagreeing: chooser
+  // and fields still set to message, headline and lede back on the round. The
+  // fields carry no value binding either, so the remount blanked them while the
+  // globals kept the text — which would submit a subject nobody can see.
+  //
+  // Delete is the cheapest parent update() to trigger, and in message mode it
+  // sits directly below an always-visible recorder, so it is easy to reach.
+  test('deleting the round clip does not disturb a message in progress', async ({ page }) => {
+    await signInAs(page, EMAIL, { name: 'Msg Member' })
+    await page.goto('/speak')
+    await stageAClip(page)
+    await page.getByRole('button', { name: 'Submit clip' }).click()
+    await expect(page.locator('.speak-upload')).toBeHidden()
+
+    await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
+    const subject = 'What I actually wanted to say'
+    await page.locator('.speak-subject-input').fill(subject)
+    await page.locator('.speak-note-input').fill('A note that must survive too')
+    await expect(page.locator('.speak-prompt-text')).toHaveText(subject)
+
+    page.once('dialog', d => d.accept())
+    await page.locator('.hrow-act[data-act="delete"]').first().click()
+    await expect(page.locator('.hrow-act[data-act="delete"]')).toHaveCount(0)
+
+    // The band still describes the message, not the round...
+    await expect(page.locator('.speak-prompt-text')).toHaveText(subject)
+    await expect(page.locator('.speak-eyebrow-text')).toHaveText('Your message')
+    // ...and the member can still see what they typed.
+    await expect(page.locator('.speak-subject-input')).toHaveValue(subject)
+    await expect(page.locator('.speak-note-input')).toHaveValue('A note that must survive too')
+  })
+
   // The subject and note are member-authored free text with no spaces
   // guaranteed anywhere in them. Nothing in css/*.css wrapped long words, so a
   // single unbroken run pushed the document wider than the viewport — while

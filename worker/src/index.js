@@ -1085,6 +1085,7 @@ async function handleVoiceSubmit(request, env) {
   let prompt
   let subject = ''
   let note = ''
+  let replacing = null
   if (kind === 'message') {
     const s = cleanVoiceText(rawSubject, { max: VOICE_SUBJECT_MAX, required: true, label: 'subject' })
     if (s.error) return json(env, { error: s.error }, 400)
@@ -1095,7 +1096,7 @@ async function handleVoiceSubmit(request, env) {
 
     // Replacing a specific message: the caller owns the id or it does not
     // exist for them, since the key is built from their own claims.
-    const replacing = params.get('promptId')
+    replacing = params.get('promptId')
     if (replacing != null && !isMessageId(replacing)) {
       return json(env, { error: 'invalid promptId' }, 400)
     }
@@ -1125,6 +1126,16 @@ async function handleVoiceSubmit(request, env) {
     try { previous = JSON.parse(previousRaw) } catch { previous = null }
   }
 
+  // A replace of a message that does not exist is not a replace. `replacing` is
+  // client-supplied, and isMessageId only proves it is well-FORMED — so without
+  // this, a caller passing a fresh random msg_ id each time skips the cap check
+  // above (it only runs when !replacing), finds no previous row, and mints a
+  // row under an id of their own choosing. That is an unbounded mailbox at one
+  // per throttle window, and it makes the policy's "up to five" untrue.
+  if (kind === 'message' && replacing && !previous) {
+    return json(env, { error: 'message not found' }, 404)
+  }
+
   // Throttle after validation — a rejected submission shouldn't consume the
   // slot (same discipline as /feedback) — and only for FIRST submissions:
   // replacing your own clip is bounded by one-clip-per-member-per-prompt, and
@@ -1144,8 +1155,14 @@ async function handleVoiceSubmit(request, env) {
   }
 
   await env.VOICE.put(r2Key, bytes, { httpMetadata: { contentType } })
-  if (previous && previous.r2Key && previous.r2Key !== r2Key) {
-    await deleteClipObjects(env, previous.r2Key)
+  // Delete the old artifacts whenever there WAS a previous clip, not only when
+  // the extension changed. On a same-extension replace the audio is overwritten
+  // in place, but the derived .srt is not — it would survive as a transcript of
+  // audio that no longer exists, and "mark reviewed" HEADs that object and would
+  // vouch for it. The row is rebuilt without `transcript` either way.
+  if (previous && previous.r2Key) {
+    if (previous.r2Key !== r2Key) await deleteClipObjects(env, previous.r2Key)
+    else await env.VOICE.delete(srtKeyFor(r2Key))
   }
 
   const durationHeader = request.headers.get('X-Voice-Duration')
@@ -1217,9 +1234,11 @@ function isMessageId(id) {
   return typeof id === 'string' && /^msg_[a-z0-9]{8,24}$/.test(id)
 }
 
-// Minted server-side, never supplied by the client: a caller-chosen id would
-// put a fresh caller-controlled value into the voice:{promptId}:{memberId}
-// interpolation, and would let one member address another's key shape.
+// Minted server-side for a NEW message. A client may name an existing message
+// on the replace path, but only one it already owns — handleVoiceSubmit 404s a
+// msg_ id with no row behind it, so a caller-chosen id never reaches here. A
+// free one would put a caller-controlled value into the
+// voice:{promptId}:{memberId} interpolation and skip the mailbox cap.
 function mintMessageId() {
   const rand = Math.random().toString(36).slice(2, 6).padEnd(4, '0')
   return 'msg_' + Date.now().toString(36) + rand
@@ -1231,10 +1250,14 @@ function mintMessageId() {
 // words behind. R2 delete on a missing key is a no-op, so this is safe to
 // call unconditionally. Character class, not \., per the dhtml/backslash
 // discipline used repo-wide.
+function srtKeyFor(r2Key) {
+  return r2Key.replace(/[.][^.]+$/, '.srt')
+}
+
 async function deleteClipObjects(env, r2Key) {
   if (!r2Key) return
   await env.VOICE.delete(r2Key)
-  await env.VOICE.delete(r2Key.replace(/[.][^.]+$/, '.srt'))
+  await env.VOICE.delete(srtKeyFor(r2Key))
 }
 
 // DELETE /voice — authenticated. Removes the caller's clip (R2 object + KV

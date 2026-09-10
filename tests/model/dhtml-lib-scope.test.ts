@@ -34,15 +34,31 @@ function declaredNames(script: string): string[] {
   return [...names]
 }
 
-// Names bound by a template: :each="x in xs" loop vars, and anything read as a
-// bare identifier inside a { } interpolation.
+// Everything outside a <script> — i.e. the templates. Component scripts are
+// full of object literals and blocks, so scanning the whole file for `{ }`
+// would drown the interpolation pass in JS noise.
+function templateMarkup(src: string): string {
+  return src.replace(/<script>[\s\S]*?<\/script>/g, '')
+}
+
+// Bare identifiers in an expression, ignoring property accesses (`a.name`
+// binds `a`, not `name`) and string literals ('This round' binds nothing).
+function identsIn(expr: string, into: Set<string>): void {
+  const bare = expr.replace(/'[^']*'|"[^"]*"/g, ' ')
+  for (const m of bare.matchAll(/(\.)?\b([a-z_$][\w$]*)\b/g)) if (!m[1]) into.add(m[2])
+}
+
+// Names bound by a template: :each="x in xs" loop vars, the directives that
+// take an expression, and anything read as a bare identifier inside a { }
+// interpolation. The interpolation pass is the one that matters most — a
+// lib-scope `const prompt` shadows `{ prompt.text }` in a template that binds
+// `prompt` in no directive at all, so a directives-only scan would miss it.
 function templateBindings(file: string): Set<string> {
-  const src = readFileSync(file, 'utf8')
+  const markup = templateMarkup(readFileSync(file, 'utf8'))
   const bound = new Set<string>()
-  for (const m of src.matchAll(/:each="\s*([A-Za-z_$][\w$]*)\s+in\s/g)) bound.add(m[1])
-  for (const m of src.matchAll(/:(?:if|hidden)="([^"]*)"/g)) {
-    for (const id of m[1].matchAll(/\b([a-z_$][\w$]*)\b/g)) bound.add(id[1])
-  }
+  for (const m of markup.matchAll(/:each="\s*([A-Za-z_$][\w$]*)\s+in\s/g)) bound.add(m[1])
+  for (const m of markup.matchAll(/:(?:if|hidden)="([^"]*)"/g)) identsIn(m[1], bound)
+  for (const m of markup.matchAll(/\{([^{}]*)\}/g)) identsIn(m[1], bound)
   return bound
 }
 
@@ -68,5 +84,16 @@ describe('dhtml lib-scope names cannot shadow template fields', () => {
     const script = "document.addEventListener('click', function(e) { const a = e.target })"
     expect(declaredNames(script)).toContain('a')
     expect(templateBindings('ui/views.html').has('a')).toBe(true)
+  })
+
+  it('the interpolation pass sees names no directive binds', () => {
+    // `prompt` is read as `{ prompt... }` in views.html and appears in no
+    // :each/:if/:hidden, so a directives-only scan would let a lib-scope
+    // `const prompt` through. Also pin what the pass must NOT bind, or it
+    // over-matches into uselessness.
+    expect(templateBindings('ui/views.html').has('prompt')).toBe(true)
+    const bound = new Set<string>()
+    identsIn("session ? 'Record a clip' : mine.name", bound)
+    expect([...bound].sort()).toEqual(['mine', 'session'])
   })
 })

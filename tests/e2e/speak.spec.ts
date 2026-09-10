@@ -319,6 +319,13 @@ test.describe('speak: free-form messages', () => {
 
     await page.locator('.speak-mode-btn', { hasText: 'Send a message' }).click()
     await expect(page.locator('.speak-upload')).toBeVisible()
+
+    // ...and switching BACK has to hide it again. paint() only ever forced the
+    // recorder open, never closed it, so the member returned to the round with
+    // a live recorder and no "Keep my current clip" beside it — and submitting
+    // from there silently replaced the answer they had already sent.
+    await page.locator('.speak-mode-btn', { hasText: 'Answer this round' }).click()
+    await expect(page.locator('.speak-upload')).toBeHidden()
   })
 })
 

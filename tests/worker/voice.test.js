@@ -820,6 +820,57 @@ describe('free-form messages', () => {
     expect(row.promptText).toBe('Second take')
   })
 
+  // The audio is overwritten in place when the extension does not change, so
+  // the ext-changed branch never fires — but the .srt is a DERIVED key and is
+  // not overwritten. It would outlive the audio it describes, and "mark
+  // reviewed" HEADs that object and would vouch for a transcript of a clip
+  // nobody can hear any more.
+  it('a same-extension replace does not leave the old transcript behind', async () => {
+    const { token, member } = await getTokenFor('srt@example.com')
+    const first = await (await postMessage(token, { subject: 'First take' })).json()
+    const srtKey = 'voice/' + first.promptId + '/' + member.id + '.srt'
+    await env.VOICE.put(srtKey, '1\n00:00:00,000 --> 00:00:01,000\nold words\n')
+    expect(await env.VOICE.head(srtKey)).not.toBeNull()
+
+    await clearMsgThrottle('srt@example.com')
+    const again = await postMessage(token, { subject: 'Second take', promptId: first.promptId })
+    expect(again.status).toBe(200)
+
+    // Same extension, so the audio object is still there under the same key...
+    expect(await env.VOICE.head('voice/' + first.promptId + '/' + member.id + '.webm')).not.toBeNull()
+    // ...but the transcript of the take that no longer exists is gone.
+    expect(await env.VOICE.head(srtKey)).toBeNull()
+  })
+
+  // isMessageId only proves the id is well-FORMED. The cap check is skipped
+  // whenever a promptId is present, so a caller passing a fresh random msg_ id
+  // each time would mint rows under ids of their own choosing, without limit —
+  // the mailbox cap and the policy's "up to five" both silently untrue.
+  it('refuses a replace of a message that does not exist', async () => {
+    const { token } = await getTokenFor('ghost@example.com')
+    const res = await postMessage(token, { subject: 'Slipping the cap', promptId: 'msg_doesnotexist1' })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toMatch(/not found/)
+
+    // Nothing was written on either side.
+    expect(await listVoiceRows()).toHaveLength(0)
+    expect((await env.VOICE.list({ prefix: 'voice/msg_' })).objects).toHaveLength(0)
+  })
+
+  it('the cap cannot be walked past with invented promptIds', async () => {
+    const { token } = await getTokenFor('capper@example.com')
+    for (let i = 0; i < 5; i++) {
+      await clearMsgThrottle('capper@example.com')
+      expect((await postMessage(token, { subject: 'Slot ' + i })).status).toBe(200)
+    }
+    await clearMsgThrottle('capper@example.com')
+    const invented = await postMessage(token, { subject: 'One more', promptId: 'msg_invented01' })
+    expect(invented.status).toBe(404)
+    await clearMsgThrottle('capper@example.com')
+    expect((await postMessage(token, { subject: 'One more' })).status).toBe(409)
+    expect(await listVoiceRows()).toHaveLength(5)
+  })
+
   it('rejects a promptId outside the message namespace on a replace', async () => {
     const { token } = await getTokenFor('msg6@example.com')
     const res = await postMessage(token, { promptId: 'general' })

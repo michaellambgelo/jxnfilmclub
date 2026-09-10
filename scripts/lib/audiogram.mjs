@@ -61,10 +61,29 @@ export function escapeHtml(s) {
 // with the ffmpeg overlay geometry; title/name/caption are user text — the
 // caption especially, since it comes back from a hand-edited SRT — and are
 // escaped.
+// How far to shrink the display line so a long title still FITS its three
+// clamped lines instead of having the third sliced through the letterforms.
+//
+// The frame has room for three lines at full size, which a hand-written prompt
+// comfortably stayed inside. A member-authored message subject does not: they
+// write up to 80 characters and mean every one of them. Shrink to fit rather
+// than clip — the same call contentgen's cards already make, and for the same
+// reason: a title you cannot read is not doing the job the frame exists for.
+//
+// Exported for the tests, which pin the boundaries rather than the curve.
+export function titleScale(title) {
+  const n = String(title || '').length
+  if (n <= 34) return 1
+  if (n <= 48) return 0.84
+  if (n <= 62) return 0.72
+  return 0.62
+}
+
 export function instantiateTemplate(tpl, { format, title, name, caption }) {
   const f = FORMATS[format]
   if (!f) throw new Error(`unknown format: ${format}`)
   return tpl
+    .replaceAll('{{TITLE_SCALE}}', String(titleScale(title)))
     .replaceAll('{{FORMAT}}', `f-${format}`)
     .replaceAll('{{WX}}', String(f.wave.x))
     .replaceAll('{{WY}}', String(f.wave.y))

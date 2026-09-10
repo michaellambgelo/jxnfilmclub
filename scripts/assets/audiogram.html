@@ -152,13 +152,13 @@
   /* ---- per-format placement ---- */
   .logo-row { top: 90px; }
   body { --head-top: 260px; --stack-gap: 64px; }
-  .title    { font-size: 84px; -webkit-line-clamp: 3; }
+  .title    { font-size: calc(84px * var(--title-scale, 1)); -webkit-line-clamp: 3; }
   .speaker  { font-size: 66px; }
   .credit-row { top: calc(var(--wy) + var(--wh) + 44px); }
 
   body.f-1x1 .logo-row { top: 80px; }
   body.f-1x1 { --head-top: 240px; --stack-gap: 56px; }
-  body.f-1x1 .title    { font-size: 62px; }
+  body.f-1x1 .title    { font-size: calc(62px * var(--title-scale, 1)); }
   body.f-1x1 .speaker  { font-size: 52px; }
   body.f-1x1 .credit-row { top: calc(var(--wy) + var(--wh) + 40px); }
   body.f-1x1 .logo .logo-word { font-size: 36px; }
@@ -167,7 +167,7 @@
      roughly the top 210px. */
   body.f-9x16 .logo-row { top: 270px; }
   body.f-9x16 { --head-top: 430px; --stack-gap: 90px; }
-  body.f-9x16 .title    { font-size: 76px; -webkit-line-clamp: 5; }
+  body.f-9x16 .title    { font-size: calc(76px * var(--title-scale, 1)); -webkit-line-clamp: 5; }
   body.f-9x16 .speaker  { font-size: 62px; }
   body.f-9x16 .credit-row { top: calc(var(--wy) + var(--wh) + 56px); }
 
@@ -198,7 +198,7 @@
   body.f-9x16 .caption { font-size: 50px; }
 </style>
 </head>
-<body class="{{FORMAT}}">
+<body class="{{FORMAT}}" style="--title-scale: {{TITLE_SCALE}}">
   <div class="panel top"></div>
   <div class="panel left"></div>
   <div class="panel right"></div>

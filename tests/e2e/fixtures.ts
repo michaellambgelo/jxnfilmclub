@@ -19,7 +19,24 @@ export async function wipeKv(page: Page | { request: APIRequestContext }, prefix
 
 // Convenience: build a signed-in localStorage session by seeding KV + flowing
 // through /otp/request+verify. Returns the member id.
-export async function signInAs(page: Page, email: string, memberOverrides: Record<string, unknown> = {}) {
+// Drive the OTP form on a /signin page we are ALREADY on, and do not assume
+// where it lands: the post-login destination is a stashed return path now, so
+// arriving from /speak lands back on /speak rather than /edit.
+export async function completeSignIn(page: Page, email: string) {
+  await page.getByLabel('Email', { exact: true }).fill(email)
+  await page.getByRole('button', { name: /log in/i }).click()
+  await expect(page.getByLabel('Code')).toBeVisible()
+  await seedKv(page, `otp:${email}`, '424242', 600)
+  await page.getByLabel('Code').fill('424242')
+  await page.getByRole('button', { name: /verify/i }).click()
+}
+
+export async function signInAs(
+  page: Page,
+  email: string,
+  memberOverrides: Record<string, unknown> & { skipGoto?: boolean } = {},
+) {
+  const { skipGoto, ...overrides } = memberOverrides
   const member = {
     id: 'id-' + email,
     email,
@@ -27,17 +44,14 @@ export async function signInAs(page: Page, email: string, memberOverrides: Recor
     pronouns: null,
     handle: null,
     joined: '2026-04-15',
-    ...memberOverrides,
+    ...overrides,
   }
   await seedKv(page, `member:${email}`, JSON.stringify(member))
-  await page.goto('/signin')
-  await page.getByLabel('Email', { exact: true }).fill(email)
-  await page.getByRole('button', { name: /log in/i }).click()
-  await expect(page.getByLabel('Code')).toBeVisible()
-  await seedKv(page, `otp:${email}`, '424242', 600)
-  await page.getByLabel('Code').fill('424242')
-  await page.getByRole('button', { name: /verify/i }).click()
-  await page.waitForURL('**/edit')
+  // skipGoto: the caller is already sitting on /signin, usually because it is
+  // testing how they got there and where they come back to.
+  if (!skipGoto) await page.goto('/signin')
+  await completeSignIn(page, email)
+  if (!skipGoto) await page.waitForURL('**/edit')
   return member
 }
 

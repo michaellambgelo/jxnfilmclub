@@ -145,13 +145,20 @@ club's Spotify show and lists every episode from `data/episodes.json`
 `scripts/refresh_spotify.py` syncs it weekly (Mondays 12:00 UTC via
 `.github/workflows/refresh-spotify.yml`) from the Anchor RSS feed.
 
-Member voice clips submitted via `/speak` feed the show. The member-facing
-status ladder is `Submitted` → `Approved` → `Published`: approving a clip
-clears it for a segment, publishing the **round** (admin portal → Voice)
-records that the episode actually aired (`config:voice_published`). The
-prompt's cutoff is display-only — past it the page says so and keeps
-accepting. A clip whose audio has hit the 60-day lifecycle is marked
-"audio expired" on its row the first time playback is attempted.
+Member voice clips submitted via `/speak` feed the show, in two modes:
+answering the configured round, or sending the club a message the member
+titled themselves (up to five live at a time). A message is stored as a
+round of one under a server-minted `msg_` promptId, so nothing downstream
+needed a migration — see `docs/features/voice.md`.
+
+The member-facing status ladder is `Submitted` → `Approved` → `Published`:
+approving a clip clears it for a segment, publishing the **round** (admin
+portal → Voice) records that the episode actually aired
+(`config:voice_published`). A message belongs to no round, so it stops at
+`Approved — we plan to use this`. The prompt's cutoff is display-only —
+past it the page says so and keeps accepting. A clip whose audio has hit
+the 60-day lifecycle is marked "audio expired" on its row the first time
+playback is attempted.
 
 Those clips feed the show: `scripts/compile_voices.mjs` stitches a prompt round's approved clips
 into a broadcast-ready WAV, and `scripts/make_audiogram.mjs` renders

@@ -75,7 +75,7 @@ body > header {
   text-decoration: none;
   padding: 1.7rem .5rem 1.5rem;
   border-bottom: 2px solid transparent;
-  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .mastnav a:not(.selected):hover {
@@ -87,6 +87,35 @@ body > header {
 /* Right-align the auth group (Join + Edit my entry). */
 .mastnav .auth-link {
   margin-left: auto;
+}
+
+/* .mastnav-links is display:contents, which is HOW .auth-link's margin-left
+   auto right-aligns by document order. The auth group has to match, or its
+   own box would break that chain. */
+.mastnav-auth {
+  display: contents;
+}
+
+/* Log in as a real action rather than a footnote beside the red Join. The
+   padding override is required: .mastnav a sets 1.7rem .5rem 1.5rem, which
+   would make the border a full-height box. Signed out the red Join carries
+   margin-left:auto and starts the group; signed in there is no Join, so the
+   account chip takes the auto margin itself. */
+.mastnav a.nav-login {
+  opacity: 1;
+  color: var(--ink-strong);
+  border: 1px solid var(--line-2);
+  padding: .55rem 1.4rem;
+  margin-left: var(--space-2);
+}
+
+.mastnav-links:not(:has(.auth-link)) + .mastnav-auth a.nav-login {
+  margin-left: auto;
+}
+
+.mastnav a.nav-login:hover {
+  color: var(--brand);
+  border-color: var(--brand);
 }
 
 /* The Join link is the one solid-red action in the masthead. */
@@ -181,6 +210,42 @@ body > header {
     background: transparent;
     color: var(--brand);
     padding: .9rem .25rem;
+  }
+
+  /* Log in stays on the logo row while .mastnav-links (flex-basis: 100%)
+     wraps below it. .nav-toggle carries margin-left:auto at base, which would
+     otherwise fight the auth group for the free space — hand it to the auth
+     group, which comes first in order. */
+  .mastnav .logo { order: 1; }
+
+  .mastnav-auth {
+    order: 2;
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .nav-toggle {
+    order: 3;
+    margin-left: 0;
+  }
+
+  .mastnav-links { order: 4; }
+
+  /* Compact enough to sit beside the wordmark and the 44px toggle inside the
+     ~331px a 360px viewport leaves after --wrap-padding. */
+  .mastnav a.nav-login {
+    padding: .45rem .9rem;
+    font-size: var(--fs-12);
+    margin-left: 0;
+  }
+}
+
+/* Below ~420px the rubber-stamp badge is what pushes Log in off the row. The
+   wordmark alone still identifies the club. */
+@media (max-width: 420px) {
+  .mastnav .logo-stamp {
+    display: none;
   }
 }
 

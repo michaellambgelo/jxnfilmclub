@@ -83,6 +83,43 @@ Replace the two `TODO_...` placeholders.
 
 ---
 
+## 4b. Create the voice buckets — and verify their lifecycle rule
+
+Member voice clips live in R2, and the **60-day deletion the privacy policy
+promises is a bucket-wide lifecycle rule**, not code. Nothing in this repo
+creates it, asserts it, or can tell you it is missing — the Worker writes no
+scrub logic for voice at all. If the rule is absent, clips accumulate forever
+and the policy page is lying.
+
+```bash
+cd worker
+npx wrangler r2 bucket create jxnfilm-voice
+npx wrangler r2 bucket create jxnfilm-voice-staging
+npx wrangler r2 bucket lifecycle add jxnfilm-voice expire-60d --expire-days 60
+npx wrangler r2 bucket lifecycle add jxnfilm-voice-staging expire-60d --expire-days 60
+```
+
+**Verify it, don't assume it** — this is the only check there is:
+
+```bash
+npx wrangler r2 bucket lifecycle list jxnfilm-voice
+```
+
+You want a rule covering **all prefixes** with a 60-day expiry. All prefixes
+matters: transcripts are written as `.srt` objects beside the audio precisely so
+one rule expires both.
+
+Worth re-running after any bucket work. The KV half of the retention promise is
+covered three ways (`VOICE_TTL` in the Worker, a behavioural test in
+`tests/worker/voice.test.js`, and a regex guard in `tui/tests/test_settings.py`);
+this half has no test and never will, because it lives in Cloudflare's control
+plane rather than the repo.
+
+Flyer images deliberately use a **separate** bucket (`jxnfilm-news`): inheriting
+the 60-day expiry would silently break months-old newsletters.
+
+---
+
 ## 5. Sign up at Resend + verify domain
 
 MailChannels ended free Worker sending in 2024; we use Resend instead (3k emails/month free).

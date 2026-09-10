@@ -7,6 +7,10 @@ const WORKER_PORT = 8787
 // which talks to production KV via wrangler — must fail loudly, never be
 // adopted.
 const ADMIN_PORT = 5175
+// The Firefox smoke runs against a BUILT site, not `nue serve`. Nue emits the
+// import map after the module loader in both, but only the build goes through
+// `postbuild` -> scripts/fix_importmap.mjs, which is the thing under test.
+const DIST_PORT = 4041
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -35,9 +39,40 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      // The Firefox smoke is excluded here, not merely targeted at firefox-dist:
+      // testMatch on one project does not stop another from collecting the file,
+      // and chromium runs against `nue serve`, which never goes through
+      // postbuild and so still emits the import map in the wrong order.
+      testIgnore: /firefox-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Deliberately ONE smoke file, not the whole suite. The rest of the
+      // suite drives a fake microphone, which is a Chromium-only launch flag,
+      // and a second full run would double e2e time to re-prove logic that is
+      // not browser-specific. What Firefox uniquely catches is the class of
+      // failure that made this project necessary: the site rendering blank
+      // because of a spec violation Chromium happens to tolerate.
+      name: 'firefox-dist',
+      testMatch: /firefox-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Firefox'], baseURL: `http://localhost:${DIST_PORT}` },
+    },
   ],
   webServer: [
+    {
+      // Built output for the Firefox smoke. The build is the point: `npm run
+      // build` runs postbuild, which reorders the import map ahead of the
+      // module loader. `nue serve` never does, so serving the dev output here
+      // would fail the smoke no matter what the fix does.
+      command: `npm run build && npx nue preview --port ${DIST_PORT}`,
+      port: DIST_PORT,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
     {
       command: `npx nue serve --port ${SITE_PORT}`,
       port: SITE_PORT,

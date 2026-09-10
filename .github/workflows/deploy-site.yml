@@ -54,10 +54,12 @@ jobs:
       - name: Build site
         run: npm run build
 
-      # SPA fallback: GitHub Pages serves 404.html for unknown paths, which
-      # lets the client-side router handle deep links like /events.
-      - name: Copy index.html to 404.html for SPA routing
-        run: cp .dist/index.html .dist/404.html
+      # The SPA fallback (GitHub Pages serves 404.html for unknown paths, which
+      # is how deep links like /events reach the client-side router) is made by
+      # `postbuild` in package.json, so that `nue preview` locally serves the
+      # same document production does. It used to be made here, which left a
+      # stale 404.html lying around locally and hid a divergence: a preview of
+      # a fresh build was still serving the previous build's SPA routes.
 
       - uses: actions/configure-pages@v5
 

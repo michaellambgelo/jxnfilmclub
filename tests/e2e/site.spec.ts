@@ -8,6 +8,13 @@ test.describe('members view', () => {
     await expect(page.getByRole('link', { name: '@michaellamb' })).toHaveAttribute(
       'href', 'https://letterboxd.com/michaellamb/',
     )
+    // The count is interpolated as a bare `{ total || 0 }`, which makes it the
+    // canary for lib-scope shadowing: a lib <script> declaring `total` compiles
+    // this to a bare `total` instead of `_.total` and the whole view dies. That
+    // is not hypothetical — hoisting a helper with a `const total` in it did
+    // exactly this, and nothing in the suite noticed. (See
+    // tests/model/dhtml-lib-scope.test.ts for the static guard.)
+    await expect(page.locator('.result-count')).toHaveText(/^[1-9]\d* members$/)
   })
 
   test('search updates ?query= and filters rows', async ({ page }) => {
@@ -149,8 +156,8 @@ test.describe('site footer', () => {
 })
 
 test.describe('signed-in nav', () => {
-  test('Account Actions click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
-    // Seed a session so the nav shows Account Actions instead of Join/Log in.
+  test('Account click lands on /edit, not join.jxnfilm.club', async ({ page }) => {
+    // Seed a session so the nav shows Account instead of Join/Log in.
     await page.goto('/')
     await page.evaluate(() => {
       localStorage.jxnfc_session = JSON.stringify({
@@ -159,7 +166,7 @@ test.describe('signed-in nav', () => {
       })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Account Actions' }).click()
+    await page.getByRole('link', { name: 'Account' }).click()
     await page.waitForURL(/\/edit/, { timeout: 5_000 })
     expect(page.url()).toContain('/edit')
     expect(page.url()).not.toContain('join.jxnfilm.club')

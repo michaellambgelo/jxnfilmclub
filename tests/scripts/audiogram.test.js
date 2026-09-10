@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildFiltergraph, buildRenderArgs, COLORS, escapeHtml, FORMAT_KEYS, FORMATS,
   instantiateTemplate, mergeManifest, parseArgs, plannedRenderPaths, resolveFormats,
-  safeName, selectClips, WAVE_SRC_W,
+  safeName, selectClips, titleScale, WAVE_SRC_W,
 } from '../../scripts/lib/audiogram.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -383,5 +383,52 @@ describe('--no-keep-audio', () => {
   })
   it('opts out', () => {
     expect(parseArgs(['--prompt', 'g', '--no-keep-audio']).keepAudio).toBe(false)
+  })
+})
+
+describe('titleScale — a long subject must fit, not get sliced', () => {
+  // The frame clamps the display line to three lines and hides the overflow.
+  // At full size a title over ~34 characters pushed the third line past the
+  // box and it rendered CUT THROUGH THE LETTERFORMS — not an ellipsis, an
+  // actual horizontal slice. Hand-written prompts stayed under that; a
+  // member-authored message subject runs to 80 characters and means them.
+  it('leaves a short title alone', () => {
+    expect(titleScale('Short one')).toBe(1)
+    expect(titleScale('')).toBe(1)
+    expect(titleScale(null)).toBe(1)
+    expect(titleScale('x'.repeat(34))).toBe(1)
+  })
+
+  it('steps down as the title grows, and never below the floor', () => {
+    const lengths = [35, 49, 63, 80, 200]
+    const scales = lengths.map(n => titleScale('x'.repeat(n)))
+    // Monotonically shrinking...
+    for (let i = 1; i < scales.length; i++) expect(scales[i]).toBeLessThanOrEqual(scales[i - 1])
+    // ...and bounded, so a pathological title cannot render as dust.
+    expect(Math.min(...scales)).toBeGreaterThanOrEqual(0.6)
+    expect(Math.max(...scales)).toBeLessThanOrEqual(1)
+  })
+
+  it('covers the whole subject range the worker will actually accept', () => {
+    // VOICE_SUBJECT_MAX is 80. Anything inside it must land on a real scale.
+    for (let n = 1; n <= 80; n++) {
+      const s = titleScale('x'.repeat(n))
+      expect(Number.isFinite(s)).toBe(true)
+      expect(s).toBeGreaterThan(0)
+    }
+  })
+
+  it('reaches the template, so the frame can actually use it', () => {
+    const tpl = readFileSync(join(ROOT, 'scripts/assets/audiogram.html'), 'utf8')
+    expect(tpl).toContain('{{TITLE_SCALE}}')
+    // Every per-format title size has to go through the scale, or the shrink
+    // silently applies to 16x9 only.
+    const sizes = tpl.match(/\.title\s+\{ font-size: [^}]+\}/g) || []
+    expect(sizes.length).toBeGreaterThanOrEqual(3)
+    for (const rule of sizes) expect(rule).toContain('var(--title-scale')
+
+    const out = instantiateTemplate(tpl, { format: '16x9', title: 'x'.repeat(70), name: 'N', caption: '' })
+    expect(out).not.toContain('{{TITLE_SCALE}}')
+    expect(out).toContain('--title-scale: ' + titleScale('x'.repeat(70)))
   })
 })

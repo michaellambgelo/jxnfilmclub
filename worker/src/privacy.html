@@ -35,7 +35,7 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 2026-09-02</p>
+  <p class="updated">Last updated: 2026-09-09</p>
 
   <p>
     Jackson Film Club ("we") operates
@@ -81,12 +81,17 @@
       <i>Send anonymously</i>, which keeps your identity out of it.</li>
     <li><b>Voice recordings</b> — if you submit a clip on the
       <a href="%SITE_ORIGIN%/speak">Speak page</a> for the podcast, we store
-      the audio itself plus your display name, the prompt you answered, and
-      when you sent it. Submitting requires ticking an explicit consent box:
-      the clip may be aired on the club podcast, credited to your display
-      name. Nothing is aired automatically — a club admin listens first.
-      Your voice is inherently identifying, so we treat clips with the
-      strictest deletion rules on this page (below).</li>
+      the audio itself plus your display name, when you sent it, and either
+      the prompt you answered or — if you sent us a message instead of
+      answering the round — the subject and any note <i>you</i> wrote for it.
+      Alongside that we keep the technical details of the file: its format,
+      its size, its length, and your Letterboxd handle if you have linked
+      one. Submitting requires ticking an explicit consent box: the clip may
+      be aired on the club podcast, credited to your display name. Nothing is
+      aired automatically — a club admin listens first. If we write out a
+      transcript of a clip, that transcript is stored beside the audio and
+      deleted with it. Your voice is inherently identifying, so we treat
+      clips with the strictest deletion rules on this page (below).</li>
   </ul>
 
   <h2>Where it lives</h2>
@@ -120,7 +125,10 @@
     (<code>jxnfc_session</code>, <code>jxnfc_otp_inflight</code>,
     <code>jxnfc_privacy_ack</code>) keep you signed in and remember which
     version of this policy you've already seen; they stay on your device,
-    and the sign-in entries are cleared when you sign out.
+    and the sign-in entries are cleared when you sign out. One more entry,
+    <code>jxnfc_next</code>, is written only while you are logging in, so we
+    can put you back on the page you started from; it lives in this tab's
+    sessionStorage and disappears when you close the tab.
     One exception worth naming: the homepage embeds our podcast via a Spotify
     player, and Spotify sets its own cookies inside that frame — see
     <a href="https://www.spotify.com/legal/privacy-policy/">Spotify's privacy
@@ -181,7 +189,8 @@
     <li><b>Feedback deletes itself after 90 days</b> — usually sooner, once
       we've read and handled it.</li>
     <li><b>Voice recordings delete themselves 60 days after you submit
-      them</b> — every clip, including ones we approved but never used. The
+      them</b> — every clip, including ones we approved but never used, and
+      messages exactly the same as answers to a prompt. The
       deletion is a storage-level expiry rule, not a cleanup script that
       could silently break. A clip that <i>was</i> aired persists only as
       part of that published episode's audio; the original upload still
@@ -216,9 +225,12 @@
       30-day deletion above erases the email record either way. The host can
       also remove you on request.</li>
     <li><b>Delete or replace your voice clip</b> — anytime before it's used,
-      right on the <a href="%SITE_ORIGIN%/speak">Speak page</a>. Deleting
-      your membership deletes your clips with it, immediately and
-      completely — a voice can't be anonymized, so we don't try.</li>
+      right on the <a href="%SITE_ORIGIN%/speak">Speak page</a>, and the same
+      for any message you sent us: each one is listed there and deleted on
+      its own. You can keep up to five messages waiting on us at a time.
+      Deleting your membership deletes your clips, your messages and any
+      transcripts of them with it, immediately and completely — a voice
+      can't be anonymized, so we don't try.</li>
     <li>Questions, or want us to do any of this for you? Email
       <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a>.</li>
   </ul>

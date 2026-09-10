@@ -8,6 +8,8 @@ deleted, whatever its moderation state).
 
 from __future__ import annotations
 
+from rich.markup import escape
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import DataTable, Label, Static
@@ -112,8 +114,13 @@ class RoundsPane(Vertical):
         table.clear()
         for rnd in self._rounds:
             counts = rnd.counts
+            # Member-authored text reaches Textual MARKUP here, which is not
+            # escaped for us: a subject containing [b] would eat the rest of
+            # the row. A minted msg_ id says nothing on its own, so a message
+            # round shows the subject its member actually wrote.
+            label = escape(rnd.prompt_text or rnd.prompt_id)
             table.add_row(
-                rnd.prompt_id,
+                f"[dim]msg[/] {label}" if rnd.is_message else label,
                 str(len(rnd.clips)),
                 f"[b green]{counts[APPROVED]}[/]" if counts[APPROVED] else "[dim]0[/]",
                 _days_cell(rnd.soonest_days()),
@@ -143,7 +150,7 @@ class RoundsPane(Vertical):
             rendered = ", ".join(clip.rendered) if clip.rendered else "[dim]—[/]"
             table.add_row(
                 str(index),
-                clip.label,
+                escape(clip.label),
                 _status_cell(clip.status),
                 fmt_duration(clip.capped_seconds),
                 _days_cell(clip.days_remaining()),
@@ -158,12 +165,12 @@ class RoundsPane(Vertical):
             if rnd is None:
                 target.update(self._empty_message())
                 return
-            target.update(f"[b]{rnd.prompt_id}[/]  ·  no clip selected")
+            target.update(f"[b]{escape(rnd.prompt_text or rnd.prompt_id)}[/]  ·  no clip selected")
             return
 
         lines = [
-            f"[b]{clip.label}[/]"
-            + (f"  [dim]@{clip.handle}[/]" if clip.handle else ""),
+            f"[b]{escape(clip.label)}[/]"
+            + (f"  [dim]@{escape(clip.handle)}[/]" if clip.handle else ""),
             f"[dim]{clip.key}[/]",
             "",
             f"status     {_status_cell(clip.status)}",
@@ -179,7 +186,7 @@ class RoundsPane(Vertical):
             f"transcript {_transcript_state(clip)}",
         ]
         if clip.prompt_text:
-            lines += ["", f"[dim]prompt:[/] {clip.prompt_text}"]
+            lines += ["", f"[dim]prompt:[/] {escape(clip.prompt_text)}"]
         if clip.error:
             lines += ["", f"[b red]{clip.error}[/]"]
         if clip.status != APPROVED:

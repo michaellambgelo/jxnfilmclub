@@ -4,6 +4,163 @@
 <script>
   import { state } from 'state'
   import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally } from 'app'
+
+  // Shared by every component in this lib file. Lib-script scope is NOT subject
+  // to the 10k component-script truncation cap (Nue pushes the head script raw;
+  // only component scripts go through util.inspect), and these were previously
+  // copy-pasted byte for byte into events-view, events-new-view and speak-view.
+  //
+  // WARNING: a name declared here becomes a file-wide reserved word for every
+  // component template in this file — see docs/CLAUDE.md, dhtml gotchas.
+  const WORKER_ORIGIN = resolveWorkerOrigin()
+  // Published for the recorder child, which is within a few hundred chars
+  // of the 10k script cap and can't afford its own copy of this.
+  globalThis.jxnfcOrigin = WORKER_ORIGIN
+
+  function resolveWorkerOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const apiParam = new URLSearchParams(location.search).get('api')
+    if (apiParam === 'local') return 'http://localhost:8787'
+    if (apiParam === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+
+  // An unsubmitted take lives only in the recorder's module scope, and the
+  // recorder tears itself down on any route change — so without this a nav
+  // click silently destroys three minutes of recording. Page-lifetime and
+  // once-guarded: module scope re-evals on every parent update.
+  if (!globalThis.jxnfcSpeakNavGuard) {
+    globalThis.jxnfcSpeakNavGuard = true
+    const SPEAK_LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
+    window.addEventListener('beforeunload', function(e) {
+      if (!globalThis.jxnfcSpeakStagedNow) return
+      e.preventDefault()
+      e.returnValue = ''
+    })
+    // Capture phase: the SPA router also listens for link clicks, and this
+    // has to win before it starts a route change.
+    document.addEventListener('click', function(e) {
+      if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
+      const link = e.target.closest ? e.target.closest('a[href]') : null
+      if (!link || link.target === '_blank') return
+      const dest = new URL(link.getAttribute('href'), location.href)
+      if (dest.origin !== location.origin || dest.pathname === location.pathname) return
+      if (!confirm(SPEAK_LOSE)) { e.preventDefault(); e.stopPropagation() }
+    }, true)
+  }
+
+  // SPEAK_LOSE guards a staged take against NAVIGATION. Nothing guarded it
+  // against the destructive buttons sitting right below the recorder: Delete
+  // and Replace both cause a parent update(), which re-evaluates
+  // speak-recorder's script and wipes the module-scope blob. Message mode made
+  // this far easier to reach, because there the recorder stays visible even
+  // after the round is answered, with Delete directly beneath it.
+  //
+  // One dialog, never two stacked: when a take is staged the caller folds this
+  // sentence into its own question rather than asking twice.
+  function speakStagedWarning() {
+    return globalThis.jxnfcSpeakStagedNow
+      ? ' You also have a recording that has not been submitted yet, and it will be lost.'
+      : ''
+  }
+
+  // Submit-error copy lives here, not in the recorder: that component is
+  // within a few hundred chars of the 10k script cap. Read at click time,
+  // so evaluation order doesn't matter.
+  // A 400 on this path has nine causes, only one of which is the consent box:
+  // subject missing, too short, too long, control characters (a PASTED TAB is
+  // enough), note too long, and so on. Collapsing them all to the consent line
+  // blamed the member for something they had already done and left them no way
+  // forward — so prefer the worker's own message, which is written for them.
+  globalThis.jxnfcVoiceErr = function(status, detail) {
+    if (status === 400) {
+      if (!detail) return 'The consent box must be checked first.'
+      return detail.charAt(0).toUpperCase() + detail.slice(1) + '.'
+    }
+    if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
+    if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
+    if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
+    if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
+    // Do not promise an immediate resend: the message throttle is still live
+    // from the submit that hit the cap, so "delete one and send another" was
+    // answered by a 429 telling them they had just submitted.
+    if (status === 409) return 'You have up to five messages waiting on us. Delete one below, then you can send another — there is a short wait between messages.'
+    return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
+  }
+
+  // Body of a failed submit, if it has one. Never throws: an error message is
+  // a courtesy and must not become a second failure.
+  function speakErrDetail(res) {
+    return res.json().then(function(body) {
+      return body && typeof body.error === 'string' ? body.error : ''
+    }).catch(function() { return '' })
+  }
+
+  // The one submit path, shared by the round recorder and the message
+  // composer. It lives here rather than in speak-recorder for two reasons:
+  // that component sits a few hundred characters from the 10k cap, and the
+  // 401 renew-and-retry below is too easy to get subtly wrong twice.
+  //
+  // meta is { kind, subject, note, promptId } and is omitted entirely for a
+  // round clip. It rides in QUERY PARAMS, never headers: fetch() throws a
+  // TypeError on a non-Latin1 header value, so the first member to type a
+  // curly apostrophe would fail before the request left the browser.
+  function speakVoiceSubmit(token, blob, type, secs, meta) {
+    const speakBase = globalThis.jxnfcOrigin || 'https://join.jxnfilm.club'
+    const speakQs = new URLSearchParams()
+    if (meta && meta.kind) speakQs.set('kind', meta.kind)
+    if (meta && meta.subject) speakQs.set('subject', meta.subject)
+    if (meta && meta.note) speakQs.set('note', meta.note)
+    if (meta && meta.promptId) speakQs.set('promptId', meta.promptId)
+    const speakQuery = speakQs.toString()
+    const speakUrl = speakBase + '/voice' + (speakQuery ? '?' + speakQuery : '')
+    function speakSend(speakToken) {
+      return fetch(speakUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + speakToken,
+          'Content-Type': type || 'application/octet-stream',
+          'X-Voice-Duration': String(secs || 0),
+          'X-Voice-Consent': 'yes',
+        },
+        body: blob,
+      })
+    }
+    return speakSend(token).then(function(res) {
+      // A 401 must NOT bounce to /signin: that unmounts the recorder and
+      // destroys the very take the member was told to resubmit. Renew in
+      // place and retry once; the blob never moves.
+      if (res.status !== 401 || !globalThis.jxnfcEnsureSession) return res
+      return globalThis.jxnfcEnsureSession().catch(function() { return null }).then(function(fresh) {
+        return fresh && fresh.token ? speakSend(fresh.token) : res
+      })
+    })
+  }
+
+  // m:ss, shared by the recorder's live timer and the history rows. Prefixed
+  // because a lib-scope declaration is a file-wide reserved word for every
+  // component template here (docs/CLAUDE.md, dhtml gotchas).
+  function speakClock(secs) {
+    const speakTotal = Math.max(0, Math.round(Number(secs) || 0))
+    return Math.floor(speakTotal / 60) + ':' + String(speakTotal % 60).padStart(2, '0')
+  }
+
+  // Message-mode state, read by speak-recorder at submit time. globalThis
+  // rather than a lib-scope let: HMR can re-import this module and reset a
+  // lib binding mid-session, and these have to survive that.
+  globalThis.jxnfcSpeakMode = globalThis.jxnfcSpeakMode || 'prompt'
+  globalThis.jxnfcSpeakSubject = globalThis.jxnfcSpeakSubject || ''
+  globalThis.jxnfcSpeakNote = globalThis.jxnfcSpeakNote || ''
+
+  function getSession() {
+    try {
+      const stored = localStorage.jxnfc_session
+      const sess = stored ? JSON.parse(stored) : null
+      return sess?.token && sess.exp > Date.now() ? sess : null
+    } catch { return null }
+  }
+
 </script>
 
 
@@ -637,64 +794,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // The Worker already resolves each entry's name off its member id, so the
     // only work left here is tolerating a legacy [name] payload from a worker
     // that predates the id migration.
@@ -865,17 +964,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     this.busy = false
 
     this.mounted = async function() {
@@ -1115,17 +1203,6 @@
   <p :if="err" class="rsvp-err">{ err }</p>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     this.mounted = function() {
       this.update({ busy: false, err: '' })
     }
@@ -1281,64 +1358,6 @@
   </form>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // Strict venue allowlist for theater meetups. Precedence: the Worker
     // GET /config theaters list (admin-editable) wins when it is a non-empty
     // array; this literal is the availability fallback when the Worker or KV
@@ -1519,21 +1538,31 @@
   <section class="speak-band -page">
     <div class="speak-band-grid">
       <div class="speak-band-main">
-        <p class="speak-band-eyebrow"><span class="rule"></span>This round’s prompt</p>
-        <h1 class="speak-band-head"><span class="q">“</span><span class="speak-prompt-text">{ prompt ? prompt.text : '' }</span><span class="q">”</span></h1>
-        <p class="speak-band-lede">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
+        <p class="speak-band-eyebrow"><span class="rule"></span><span class="speak-eyebrow-text">{ eyebrowText() }</span></p>
+        <h1 class="speak-band-head"><span class="q speak-q" :hidden="isMessage()">“</span><span class="speak-prompt-text">{ headText() }</span><span class="q speak-q" :hidden="isMessage()">”</span></h1>
+        <p class="speak-band-lede speak-lede-prompt" :hidden="isMessage()">Record straight from your browser or upload a clip. Three minutes or less. The best answers air on the next JXN Film Club podcast.</p>
+        <p class="speak-band-lede speak-lede-message" :hidden="!isMessage()">Tell us what it is about, then record. Three minutes or less, same as a prompt answer — a host listens to every one.</p>
+        <!-- One button whose LABEL is interpolated, rather than a signed-in
+             and signed-out pair: .speak-band-btn is display:inline-flex,
+             which outranks the UA [hidden] rule, and swapping nodes inside
+             the band shifts later siblings and crashes the nuedom diff. -->
         <div class="speak-band-actions">
-          <button type="button" class="speak-band-btn" :onclick="toRecorder">Record a clip</button>
-          <button type="button" class="speak-band-btn -quiet" :onclick="toUpload">Upload a file</button>
+          <button type="button" class="speak-band-btn" :onclick="toRecorder">{ session ? 'Record a clip' : 'Log in to record' }</button>
+          <button type="button" class="speak-band-btn -quiet" :onclick="toUpload">{ session ? 'Upload a file' : 'Join the club' }</button>
         </div>
-        <p class="speak-band-reassure">{ session ? 'You can re-record or pull your clip any time before the episode drops.' : 'Members only — log in to record.' }</p>
-        <p :hidden="!isClosed()" class="speak-band-closed">This round’s cutoff has passed. You can still submit, but a late clip may not make this episode.</p>
+        <p class="speak-band-reassure" :hidden="!session">You can re-record or pull your clip any time before the episode drops.</p>
+        <!-- Signed out, this used to be dead plain text saying "log in" with
+             nothing to click, beside a red button that silently jumped to
+             /signin. Both doors are real links now, and they are different
+             doors: joining and logging in are not the same thing. -->
+        <p class="speak-band-reassure" :hidden="session">Members only — <a href="/signin">log in</a> to record, or <a href="https://join.jxnfilm.club/">join the club</a> first.</p>
+        <p :hidden="!isClosed() || isMessage()" class="speak-band-closed">This round’s cutoff has passed. You can still submit, but a late clip may not make this episode.</p>
       </div>
       <div class="speak-band-rail">
         <div class="speak-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="speak-band-details">
           <div class="drow"><span class="dt">Length</span><span class="dd">3 min or less</span></div>
-          <div class="drow"><span class="dt">Cutoff</span><span class="dd speak-deadline { isClosed() ? '-closed' : '' }">{ (isClosed() ? 'Closed · ' : '') + (deadlineLabel || (prompt && prompt.deadline) || '—') }</span></div>
+          <div class="drow"><span class="dt speak-cutoff-dt">{ isMessage() ? 'Goes to' : 'Cutoff' }</span><span class="dd speak-deadline { !isMessage() && isClosed() ? '-closed' : '' }">{ isMessage() ? 'The hosts' : cutoffLabel() }</span></div>
           <div class="drow"><span class="dt">Status</span><span class="dd speak-status-dd">{ railStatus() }</span></div>
         </div>
       </div>
@@ -1549,7 +1578,17 @@
     a member to submit one.
   </p>
 
-  <div :hidden="!session || !mineLoaded || (mine && !replacing)">
+  <!-- Mode chooser + subject fields. Its own component because a child's
+       update() re-renders only itself: a parent update() re-evaluates
+       speak-recorder's script and wipes the module-scope blob holding an
+       unsubmitted take. speak-compose must never call up. -->
+  <speak-compose :session="session"/>
+
+  <!-- Class hook: speak-compose repaints this wrapper imperatively on a mode
+       switch. It must never trigger a parent update() to do it — that
+       re-evaluates speak-recorder's script and wipes the module-scope blob
+       holding an unsubmitted take. -->
+  <div class="speak-rec-wrap" :hidden="recHidden()">
     <speak-recorder :session="session"/>
     <button :hidden="!mine || !replacing" type="button" class="plain" :onclick="cancelReplace" :disabled="busy">Keep my current clip</button>
   </div>
@@ -1565,64 +1604,6 @@
   </div>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-    // Published for the recorder child, which is within a few hundred chars
-    // of the 10k script cap and can't afford its own copy of this.
-    globalThis.jxnfcOrigin = WORKER_ORIGIN
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
-    // An unsubmitted take lives only in the recorder's module scope, and the
-    // recorder tears itself down on any route change — so without this a nav
-    // click silently destroys three minutes of recording. Page-lifetime and
-    // once-guarded: module scope re-evals on every parent update.
-    if (!globalThis.jxnfcSpeakNavGuard) {
-      globalThis.jxnfcSpeakNavGuard = true
-      const LOSE = 'You have a recording that has not been submitted yet. Leave and lose it?'
-      window.addEventListener('beforeunload', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow) return
-        e.preventDefault()
-        e.returnValue = ''
-      })
-      // Capture phase: the SPA router also listens for link clicks, and this
-      // has to win before it starts a route change.
-      document.addEventListener('click', function(e) {
-        if (!globalThis.jxnfcSpeakStagedNow || e.defaultPrevented) return
-        const a = e.target.closest ? e.target.closest('a[href]') : null
-        if (!a || a.target === '_blank') return
-        const url = new URL(a.getAttribute('href'), location.href)
-        if (url.origin !== location.origin || url.pathname === location.pathname) return
-        if (!confirm(LOSE)) { e.preventDefault(); e.stopPropagation() }
-      }, true)
-    }
-
-    // Submit-error copy lives here, not in the recorder: that component is
-    // within a few hundred chars of the 10k script cap. Read at click time,
-    // so evaluation order doesn't matter.
-    globalThis.jxnfcVoiceErr = function(status) {
-      if (status === 400) return 'The consent box must be checked first.'
-      if (status === 401) return 'Your session expired and could not be renewed. Log in again in another tab, then press Submit — your recording is still here.'
-      if (status === 413) return 'That clip is too large. Keep it under three minutes or 8 MB.'
-      if (status === 415) return 'That audio format is not supported. Try mp3, m4a, or a fresh recording.'
-      if (status === 429) return 'You have submitted very recently. Give it a little while and try again.'
-      return 'Something went wrong (HTTP ' + status + '). Try again in a minute — your recording is still here.'
-    }
-
-    function getSession() {
-      try {
-        const raw = localStorage.jxnfc_session
-        const s = raw ? JSON.parse(raw) : null
-        return s?.token && s.exp > Date.now() ? s : null
-      } catch { return null }
-    }
-
     // Fallback prompt: used when the worker config has no well-formed
     // voice_prompt or the config fetch fails entirely.
     const DEFAULT_PROMPT = { id: 'general', text: "Tell us what you're watching" }
@@ -1661,9 +1642,22 @@
     // repaints the rail imperatively — the child must NEVER trigger a
     // parent update(): every parent update re-evaluates the child script,
     // wiping its module scope and with it any unsubmitted take.
+    // Published for speak-compose's imperative repaint, which cannot call a
+    // parent method after a mode switch without triggering a parent update().
+    this.cutoffLabel = function() {
+      const closed = this.isClosed()
+      globalThis.jxnfcSpeakClosed = closed
+      const label = (closed ? 'Closed · ' : '') + (this.deadlineLabel || (this.prompt && this.prompt.deadline) || '—')
+      globalThis.jxnfcSpeakCutoff = label
+      return label
+    }
+
     this.railStatus = function() {
       let base = '—'
-      if (this.session) {
+      // In message mode the rail describes the message being composed, not
+      // the member's answer to the round — those are different submissions.
+      if (this.session && globalThis.jxnfcSpeakMode === 'message') base = 'New message'
+      else if (this.session) {
         if (!this.mineLoaded) base = '…'
         else if (this.mine) base = this.statusLabel(this.mine)
         else if (this.deleted) base = 'Deleted'
@@ -1672,20 +1666,61 @@
       return globalThis.jxnfcSpeakStagedNow ? 'Draft' : base
     }
 
+    // Mode is owned by speak-compose and READ BACK here, never mirrored into
+    // this component's state: a later parent re-render then re-derives it
+    // instead of reverting to a stale copy. Same shape as railStatus().
+    this.isMessage = function() { return globalThis.jxnfcSpeakMode === 'message' }
+
+    // The band is the PARENT template, so every parent update() — Delete and
+    // Replace both cause one — repaints it. Deriving these from the mode makes
+    // that repaint self-correcting; hard-coding the round copy meant a member
+    // composing a message watched the headline snap back to the round prompt
+    // the moment they deleted their round clip. speak-compose's paint() still
+    // handles the keystroke-by-keystroke case, which no re-render covers.
+    this.eyebrowText = function() { return this.isMessage() ? 'Your message' : 'This round’s prompt' }
+
+    this.headText = function() {
+      if (this.isMessage()) return globalThis.jxnfcSpeakSubject || 'What is on your mind?'
+      return this.prompt ? this.prompt.text : ''
+    }
+
+    // The recorder's visibility, with the ROUND-mode answer published so that
+    // speak-compose can restore it on the way back out of message mode. A
+    // member who already answered the round has the recorder hidden; entering
+    // message mode reveals it, and leaving has to hide it again or they are
+    // shown a recorder with no "Keep my current clip" beside it, and a submit
+    // silently replaces the answer they already sent. Computed before the
+    // branch, never inside it, so the published value is never stale.
+    this.recHidden = function() {
+      const roundHidden = !this.session || !this.mineLoaded || (this.mine && !this.replacing)
+      globalThis.jxnfcSpeakRecHidden = roundHidden
+      return this.isMessage() ? !this.session : roundHidden
+    }
+
+    // Signed out, the primary action is a login, and it must not be
+    // location.href: GitHub Pages answers every non-file path with a 404
+    // before the SPA takes over, so a full load lands on a 404 document.
+    // Stash where we are, then let the router do a real pushState.
+    this.toSignin = function() {
+      if (globalThis.jxnfcStashNext) globalThis.jxnfcStashNext(location.pathname)
+      state.type = 'signin'
+    }
+
     this.toRecorder = function() {
-      if (!this.session) { location.href = '/signin'; return }
+      if (!this.session) { this.toSignin(); return }
       const el = document.querySelector('.speak-flow')
-      if (el) el.scrollIntoView({ behavior: 'smooth' })
+      if (el) el.scrollIntoView()
     }
 
     this.toUpload = function() {
-      if (!this.session) { location.href = '/signin'; return }
+      // Signed out this button is the OTHER door — joining, not logging in.
+      if (!this.session) { location.href = 'https://join.jxnfilm.club/'; return }
       // The upload input has no box when an existing clip hides the
       // recorder — land on the clip card (Replace button) instead.
       const input = document.querySelector('.speak-upload input[type="file"]')
       const visible = input && input.offsetParent
       const el = visible ? input : document.querySelector('.speak-flow')
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (el) el.scrollIntoView({ block: 'center' })
       if (visible) input.focus({ preventScroll: true })
     }
 
@@ -1693,6 +1728,17 @@
       const self = this
       const session = getSession()
       globalThis.jxnfcSpeakStagedNow = false
+      // A stale message mode must not survive a route change — landing on
+      // /speak should always open on the round.
+      globalThis.jxnfcSpeakMode = 'prompt'
+      globalThis.jxnfcSpeakSubject = ''
+      globalThis.jxnfcSpeakNote = ''
+      // Published for speak-compose, which repaints the band headline by hand
+      // and needs the round text to put back when the member switches away
+      // from a message.
+      globalThis.jxnfcSpeakPromptText = DEFAULT_PROMPT.text
+      globalThis.jxnfcSpeakCutoff = '—'
+      globalThis.jxnfcSpeakClosed = false
       // User-action-only bridges for the history rows (a bridge fired from
       // a child's mounted would remount-recurse; these fire on clicks only).
       globalThis.jxnfcSpeakStartReplace = function() { self.update({ replacing: true, err: '' }) }
@@ -1711,6 +1757,7 @@
         if (vp && typeof vp.id == 'string' && vp.id && typeof vp.text == 'string' && vp.text) {
           next.prompt = { id: vp.id, text: vp.text, deadline: vp.deadline }
           next.deadlineLabel = self.fmtDeadline(vp.deadline)
+          globalThis.jxnfcSpeakPromptText = vp.text
         }
         if (rs[1]) next.session = rs[1]
         if (Object.keys(next).length) self.update(next)
@@ -1767,7 +1814,7 @@
 
   <div :hidden="!preview" class="speak-preview">
     <p class="speak-kicker">Preview</p>
-    <div class="speak-player"></div>
+    <audio :if="clipSrc" class="speak-player" controls src="{ clipSrc }" :onloadedmetadata="onMeta"></audio>
     <p class="speak-clip-meta">{ clipLabel }</p>
     <p :hidden="!tooLong" class="hint speak-toolong">That is longer than three minutes — only the first 3:00 will be used.</p>
     <label class="speak-consent">
@@ -1785,15 +1832,13 @@
   <p :if="err" class="rsvp-err">{ err }</p>
 
   <script>
-    // Origin and error copy come from the parent (globalThis), read at call
-    // time — this script is close to the 10k serialization cap and can't
-    // afford its own copies. See speak-view.
-    function origin() { return globalThis.jxnfcOrigin || 'https://join.jxnfilm.club' }
-    function friendly(s) { return globalThis.jxnfcVoiceErr(s) }
-
+    // Submit plumbing and error copy live at lib scope (speakVoiceSubmit,
+    // jxnfcVoiceErr): this script is a few hundred characters from the 10k
+    // serialization cap and cannot afford its own copies, and the message
+    // composer has to share the exact same 401 renew-and-retry.
     const MAX_SECONDS = 180
     const MAX_BYTES = 8 * 1024 * 1024
-    const RESET = { recording: false, preview: false, consent: false, elapsed: 0, err: '', clipLabel: '', starting: false, tooLong: false }
+    const RESET = { recording: false, preview: false, clipSrc: '', consent: false, elapsed: 0, err: '', clipLabel: '', starting: false, tooLong: false }
 
     let recorder = null
     let stream = null
@@ -1811,7 +1856,6 @@
     let clipType = ''
     let clipUrl = ''
     let clipSeconds = 0
-    let audioEl = null
 
     function stopTracks() {
       if (!stream) return
@@ -1825,11 +1869,6 @@
     }
 
     function dropClip() {
-      if (audioEl) {
-        try { audioEl.pause() } catch (e) {}
-        if (audioEl.parentNode) audioEl.parentNode.removeChild(audioEl)
-        audioEl = null
-      }
       if (clipUrl) URL.revokeObjectURL(clipUrl)
       clipBlob = null; clipType = ''; clipUrl = ''; clipSeconds = 0
     }
@@ -1865,12 +1904,7 @@
       if (el) el.textContent = v ? 'Draft' : (globalThis.jxnfcSpeakBase || '—')
     }
 
-    function fmtT(s) {
-      const n = Math.max(0, Math.round(Number(s) || 0))
-      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
-    }
-
-    this.fmtTime = function(s) { return fmtT(s) }
+    this.fmtTime = function(s) { return speakClock(s) }
 
     this.mounted = function() {
       const self = this
@@ -1879,34 +1913,23 @@
       globalThis.jxnfcSpeakDiscard = function() { cleanupAll(); self.update(RESET); tellStaged(false) }
       // Module state does NOT survive parent-triggered remounts (script
       // re-evals, clipBlob resets) — restore branch kept defensively.
-      this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, elapsed: clipSeconds, consent: false, err: '', tooLong: clipSeconds > MAX_SECONDS, clipLabel: clipBlob ? 'Staged clip · ' + fmtT(clipSeconds) : '' })
-      if (clipBlob) this.attachPreview()
+      this.update({ canRecord: canRec(), busy: false, recording: false, preview: !!clipBlob, clipSrc: clipUrl, elapsed: clipSeconds, consent: false, err: '', tooLong: clipSeconds > MAX_SECONDS, clipLabel: clipBlob ? 'Staged clip · ' + speakClock(clipSeconds) : '' })
       tellStaged(!!clipBlob)
     }
 
-    this.attachPreview = function() {
-      const self = this
-      const el = this.root ? this.root.querySelector('.speak-player') : null
-      if (!el || !clipUrl) return
-      if (!audioEl) {
-        audioEl = document.createElement('audio')
-        audioEl.controls = true
-        audioEl.src = clipUrl
-        audioEl.addEventListener('loadedmetadata', function() {
-          if (!clipSeconds && isFinite(audioEl.duration) && audioEl.duration > 0) {
-            clipSeconds = Math.round(audioEl.duration)
-            // An upload longer than the cap is accepted and silently trimmed
-            // at render time — say so here rather than letting the member
-            // find out from the finished audiogram.
-            self.update({ elapsed: clipSeconds, tooLong: clipSeconds > MAX_SECONDS })
-            self.attachPreview()
-          }
-        })
-      }
-      if (audioEl.parentNode !== el) {
-        el.innerHTML = ''
-        el.appendChild(audioEl)
-      }
+    // The player is DECLARATIVE (src bound to clipSrc) rather than an element
+    // appended by hand. nuedom re-renders a component after its handler
+    // returns, which detached an imperatively-appended node — so ticking the
+    // consent box silently removed the preview the member had just been
+    // listening to. Binding it means no render can lose it.
+    this.onMeta = function(e) {
+      const audio = e.target
+      if (clipSeconds || !isFinite(audio.duration) || audio.duration <= 0) return
+      clipSeconds = Math.round(audio.duration)
+      // An upload longer than the cap is accepted and silently trimmed at
+      // render time — say so here rather than letting the member find out
+      // from the finished audiogram.
+      this.update({ elapsed: clipSeconds, tooLong: clipSeconds > MAX_SECONDS })
     }
 
     this.toggleRecord = function() {
@@ -1947,9 +1970,8 @@
           clipUrl = URL.createObjectURL(clipBlob)
           chunks = []
           recorder = null
-          self.update({ recording: false, preview: true, elapsed: secs, clipLabel: 'New recording · ' + fmtT(secs) })
-          self.attachPreview()
-          tellStaged(true)
+          self.update({ recording: false, preview: true, clipSrc: clipUrl, elapsed: secs, clipLabel: 'New recording · ' + speakClock(secs) })
+            tellStaged(true)
         }
         startedAt = Date.now()
         recorder.start()
@@ -1985,14 +2007,12 @@
       clipType = f.type || 'application/octet-stream'
       clipSeconds = 0
       clipUrl = URL.createObjectURL(f)
-      self.update({ err: '', preview: true, recording: false, elapsed: 0, tooLong: false, clipLabel: 'Upload · ' + f.name })
-      self.attachPreview()
+      self.update({ err: '', preview: true, clipSrc: clipUrl, recording: false, elapsed: 0, tooLong: false, clipLabel: 'Upload · ' + f.name })
       tellStaged(true)
     }
 
     this.consentChange = function(e) {
       this.update({ consent: !!e.target.checked })
-      this.attachPreview()
     }
 
     this.discardClip = function() {
@@ -2001,41 +2021,159 @@
       tellStaged(false)
     }
 
-    this.post = function(token) {
-      return fetch(origin() + '/voice', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': clipType || 'application/octet-stream',
-          'X-Voice-Duration': String(clipSeconds || 0),
-          'X-Voice-Consent': 'yes',
-        },
-        body: clipBlob,
-      })
-    }
-
     this.submit = async function() {
       const self = this
       if (!clipBlob) { self.update({ err: 'Record or choose an audio file first.' }); return }
       if (!this.consent) return
+      // In message mode the subject is required, and it is cheaper to say so
+      // here than to spend a round trip finding out from the worker.
+      const meta = globalThis.jxnfcSpeakMeta ? globalThis.jxnfcSpeakMeta() : null
+      if (meta && meta.error) { self.update({ err: meta.error }); return }
       self.update({ busy: true, err: '' })
       try {
-        let res = await this.post(this.session.token)
-        // A 401 here used to send the member to /signin — which unmounts this
-        // component and destroys the very take they were told to resubmit.
-        // Renew in place instead and retry once; the blob never moves.
-        if (res.status === 401 && globalThis.jxnfcEnsureSession) {
-          const fresh = await globalThis.jxnfcEnsureSession().catch(function() { return null })
-          if (fresh && fresh.token) res = await this.post(fresh.token)
+        const res = await speakVoiceSubmit(this.session.token, clipBlob, clipType, clipSeconds, meta)
+        if (!res.ok) {
+          const detail = res.status === 400 ? await speakErrDetail(res) : ''
+          const err = new Error(globalThis.jxnfcVoiceErr(res.status, detail)); err.shown = true; throw err
         }
-        if (!res.ok) { const err = new Error(friendly(res.status)); err.shown = true; throw err }
         // Fresh route render: the parent refetches /voice/mine and shows
         // the submitted state (house mutation idiom).
         dropClip()
         location.reload()
       } catch (e) {
         self.update({ busy: false, err: (e && e.shown) ? e.message : 'Could not reach the server — check your connection and try again. Your recording is still here.' })
-        self.attachPreview()
+      }
+    }
+  </script>
+</div>
+
+
+<!-- Mode chooser + the subject/note fields for a free-form message.
+     A separate component purely for UPDATE ISOLATION: a child's update()
+     re-renders only itself, while a parent update() re-evaluates
+     speak-recorder's script and destroys the module-scope blob holding an
+     unsubmitted take. So this never calls up — it writes mode to globalThis
+     and repaints the band and the recorder wrapper imperatively, the same
+     way the recorder repaints the rail via tellStaged().
+     The text inputs are deliberately uncontrolled and are only read at
+     submit time: re-rendering on every keystroke would move the caret. -->
+<div :is="speak-compose" class="speak-compose">
+
+  <div :hidden="!session" class="speak-mode">
+    <button type="button" class="speak-mode-btn { mode === 'prompt' ? '-on' : '' }" :onclick="pickPrompt">Answer this round</button>
+    <button type="button" class="speak-mode-btn { mode === 'message' ? '-on' : '' }" :onclick="pickMessage">Send a message</button>
+  </div>
+
+  <p :hidden="!session || mode === 'message'" class="hint speak-mode-hint">Something else on your mind? Send the club a message instead — you pick the subject.</p>
+
+  <div :hidden="!session || mode !== 'message'" class="speak-subject">
+    <label>What is this about?
+      <input type="text" maxlength="80" class="speak-subject-input" placeholder="The ending of Nope, explained" :oninput="onSubject">
+    </label>
+    <p class="hint"><span class="speak-subject-left">{ left }</span> characters left — this is the title your clip airs under, so write it the way you want it read.</p>
+    <label>Anything else we should know (optional)
+      <textarea rows="2" maxlength="500" class="speak-note-input" :oninput="onNote"></textarea>
+    </label>
+    <p class="hint">Messages go straight to the hosts. Same three-minute limit, same 60-day auto-delete, and you can keep up to five waiting on us at once.</p>
+  </div>
+
+  <script>
+    const SUBJECT_MAX = 80
+
+    function el(sel) { return document.querySelector(sel) }
+    function val(sel) {
+      const node = el(sel)
+      return node ? node.value.replace(/[ ]+/g, ' ').trim() : ''
+    }
+
+    // Everything the band shows that depends on mode, repainted by hand.
+    // A parent update() would do it declaratively and cost a staged take.
+    function paint(mode) {
+      const message = mode === 'message'
+      const eyebrow = el('.speak-eyebrow-text')
+      if (eyebrow) eyebrow.textContent = message ? 'Your message' : 'This round’s prompt'
+      const head = el('.speak-prompt-text')
+      if (head) head.textContent = message ? (globalThis.jxnfcSpeakSubject || 'What is on your mind?') : (globalThis.jxnfcSpeakPromptText || '')
+      // Quoting a member’s own words back at them as though the club had
+      // asked them is the wrong register, so the quote marks come off.
+      const quotes = document.querySelectorAll('.speak-q')
+      for (let i = 0; i < quotes.length; i++) quotes[i].hidden = message
+      const lp = el('.speak-lede-prompt')
+      if (lp) lp.hidden = message
+      const lm = el('.speak-lede-message')
+      if (lm) lm.hidden = !message
+      const rail = el('.speak-status-dd')
+      if (rail && !globalThis.jxnfcSpeakStagedNow) rail.textContent = message ? 'New message' : (globalThis.jxnfcSpeakBase || '—')
+      // The cutoff belongs to the round. A message has none, and showing one
+      // beside it would read as a deadline the member does not actually have.
+      const cutT = el('.speak-cutoff-dt')
+      if (cutT) cutT.textContent = message ? 'Goes to' : 'Cutoff'
+      const cutV = el('.speak-deadline')
+      if (cutV) cutV.textContent = message ? 'The hosts' : (globalThis.jxnfcSpeakCutoff || '—')
+      if (cutV) cutV.classList.toggle('-closed', !message && !!globalThis.jxnfcSpeakClosed)
+      // The round's late-cutoff caution is equally irrelevant to a message.
+      const closed = el('.speak-band-closed')
+      if (closed) closed.hidden = message || !globalThis.jxnfcSpeakClosed
+      // A member who already answered the round has the recorder hidden;
+      // switching to a message brings it back, and switching BACK has to hide
+      // it again — speak-view publishes the round-mode answer for exactly this.
+      const wrap = el('.speak-rec-wrap')
+      if (wrap) wrap.hidden = message ? false : !!globalThis.jxnfcSpeakRecHidden
+    }
+
+    function setMode(self, mode) {
+      globalThis.jxnfcSpeakMode = mode
+      self.update({ mode: mode, left: SUBJECT_MAX - (globalThis.jxnfcSpeakSubject || '').length })
+      paint(mode)
+    }
+
+    this.pickPrompt = function() { setMode(this, 'prompt') }
+    this.pickMessage = function() {
+      setMode(this, 'message')
+      const input = el('.speak-subject-input')
+      if (input) input.focus()
+    }
+
+    // The counter is component state rather than an imperative repaint:
+    // nuedom re-renders this component after every handler, which restored a
+    // hand-written textContent to whatever the template said. The input
+    // itself stays uncontrolled, so the re-render never touches the caret.
+    this.onSubject = function() {
+      globalThis.jxnfcSpeakSubject = val('.speak-subject-input')
+      this.update({ left: SUBJECT_MAX - globalThis.jxnfcSpeakSubject.length })
+      paint('message')
+    }
+
+    this.onNote = function() {
+      const node = el('.speak-note-input')
+      globalThis.jxnfcSpeakNote = node ? node.value.trim() : ''
+    }
+
+    this.mounted = function() {
+      const mode = globalThis.jxnfcSpeakMode || 'prompt'
+      this.update({ mode: mode, left: SUBJECT_MAX - (globalThis.jxnfcSpeakSubject || '').length })
+      // The band lives in the PARENT template, so a parent update() — which
+      // Delete and Replace both trigger — repaints it from the round-mode
+      // bindings and remounts this child. Restoring the mode here without
+      // repainting left the two halves disagreeing: chooser and fields still
+      // set to message, headline and lede reverted to the round.
+      paint(mode)
+      // The fields carry no value binding, so a remount blanks them while the
+      // globals still hold the text — which would submit a subject the member
+      // can no longer see. Restore both from the globals that outlive the node.
+      const subjectNode = el('.speak-subject-input')
+      if (subjectNode) subjectNode.value = globalThis.jxnfcSpeakSubject || ''
+      const noteNode = el('.speak-note-input')
+      if (noteNode) noteNode.value = globalThis.jxnfcSpeakNote || ''
+      // Read at submit time by speak-recorder, which owns the audio. Returning
+      // null keeps the round path byte-identical to what it was.
+      globalThis.jxnfcSpeakMeta = function() {
+        if (globalThis.jxnfcSpeakMode !== 'message') return null
+        const subject = val('.speak-subject-input')
+        if (subject.length < 3) return { error: 'Give your message a subject first — a few words is plenty.' }
+        if (subject.length > SUBJECT_MAX) return { error: 'That subject is longer than 80 characters.' }
+        const node = el('.speak-note-input')
+        return { kind: 'message', subject: subject, note: node ? node.value.trim() : '' }
       }
     }
   </script>
@@ -2055,8 +2193,9 @@
 <div :is="speak-history" class="speak-history">
   <h2 :hidden="!items || !items.length" class="speak-history-head">Your submissions</h2>
   <div :each="c in items" key="{ c.promptId }" class="hrow" data-prompt="{ c.promptId }">
-    <p class="hrow-prompt">“{ c.promptText }”</p>
-    <p class="hrow-meta"><span :if="c.current" class="hrow-badge">This round</span>{ labelOf(c) } · { fmtDate(c.at) }{ c.duration ? ' · ' + fmtClock(c.duration) : '' }{ expiresIn(c.expiresAt) }</p>
+    <p class="hrow-prompt">{ c.kind === 'message' ? c.promptText : '“' + c.promptText + '”' }</p>
+    <p :if="c.note" class="hrow-note">{ c.note }</p>
+    <p class="hrow-meta"><span :if="c.kind === 'message'" class="hrow-badge -msg">Your message</span><span :if="c.current" class="hrow-badge">This round</span>{ labelOf(c) } · { fmtDate(c.at) }{ c.duration ? ' · ' + fmtClock(c.duration) : '' }{ expiresIn(c.expiresAt) }</p>
     <div class="hrow-player" data-prompt="{ c.promptId }"></div>
     <div class="hrow-btns">
       <button type="button" class="-ghost hrow-act" data-act="listen" data-prompt="{ c.promptId }">Listen</button>
@@ -2067,17 +2206,6 @@
   <p class="hrow-err"></p>
 
   <script>
-    const WORKER_ORIGIN = resolveWorkerOrigin()
-
-    function resolveWorkerOrigin() {
-      if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
-      const override = new URLSearchParams(location.search).get('api')
-      if (override === 'local') return 'http://localhost:8787'
-      if (override === 'prod')  return 'https://join.jxnfilm.club'
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
-      return 'https://join.jxnfilm.club'
-    }
-
     // Refilled by every mounted() run — module scope resets on remount.
     let rows = []
     let sess = null
@@ -2162,6 +2290,11 @@
     // publishing the round makes the second true.
     this.labelOf = function(c) {
       if (!c) return 'Submitted'
+      // Publication is round-scoped (config:voice_published) and a message
+      // belongs to no round, so an approved message can never turn into
+      // Published. Say what is actually true rather than leaving a member
+      // watching for a state that will not arrive.
+      if (c.status === 'approved' && c.kind === 'message') return 'Approved — we plan to use this'
       if (c.status === 'approved') return c.published ? 'Published' : 'Approved'
       if (c.status === 'rejected') return 'Not chosen for publication'
       return 'Submitted'
@@ -2172,10 +2305,7 @@
       return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     }
 
-    this.fmtClock = function(s) {
-      const n = Math.max(0, Math.round(Number(s) || 0))
-      return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
-    }
+    this.fmtClock = function(s) { return speakClock(s) }
 
     this.expiresIn = function(exp) {
       const ms = Number(exp) * 1000 - Date.now()
@@ -2246,6 +2376,11 @@
     }
 
     this.replaceRow = function(id) {
+      // Replace re-opens the recorder, so an already-staged take is exactly
+      // what the member is about to destroy — and silently, since the preview
+      // simply disappears.
+      const warn = speakStagedWarning()
+      if (warn && !confirm('Record a new clip to replace this one?' + warn)) return
       if (globalThis.jxnfcSpeakStartReplace) globalThis.jxnfcSpeakStartReplace()
     }
 
@@ -2253,7 +2388,7 @@
       if (working) return
       const row = rows.find(function(c) { return c.promptId === id })
       if (!row) return
-      if (!confirm('Delete this clip? This cannot be undone.')) return
+      if (!confirm('Delete this clip? This cannot be undone.' + speakStagedWarning())) return
       working = true
       setErr('')
       try {

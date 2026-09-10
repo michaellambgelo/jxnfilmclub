@@ -956,6 +956,8 @@ function voiceClipCard(c) {
   const srtKey = String(c.r2Key || '').replace(/\.[^.]+$/, '.srt')
   return `
     <div class="voice-clip">
+      ${c.kind === 'message' ? `<p class="voice-subject">${escapeHtml(c.promptText || '(no subject)')}</p>` : ''}
+      ${c.kind === 'message' && c.note ? `<p class="voice-note">${escapeHtml(c.note)}</p>` : ''}
       <div class="voice-meta">
         <strong>${escapeHtml(c.name || c.memberId)}</strong>
         ${c.handle ? `<code>@${escapeHtml(c.handle)}</code>` : ''}
@@ -1020,21 +1022,29 @@ async function renderVoice() {
       the episode is actually out — approved clips read “Approved” until then. Approve/reject/delete/publish
       go through the join Worker to keep the KV TTLs intact. Compile the
       approved set with <code>node scripts/compile_voices.mjs &lt;promptId&gt;</code>, or render branded
-      audiogram videos with <code>node scripts/make_audiogram.mjs --prompt &lt;promptId&gt;</code>.</p>
+      audiogram videos with <code>node scripts/make_audiogram.mjs --prompt &lt;promptId&gt;</code>.
+      Members can also send a message they titled themselves instead of answering the round;
+      those collect under <b>Messages</b> below, up to five live per member.</p>
     <p class="section-hint">Current prompt: <code>${escapeHtml(prompt.id)}</code> —
       “${escapeHtml(prompt.text)}”${prompt.deadline ? ` (deadline ${escapeHtml(prompt.deadline)})` : ''}
       · edit in the Config tab.</p>
     ${groups.length ? groups.map(g => `
       <section class="voice-group">
-        <h3><code>${escapeHtml(g.promptId)}</code>
-          ${g.promptId === prompt.id ? '<span class="pill on">current prompt</span>' : ''}
-          ${published.has(g.promptId) ? '<span class="pill on">published</span>' : ''}
+        <h3>${g.messages ? 'Messages' : `<code>${escapeHtml(g.promptId)}</code>`}
+          ${!g.messages && g.promptId === prompt.id ? '<span class="pill on">current prompt</span>' : ''}
+          ${!g.messages && published.has(g.promptId) ? '<span class="pill on">published</span>' : ''}
           <span class="muted">(${g.clips.length})</span>
-          <button data-action="voice-publish" data-prompt="${attr(g.promptId)}"
+          ${g.messages ? '' : `<button data-action="voice-publish" data-prompt="${attr(g.promptId)}"
             data-published="${published.has(g.promptId) ? '1' : '0'}"
             title="Whether this round's episode has aired — flips every approved clip in it from Approved to Published for its member"
-            >${published.has(g.promptId) ? 'unpublish round' : 'publish round'}</button></h3>
-        ${g.promptText ? `<p class="section-hint">“${escapeHtml(g.promptText)}”</p>` : ''}
+            >${published.has(g.promptId) ? 'unpublish round' : 'publish round'}</button>`}</h3>
+        ${g.messages
+          ? `<p class="section-hint">Members writing their own prompt rather than answering the round —
+              each one is its own single-clip round under a minted <code>msg_</code> id. There is no
+              publish toggle because publication is round-scoped and these belong to no round; an
+              approved message reads “Approved — we plan to use this” to its member. Render one with
+              <code>node scripts/make_audiogram.mjs --prompt &lt;msg_id&gt; --with-prompt --clips-only</code>.</p>`
+          : (g.promptText ? `<p class="section-hint">“${escapeHtml(g.promptText)}”</p>` : '')}
         ${g.clips.map(voiceClipCard).join('')}
       </section>`).join('') : '<p class="empty">No voice clips yet.</p>'}
   `

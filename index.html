@@ -91,15 +91,51 @@
     } catch { return false }
   }
 
+  // Where to land after a login. Deliberately NOT a ?next= query param:
+  // nuestate reads and emits only the keys registered in state.setup, so an
+  // unregistered param never survives an SPA navigation — and a REGISTERED one
+  // is worse, because api.set() runs save() -> fire() -> pushURLState(), so
+  // sign-in-view.mounted() would read the previous page's location.search.
+  // sessionStorage sidesteps both and dies with the tab.
+  //
+  // Validated against a literal allowlist on BOTH write and read. Not a
+  // regex: '//evil.example' and a backslash variant both look same-origin,
+  // and backslashes in this codebase are their own hazard. Seven routes is
+  // a short enough list to simply enumerate.
+  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback']
+
+  globalThis.jxnfcStashNext = (path) => {
+    try {
+      if (NEXT_OK.includes(path)) sessionStorage.jxnfc_next = path
+      else delete sessionStorage.jxnfc_next
+    } catch { /* private mode, blocked storage: the landing just defaults */ }
+  }
+
+  globalThis.jxnfcNext = () => {
+    try {
+      const path = sessionStorage.jxnfc_next
+      delete sessionStorage.jxnfc_next
+      return NEXT_OK.includes(path) ? path : ''
+    } catch { return '' }
+  }
+
   // Work around Nue's autolink intercepting every anchor click. Autolink's
   // listener runs on the bubble phase at document level; a capture-phase
   // stopImmediatePropagation before it fires lets the browser handle
   // cross-origin and target="_blank" anchors natively.
+  //
+  // The same listener is where a login click is caught: it is the only place
+  // that sees every anchor before autolink starts a route change. Guarded on
+  // defaultPrevented because the same-path handler above preventDefaults
+  // without stopping propagation.
   document.addEventListener('click', (e) => {
     const a = e.target?.closest?.('a[href]')
     if (!a) return
     const url = new URL(a.href, location.href)
     const external = url.origin !== location.origin
+    if (!external && !e.defaultPrevented && url.pathname === '/signin' && location.pathname !== '/signin') {
+      globalThis.jxnfcStashNext(location.pathname)
+    }
     if (external || a.target === '_blank') {
       e.stopImmediatePropagation()
     }
@@ -125,9 +161,16 @@
         <a href="/members">Members</a>
         <a href="/events">Events</a>
         <a href="/watched">Watched</a>
+        <a href="/speak">Speak</a>
         <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
-        <a :if="!signedIn" href="/signin">Log in</a>
-        <a :if="signedIn" href="/edit">Account Actions</a>
+      </div>
+      <!-- Log in lives OUTSIDE .mastnav-links so the hamburger never hides it:
+           it was a dim link behind a collapsed menu, which made logging back
+           in harder to find than joining for the first time. Join stays in
+           the menu, so the masthead keeps exactly one solid red action. -->
+      <div class="mastnav-auth">
+        <a :if="!signedIn" href="/signin" class="nav-login">Log in</a>
+        <a :if="signedIn" href="/edit" class="nav-login">Account</a>
       </div>
     </nav>
   </header>
@@ -151,7 +194,7 @@
 
   <div class="policy-toast" :hidden="!policyToast" role="status">
     <a href="{ policyUrl }">Our privacy policy was updated</a>
-    <button type="button" class="policy-toast-close" aria-label="Dismiss" :onclick="dismissPolicyToast">&times;</button>
+    <button type="button" class="policy-toast-close" aria-label="Dismiss" :onclick="dismissPolicyToast">×</button>
   </div>
 
   <script>
@@ -165,7 +208,7 @@
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :
         type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
-        type === 'speak'   ? 'speak-view' :       // member voice clips for the podcast; newsletter-linked, no nav entry
+        type === 'speak'   ? 'speak-view' :       // member voice clips + messages for the podcast; in the nav since the message mode shipped
         type === 'feedback' ? 'feedback-view' :   // beta feedback form (anonymous ok)
                              'home-view'
       this.mount(view, 'article')

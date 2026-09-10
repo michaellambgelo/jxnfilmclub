@@ -536,3 +536,20 @@ dialog pre.rich {
 .nl-group textarea { width: 100%; font-size: 0.85rem }
 .nl-flyer-stage { display: flex; align-items: center; gap: 0.7rem; margin: 0.5rem 0 }
 .nl-flyer-stage img { width: 56px; height: auto; border: 1px solid var(--border) }
+
+/* A message leads with the subject its member wrote — that is the thing an
+   operator is triaging, not the round id. */
+.voice-clip .voice-subject {
+  margin: 0 0 .25rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.voice-clip .voice-note {
+  margin: 0 0 .5rem;
+  /* Same pairing as td.prewrap above: keep author line breaks, but break an
+     unbroken run rather than scrolling the triage table sideways. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  opacity: .8;
+}

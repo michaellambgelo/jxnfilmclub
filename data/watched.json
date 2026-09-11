@@ -1022,6 +1022,14 @@
   ],
   "calissippi": [
     {
+      "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=ae23afa84a",
+      "rating": "3.0",
+      "title": "The Fix",
+      "watched_date": "2026-09-11",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/hope-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/4/6/6/3/954663-hope-2026-0-600-0-900-crop.jpg?v=102a8bfda2",
       "rating": "3.5",
@@ -1110,14 +1118,6 @@
       "title": "Heel",
       "watched_date": "2026-08-26",
       "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/dtf-st-louis/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/1/0/8/0/8/1510808-dtf-st-louis-0-600-0-900-crop.jpg?v=139044d7f9",
-      "rating": "4.5",
-      "title": "DTF St. Louis",
-      "watched_date": "2026-08-26",
-      "year": "2026"
     }
   ],
   "dacoats": [

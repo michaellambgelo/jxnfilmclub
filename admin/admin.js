@@ -21,7 +21,7 @@ import {
   buildStatsContext, computeMemberStats, normalizeAttendees, fitBox,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
   newsletterSendBlocker, newsletterSizeReport,
-  countPendingVoice, countOpenFeedback } from './lib.js'
+  countPendingVoice, countOpenFeedback, rsvpEnabled, sanitizeAdminEvent } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -1607,50 +1607,49 @@ async function renderEvents() {
   })
 }
 
-// Mirrors worker/src/index.js:publicEventProjection — strips the host's
-// private `address` so it never lands in the public events:all aggregate.
-function projectEvent(e) {
-  if (!e || !e.id) return null
-  const out = { id: e.id }
-  for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
-                   'hostId', 'hostName', 'capacity', 'kind', 'time']) {
-    if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
+// Event writes go through the join Worker (PUT /admin/events/:id), never the
+// raw /api/kv shim. A KV write cannot promote a waitlist, cannot enforce the
+// capacity guard, and cannot tell twenty people the date moved — and once
+// club events could take RSVPs, all three became things an event save has to
+// do. Guest RSVPs have proxied for the same reason since they shipped.
+//
+// `notify` is an explicit opt-in: fixing a typo should not mail the room.
+// Returns { event, changes, notified } so the caller can report what went out.
+async function saveEvent(raw, notify = false) {
+  const ev = sanitizeAdminEvent(raw)
+  return api('PUT', `/api/events?${qs({ env: env(), id: ev.id })}`, JSON.stringify({ event: ev, notify: !!notify }))
+}
+
+// Cancellation notices then teardown, all Worker-side: event:, rsvp:, attend:
+// and both aggregates. Always notifies — the event is gone, and the failure
+// mode of staying quiet is somebody standing outside a venue.
+async function deleteEventKv(id) {
+  return api('DELETE', `/api/events?${qs({ env: env(), id })}`)
+}
+
+// "3 confirmed + 2 waitlisted" — the audience for a notification, phrased for
+// a confirm() dialog. Empty string when there is nobody to mail.
+function rsvpAudience(id) {
+  const r = (rsvpCache && rsvpCache[id]) || { confirmed: [], waitlist: [] }
+  const withEmail = (list) => (list || []).filter(x => x && x.email).length
+  const c = withEmail(r.confirmed), w = withEmail(r.waitlist)
+  if (!c && !w) return ''
+  const parts = []
+  if (c) parts.push(`${c} confirmed`)
+  if (w) parts.push(`${w} waitlisted`)
+  return parts.join(' + ')
+}
+
+// Human-readable diff of the fields the Worker will put in the email body.
+// Kept in step with diffEventNotifiable() in worker/src/index.js — this is
+// the preview, that is the authority.
+function describeEventChanges(before, after) {
+  const out = []
+  for (const f of ['date', 'time', 'venue', 'address', 'title']) {
+    const a = (before && before[f]) || '', b = (after && after[f]) || ''
+    if (a !== b) out.push(`${f}: ${a || '(blank)'} → ${b || '(blank)'}`)
   }
   return out
-}
-
-// Write per-event row (full, with private address) + patch events:all with
-// the public projection so the Worker's GET /events reflects the change on
-// the next read AND can't leak the address.
-async function writeEventKv(ev) {
-  await putKv(`event:${ev.id}`, JSON.stringify(ev), 'ATTENDANCE_KV')
-  const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
-  const agg = tryParse(aggRaw.values['events:all']) || []
-  const proj = projectEvent(ev)
-  const idx = agg.findIndex(e => e.id === ev.id)
-  if (idx === -1) agg.push(proj)
-  else agg[idx] = proj
-  await putKv('events:all', JSON.stringify(agg), 'ATTENDANCE_KV')
-}
-
-async function deleteEventKv(id) {
-  await delKv(`event:${id}`, 'ATTENDANCE_KV').catch(() => {})
-  // Tear down RSVP state too — for hosted screenings these are the canonical
-  // attendee list. (.catch swallows "not found" so unhosted events still work.)
-  await delKv(`rsvp:${id}`, 'ATTENDANCE_KV').catch(() => {})
-  await delKv(`attend:${id}`, 'ATTENDANCE_KV').catch(() => {})
-  const aggRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'events:all' })}`)
-  const agg = tryParse(aggRaw.values['events:all']) || []
-  const next = agg.filter(e => e.id !== id)
-  await putKv('events:all', JSON.stringify(next), 'ATTENDANCE_KV')
-  // Also prune from the attendance:all aggregate so /events/attendance bulk
-  // read doesn't keep returning a phantom entry.
-  const attRaw = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'attendance:all' })}`)
-  const att = tryParse(attRaw.values['attendance:all']) || {}
-  if (att[id] != null) {
-    delete att[id]
-    await putKv('attendance:all', JSON.stringify(att), 'ATTENDANCE_KV')
-  }
 }
 
 function renderEventCards() {
@@ -1660,6 +1659,7 @@ function renderEventCards() {
     return `
     <div class="event-form" data-idx="${i}">
       ${hosted ? `<p class="muted" style="margin:0 0 0.5rem">🏠 Member-hosted (host id <code>${attr(e.hostId)}</code>)</p>` : ''}
+      ${e.kind === 'social' ? `<p class="muted" style="margin:0 0 0.5rem">🥂 Social event — the film fields below are optional.</p>` : ''}
       <div class="grid">
         <div><label>ID</label><input type="text" name="id" value="${attr(e.id)}" readonly></div>
         <div><label>Title</label><input type="text" name="title" value="${attr(e.title || '')}"></div>
@@ -1669,17 +1669,29 @@ function renderEventCards() {
         <div><label>Venue</label><input type="text" name="venue" value="${attr(e.venue || '')}"></div>
         <div><label>Poster URL</label><input type="url" name="poster" value="${attr(e.poster || '')}"></div>
         <div><label>Letterboxd URI</label><input type="url" name="letterboxd_uri" value="${attr(e.letterboxd_uri || '')}"></div>
+        <div><label>Kind</label><select name="kind">
+          ${['', 'house', 'meetup', 'social'].map(k => `<option value="${attr(k)}"${(e.kind || '') === k ? ' selected' : ''}>${k || '(none)'}</option>`).join('')}
+        </select></div>
+        <div><label>Time <span class="muted">— showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
+        <div><label>Capacity <span class="muted">— blank = uncapped</span></label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
+        <div><label>Ticket URL <span class="muted">— external box office; turns RSVP off</span></label>
+          <input type="url" name="ticketUrl" value="${attr(e.ticketUrl || '')}" placeholder="https://..."></div>
+        <div><label>RSVP</label>
+          <label class="cfg-inline"><input type="checkbox" name="rsvp"${rsvpEnabled(e) ? ' checked' : ''}${e.ticketUrl ? ' disabled' : ''}>
+            <span class="muted">${e.ticketUrl ? 'off — this event sells tickets' : 'collect RSVPs instead of post-hoc attendance'}</span></label></div>
         ${hosted ? `
         <div><label>Host name</label><input type="text" name="hostName" value="${attr(e.hostName || '')}"></div>
-        <div><label>Kind <span class="muted">— house | meetup</span></label><input type="text" name="kind" value="${attr(e.kind || '')}" placeholder="house | meetup"></div>
-        <div><label>Time <span class="muted">— showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
-        <div><label>Capacity</label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
         <div style="grid-column:1/-1"><label>Address <span class="muted">— private; only emailed to confirmed RSVPs</span></label>
           <input type="text" name="address" value="${attr(e.address || '')}"></div>
-        <div style="grid-column:1/-1"><label>Notes <span class="muted">— included in every RSVP email</span></label>
-          <textarea name="notes" rows="3">${escapeHtml(e.notes || '')}</textarea></div>
         ` : ''}
+        <div style="grid-column:1/-1"><label>Notes <span class="muted">— included in every RSVP email; never public</span></label>
+          <textarea name="notes" rows="3">${escapeHtml(e.notes || '')}</textarea></div>
       </div>
+      ${rsvpEnabled(e) && rsvpAudience(e.id) ? `
+      <label class="cfg-inline notify-rsvps" style="margin:0.5rem 0 0">
+        <input type="checkbox" name="notify-rsvps">
+        <span>Email ${escapeHtml(rsvpAudience(e.id))} about this change</span>
+      </label>` : ''}
       <div class="toolbar">
         <button class="primary" data-action="event-save" data-idx="${i}">save</button>
         <button class="danger" data-action="event-del" data-idx="${i}">delete event</button>
@@ -1694,7 +1706,7 @@ function renderEventCards() {
           `).join('') || '<li class="muted">no attendees</li>'}
         </ul>
       </div>
-      ${hosted ? renderRsvpSection(e) : ''}
+      ${rsvpEnabled(e) ? renderRsvpSection(e) : ''}
     </div>
   `
   }).join('')
@@ -1975,25 +1987,64 @@ document.addEventListener('click', async (e) => {
       const idx = Number(btn.dataset.idx)
       const form = btn.closest('.event-form')
       const updated = { ...eventsCache[idx] }
-      form.querySelectorAll('input, textarea').forEach(input => {
+      // Scoped to .grid, which holds exactly the event fields. An unscoped
+      // scrape also swept up the guest-add inputs that renderRsvpSection()
+      // renders lower down inside this same .event-form — and since a
+      // checkbox's .value is the string "on" whether or not it is ticked,
+      // that wrote a junk guest-force: "on" onto every hosted event row.
+      //
+      // `select` is in the list because Kind is one: a scrape of only
+      // input+textarea would silently never read it, leaving kind stuck at
+      // whatever it already was while the UI showed the new choice.
+      form.querySelectorAll('.grid input, .grid select, .grid textarea').forEach(input => {
+        // A checkbox carries its state in .checked; .value is the string "on"
+        // when ticked and absent when not, which is never what we want stored.
+        if (input.type === 'checkbox') { updated[input.name] = input.checked; return }
+        // A blank field is sent as '' rather than dropped from the payload.
+        // The Worker MERGES a PUT over the stored row (so a body that forgets
+        // a field cannot wipe it, or silently uncap the event and promote the
+        // waitlist), which means clearing has to be said out loud.
         const v = (input.value || '').trim()
         if (input.name === 'year' || input.name === 'capacity') {
-          updated[input.name] = v ? Number(v) : undefined
+          updated[input.name] = v ? Number(v) : ''
         }
-        else if (v) updated[input.name] = v
-        else delete updated[input.name]
+        else updated[input.name] = v
       })
-      eventsCache[idx] = updated
-      await writeEventKv(updated)
-      toast(`Saved event "${updated.title || updated.id}"`)
+      // The notify box lives outside .grid (it is an instruction about this
+      // save, not a field of the event), so it is read separately.
+      const notifyBox = form.querySelector('input[name="notify-rsvps"]')
+      const notify = !!(notifyBox && notifyBox.checked)
+
+      // Mailing people is not undoable, so name the count and the change
+      // before it happens rather than reporting it afterwards.
+      if (notify) {
+        const audience = rsvpAudience(updated.id)
+        if (!audience) { toast('Nobody has RSVPed yet — nothing to notify', true); return }
+        const diff = describeEventChanges(eventsCache[idx], updated)
+        const what = diff.length ? diff.map(c => `  • ${c}`).join('\n') : '  • (no where/when change — this re-sends the details)'
+        if (!confirm(`Email ${audience} about "${updated.title || updated.id}"?\n\n${what}\n\nThis cannot be undone.`)) return
+      }
+
+      const res = await saveEvent(updated, notify)
+      // Cache what the Worker actually stored, not the raw scrape, so the
+      // re-render shows the truth (e.g. a ticket link having cleared rsvp).
+      eventsCache[idx] = { ...updated, ...res.event }
+      toast(res.notified
+        ? `Saved "${updated.title || updated.id}" — emailed ${res.notified} ${res.notified === 1 ? 'person' : 'people'}`
+        : `Saved event "${updated.title || updated.id}"`)
+      await switchTab(currentTab)
     }
     else if (a === 'event-del') {
       const idx = Number(btn.dataset.idx)
       const ev = eventsCache[idx]
-      if (!confirm(`Delete event "${ev.title || ev.id}"?\n\nClears event:${ev.id} from ATTENDANCE_KV and removes it from the events:all aggregate. Attendance (attend:${ev.id}) is kept — clear it separately if desired.`)) return
-      await deleteEventKv(ev.id)
+      const audience = rsvpAudience(ev.id)
+      const warn = audience
+        ? `\n\n⚠️ ${audience} will be emailed a cancellation notice. This cannot be undone.`
+        : ''
+      if (!confirm(`Delete event "${ev.title || ev.id}"?\n\nClears event:${ev.id}, rsvp:${ev.id} and attend:${ev.id}, and removes it from both aggregates.${warn}`)) return
+      const res = await deleteEventKv(ev.id)
       eventsCache.splice(idx, 1)
-      toast(`Deleted event`)
+      toast(res.notified ? `Deleted event — emailed ${res.notified}` : 'Deleted event')
       await switchTab(currentTab)
     }
     else if (a === 'event-new') {
@@ -2003,9 +2054,12 @@ document.addEventListener('click', async (e) => {
         toast(`Event id "${id}" already exists`, true)
         return
       }
-      const fresh = { id, title: 'Untitled', date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()) }
-      eventsCache.push(fresh)
-      await writeEventKv(fresh)
+      // rsvp is stamped explicitly rather than left absent: absence has to go
+      // on meaning "off" for the curated back catalogue, so "on by default"
+      // can only be delivered at create time.
+      const fresh = { id, title: 'Untitled', rsvp: true, date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()) }
+      const created = await saveEvent(fresh)
+      eventsCache.push({ ...fresh, ...created.event })
       toast(`Created event "${id}"`)
       await switchTab(currentTab)
     }

@@ -453,7 +453,7 @@ export function socialEventView(e) {
   if (!e) return null
   const out = {}
   for (const k of ['id', 'title', 'film', 'year', 'date', 'venue', 'poster',
-                   'letterboxd_uri', 'hostName', 'hostId', 'kind', 'time']) {
+                   'letterboxd_uri', 'hostName', 'hostId', 'kind', 'time', 'ticketUrl']) {
     if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
   }
   return out
@@ -1342,4 +1342,50 @@ export function countPendingVoice(rows) {
 // drops) doesn't inflate the badge.
 export function countOpenFeedback(keys, values) {
   return (keys || []).filter(k => k && tryParse((values || {})[k.name])).length
+}
+
+// --- Events: RSVP mode + write-time sanitation -----------------------------
+
+// Does this event collect RSVPs, or take the post-hoc "I was there" toggle?
+// The two are mutually exclusive: when RSVPs are on the attendee list IS the
+// confirmed list, so offering both gives one event two sources of truth.
+//
+// Precedence, and why:
+//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
+//     control we link out; also taking an RSVP would imply we hold a seat we
+//     do not hold. Structural rather than a validation rule, so it cannot be
+//     misconfigured.
+//  2. An explicit `rsvp` boolean wins. The Events tab stamps `rsvp: true` on
+//     every event it creates, which is what makes "on by default" true for
+//     new club events without making ABSENCE mean on.
+//  3. Otherwise fall back to `hostId` — member-hosted screenings have always
+//     taken RSVPs, the curated rows have always taken attendance, and neither
+//     carries an `rsvp` field.
+//
+// MIRRORED in worker/src/index.js and model/index.ts — keep all three in
+// lockstep (see docs/features/hosting.md).
+export function rsvpEnabled(e) {
+  if (!e) return false
+  if (e.ticketUrl) return false
+  if (typeof e.rsvp === 'boolean') return e.rsvp
+  return !!e.hostId
+}
+
+// Coerce the one thing the Worker cannot see: a form checkbox.
+//
+// An unchecked checkbox is absent from a scrape and a checked one yields the
+// string "on", so a row that stored "on" would read truthy forever but never
+// equal true. Everything else an admin can type — the https rule, the kind
+// allowlist, the ticket/RSVP exclusivity — is validated Worker-side by
+// validAdminEvent(), which is the authority. Duplicating those checks here
+// only re-creates the failure this function exists to prevent: a value the
+// client silently drops, so the operator never sees the error.
+//
+// Empty strings are passed through deliberately. A PUT merges over the stored
+// row, so '' is how the dashboard says "clear this field".
+export function sanitizeAdminEvent(row) {
+  const out = { ...(row || {}) }
+  if (out.rsvp === undefined || out.rsvp === null || out.rsvp === '') delete out.rsvp
+  else out.rsvp = out.rsvp === true || out.rsvp === 'on' || out.rsvp === 'true'
+  return out
 }

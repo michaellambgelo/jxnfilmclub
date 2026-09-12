@@ -147,3 +147,42 @@ describe('POST /admin/scrub', () => {
     expect(body.error).toMatch(/already happened/)
   })
 })
+
+// The 30-day promise in worker/src/privacy.html is not scoped to
+// member-hosted screenings, so the scrub must not be either: a club event an
+// admin set up with RSVPs on collects the same emails and the same notes.
+describe('scrub covers hostless club events that take RSVPs', () => {
+  async function seedClubEvent(id, date, extra = {}) {
+    const event = { id, title: 'Club Night', film: 'F', date, notes: 'parking round back', ...extra }
+    await env.ATTENDANCE_KV.put(`event:${id}`, JSON.stringify(event))
+    const allRaw = await env.ATTENDANCE_KV.get('events:all')
+    const all = allRaw ? JSON.parse(allRaw) : []
+    const { notes, ...proj } = event
+    all.push(proj)
+    await env.ATTENDANCE_KV.put('events:all', JSON.stringify(all))
+    await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
+    return event
+  }
+
+  it('strips notes and deletes the RSVP list on a past hostless RSVP event', async () => {
+    await seedClubEvent('club-old', daysFromNow(-40), { rsvp: true })
+    await seedRsvp('club-old', [{ memberId: 'm9', name: 'Dana', email: 'dana@example.com', at: 9 }])
+
+    const res = await scrub()
+    expect(res.status).toBe(200)
+
+    const row = JSON.parse(await env.ATTENDANCE_KV.get('event:club-old'))
+    expect(row.notes).toBeUndefined()
+    expect(row.scrubbedAt).toBeTruthy()
+    expect(await env.ATTENDANCE_KV.get('rsvp:club-old')).toBeNull()
+  })
+
+  it('leaves a past attendance-only event alone — it holds no emails to delete', async () => {
+    await seedClubEvent('club-plain', daysFromNow(-40))
+
+    await scrub()
+    const row = JSON.parse(await env.ATTENDANCE_KV.get('event:club-plain'))
+    expect(row.notes).toBe('parking round back')
+    expect(row.scrubbedAt).toBeUndefined()
+  })
+})

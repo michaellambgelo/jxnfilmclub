@@ -386,6 +386,30 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // PUT/DELETE /api/events?env=&id=  — event writes proxy the join Worker's
+  // /admin/events/:id so the capacity guard, waitlist promotion and the RSVP
+  // notification emails all run. A raw KV write can do none of those.
+  if ((method === 'PUT' || method === 'DELETE') && url.pathname === '/api/events') {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    if (!q.id) throw new HttpError(400, 'id required')
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before editing events`)
+    }
+    const body = await readBody(req)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/events/${encodeURIComponent(q.id)}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: method === 'DELETE' ? undefined : body,
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
   // GET /api/tmdb/search?env=&q=  → proxies the join Worker's admin-gated
   // TMDB poster search with ADMIN_TOKEN held server-side, mirroring the
   // hosted admin worker's /api/tmdb/search.

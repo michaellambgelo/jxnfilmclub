@@ -553,3 +553,11 @@ dialog pre.rich {
   overflow-wrap: anywhere;
   opacity: .8;
 }
+
+/* Checkbox + hint on one line, for the Events tab RSVP toggle. */
+.cfg-inline { display: flex; align-items: center; gap: 0.4rem; font-weight: normal; }
+.cfg-inline input[type="checkbox"] { width: auto; margin: 0; }
+
+/* The notify opt-in sits outside .grid — it is an instruction about this
+   save, not a field of the event — so it needs its own emphasis. */
+.notify-rsvps { color: var(--warn, #c84); font-weight: 600; }

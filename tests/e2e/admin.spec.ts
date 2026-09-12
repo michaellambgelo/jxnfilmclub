@@ -499,4 +499,183 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('.cg-copy-all')).toHaveCount(0)
     await expect(page.locator('.cg-copy-page')).toHaveCount(0)
   })
+  // The Events tab writes KV directly, so the form scrape IS the validation.
+  // Two things it has to get right, both of which were wrong before:
+  // a checkbox carries its state in .checked (its .value is the string "on"
+  // whether ticked or not), and the scrape must not reach the guest-add
+  // inputs that renderRsvpSection puts lower down inside the same form.
+  test('Events tab: RSVP round-trips as a real boolean, and guest fields never leak into the row', async ({ page }) => {
+    const id = 'e2e-admin-event'
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: {
+        ns: 'ATTENDANCE_KV',
+        key: `event:${id}`,
+        value: JSON.stringify({ id, title: 'Admin E2E Event', date: '2099-09-09', venue: 'Somewhere' }),
+      },
+    })
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    // Located by the id input's value, not hasText: every field on this form
+    // is an <input>, so its text content is empty.
+    const form = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
+    await expect(form).toBeVisible()
+
+    // Tick RSVP and pick a kind from the select (a scrape of input+textarea
+    // only would silently never read the select).
+    await form.locator('input[name="rsvp"]').check()
+    await form.locator('select[name="kind"]').selectOption('social')
+    await form.locator('button[data-action="event-save"]').click()
+
+    const readRow = async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:' + id)}`)
+      const raw = (await res.json()).value
+      return raw ? JSON.parse(raw) : null
+    }
+
+    // A real boolean, not the string "on".
+    await expect.poll(async () => (await readRow())?.rsvp).toBe(true)
+
+    expect((await readRow()).kind).toBe('social')
+
+    // Now that RSVPs are on, the tab re-render puts the guest-add block INSIDE
+    // this same .event-form. Fill it and save the event again: an unscoped
+    // scrape would sweep those inputs onto the event row — and because a
+    // checkbox's .value is "on" whether ticked or not, it did exactly that.
+    const form2 = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
+    await expect(form2.locator('input[name="guest-name"]')).toBeVisible()
+    await form2.locator('input[name="guest-name"]').fill('Should Not Persist')
+    await form2.locator('input[name="guest-email"]').fill('leak@example.com')
+    await form2.locator('button[data-action="event-save"]').click()
+
+    await expect.poll(async () => (await readRow())?.title).toBe('Admin E2E Event')
+    const row = await readRow()
+    expect('guest-force' in row).toBe(false)
+    expect('guest-name' in row).toBe(false)
+    expect('guest-email' in row).toBe(false)
+    // And the real fields survived the second save intact.
+    expect(row.rsvp).toBe(true)
+    expect(row.kind).toBe('social')
+  })
+  // The scenario this whole path exists for: an event is announced, members
+  // RSVP, it gets postponed, and everyone holding a spot has to be told.
+  test('Events tab: postponing an event emails confirmed and waitlisted RSVPs', async ({ page }) => {
+    const id = 'e2e-postpone'
+    const putKv = (key: string, value: string, ns = 'ATTENDANCE_KV') =>
+      page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns, key, value } })
+
+    await putKv(`event:${id}`, JSON.stringify({
+      id, title: 'Drinks at Banner Hall', kind: 'social',
+      date: '2099-08-01', venue: 'Banner Hall', rsvp: true, capacity: 1,
+    }))
+    await putKv(`rsvp:${id}`, JSON.stringify({
+      confirmed: [{ memberId: 'm1', name: 'Confirmed Cass', email: 'cass@example.com', at: 1 }],
+      waitlist:  [{ memberId: 'm2', name: 'Waiting Wes',   email: 'wes@example.com',  at: 2 }],
+    }))
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    const form = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
+    await expect(form).toBeVisible()
+
+    // The notify control names its audience, so the admin knows the blast
+    // radius before ticking it.
+    const notify = form.locator('input[name="notify-rsvps"]')
+    await expect(form.locator('.notify-rsvps')).toContainText('1 confirmed + 1 waitlisted')
+
+    await form.locator('input[name="date"]').fill('2099-09-15')
+    await notify.check()
+
+    // Declining the confirm must not write OR send — mailing people is not
+    // undoable, so the dialog is a real gate rather than a formality.
+    page.once('dialog', d => d.dismiss())
+    await form.locator('button[data-action="event-save"]').click()
+    const readEvent = async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:' + id)}`)
+      return JSON.parse((await res.json()).value)
+    }
+    expect((await readEvent()).date).toBe('2099-08-01')
+
+    // Accept it this time.
+    page.once('dialog', async d => {
+      expect(d.message()).toContain('2099-08-01 → 2099-09-15')
+      await d.accept()
+    })
+    await form.locator('button[data-action="event-save"]').click()
+
+    await expect(page.locator('#toast')).toContainText('emailed 2 people')
+    await expect.poll(async () => (await readEvent()).date).toBe('2099-09-15')
+
+    // E2E mode stashes only the most recent send; the count above covers the
+    // rest. This proves the body an RSVP actually receives.
+    const mailRes = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=__last_email__`)
+    const mail = JSON.parse((await mailRes.json()).value)
+    expect(mail.to).toBe('wes@example.com')
+    expect(mail.subject).toContain('Drinks at Banner Hall')
+    // Waitlisted, so the mail states their position and offers no cancel link.
+    expect(mail.text).toContain('#1 on the waitlist')
+    expect(mail.text).toContain('2099-08-01 → 2099-09-15')
+    // A social club event is not "the screening", and has no host.
+    expect(mail.text).toContain('Jackson Film Club updated the event')
+  })
+  // A social event has no film, so no poster to borrow. Content Gen draws one
+  // from the title instead, and this promotes it to the event's real artwork
+  // — which is what puts it in the newsletter and the social cards too, not
+  // just the site (the site renders its own title card in CSS regardless).
+  test('Content Gen: a generated title card can become the event poster', async ({ page }) => {
+    const id = 'e2e-titlecard'
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: {
+        ns: 'ATTENDANCE_KV', key: `event:${id}`,
+        value: JSON.stringify({
+          id, title: 'Drinks at Banner Hall', kind: 'social',
+          date: '2099-09-15', time: '19:00', venue: 'Banner Hall', rsvp: true,
+        }),
+      },
+    })
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-kind').selectOption('titlecard')
+
+    // Choosing the poster kind lands on the 2:3 size, because that is the only
+    // shape the site's poster slot can take without letterboxing.
+    await expect(page.locator('.cg-size.active')).toContainText('Poster')
+
+    await page.locator('#cg-event').selectOption(id)
+    await expect(page.locator('#cg-use-poster')).toBeEnabled()
+    await page.locator('#cg-use-poster').click()
+    await expect(page.locator('#toast')).toContainText('Poster set on')
+
+    const row = await expect.poll(async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:' + id)}`)
+      return JSON.parse((await res.json()).value).poster
+    }).toMatch(/\/nl\/img\/[0-9a-f]{64}\.png$/).then(async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:' + id)}`)
+      return JSON.parse((await res.json()).value)
+    })
+
+    // A one-field PUT must not have disturbed anything else on the row — the
+    // Worker merges, so title/date/rsvp all survive untouched.
+    expect(row.title).toBe('Drinks at Banner Hall')
+    expect(row.rsvp).toBe(true)
+    expect(row.time).toBe('19:00')
+
+    // The bytes really landed in R2 and are served publicly, with no auth.
+    //
+    // Fetched by PATH against the dev worker rather than by the stored URL:
+    // the staging env has a custom_domain route, and `wrangler dev` rewrites
+    // request.url to that hostname even while listening on localhost — so the
+    // Worker builds join-staging.jxnfilm.club into the URL it returns. A local
+    // artifact, not a bug; production origins are correct.
+    const img = await page.request.get(`${WORKER_ORIGIN}${new URL(row.poster).pathname}`)
+    expect(img.status()).toBe(200)
+    expect(img.headers()['content-type']).toBe('image/png')
+
+    // And the card swaps its CSS stand-in for the real artwork.
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'Drinks at Banner Hall' })
+    await expect(card.locator('.event-titlecard')).toHaveCount(0)
+    await expect(card.locator('img.event-poster')).toHaveAttribute('src', row.poster)
+  })
 })

@@ -56,9 +56,9 @@ deleted. `scrubPastEvents()` in `worker/src/index.js` delivers on that:
 - For hosted events with `date` >30 days past: strips `address`/`notes` off
   the canonical `event:{id}` row, stamps `scrubbedAt`, re-projects into
   `events:all` via `writeEvent`, and deletes `rsvp:{id}`.
-- Sweeps orphaned `rsvp:{id}` records whose event row is gone (the admin
-  dashboard writes KV directly and can orphan one; `handleDeleteEvent` cleans
-  up after itself).
+- Sweeps orphaned `rsvp:{id}` records whose event row is gone. Both delete
+  paths clean up after themselves now, but a hand-run `wrangler kv key delete`
+  still orphans one.
 - The `attend:{eventId}` history (`{ id, name }` entries — no emails, no
   addresses) and the public event listing are untouched.
 - `POST /events/:id/rsvp` rejects screenings whose `date` is past (409), so a
@@ -112,7 +112,8 @@ Semantics:
 - **Past screenings are read-only.** The worker 409s both guest verbs once
   `event.date < centralToday()`, and `DELETE /events/:id` gets the same 409
   (cancelling would email cancellation notices for an event that's over —
-  the post-event scrub owns teardown; admins still delete via raw KV). The
+  the post-event scrub owns teardown; an admin can still delete one via
+  `DELETE /admin/events/:id`, which mails nobody for a past date). The
   SPA mirrors this: on a past screening the host panel shows the guest list
   read-only with a "Guest list closed (past date)" hint — no add form, no
   remove buttons, no Cancel screening button.
@@ -122,6 +123,79 @@ Semantics:
 
 Tests: `tests/worker/screenings.test.js` (guest suite),
 `tests/admin-worker/admin-worker.test.js` (`/api/rsvp/guest` proxy).
+
+## RSVPs are a toggle, not a consequence of who created the event
+
+`hostId` used to BE the RSVP switch: hosted events took RSVPs, curated ones
+took the post-hoc attendance toggle, and neither could do the other. That is
+now an explicit two-axis model — see
+[events.md § The three card modes](events.md#the-three-card-modes) for the
+predicate and its back-compat rules.
+
+What it changed on this page's turf:
+
+- `POST/DELETE /events/:id/rsvp`, `POST/DELETE /events/:id/rsvp/guest`, and
+  `purgeRsvps()`'s waitlist-promotion branch all gate on `rsvpEnabled(event)`
+  rather than `!event.hostId`, so an admin club event with RSVPs on gets the
+  full capacity / waitlist / promotion / email flow.
+- `authorizeGuestManager` is unchanged and did not need to be: it checks
+  `ADMIN_TOKEN` first, then falls through to `hostId === claims.id`. On a
+  hostless club event only an admin qualifies, which is the correct rule.
+- `rsvpEmailBody()` emits `Film:` only when there is a film and `Hosted by:`
+  only when there is a host, and picks Address-vs-Venue **structurally**
+  (`address` present → Address block, else `venue` → Venue line) rather than
+  off `kind`. Both existing kinds are byte-identical; a social club event no
+  longer mails a bare `Address:` with nothing under it.
+- `scrubPastEvents()` strips `address`/`notes` from any past event where
+  `hostId || rsvpEnabled(proj)`, not just hosted ones. The `rsvp:` sweep
+  beside it was already date-keyed across every `rsvp:` key, so the 30-day
+  promise already reached hostless records.
+
+**Lockstep warning — three copies of `rsvpEnabled`**, the same hazard as
+`THEATERS` below: `worker/src/index.js`, `model/index.ts` (imported by both
+`ui/views.html` and `ui/auth.html`), and `admin/lib.js`. Drift here is silent
+— an event simply offers the wrong affordance on one surface.
+`tests/admin/events-rsvp.test.js` pins the intended semantics.
+
+### Admin event writes go through the Worker
+
+Event writes from the dashboard used to be raw `PUT /api/kv`. They proxy
+through the join Worker now — `PUT`/`DELETE /admin/events/:id`, ADMIN_TOKEN
+bearer, reached via the admin Worker's `/api/events` — for the same reason
+guest RSVPs always have: a KV write cannot promote a waitlist, cannot enforce
+the capacity guard, and cannot tell twenty people the date moved.
+
+| | Host `PATCH /events/:id` | Admin `PUT /admin/events/:id` |
+|---|---|---|
+| Validator | `validScreeningInput` (house needs address + capacity) | `validAdminEvent` (title + date; everything else optional) |
+| `kind` | immutable | immutable on a **hosted** row; editable on a curated one |
+| Notify trigger | automatic, on a where/when diff | explicit `notify` flag from the dashboard |
+| Audience | confirmed RSVPs | confirmed **and** waitlisted |
+| Waitlist promotion on a capacity rise | yes | yes — never gated on `notify`, since a promoted member now holds a seat |
+
+Why the trigger differs: a host editing their own screening has no dashboard
+to tick a box in, so automatic is the only safe default there. An admin does,
+and wants to fix a typo without mailing the room — or to re-send the details
+after a phone call without inventing a change. With `notify` set and nothing
+changed, the mail simply omits its "What changed" section.
+
+`validAdminEvent` never reads `id` (it comes from the path) or
+`hostId`/`hostName` (they come from the stored row), so an admin edit can
+never reassign who hosted an event. It also has no "date must be today or
+later" rule — 42 of the rows in `data/events.json` are back catalogue.
+
+Waitlisted members get `sendWaitlistUpdateEmail`, which restates their
+position and **never carries the private address** — they hold no seat, and
+the address only ever goes to people who do.
+
+`DELETE /admin/events/:id` mails a cancellation to confirmed and waitlisted
+alike, then tears down `event:`, `rsvp:`, `attend:` and both aggregates.
+Unlike the host DELETE it does not 409 on a past event (clearing the back
+catalogue is an admin job) and mails nobody in that case.
+
+Tests: `tests/worker/admin-events.test.js`,
+`tests/admin-worker/admin-worker.test.js` (`/api/events` proxy),
+`tests/e2e/admin.spec.ts` (the postponement flow end to end).
 
 ## Theater allowlist
 
@@ -141,6 +215,12 @@ an admin bulk-rename is an optional future cleanup.
 
 ## `kind` semantics
 
+Three values: `'house'`, `'meetup'`, and `'social'`.
+
+- `'social'` is a **club event with no film** (a meetup at Banner Hall). It is
+  **admin-portal only** — `/host` deliberately stays films-only, so
+  `validScreeningInput` has no `'social'` branch and members cannot create one.
+  It is public: `isMembersOnly()` returns true only for `'house'`.
 - New hosted events are always stamped `'house'` or `'meetup'` by
   `validScreeningInput`. `kind` is **immutable on PATCH** (400) — converting a
   house screening whose address was already emailed into a public meetup (or
@@ -215,6 +295,8 @@ CSS exists because the author-level `display: grid` rules outrank the UA's
 |------|------|
 | `ui/views.html` | `events-new-view` form (toggle, THEATERS mirror), `event-card` RSVP/meetup copy |
 | `worker/src/index.js` | `THEATERS`, `validScreeningInput`, projection, RSVP/waitlist, email templates |
-| `admin/admin.js` | `projectEvent` mirror (incl. `kind`/`time`), Kind/Time inputs on hosted events |
+| `admin/admin.js` | Kind/Time/Capacity/RSVP/Ticket URL inputs on every event, Address on hosted ones only; `saveEvent`/`deleteEventKv` proxy the Worker (there is no client-side projection mirror any more — the Worker projects) |
+| `admin/worker/src/index.js`, `admin/server.mjs` | `/api/events` proxy (PUT/DELETE) |
+| `admin/lib.js` | `rsvpEnabled()`, `sanitizeAdminEvent()` |
 | `tests/worker/screenings.test.js` | House + meetup suites (`createScreening` / `createMeetup` fixtures) |
 | `tests/e2e/screenings.spec.ts` | /host form specs incl. the meetup toggle |

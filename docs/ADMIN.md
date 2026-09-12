@@ -109,13 +109,15 @@ when something looks off.
 
 ### Add or edit an event
 
-Events are fully repo-driven, no KV involved.
+**Events are KV-driven.** Use the Events tab in the admin portal — it writes
+`event:{id}` and patches the `events:all` aggregate in `ATTENDANCE_KV`, and
+the public site reads them through the Worker's `GET /events`, so a save shows
+up on `/events` immediately. `data/events.json` is an archival snapshot that
+`snapshot-events.yml` rewrites from the Worker every 6h; **editing it by hand
+is pointless** — the next cron tick overwrites your change.
 
-1. Edit `data/events.json` in your editor.
-2. Commit and push.
-3. `deploy-site.yml` rebuilds and the new event shows up on `/events`.
-
-Schema (see `ui/views.html` for what renders):
+Fields (canonical row; `address` and `notes` are private and never reach the
+public projection):
 
 ```json
 {
@@ -125,9 +127,59 @@ Schema (see `ui/views.html` for what renders):
   "year": 1928,
   "date": "2026-06-12",
   "venue": "Location",
-  "poster": "https://..."
+  "poster": "https://...",
+  "kind": "social",
+  "rsvp": true,
+  "ticketUrl": "https://...",
+  "time": "19:30",
+  "capacity": 40,
+  "notes": "Parking round back"
 }
 ```
+
+**Kind** — leave blank for an ordinary club screening. `social` marks an event
+with no film (the film fields become optional); `house` and `meetup` are
+normally stamped by the member `/host` form, though setting `meetup` on a
+curated theater event fixes the home page's House/Venue tag.
+
+**RSVP vs Ticket URL — pick one.** New events created here get RSVP **on** by
+default. Ticking RSVP gives the event the full capacity / waitlist /
+confirmation-email flow and shows the RSVP list on the card here. Setting a
+Ticket URL instead turns RSVP off structurally (the theater keeps box-office
+control) and the public card shows a "Get tickets" link. An event with RSVPs
+off gets the post-hoc "I was there" attendance toggle instead — never both.
+
+**Notifying RSVPs.** When an event has RSVPs, the form grows a checkbox
+naming its audience — *"Email 12 confirmed + 3 waitlisted about this change"*.
+It is **off by default**, so fixing a typo mails nobody. Tick it and the save
+emails everyone holding a spot, confirmed and waitlisted, with a diff of what
+moved. You get a confirm dialog showing the change and the count first;
+mailing people is not undoable. Ticking it with nothing changed re-sends the
+current details, which is what you want after a phone call.
+
+Waitlisted members never receive the private address — they hold no seat.
+
+**Deleting an event always notifies.** Cancellation notices go to confirmed
+and waitlisted alike before the row is torn down; the confirm dialog names the
+count. A past event mails nobody (its RSVP list was scrubbed 30 days after it
+happened) but still cleans up.
+
+Both paths run through the join Worker rather than a raw KV write, so the
+capacity guard and waitlist promotion apply: raising capacity promotes from
+the waitlist and emails whoever moved up, whether or not you ticked notify.
+Lowering it below the already-confirmed count is refused.
+
+**A save merges, it does not replace.** `PUT /admin/events/:id` layers the
+body over the stored row, so a field the payload omits keeps its value —
+which is why a script that forgets `capacity` cannot silently uncap an event
+and promote its whole waitlist. Clearing is therefore explicit: send `""`
+(the dashboard does this for any field you blank in the form). `id` is taken
+from the path and `hostId`/`hostName` from the stored row, so an admin edit
+can never reassign who hosted an event.
+
+Older events predating the toggle carry no `rsvp` field; they read as RSVP-off
+and keep taking attendance, which is why the flag is stamped explicitly rather
+than defaulted on read.
 
 ### Remove a member (moderation)
 

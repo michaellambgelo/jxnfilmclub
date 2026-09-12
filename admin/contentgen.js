@@ -81,12 +81,18 @@ const SIZES = {
   'ig-story': { w: 1080, h: 1920, label: 'IG story' },
   'fb': { w: 1200, h: 630, label: 'Facebook' },
   'x': { w: 1200, h: 675, label: 'Bluesky / X' },
+  // 2:3, matching .event-poster-wrap on the site — the shape a film poster
+  // occupies, so a generated one drops into that slot without letterboxing.
+  'poster': { w: 800, h: 1200, label: 'Poster' },
 }
 
 const KINDS = {
   announce: 'Event announcement',
   countdown: 'Countdown',
   recap: 'Post-event recap',
+  // Listed after the post types, not before them: this one makes artwork for
+  // an event rather than a post about it, and announce stays the default.
+  titlecard: 'Event poster (no film)',
   lineup: 'Season lineup',
   monthwrap: 'Monthly wrap',
   episode: 'New podcast episode',
@@ -606,6 +612,80 @@ async function drawEventCard(c, W, H, event, lead) {
   if (venue) {
     c.fillStyle = PAPER_4
     c.fillText(venue, tx, ty)
+  }
+
+  footer(c, W, H, pad, 'jxnfilm.club/events')
+}
+
+// A poster for an event that has no film to borrow one from.
+//
+// Deliberately the same composition as .event-titlecard in css/cards.css:
+// brand rule along the top edge, label eyebrow, then the title and date stamp
+// anchored to the bottom the way a film poster sets its title. The site
+// renders that live in CSS for free; this exists so the same artwork can be a
+// real image — one an email client can show and a social post can carry.
+//
+// Keep the two in step. If the eyebrow wording changes here, evEyebrow() in
+// ui/views.html says the same thing.
+async function drawTitleCard(c, W, H, event) {
+  const e = event || {}
+  const pad = Math.round(W * 0.085)
+
+  c.fillStyle = SURFACE
+  c.fillRect(0, 0, W, H)
+
+  // The brand hairline, and the wash below it that keeps a flat panel from
+  // reading as an unloaded image.
+  const wash = c.createLinearGradient(0, 0, 0, Math.round(H * 0.42))
+  wash.addColorStop(0, 'rgba(215,50,31,0.10)')
+  wash.addColorStop(1, 'rgba(215,50,31,0)')
+  c.fillStyle = wash
+  c.fillRect(0, 0, W, Math.round(H * 0.42))
+  c.fillStyle = BRAND
+  c.fillRect(0, 0, W, Math.round(H * 0.006))
+
+  // Eyebrow: the rule, then who is running this. A member-hosted screening is
+  // that member's, not the club's.
+  const eyePx = Math.round(W * 0.026)
+  const eyeY = pad + eyePx
+  const ruleW = Math.round(W * 0.05)
+  c.fillStyle = BRAND
+  c.fillRect(pad, eyeY - Math.round(eyePx * 0.35), ruleW, Math.max(2, Math.round(H * 0.0025)))
+  c.textBaseline = 'alphabetic'
+  label(c, e.hostId ? `Hosted by ${e.hostName || 'a member'}` : 'JXN Film Club presents',
+        pad + ruleW + Math.round(W * 0.025), eyeY, eyePx)
+
+  // Title + date stamp, measured up from the footer so they sit on the bottom
+  // edge however many lines the title runs to.
+  const tw = W - pad * 2
+  let titlePx = Math.round(W * 0.105)
+  c.font = `italic 700 ${titlePx}px ${DISPLAY}`
+  let lines = wrapText(c, e.title || 'Untitled', tw)
+  while (lines.length > 4 && titlePx > Math.round(W * 0.055)) {
+    titlePx = Math.round(titlePx * 0.88)
+    c.font = `italic 700 ${titlePx}px ${DISPLAY}`
+    lines = wrapText(c, e.title || 'Untitled', tw)
+  }
+
+  const stamp = fmtSocialDate(e.date) + (e.time ? `  ·  ${fmtShowtime(e.time)}` : '')
+  const stampPx = Math.round(W * 0.028)
+  const lineH = Math.round(titlePx * 1.1)
+  const bottom = H - pad - Math.round(H * 0.055)
+  let ty = bottom - (stamp.trim() ? Math.round(stampPx * 2.4) : 0) - lines.length * lineH
+
+  c.fillStyle = PAPER
+  c.textBaseline = 'top'
+  for (const line of lines) {
+    c.fillText(line, pad, ty)
+    ty += lineH
+  }
+  if (stamp.trim()) {
+    ty += Math.round(stampPx * 0.9)
+    c.font = `500 ${stampPx}px ${LABEL}`
+    c.letterSpacing = `${Math.round(stampPx * 0.08)}px`
+    c.fillStyle = PAPER_4
+    c.fillText(stamp.toUpperCase(), pad, ty)
+    c.letterSpacing = '0px'
   }
 
   footer(c, W, H, pad, 'jxnfilm.club/events')
@@ -1202,7 +1282,7 @@ function setRenderBusy(on) {
   const wrap = document.querySelector('.cg-canvas-wrap')
   if (wrap) wrap.classList.toggle('loading', on)
   if (cg.batching) return
-  for (const id of ['#cg-download', '#cg-download-all']) {
+  for (const id of ['#cg-download', '#cg-download-all', '#cg-use-poster']) {
     const b = document.querySelector(id)
     if (b) b.disabled = on
   }
@@ -1217,6 +1297,7 @@ async function drawForKind(c, w, h, data) {
   else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data)
   else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data)
   else if (cg.kind === 'recap') await drawRecapCard(c, w, h, data.event, data.count)
+  else if (cg.kind === 'titlecard') await drawTitleCard(c, w, h, data.event)
   else if (cg.kind === 'countdown') await drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)))
   else await drawEventCard(c, w, h, data.event, 'Next screening')
 }
@@ -1370,7 +1451,7 @@ export async function renderContentGen(context) {
   // below a stored index, same hazard episodeIdx has above.
   if (!cg.diary || cg.diaryPage >= cg.diary.pageCount) cg.diaryPage = 0
 
-  const needsEvent = ['announce', 'countdown', 'recap'].includes(cg.kind)
+  const needsEvent = ['announce', 'countdown', 'recap', 'titlecard'].includes(cg.kind)
   const emptyMsg =
     needsEvent && !cg.events.length ? 'No events in KV — create one on the Events tab first.'
     : cg.kind === 'roundup' && !(cg.roundup && cg.roundup.films.length) ? 'No member watches logged in the last 7 days — nothing to round up.'
@@ -1494,6 +1575,9 @@ export async function renderContentGen(context) {
         <div class="cg-canvas-wrap"><canvas id="cg-canvas"></canvas></div>
         <div class="toolbar">
           <button type="button" class="primary" id="cg-download">Download PNG</button>
+          ${cg.kind === 'titlecard' && cg.size === 'poster'
+            ? '<button type="button" id="cg-use-poster">Use as event poster</button>'
+            : ''}
           ${cg.kind === 'diary' && cg.diary && cg.diary.pageCount > 1
             ? `<button type="button" id="cg-download-all">Download all ${cg.diary.pageCount} pages</button>`
             : ''}
@@ -1516,6 +1600,11 @@ export async function renderContentGen(context) {
   const kindSel = document.querySelector('#cg-kind')
   kindSel.addEventListener('change', async () => {
     cg.kind = kindSel.value
+    // A poster is 2:3 by definition, and it is the only kind whose output can
+    // be promoted to an event's artwork — so land on that size rather than
+    // making the operator notice a square one is wrong.
+    if (cg.kind === 'titlecard') cg.size = 'poster'
+    else if (cg.size === 'poster') cg.size = 'ig-post'
     await ctx.withBusy(() => renderContentGen(ctx))
   })
   const refresh = () => {
@@ -1587,6 +1676,43 @@ export async function renderContentGen(context) {
       renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
     })
   })
+  // Promote the rendered card to the event's real artwork: upload the PNG to
+  // the content-addressed image store the newsletter already uses, then PUT
+  // just the poster field. The Worker MERGES a PUT over the stored row, so a
+  // one-field body is safe — nothing else on the event is touched, and the
+  // title/date it validates against come from KV.
+  const usePoster = document.querySelector('#cg-use-poster')
+  if (usePoster) usePoster.addEventListener('click', async () => {
+    const ev = currentEvent()
+    if (!ev || !ev.id) return ctx.toast('Pick an event first', true)
+    if (ev.poster && !confirm(`"${ev.title || ev.id}" already has a poster. Replace it?`)) return
+
+    // Take the bitmap BEFORE withBusy: it swaps the tab's innerHTML for a
+    // loading state, which destroys the very canvas being read from.
+    const blob = await toBlobAsync(document.querySelector('#cg-canvas'))
+    if (!blob) return ctx.toast('PNG export failed', true)
+
+    await ctx.withBusy(async () => {
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    // Chunked: String.fromCharCode(...bytes) blows the call stack past ~100KB.
+    let bin = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+    }
+    const up = await ctx.api('POST', `/api/newsletter/image?${qs({ env: ctx.env() })}`,
+      JSON.stringify({ contentType: 'image/png', b64: btoa(bin) }))
+    // A one-field body: the Worker merges a PUT over the stored row, so
+    // nothing else on the event is touched and the title/date it validates
+    // against come from KV.
+    await ctx.api('PUT', `/api/events?${qs({ env: ctx.env(), id: ev.id })}`,
+      JSON.stringify({ event: { poster: up.url } }))
+    // withBusy leaves the loading state in place on success — the caller owns
+    // the re-render, which also re-reads the event and shows its new poster.
+    await renderContentGen(ctx)
+    ctx.toast(`Poster set on "${ev.title || ev.id}"`)
+    })
+  })
+
   const dl = document.querySelector('#cg-download')
   if (dl) dl.addEventListener('click', () => {
     const canvas = document.querySelector('#cg-canvas')

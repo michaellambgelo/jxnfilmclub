@@ -430,6 +430,15 @@ async function handle(request, env, access) {
     if (!q.event) throw new HttpError(400, 'event required')
     return proxyJoinAdmin(request, env, q, `/events/${encodeURIComponent(q.event)}/rsvp/guest`, method)
   }
+  // PUT/DELETE /api/events?env=&id=  — event writes go through the join
+  // Worker rather than the /api/kv shim, so the capacity guard, waitlist
+  // promotion and the RSVP notification emails all run. A raw KV write can
+  // do none of those, which is why this exists at all (same reasoning as
+  // /api/rsvp/guest above).
+  if ((method === 'PUT' || method === 'DELETE') && url.pathname === '/api/events') {
+    if (!q.id) throw new HttpError(400, 'id required')
+    return proxyJoinAdmin(request, env, q, `/admin/events/${encodeURIComponent(q.id)}`, method)
+  }
   // Identity comes from the verified Access JWT.
   if (method === 'GET' && url.pathname === '/api/whoami') {
     return json(200, { email: access.email || '(no email claim)', mode: 'hosted' })

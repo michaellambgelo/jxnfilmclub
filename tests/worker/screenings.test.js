@@ -1243,3 +1243,178 @@ describe('house screenings are members-only on GET /events', () => {
     expect(snapshot.every(e => e.kind !== 'house' && !(!e.kind && e.hostId))).toBe(true)
   })
 })
+
+// --- Club events: RSVPs without a host, ticket links, social events --------
+//
+// Until now `hostId` WAS the RSVP switch, so an admin-created club event
+// could not take an RSVP and a member-hosted one could not decline to. These
+// cover the two axes that replaced it: an explicit `rsvp` flag, and a
+// `ticketUrl` that structurally turns RSVPs off.
+
+// Club events are written straight to KV by the admin dashboard (there is no
+// POST /events for them), so the fixture does what the dashboard does: the
+// canonical row plus its public projection in the aggregate.
+async function seedClubEvent(overrides = {}) {
+  const event = {
+    id: 'club-1',
+    title: 'Preview Night',
+    film: 'Sunset Boulevard',
+    year: 1950,
+    date: '2099-06-01',
+    venue: 'The Capri Theater',
+    rsvp: true,
+    ...overrides,
+  }
+  await env.ATTENDANCE_KV.put(`event:${event.id}`, JSON.stringify(event))
+  const { address, notes, ...projection } = event
+  await env.ATTENDANCE_KV.put('events:all', JSON.stringify([projection]))
+  await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
+  return event
+}
+
+describe('club events — RSVP without a host', () => {
+  it('accepts an RSVP on a hostless event when rsvp is true', async () => {
+    await seedClubEvent()
+    const { token, member } = await getTokenFor('club-a@example.com')
+    captureEmails()
+
+    const res = await req('/events/club-1/rsvp', { method: 'POST', token })
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe('confirmed')
+
+    const mine = await (await req('/events/club-1/rsvp/me', { token })).json()
+    expect(mine.status).toBe('confirmed')
+
+    // The confirmed list is mirrored into attendance, same as a screening.
+    const att = await (await req('/events/club-1/attendance')).json()
+    expect(names(att.attendees)).toContain(member.name)
+  })
+
+  it('409s the post-hoc attend toggle, so one event never has two sources of truth', async () => {
+    await seedClubEvent()
+    const { token } = await getTokenFor('club-b@example.com')
+    captureEmails()
+
+    const res = await req('/events/club-1/attend', { method: 'POST', token })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/takes RSVPs/)
+  })
+
+  it('waitlists past capacity and promotes the head on cancel', async () => {
+    await seedClubEvent({ capacity: 1 })
+    const a = await getTokenFor('club-c1@example.com')
+    const b = await getTokenFor('club-c2@example.com')
+    captureEmails()
+
+    expect((await (await req('/events/club-1/rsvp', { method: 'POST', token: a.token })).json()).status)
+      .toBe('confirmed')
+    expect((await (await req('/events/club-1/rsvp', { method: 'POST', token: b.token })).json()).status)
+      .toBe('waitlisted')
+
+    await req('/events/club-1/rsvp', { method: 'DELETE', token: a.token })
+    const promoted = await (await req('/events/club-1/rsvp/me', { token: b.token })).json()
+    expect(promoted.status).toBe('confirmed')
+  })
+
+  it('lets an admin add a guest to a club event, which a host-only check would have blocked', async () => {
+    await seedClubEvent()
+    captureEmails()
+    const res = await req('/events/club-1/rsvp/guest', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-admin-token' },
+      body: { name: 'Walk-in Wanda' },
+    })
+    expect(res.status).toBe(200)
+    const att = await (await req('/events/club-1/attendance')).json()
+    expect(names(att.attendees)).toContain('Walk-in Wanda')
+  })
+
+  it('an explicit rsvp:false turns RSVPs off and hands the event back to attendance', async () => {
+    await seedClubEvent({ rsvp: false })
+    const { token, member } = await getTokenFor('club-d@example.com')
+    captureEmails()
+
+    expect((await req('/events/club-1/rsvp', { method: 'POST', token })).status).toBe(409)
+    const res = await req('/events/club-1/attend', { method: 'POST', token })
+    expect(res.status).toBe(200)
+    expect(names((await res.json()).attendees)).toContain(member.name)
+  })
+
+  // This is the regression that matters most: absence has to keep meaning
+  // "off" for the 42 curated rows, or every past screening would suddenly
+  // start refusing the attendance toggle.
+  it('a curated row with no rsvp field and no host still takes attendance, not RSVPs', async () => {
+    await seedClubEvent({ rsvp: undefined })
+    const { token } = await getTokenFor('club-e@example.com')
+    captureEmails()
+
+    expect((await req('/events/club-1/rsvp', { method: 'POST', token })).status).toBe(409)
+    expect((await req('/events/club-1/attend', { method: 'POST', token })).status).toBe(200)
+  })
+})
+
+describe('club events — ticket links', () => {
+  it('a ticketUrl turns RSVPs off even when rsvp is explicitly true', async () => {
+    await seedClubEvent({ rsvp: true, ticketUrl: 'https://tickets.example.com/xyz' })
+    const { token } = await getTokenFor('tix-a@example.com')
+    captureEmails()
+
+    const res = await req('/events/club-1/rsvp', { method: 'POST', token })
+    expect(res.status).toBe(409)
+    // ...and the attendance toggle is what the viewer gets instead.
+    expect((await req('/events/club-1/attend', { method: 'POST', token })).status).toBe(200)
+  })
+
+  it('publishes ticketUrl and rsvp on the public read so the card can choose an affordance', async () => {
+    await seedClubEvent({ rsvp: true, ticketUrl: 'https://tickets.example.com/xyz' })
+    const all = await (await req('/events')).json()
+    const ev = all.find(e => e.id === 'club-1')
+    expect(ev.ticketUrl).toBe('https://tickets.example.com/xyz')
+    expect(ev.rsvp).toBe(true)
+  })
+
+  // false is neither undefined, null nor '' — but it is falsy, and a filter
+  // written the obvious way would drop it and silently flip the event back on.
+  it('keeps an explicit rsvp:false in the public projection', async () => {
+    await seedClubEvent({ rsvp: false })
+    const all = await (await req('/events')).json()
+    expect(all.find(e => e.id === 'club-1').rsvp).toBe(false)
+  })
+})
+
+describe('club events — social events have no film and no host', () => {
+  it('is public: kind social is not members-only the way house is', async () => {
+    await seedClubEvent({ id: 'club-1', kind: 'social', film: undefined, year: undefined,
+      title: 'Drinks at Banner Hall', venue: 'Banner Hall' })
+    const anon = await (await req('/events')).json()
+    expect(anon.map(e => e.title)).toContain('Drinks at Banner Hall')
+  })
+
+  it('sends an RSVP email with no Film and no Hosted by line, and a Venue instead of a blank Address', async () => {
+    await seedClubEvent({ kind: 'social', film: undefined, year: undefined,
+      title: 'Drinks at Banner Hall', venue: 'Banner Hall' })
+    const { token } = await getTokenFor('social-a@example.com')
+    const sent = captureEmails()
+
+    await req('/events/club-1/rsvp', { method: 'POST', token })
+    const body = sent.map(e => e.text || '').join('\n')
+    expect(body).toContain('Venue: Banner Hall')
+    expect(body).not.toContain('Film:')
+    expect(body).not.toContain('Hosted by:')
+    // The old code pushed a bare 'Address:' with an empty line under it.
+    expect(body).not.toContain('Address:')
+  })
+
+  it('names the club, not "A club member", when an admin adds a guest to a hostless event', async () => {
+    await seedClubEvent({ kind: 'social', film: undefined, title: 'Drinks', venue: 'Banner Hall' })
+    const sent = captureEmails()
+    await req('/events/club-1/rsvp/guest', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-admin-token' },
+      body: { name: 'Guest G', email: 'guest-g@example.com' },
+    })
+    const body = sent.map(e => e.text || '').join('\n')
+    expect(body).toContain('Jackson Film Club added you')
+    expect(body).not.toContain('A club member added you')
+  })
+})

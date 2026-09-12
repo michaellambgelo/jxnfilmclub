@@ -373,6 +373,73 @@ describe('/api/member/unlink', () => {
   })
 })
 
+// --- Event write proxy: PUT upserts, DELETE cancels, both via the join worker ---
+//
+// Event writes used to go through /api/kv. They proxy now because a raw KV
+// write cannot promote a waitlist, enforce the capacity guard, or email the
+// RSVP list when an admin postpones something.
+
+describe('/api/events', () => {
+  it('PUT proxies to the join worker admin event endpoint with the admin token', async () => {
+    const { service, calls } = stubService({ ok: true, created: false, notified: 3 })
+    const body = JSON.stringify({ event: { id: 'club-1', title: 'Night', date: '2099-09-01' }, notify: true })
+    const res = await call('/api/events?env=production&id=club-1', {
+      method: 'PUT', body, token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual({ ok: true, created: false, notified: 3 })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/events/club-1')
+    expect(calls[0].init.method).toBe('PUT')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe(body)
+  })
+
+  it('DELETE proxies with method DELETE', async () => {
+    const { service, calls } = stubService({ ok: true, notified: 2 })
+    const res = await call('/api/events?env=production&id=club-1', {
+      method: 'DELETE', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/events/club-1')
+    expect(calls[0].init.method).toBe('DELETE')
+  })
+
+  it('staging uses JOIN_WORKER_STAGING with the staging token', async () => {
+    const { service, calls } = stubService({ ok: true })
+    await call('/api/events?env=staging&id=club-2', {
+      method: 'PUT', body: '{"event":{},"notify":false}',
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/events/club-2')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+  })
+
+  it('400s without an id param; relays join worker errors', async () => {
+    const { service } = stubService({ error: 'cannot reduce capacity below the 4 already-confirmed RSVPs' }, 400)
+    const missing = await call('/api/events?env=production', {
+      method: 'PUT', body: '{"event":{}}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('id')
+
+    const overbooked = await call('/api/events?env=production&id=club-3', {
+      method: 'PUT', body: '{"event":{}}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(overbooked.status).toBe(400)
+    expect((await overbooked.json()).error).toContain('already-confirmed')
+  })
+
+  it('an event id with a slash cannot escape the admin event path', async () => {
+    const { service, calls } = stubService({ ok: true })
+    await call(`/api/events?env=production&id=${encodeURIComponent('a/../../admin/scrub')}`, {
+      method: 'PUT', body: '{"event":{}}', token: await signToken(),
+      envOverrides: { JOIN_WORKER: service },
+    })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/events/a%2F..%2F..%2Fadmin%2Fscrub')
+  })
+})
+
 // --- Guest RSVP proxy: POST adds, DELETE removes, both via the join worker ---
 
 describe('/api/rsvp/guest', () => {

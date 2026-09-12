@@ -264,6 +264,35 @@ export async function getEvents(opts = {}) {
   return getList('events', opts)
 }
 
+// Does this event collect RSVPs, or is it a post-hoc "I was there" event?
+//
+// The two are mutually exclusive by construction: attendance is derived from
+// the confirmed-RSVP list when RSVPs are on, so offering both would give one
+// event two sources of truth. Every caller that gates an attend/RSVP
+// affordance asks this, never `hostId` directly.
+//
+// Precedence, and why:
+//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
+//     control we link out; taking an RSVP as well would imply we hold a seat
+//     we do not hold. Making that structural (rather than a validation rule)
+//     means it cannot be misconfigured — the same reasoning as isMembersOnly().
+//  2. An explicit `rsvp` boolean wins. The admin portal stamps `rsvp: true` on
+//     every event it creates, which is what makes "on by default" true for new
+//     club events without making absence mean on.
+//  3. Otherwise fall back to `hostId`. Member-hosted screenings have always
+//     taken RSVPs and the 42 curated rows in data/events.json have always
+//     taken attendance, and neither carries an `rsvp` field — so this branch
+//     is what keeps every pre-existing row behaving exactly as it did.
+//
+// MIRRORED in worker/src/index.js and admin/lib.js — keep all three in
+// lockstep (see docs/features/hosting.md).
+export function rsvpEnabled(e: any): boolean {
+  if (!e) return false
+  if (e.ticketUrl) return false
+  if (typeof e.rsvp === 'boolean') return e.rsvp
+  return !!e.hostId
+}
+
 async function getList(type: string, opts: any) {
   const { start = 0, limit = 30, sort, search, venue } = opts || {}
 

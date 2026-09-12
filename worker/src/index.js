@@ -196,6 +196,14 @@ async function route(request, env) {
     if (request.method === 'POST'   && pathname === '/admin/voice/publish') return handleAdminVoicePublish(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/transcript') return handleAdminVoiceTranscript(request, env)
     if (request.method === 'DELETE' && pathname === '/admin/voice')         return handleAdminVoiceDelete(request, env)
+    // Admin event writes. Same id-in-path shape as /events/:id; the ADMIN_TOKEN
+    // gate lives in the handlers so an unset token can never read as a match.
+    const adminEventMatch = /^\/admin\/events\/([^\/]+)$/.exec(pathname)
+    if (adminEventMatch) {
+      const id = decodeURIComponent(adminEventMatch[1])
+      if (request.method === 'PUT')    return handleAdminEventPut(request, env, id)
+      if (request.method === 'DELETE') return handleAdminEventDelete(request, env, id)
+    }
 
     if (request.method === 'POST' && pathname === '/session/revoke')  return handleSessionRevoke(request, env)
     if (request.method === 'POST' && pathname === '/session/refresh') return handleSessionRefresh(request, env)
@@ -1907,11 +1915,12 @@ async function handleAttend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
-  // For member-hosted screenings, attendance is the confirmed-RSVP list and is
+  // When an event collects RSVPs, attendance IS the confirmed-RSVP list and is
   // managed via /events/:id/rsvp. Reject the post-hoc toggle so the SPA can't
-  // accidentally double-write or skip the email/waitlist path.
-  if (await isHostedEvent(env, eventId)) {
-    return json(env, { error: 'this is a hosted screening — RSVP via /events/:id/rsvp' }, 409)
+  // accidentally double-write or skip the email/waitlist path. Keyed on
+  // rsvpEnabled(), not hostId: an admin-created club event can take RSVPs too.
+  if (await eventTakesRsvp(env, eventId)) {
+    return json(env, { error: 'this event takes RSVPs — use /events/:id/rsvp' }, 409)
   }
 
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
@@ -1931,8 +1940,8 @@ async function handleUnattend(request, env, eventId) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
 
-  if (await isHostedEvent(env, eventId)) {
-    return json(env, { error: 'this is a hosted screening — cancel via /events/:id/rsvp' }, 409)
+  if (await eventTakesRsvp(env, eventId)) {
+    return json(env, { error: 'this event takes RSVPs — cancel via /events/:id/rsvp' }, 409)
   }
 
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
@@ -2080,8 +2089,12 @@ function publicEventProjection(event) {
   // `notes` is deliberately excluded too: the host form promises notes are
   // "included in every RSVP email", and hosts put parking/entry details there.
   // They stay on the canonical row (emails, host view, admin) only.
+  // `rsvp` and `ticketUrl` are public on purpose: the card cannot decide
+  // between the RSVP block, the ticket link and the attendance toggle without
+  // them. Note the filter below keeps `rsvp: false` (false !== ''), which it
+  // must — an explicit false is how an admin turns RSVPs back off.
   for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
-                   'hostId', 'hostName', 'capacity', 'kind', 'time']) {
+                   'hostId', 'hostName', 'capacity', 'kind', 'time', 'rsvp', 'ticketUrl']) {
     if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
   }
   return out
@@ -2611,10 +2624,37 @@ function parseProfileAvatar(html) {
 // `{ id, name }` entries keyed on the same memberId, so a rename resolves
 // there the same way it does everywhere else.
 
-async function isHostedEvent(env, eventId) {
+// Does this event collect RSVPs, or is it a post-hoc "I was there" event?
+// The two are mutually exclusive by construction: when RSVPs are on, the
+// attendee list IS the confirmed list (plus the host), so offering the toggle
+// as well would give one event two sources of truth.
+//
+// Precedence, and why:
+//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
+//     control we link out; also taking an RSVP would imply we hold a seat we
+//     do not hold. Structural rather than a validation rule, so it cannot be
+//     misconfigured — the same reasoning as isMembersOnly().
+//  2. An explicit `rsvp` boolean wins. The admin portal stamps `rsvp: true` on
+//     every event it creates, which is what makes "on by default" true for new
+//     club events without making ABSENCE mean on.
+//  3. Otherwise fall back to `hostId`. Member-hosted screenings have always
+//     taken RSVPs; the curated rows in data/events.json have always taken
+//     attendance; neither carries an `rsvp` field. This branch is what keeps
+//     every pre-existing row behaving exactly as it did.
+//
+// MIRRORED in model/index.ts and admin/lib.js — keep all three in lockstep
+// (see docs/features/hosting.md).
+function rsvpEnabled(event) {
+  if (!event) return false
+  if (event.ticketUrl) return false
+  if (typeof event.rsvp === 'boolean') return event.rsvp
+  return !!event.hostId
+}
+
+async function eventTakesRsvp(env, eventId) {
   const raw = await env.ATTENDANCE_KV.get(`event:${eventId}`)
   if (!raw) return false
-  try { return !!JSON.parse(raw).hostId } catch { return false }
+  try { return rsvpEnabled(JSON.parse(raw)) } catch { return false }
 }
 
 async function readEvent(env, eventId) {
@@ -2731,6 +2771,25 @@ function fmtTime(hhmm) {
 const MEETUP_SELF_ORGANIZED =
   'This meetup is self-organized — buy your own ticket and get yourself there; the club just shows up together.'
 
+// Who is running this, and what do we call it. A member-hosted screening is
+// run by its host; a club event is run by the club. A social event is not a
+// screening — mailing someone about "the screening Drinks at Banner Hall"
+// reads as a bug, because it is one.
+const eventRunner = (event) =>
+  event.hostId ? (event.hostName || 'the host') : 'Jackson Film Club'
+const eventNoun = (event) =>
+  event.kind === 'social' ? 'the event' : 'the screening'
+
+// Address vs venue, chosen structurally rather than off `kind`: a house
+// screening is the only thing carrying a private address, and everything else
+// with a location has a venue. Keeps both hosted kinds byte-identical while
+// covering club events, which have a venue and often no kind at all.
+function eventWhereLines(event) {
+  if (event.address) return ['Address:', event.address]
+  if (event.venue) return [`Venue: ${event.venue}`]
+  return []
+}
+
 function fmtScreeningWhen(event) {
   // Date as-is (YYYY-MM-DD); hosted events of either kind may carry an
   // optional showtime.
@@ -2741,19 +2800,23 @@ function fmtScreeningWhen(event) {
 function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   const lines = [
     opts.intro || `You're confirmed for ${event.title} on ${fmtScreeningWhen(event)}.`,
-    `Film: ${event.film || '(see host)'}`,
-    `Hosted by: ${event.hostName || 'a member'}`,
-    '',
   ]
-  if (event.kind === 'meetup') {
-    lines.push(`Venue: ${event.venue}`)
-  } else {
-    lines.push('Address:', address)
-  }
+  // A social club event has no film, and a club event has no host — emitting
+  // either line unconditionally is how you mail someone "Film: (see host)"
+  // for a meetup at a bookshop.
+  if (event.film) lines.push(`Film: ${event.film}`)
+  if (event.hostId) lines.push(`Hosted by: ${event.hostName || 'a member'}`)
+  lines.push('')
+  // Structural, not kind-keyed: a house screening is the only thing that
+  // carries a private address, and everything else that has a location has a
+  // venue. That keeps both existing kinds byte-identical (meetups have a
+  // venue and no address, house has an address) while covering club events,
+  // which have a venue and no kind at all.
+  lines.push(...eventWhereLines({ ...event, address }))
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
   if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   if (notes) {
-    lines.push('', 'Notes from the host:', notes)
+    lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', notes)
   }
   lines.push('', ...(opts.cancelLines || [
     "Can't make it? Use the one-click link below to cancel — it opens a spot",
@@ -2779,7 +2842,7 @@ async function sendGuestRsvpEmail(env, guest, event, origin) {
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
   const body = rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl, {
-    intro: `${event.hostName || 'A club member'} added you to the guest list for ${event.title} on ${fmtScreeningWhen(event)}.`,
+    intro: `${event.hostId ? (event.hostName || 'A club member') : 'Jackson Film Club'} added you to the guest list for ${event.title} on ${fmtScreeningWhen(event)}.`,
     cancelLines: [
       "Didn't expect this, or can't make it? One click removes you from the",
       'list — and we keep no other record of your email past 30 days after',
@@ -2794,25 +2857,49 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   const token = await signRsvpCancelToken(env, event.id, member.id)
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const lines = [
-    `Heads up — ${event.hostName || 'the host'} updated the screening "${event.title}".`,
+    `Heads up — ${eventRunner(event)} updated ${eventNoun(event)} "${event.title}".`,
     '',
-    'What changed:',
   ]
-  for (const c of changes) lines.push(`  • ${c.field}: ${c.from || '(blank)'} → ${c.to || '(blank)'}`)
-  lines.push(
-    '',
-    'Current details:',
-    `Date: ${fmtScreeningWhen(event)}`,
-  )
-  if (event.kind === 'meetup') {
-    lines.push(`Venue: ${event.venue}`)
-  } else {
-    lines.push(`Address: ${event.address || '(see host)'}`)
+  // An admin can send this deliberately with nothing changed (a re-send of
+  // the details). Printing an empty "What changed:" header would look broken,
+  // so the section only appears when there is something in it.
+  if (changes.length) {
+    lines.push('What changed:')
+    for (const c of changes) lines.push(`  • ${c.field}: ${c.from || '(blank)'} → ${c.to || '(blank)'}`)
+    lines.push('')
   }
+  lines.push('Current details:', `Date: ${fmtScreeningWhen(event)}`)
+  lines.push(...eventWhereLines(event))
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
   if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
-  if (event.notes) lines.push('', 'Notes from the host:', event.notes)
+  if (event.notes) lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', event.notes)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
+  const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
+  await sendEmail(env, member.email, subject, lines.join('\n'))
+}
+
+// Waitlisted members get the same change notice, minus the cancel link (they
+// hold no seat to give up) and with their position restated so the mail is
+// self-explanatory to someone who is not yet in.
+async function sendWaitlistUpdateEmail(env, member, event, changes, position) {
+  if (!member.email) return
+  const lines = [
+    `Heads up — ${eventRunner(event)} updated ${eventNoun(event)} "${event.title}".`,
+    `You are #${position} on the waitlist, so this affects you if a spot opens.`,
+    '',
+  ]
+  if (changes.length) {
+    lines.push('What changed:')
+    for (const c of changes) lines.push(`  • ${c.field}: ${c.from || '(blank)'} → ${c.to || '(blank)'}`)
+    lines.push('')
+  }
+  lines.push('Current details:', `Date: ${fmtScreeningWhen(event)}`)
+  // Never the private address: a waitlisted member is not a confirmed RSVP,
+  // and the address is only ever mailed to people who hold a seat.
+  if (event.venue) lines.push(`Venue: ${event.venue}`)
+  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
+  lines.push('', 'No action needed — we will email you if a spot opens up.')
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
   await sendEmail(env, member.email, subject, lines.join('\n'))
 }
@@ -2821,7 +2908,7 @@ async function sendScreeningCancelledEmail(env, member, event) {
   if (!member.email) return // name-only guests have nothing to send to
   const subject = `Cancelled: ${event.title} on ${fmtScreeningWhen(event)}`
   const text = [
-    `Sorry — ${event.hostName || 'the host'} cancelled the screening "${event.title}"`,
+    `Sorry — ${eventRunner(event)} cancelled ${eventNoun(event)} "${event.title}"`,
     `that was scheduled for ${fmtScreeningWhen(event)}.`,
     '',
     'No action needed on your end. Watch the events page for future screenings.',
@@ -2913,6 +3000,92 @@ function slugifyForId(s) {
 //   'meetup' — public theater from the THEATERS allowlist, optional capacity
 //              (no cap → RSVPs always confirm), optional showtime; any
 //              submitted address is ignored, never stored.
+// Validation for an ADMIN event write, which is a different shape from a
+// member-hosted one. validScreeningInput() exists to enforce the /host
+// contract — it coerces `kind` to house|meetup and then demands an address
+// and capacity — and running a curated club event through it would stamp
+// every one of them 'house' and reject them for having no address.
+//
+// This is deliberately permissive: the caller holds ADMIN_TOKEN, so the job
+// is to catch shape mistakes (a capacity of "lots", an http ticket link)
+// rather than to police an untrusted client. `id`, `hostId` and `hostName`
+// are NOT read from the body — see handleAdminEventPut.
+function validAdminEvent(body) {
+  const out = {}
+  const str = (k, max) => {
+    if (typeof body[k] !== 'string') return null
+    const s = body[k].trim()
+    if (!s) return ''
+    if (s.length > max) return { error: `${k} too long (<=${max} chars)` }
+    return s
+  }
+
+  const title = str('title', MAX_EVENT_FIELD)
+  if (title && title.error) return title
+  if (!title) return { error: 'title is required (<=200 chars)' }
+  out.title = title
+
+  if (typeof body.date !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(body.date)) {
+    return { error: 'date is required (YYYY-MM-DD)' }
+  }
+  out.date = body.date
+
+  // Unlike the host form there is no "must be today or later" rule: admins
+  // backfill the club's history, which is where 42 of the rows came from.
+
+  if (body.year != null && body.year !== '') {
+    const y = Number(body.year)
+    if (!Number.isInteger(y) || y < 1888 || y > 2100) return { error: 'invalid year' }
+    out.year = y
+  }
+  if (body.time != null && body.time !== '') {
+    if (typeof body.time !== 'string' || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(body.time)) {
+      return { error: 'time must be HH:MM (24-hour)' }
+    }
+    out.time = body.time
+  }
+  if (body.capacity != null && body.capacity !== '') {
+    const cap = Number(body.capacity)
+    if (!Number.isInteger(cap) || cap < 1 || cap > MAX_CAPACITY) {
+      return { error: 'capacity must be a positive integer (<=1000)' }
+    }
+    out.capacity = cap
+  }
+  if (body.kind != null && body.kind !== '') {
+    if (!['house', 'meetup', 'social'].includes(body.kind)) return { error: 'invalid kind' }
+    out.kind = body.kind
+  }
+  if (typeof body.rsvp === 'boolean') out.rsvp = body.rsvp
+
+  for (const [k, max] of [['film', MAX_EVENT_FIELD], ['venue', MAX_EVENT_FIELD],
+                          ['poster', 500], ['address', MAX_ADDRESS], ['notes', MAX_NOTES]]) {
+    const s = str(k, max)
+    if (s && s.error) return s
+    if (s) out[k] = s
+  }
+
+  for (const [k, re, msg] of [
+    ['letterboxd_uri', /^https:\/\/(www\.)?(letterboxd\.com|boxd\.it)\//, 'letterboxd_uri must be a letterboxd.com or boxd.it link'],
+    // https only: it lands in a public projection and in mail, and http would
+    // downgrade whoever clicks it.
+    ['ticketUrl', /^https:\/\/[^ ]+$/, 'ticketUrl must be an https link'],
+  ]) {
+    const s = str(k, 500)
+    if (s && s.error) return s
+    if (s) {
+      if (!re.test(s)) return { error: msg }
+      out[k] = s
+    }
+  }
+
+  // A ticket link means the box office owns the seats, so an RSVP flag
+  // alongside it is a contradiction rather than a preference. Mirrors
+  // rsvpEnabled()'s short-circuit, enforced at the write so no reader has to.
+  if (out.ticketUrl) delete out.rsvp
+
+  return { value: out }
+}
+
 function validScreeningInput(body, theaters = THEATERS) {
   const out = {}
   out.kind = body.kind === 'meetup' ? 'meetup' : 'house'
@@ -3209,7 +3382,8 @@ async function handleDeleteEvent(request, env, eventId) {
   }
   // A screening that already happened can't be cancelled: deletion would
   // email cancellation notices for an event that's over. The post-event
-  // scrub cron owns past-event teardown (and admins write KV directly).
+  // scrub cron owns past-event teardown, and an admin can still delete one
+  // through DELETE /admin/events/:id, which mails nobody for a past date.
   if (event.date && event.date < centralToday()) {
     return json(env, { error: 'this screening has already happened' }, 409)
   }
@@ -3225,6 +3399,180 @@ async function handleDeleteEvent(request, env, eventId) {
   return json(env, { ok: true, notified: rsvp.confirmed.length })
 }
 
+// --- Admin event writes (ADMIN_TOKEN) -------------------------------------
+//
+// The admin dashboard used to PUT event rows straight into KV through its own
+// /api/kv shim. That worked while club events could not take RSVPs, and
+// stopped working the moment they could: a raw KV write cannot promote a
+// waitlist, cannot honour the capacity guard, and — the reason this exists —
+// cannot tell twenty people the date moved. Guest RSVPs already proxy through
+// the Worker for exactly this reason; event writes now do the same, so KV,
+// the aggregate, the RSVP list and the mailbox can never disagree.
+
+function adminAuthorized(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  // The env.ADMIN_TOKEN && guard is load-bearing: with the var unset, an
+  // accept-phrased comparison would grant admin to a request sending no
+  // Authorization header at all.
+  return !!env.ADMIN_TOKEN && auth === env.ADMIN_TOKEN
+}
+
+// Which edits are worth an email. Deliberately where/when only, matching the
+// host PATCH: the diff is what the notice actually says, and "poster changed"
+// is not something to put in twenty inboxes. Whether the mail is SENT is a
+// separate decision (the admin's notify flag) — this only decides the body.
+function diffEventNotifiable(before, after) {
+  const changes = []
+  for (const field of ['date', 'time', 'venue', 'address', 'title']) {
+    if ((before[field] || '') !== (after[field] || '')) {
+      changes.push({ field, from: before[field] || '', to: after[field] || '' })
+    }
+  }
+  return changes
+}
+
+// PUT /admin/events/:id — upsert. Body is { event, notify }.
+//
+// `notify` is an explicit opt-in rather than a consequence of the diff: an
+// admin fixing a typo in a title should not mail the room, and an admin who
+// wants to re-send the details after a phone call should be able to without
+// inventing a change. The host PATCH keeps its automatic behaviour — a host
+// editing their own screening has no dashboard to tick a box in.
+// Fields an explicit empty value clears. Everything else an admin can send is
+// either required (title, date) or a boolean (rsvp).
+const ADMIN_EVENT_CLEARABLE = ['film', 'year', 'time', 'venue', 'address', 'capacity',
+                               'notes', 'poster', 'letterboxd_uri', 'ticketUrl', 'kind']
+
+async function handleAdminEventPut(request, env, eventId) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const body = await request.json().catch(() => ({}))
+  const input = body && body.event ? body.event : {}
+
+  const existing = await readEvent(env, eventId)
+  // Merge over the stored row rather than replacing it. A body that simply
+  // omits `capacity` must not read as "uncapped" — that would wipe the cap
+  // AND promote the whole waitlist, mailing everyone that they hold a seat
+  // they do not. Clearing is therefore explicit: send '' or null (the same
+  // delete-on-empty rule PATCH uses for time/capacity/letterboxd_uri).
+  const given = Object.fromEntries(
+    Object.entries(input).filter(([, val]) => val !== undefined && val !== null && val !== '')
+  )
+  const v = validAdminEvent({ ...(existing || {}), ...given })
+  if (v.error) return json(env, { error: v.error }, 400)
+  for (const f of ADMIN_EVENT_CLEARABLE) {
+    if (input[f] === '' || input[f] === null) delete v.value[f]
+  }
+
+  // `kind` is immutable on a member-hosted row for the same reason it is on
+  // PATCH: converting a house screening whose address has already been mailed
+  // into a public meetup is a semantic mess. On a curated row it stays
+  // editable — setting kind on one is a documented admin fix.
+  if (existing && existing.hostId) {
+    const existingKind = existing.kind || 'house'
+    if (v.value.kind && v.value.kind !== existingKind) {
+      return json(env, { error: 'kind cannot be changed on a member-hosted screening' }, 400)
+    }
+  }
+
+  const rsvp = await readRsvp(env, eventId)
+  // Capacity may not drop below the people already holding a seat — but only
+  // when the write actually CHANGES capacity. A force-added guest can leave
+  // confirmed above capacity, and an unrelated edit to such an event must
+  // still go through. Compared against the stored value, not against whether
+  // the field was present in the body, which a full-form client always is.
+  const capBefore = existing && existing.capacity != null ? existing.capacity : null
+  const capAfter = v.value.capacity != null ? v.value.capacity : null
+  if (capAfter !== capBefore && capAfter != null && capAfter < rsvp.confirmed.length) {
+    return json(env, { error: `cannot reduce capacity below the ${rsvp.confirmed.length} already-confirmed RSVPs` }, 400)
+  }
+
+  // id comes from the path and hostId/hostName from the stored row: an admin
+  // edits an event, and must not be able to reassign who hosted it.
+  const updated = { id: eventId, ...v.value }
+  if (existing) {
+    if (existing.hostId) { updated.hostId = existing.hostId; updated.hostName = existing.hostName }
+    if (existing.scrubbedAt) updated.scrubbedAt = existing.scrubbedAt
+  }
+
+  const changes = existing ? diffEventNotifiable(existing, updated) : []
+  await writeEvent(env, updated)
+
+  const origin = new URL(request.url).origin
+
+  // Capacity increase (or un-capping) promotes the waitlist head-first. Never
+  // gated on `notify`: a promoted member is now holding a seat and has to be
+  // told, the same as any other promotion in the system.
+  let after = rsvp
+  const effCap = v.value.capacity == null ? Infinity : v.value.capacity
+  if (effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
+    const slots = effCap - rsvp.confirmed.length
+    const promoted = rsvp.waitlist.slice(0, slots)
+    after = { confirmed: [...rsvp.confirmed, ...promoted], waitlist: rsvp.waitlist.slice(slots) }
+    await writeRsvp(env, eventId, after, updated)
+    for (const p of promoted) {
+      try { await sendRsvpEmail(env, { id: p.memberId, email: p.email, name: p.name }, updated, origin) }
+      catch (e) { console.error('promotion email failed:', e?.message || e) }
+    }
+  }
+
+  let notified = 0
+  if (body.notify) {
+    for (const c of after.confirmed) {
+      try {
+        await sendScreeningUpdateEmail(env, { id: c.memberId, email: c.email, name: c.name }, updated, changes, origin)
+        notified++
+      } catch (e) { console.error('update email failed:', e?.message || e) }
+    }
+    // Waitlisted members are told too. They are holding a spot on a date that
+    // may have just moved out from under them, and finding out at promotion
+    // time is too late to be useful.
+    for (let i = 0; i < after.waitlist.length; i++) {
+      const w = after.waitlist[i]
+      try {
+        await sendWaitlistUpdateEmail(env, { id: w.memberId, email: w.email, name: w.name }, updated, changes, i + 1)
+        notified++
+      } catch (e) { console.error('waitlist update email failed:', e?.message || e) }
+    }
+  }
+
+  return json(env, {
+    ok: true,
+    created: !existing,
+    event: publicEventProjection(updated),
+    changes,
+    notified,
+  })
+}
+
+// DELETE /admin/events/:id — cancellation notices, then teardown.
+//
+// Always notifies, with no opt-out: the event is gone, and the failure mode
+// of staying quiet is somebody standing outside a venue. Unlike the host
+// DELETE this does NOT 409 on a past event — cleaning up the back catalogue
+// is an admin job, and nobody is mailed about it because the RSVP list has
+// already been scrubbed by then.
+async function handleAdminEventDelete(request, env, eventId) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+
+  const rsvp = await readRsvp(env, eventId)
+  let notified = 0
+  const past = event.date && event.date < centralToday()
+  if (!past) {
+    for (const r of [...rsvp.confirmed, ...rsvp.waitlist]) {
+      try {
+        await sendScreeningCancelledEmail(env, { id: r.memberId, email: r.email, name: r.name }, event)
+        notified++
+      } catch (e) { console.error('cancellation email failed:', e?.message || e) }
+    }
+  }
+
+  await removeRsvp(env, eventId)
+  await deleteEvent(env, eventId)
+  return json(env, { ok: true, notified })
+}
+
 // POST /events/:id/rsvp — authenticated, hosted events only. Confirms if
 // under cap, otherwise waitlists. Confirmation emails the address; waitlist
 // gets no email until promotion (then a confirmation email goes out).
@@ -3237,7 +3585,7 @@ async function handleRsvp(request, env, eventId) {
 
   const event = await readEvent(env, eventId)
   if (!event) return json(env, { error: 'event not found' }, 404)
-  if (!event.hostId) return json(env, { error: 'this event does not accept RSVPs (use /attend)' }, 409)
+  if (!rsvpEnabled(event)) return json(env, { error: 'this event does not accept RSVPs (use /attend)' }, 409)
   // A screening that already happened takes no RSVPs — also keeps a late
   // request from recreating a record the post-event scrub already deleted.
   const today = centralToday()
@@ -3289,7 +3637,7 @@ async function handleRsvp(request, env, eventId) {
 async function cancelRsvp(env, eventId, memberId, origin) {
   const event = await readEvent(env, eventId)
   if (!event) return { ok: false, code: 404, error: 'event not found' }
-  if (!event.hostId) return { ok: false, code: 409, error: 'not a hosted screening' }
+  if (!rsvpEnabled(event)) return { ok: false, code: 409, error: 'this event does not accept RSVPs' }
 
   const rsvp = await readRsvp(env, eventId)
   const cIdx = rsvp.confirmed.findIndex(r => r.memberId === memberId)
@@ -3352,7 +3700,7 @@ async function authorizeGuestManager(request, env, event) {
 async function handleGuestAdd(request, env, eventId) {
   const event = await readEvent(env, eventId)
   if (!event) return json(env, { error: 'event not found' }, 404)
-  if (!event.hostId) return json(env, { error: 'not a hosted screening' }, 409)
+  if (!rsvpEnabled(event)) return json(env, { error: 'this event does not accept RSVPs' }, 409)
   if (event.date && event.date < centralToday()) {
     return json(env, { error: 'this screening has already happened' }, 409)
   }
@@ -3397,7 +3745,7 @@ async function handleGuestAdd(request, env, eventId) {
 async function handleGuestRemove(request, env, eventId) {
   const event = await readEvent(env, eventId)
   if (!event) return json(env, { error: 'event not found' }, 404)
-  if (!event.hostId) return json(env, { error: 'not a hosted screening' }, 409)
+  if (!rsvpEnabled(event)) return json(env, { error: 'this event does not accept RSVPs' }, 409)
   // Past screenings are read-only until the scrub deletes them: removal
   // routes through cancelRsvp, whose waitlist promotion would email someone
   // an address for a screening that already happened.
@@ -3432,12 +3780,18 @@ async function scrubPastEvents(env) {
   let scrubbedEvents = 0
   let deletedRsvps = 0
 
-  // Hosted events past the cutoff: strip private fields off the canonical row.
-  // events:all projections carry `date` + `hostId`, so no event:* prefix scan.
-  // writeEvent re-projects into events:all, which never held address/notes.
+  // Events past the cutoff that hold private fields: strip them off the
+  // canonical row. events:all projections carry `date`, `hostId`, `rsvp` and
+  // `ticketUrl`, so no event:* prefix scan is needed. writeEvent re-projects
+  // into events:all, which never held address/notes.
+  //
+  // rsvpEnabled() is in the condition, not just hostId: an admin-created club
+  // event can take RSVPs and carry `notes`, and the privacy policy's 30-day
+  // promise is not scoped to member-hosted screenings.
   const all = await readEventsAll(env)
   for (const proj of all) {
-    if (!proj || !proj.hostId || !proj.date || proj.date >= cutoff) continue
+    if (!proj || !proj.date || proj.date >= cutoff) continue
+    if (!proj.hostId && !rsvpEnabled(proj)) continue
     const event = await readEvent(env, proj.id)
     if (!event || event.scrubbedAt) continue
     delete event.address
@@ -3448,8 +3802,9 @@ async function scrubPastEvents(env) {
   }
 
   // RSVP sweep: delete every rsvp:{id} whose event is past the cutoff — or
-  // gone entirely (the admin dashboard writes KV directly and can orphan a
-  // record; handleDeleteEvent cleans up after itself).
+  // gone entirely. Both delete paths now clean up after themselves, but a
+  // hand-run `wrangler kv key delete` still orphans one, and the sweep costs
+  // a list() either way.
   let cursor
   do {
     const page = await env.ATTENDANCE_KV.list({ prefix: 'rsvp:', cursor })
@@ -3503,7 +3858,7 @@ async function purgeRsvps(env, member, origin) {
       if (!rsvp.confirmed.some(mine) && !rsvp.waitlist.some(mine)) continue
 
       const event = await readEvent(env, eventId)
-      if (event && event.hostId && event.date >= today) {
+      if (event && rsvpEnabled(event) && event.date >= today) {
         await cancelRsvp(env, eventId, member.id, origin)
       } else {
         await env.ATTENDANCE_KV.put(`rsvp:${eventId}`, JSON.stringify({

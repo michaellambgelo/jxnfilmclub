@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled } from 'app'
 
   // Shared by every component in this lib file. Lib-script scope is NOT subject
   // to the 10k component-script truncation cap (Nue pushes the head script raw;
@@ -161,6 +161,116 @@
     } catch { return null }
   }
 
+  // --- Event predicates + formatters, ev-prefixed --------------------------
+  //
+  // These live here, not in event-card, for two reasons. Lib-script scope is
+  // not subject to the 10k component-script truncation cap, and event-card
+  // was already within 1k of it. And every one of them is pure, so home-view
+  // and event-card can share one definition instead of drifting copies.
+  //
+  // The ev prefix is not decoration: a name declared in this lib script
+  // becomes a file-wide reserved word that shadows the same field name in
+  // EVERY template in this file. A bare rsvp or ticketUrl here would silently
+  // rebind those interpolations. See docs/CLAUDE.md.
+
+  // Whether this event collects RSVPs, or takes the post-hoc I-was-there
+  // toggle instead. The two are mutually exclusive: when RSVPs are on the
+  // attendee list IS the confirmed list, so offering both gives one event two
+  // sources of truth. Imported rather than redefined so the SPA, the Worker
+  // and the admin dashboard cannot drift.
+  const evRsvpOn = rsvpEnabled
+
+  // An external box-office link. Present means the theater sells the seats,
+  // so the card links out instead of offering an RSVP.
+  function evTicketUrl(e) {
+    return e && typeof e.ticketUrl === 'string' && e.ticketUrl ? e.ticketUrl : ''
+  }
+
+  // A club event with no film — a meetup at a bookshop, a members social.
+  function evIsSocial(e) { return !!e && e.kind === 'social' }
+
+  // Hosted events without a kind predate meetups, so they are house
+  // screenings. A club event has no kind and no host and is neither.
+  function evIsMeetup(e) {
+    if (!e) return false
+    return (e.kind || (e.hostId ? 'house' : '')) === 'meetup'
+  }
+  function evIsHouse(e) {
+    if (!e) return false
+    return (e.kind || (e.hostId ? 'house' : '')) === 'house'
+  }
+
+  // The host is in the attendee list - they are in the room - but never
+  // occupies an RSVP slot, so every capacity comparison runs off the
+  // host-less count. Mirrors the worker, where capacity gates confirmed only.
+  function evGuestCount(e, attendees) {
+    const host = e && e.hostId
+    return (attendees || []).filter(function(a) { return a.id !== host }).length
+  }
+
+  function evIsFuture(e) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+    return ((e && e.date) || '') >= today
+  }
+
+  function evFormatDate(ts) {
+    if (!ts) return ''
+    // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC, so it does not roll
+    // back a day west of UTC. Character classes, never a backslash escape:
+    // backslashes are DOUBLED in the compiled bundle.
+    const evd = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
+    return evd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  }
+
+  // The poster slot's stand-in when an event has no artwork. A screening
+  // borrows the film's poster; a drinks night at Banner Hall has no such
+  // thing, and an empty 2:3 well reads as a broken image rather than a
+  // design. So the slot draws its own title card instead.
+  //
+  // The eyebrow tells the truth about who is running it: the club presents
+  // its own events, but a member-hosted screening is that member's. hostName
+  // is resolved off hostId on every read, so a rename follows it here too.
+  function evEyebrow(e) {
+    if (e && e.hostId) return 'Hosted by ' + (e.hostName || 'a member')
+    return 'JXN Film Club presents'
+  }
+
+  // Date, plus showtime when there is one — the date stamp a real poster
+  // carries, not a repeat of the meta row (which also names the venue).
+  function evPosterMeta(e) {
+    if (!e || !e.date) return ''
+    const evWhen = evFormatDate(e.date)
+    return e.time ? evWhen + ' · ' + evFormatTime(e.time) : evWhen
+  }
+
+  // The Program tag. kind is authoritative when present ("Patton House &
+  // Gallery" would trip the regex); the heuristic only covers legacy rows.
+  function evProgramTag(e) {
+    if (!e) return 'Venue'
+    if (e.kind === 'social') return 'Social'
+    if (e.kind) return e.kind === 'house' ? 'House' : 'Venue'
+    return (/house|porch|backyard|home/i.test(e.venue || '') || !!e.hostId) ? 'House' : 'Venue'
+  }
+
+  // A call-to-action has to tell the truth about what is on the other side:
+  // an event with a box-office link is not something you RSVP to.
+  function evEventAction(e) {
+    if (evTicketUrl(e)) return 'Tickets'
+    return evRsvpOn(e) ? 'RSVP' : 'Details'
+  }
+
+  // A social event is a club event but not a film, so it never sits under the
+  // home page hero stamp, which reads "Next screening".
+  function evNotSocial(e) { return !evIsSocial(e) }
+
+  function evFormatTime(hhmm) {
+    if (!hhmm) return ''
+    const parts = String(hhmm).split(':')
+    const h = Number(parts[0]), m = Number(parts[1])
+    const ampm = h >= 12 ? 'pm' : 'am'
+    return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + ampm
+  }
+
 </script>
 
 
@@ -179,7 +289,7 @@
         <span :if="hero.venue">· { hero.venue }</span>
       </p>
       <div class="nshero-actions">
-        <a href="/events" class="ns-btn">{ hero && hero.upcoming ? 'RSVP' : 'See screenings' }</a>
+        <a href="/events" class="ns-btn">{ hero && hero.upcoming ? hero.action : 'See screenings' }</a>
       </div>
     </div>
     <div :if="hero" class="nshero-poster">
@@ -209,14 +319,14 @@
       </div>
       <div class="program-film">
         <h3>{ e.film }</h3>
-        <p>{ e.title }</p>
+        <p :if="e.title">{ e.title }</p>
       </div>
       <div class="program-venue">
-        <span class="program-tag { e.house ? '-house' : '' }">{ e.house ? 'House' : 'Venue' }</span>
+        <span class="program-tag { e.tag === 'House' ? '-house' : (e.tag === 'Social' ? '-social' : '') }">{ e.tag }</span>
         <p>{ e.venue }</p>
       </div>
       <div class="program-action">
-        <a href="/events" class="ns-btn { e.upcoming ? '' : '-ghost' }">{ e.upcoming ? 'RSVP' : 'Details' }</a>
+        <a href="/events" class="ns-btn { e.upcoming ? '' : '-ghost' }">{ e.upcoming ? e.action : 'Details' }</a>
       </div>
     </div>
   </section>
@@ -395,18 +505,20 @@
           mo: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
           yr: d.getFullYear(),
           film: e.film || e.title,
-          title: e.title,
+          // Blank rather than a repeat: a social event has no film, so the
+          // heading already IS the title and the sub-line would echo it.
+          title: e.film ? e.title : '',
           venue: e.venue || (e.hostName ? 'Hosted by ' + e.hostName : 'TBA'),
-          // kind is authoritative when present ("Patton House & Gallery" would
-          // trip the regex); the heuristics only cover legacy rows without it.
-          house: e.kind ? e.kind === 'house'
-               : (/house|porch|backyard|home/i.test(e.venue || '') || !!e.hostId),
+          tag: evProgramTag(e),
+          action: evEventAction(e),
           upcoming: (e.date || '') >= today,
         }
       })
 
-      const h = upcoming[0] || past[0]
+      // The hero stamp reads "Next screening", so it must name a screening.
+      const h = upcoming.filter(evNotSocial)[0] || past.filter(evNotSocial)[0]
       const hero = h ? {
+        action: evEventAction(h),
         film: h.film || h.title,
         year: h.year,
         poster: h.poster,
@@ -873,22 +985,32 @@
      when the viewer is the host renders a host-only sub-section. -->
 <article :is="event-card" class="event-card">
   <div class="event-poster-wrap">
-    <img :if="event.poster" src="{ event.poster }" alt="{ event.film }" class="event-poster">
+    <img :if="event.poster" src="{ event.poster }" alt="{ event.film || event.title }" class="event-poster">
+    <!-- The title card OWNS the heading and date stamp when it is showing,
+         rather than duplicating them: the body's h3 and date are :if-gated on
+         a poster existing. Rendering both put the same title in the same
+         typeface twice, back to back, which reads as a bug. Both conditions
+         come off the event prop, so neither ever toggles after mount. -->
+    <div :if="!event.poster" class="event-titlecard">
+      <p class="event-titlecard-eyebrow"><span class="rule"></span>{ eyebrow() }</p>
+      <h3 class="event-titlecard-title">{ event.title }</h3>
+      <p :if="posterMeta()" class="event-titlecard-meta">{ posterMeta() }</p>
+    </div>
   </div>
   <div class="event-body">
-    <h3>{ event.title }</h3>
-    <p class="event-film">
+    <h3 :if="event.poster">{ event.title }</h3>
+    <p :if="event.film" class="event-film">
       <a :if="event.letterboxd_uri" href="{ event.letterboxd_uri }" target="_blank" rel="noopener">{ event.film }</a>
       <span :if="!event.letterboxd_uri">{ event.film }</span>
     </p>
     <p class="event-meta">
       <span :if="event.venue" class="event-venue">{ event.venue }</span>
       <span :if="event.hostId" class="event-host"><avatar :name="event.hostName || 'a member'" :src="hostAvatarSrc()"/>Hosted by { event.hostName || 'a member' }</span>
-      <span class="event-date">{ formatDate(event.date) }</span>
-      <span :if="event.time" class="event-time">{ formatTime(event.time) }</span>
+      <span :if="event.poster" class="event-date">{ formatDate(event.date) }</span>
+      <span :if="event.poster && event.time" class="event-time">{ formatTime(event.time) }</span>
     </p>
 
-    <div :if="event.hostId" class="event-rsvp">
+    <div :if="rsvpOn()" class="event-rsvp">
       <div class="rsvp-meter">
         { guestCount() + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
@@ -897,10 +1019,11 @@
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
       <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
       <div :if="session && isFuture() && myRsvp && !isHost">
-        <p :if="myRsvp.status === 'confirmed' && !isMeetup()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
+        <p :if="myRsvp.status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
         <p :if="myRsvp.status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
-        <p :if="myRsvp.status === 'waitlisted' && !isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
-        <p :if="myRsvp.status === 'waitlisted' && isMeetup()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. You'll get an email if a spot opens.</p>
+        <p :if="myRsvp.status === 'confirmed' && !isHouse() && !isMeetup()" class="rsvp-status">You're in. Check your email for the details.</p>
+        <p :if="myRsvp.status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
+        <p :if="myRsvp.status === 'waitlisted' && !isHouse()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. You'll get an email if a spot opens.</p>
         <button :if="myRsvp.status === 'none' && (!event.capacity || guestCount() < event.capacity)"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
         <button :if="myRsvp.status === 'none' && event.capacity && guestCount() >= event.capacity"
@@ -912,7 +1035,14 @@
     </div>
 
     <div class="event-attendance">
-      <div :if="!event.hostId" class="attendance-count">{ (attendees || []).length } attended</div>
+      <!-- The box office sells the seats, so we link out rather than take an
+           RSVP. ticketUrl rides the event prop, so this :if resolves at first
+           paint and never toggles after mount - the shape that crashes
+           nuedom's diff. The capture listener in index.html already lets a
+           target=_blank anchor through autolink. -->
+      <a :if="ticketUrl()" href="{ event.ticketUrl }" target="_blank" rel="noopener"
+        class="attend-btn event-ticket-btn">Get tickets</a>
+      <div :if="!rsvpOn()" class="attendance-count">{ (attendees || []).length } attended</div>
       <div :if="(attendees || []).length" class="attendance-list">
         <span :each="a in attendees" key="{ a.id || a.name }" class="attendee">
           <a :if="handleFor(a)" href="https://letterboxd.com/{ handleFor(a) }/"
@@ -920,9 +1050,9 @@
           <span :if="!handleFor(a)">{ a.name }</span>
         </span>
       </div>
-      <button :if="!event.hostId && canToggle() && !attended()" type="button" class="attend-btn"
+      <button :if="!rsvpOn() && canToggle() && !attended()" type="button" class="attend-btn"
         :disabled="busy" :onclick="toggle('POST')">{ busy ? 'Saving' : 'I was there' }</button>
-      <button :if="!event.hostId && canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
+      <button :if="!rsvpOn() && canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
         :disabled="busy" :onclick="toggle('DELETE')">{ busy ? 'Removing' : 'Remove me' }</button>
     </div>
 
@@ -967,7 +1097,10 @@
     this.busy = false
 
     this.mounted = async function() {
-      if (!this.event.hostId) return
+      // Keyed on rsvpOn, not hostId: an admin-created club event takes RSVPs
+      // too, and without this it would render an RSVP block that never learns
+      // the viewer's own status.
+      if (!evRsvpOn(this.event)) return
       if (this.session) {
         try {
           const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp/me', {
@@ -1056,48 +1189,24 @@
       this.patchLbUri('')
     }
 
-    this.formatDate = function(ts) {
-      if (!ts) return ''
-      // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC, so it doesn't
-      // roll back a day west of UTC (matches the pattern used above).
-      const d = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(ts) ? new Date(ts + 'T00:00:00') : new Date(ts)
-      return d.toLocaleDateString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric',
-      })
-    }
-
-    this.formatTime = function(hhmm) {
-      const parts = hhmm.split(':')
-      const h = Number(parts[0]), m = Number(parts[1])
-      const ampm = h >= 12 ? 'pm' : 'am'
-      return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + ampm
-    }
-
-    // Hosted events without a kind field predate meetups → house.
-    // NOTE: no backticks in view <script> comments — nuedom's RE_FN mis-parses
-    // the compiled bundle when util.inspect falls back to single-quote escaping.
-    this.isMeetup = function() {
-      const kind = this.event.kind || (this.event.hostId ? 'house' : '')
-      return kind === 'meetup'
-    }
-
-    // The host is in the attendee list — they are in the room — but never
-    // occupies an RSVP slot, so every capacity comparison runs off the
-    // host-less count. Mirrors the worker, where capacity gates
-    // rsvp.confirmed only.
-    this.guestCount = function() {
-      const host = this.event.hostId
-      return (this.attendees || []).filter(function(a) { return a.id !== host }).length
-    }
+    // Pure helpers live in the lib script at the top of this file, which is
+    // NOT subject to the 10k component-script truncation cap. These thunks
+    // exist because a template cannot call a lib function directly.
+    this.formatDate = function(ts) { return evFormatDate(ts) }
+    this.formatTime = function(hhmm) { return evFormatTime(hhmm) }
+    this.isMeetup = function() { return evIsMeetup(this.event) }
+    this.isHouse = function() { return evIsHouse(this.event) }
+    this.eyebrow = function() { return evEyebrow(this.event) }
+    this.posterMeta = function() { return evPosterMeta(this.event) }
+    this.rsvpOn = function() { return evRsvpOn(this.event) }
+    this.ticketUrl = function() { return evTicketUrl(this.event) }
+    this.guestCount = function() { return evGuestCount(this.event, this.attendees) }
+    this.isFuture = function() { return evIsFuture(this.event) }
 
     this.canToggle = function() { return !!this.session }
     this.attended = function() {
       const me = this.session && this.session.id
       return !!me && (this.attendees || []).some(function(a) { return a.id === me })
-    }
-    this.isFuture = function() {
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
-      return (this.event.date || '') >= today
     }
 
     this.toggle = async function(method) {

@@ -1,5 +1,16 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/legend/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/fz/y8/qa/2f/mJ9dl6hzp3xhCbohMgrai8I2AZU-0-600-0-900-crop.jpg?v=4ad31f83de",
+    "rating": "2.5",
+    "review": "how can it look so good but be so bad? tom cruise is problematically hot",
+    "title": "Legend",
+    "watched_date": "2026-09-11",
+    "year": "1985"
+  },
+  {
     "handle": "calissippi",
     "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=ae23afa84a",
@@ -8,6 +19,17 @@
     "title": "The Fix",
     "watched_date": "2026-09-11",
     "year": "2026"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/romeo-juliet-1996/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/4/7/51647-romeo-juliet-0-600-0-900-crop.jpg?v=bbd8155493",
+    "rating": "4.0",
+    "review": "The visual elements they tie with 400 year old writing are so impressive to me because you don\u2019t necessarily have to understand the way they\u2019re talking but you can still follow the story",
+    "title": "Romeo + Juliet",
+    "watched_date": "2026-09-11",
+    "year": "1996"
   },
   {
     "handle": "michaellamb",
@@ -104,16 +126,6 @@
     "year": "2012"
   },
   {
-    "handle": "michaellamb",
-    "link": "https://letterboxd.com/michaellamb/film/world-trade-center/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/7/4/7/50747-world-trade-center-0-600-0-900-crop.jpg?v=6016d7d5ac",
-    "rating": "1.5",
-    "review": "Michael Shannon's character exists to perpetuate myths that support Christian Nationalism I said what I said",
-    "title": "World Trade Center",
-    "watched_date": "2026-09-09",
-    "year": "2006"
-  },
-  {
     "handle": "bearleebooks",
     "liked": true,
     "link": "https://letterboxd.com/bearleebooks/film/walle/",
@@ -134,17 +146,6 @@
     "title": "Angel's Egg",
     "watched_date": "2026-09-09",
     "year": "1985"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/misery/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/8/4/6/50846-misery-0-600-0-900-crop.jpg?v=f079fc8138",
-    "rating": "5.0",
-    "review": "I miss that kind of misery",
-    "title": "Misery",
-    "watched_date": "2026-09-08",
-    "year": "1990"
   },
   {
     "handle": "jon_knowledge",

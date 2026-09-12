@@ -706,6 +706,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/romeo-juliet-1996/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/4/7/51647-romeo-juliet-0-600-0-900-crop.jpg?v=bbd8155493",
+      "rating": "4.0",
+      "title": "Romeo + Juliet",
+      "watched_date": "2026-09-11",
+      "year": "1996"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/wild-at-heart/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/bi/3h/zv/k4/5Lu9HbcGBxjm4R1KNthmqaD5VRT-0-600-0-900-crop.jpg?v=36a83d1697",
       "rating": "4.5",
@@ -802,15 +811,6 @@
       "title": "Picnic at Hanging Rock",
       "watched_date": "2026-09-02",
       "year": "1975"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/being-john-malkovich/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/1/8/51618-being-john-malkovich-0-600-0-900-crop.jpg?v=aecbc04013",
-      "rating": "3.5",
-      "title": "Being John Malkovich",
-      "watched_date": "2026-09-01",
-      "year": "1999"
     }
   ],
   "badmov1eenjoyer": [
@@ -1746,6 +1746,15 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/legend/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/fz/y8/qa/2f/mJ9dl6hzp3xhCbohMgrai8I2AZU-0-600-0-900-crop.jpg?v=4ad31f83de",
+      "rating": "2.5",
+      "title": "Legend",
+      "watched_date": "2026-09-11",
+      "year": "1985"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/hope-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/4/6/6/3/954663-hope-2026-0-600-0-900-crop.jpg?v=102a8bfda2",
       "rating": "3.5",
@@ -1838,16 +1847,6 @@
       "title": "Dragonheart 3: The Sorcerer's Curse",
       "watched_date": "2026-09-05",
       "year": "2015"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/akira/1/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/xk/25/lu/0m/mi2Axov7Hy20wieoGfrbqDWLjSr-0-600-0-900-crop.jpg?v=dd1e90619a",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "Akira",
-      "watched_date": "2026-09-05",
-      "year": "1988"
     }
   ],
   "mrbienkowski": [

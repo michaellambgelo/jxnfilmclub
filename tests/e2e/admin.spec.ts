@@ -700,9 +700,12 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('.event-form')).toHaveCount(before)
 
     // The id derives from date + film as you type.
-    await panel.locator('#ne-date').fill('2026-10-22')
-    await panel.locator('#ne-film').fill('Clayface')
-    await expect(panel.locator('#ne-id')).toHaveValue('2026-10-22-clayface')
+    // 2099 + a nonsense film: data/events.json is re-snapshotted from
+    // production every 6h and the fixture reseeds events:all from it, so any
+    // plausible real slug can collide with live club data. This one cannot.
+    await panel.locator('#ne-date').fill('2099-10-22')
+    await panel.locator('#ne-film').fill('Zzyzx Testfilm')
+    await expect(panel.locator('#ne-id')).toHaveValue('2099-10-22-zzyzx-testfilm')
 
     // No title yet: creating is refused, and still nothing is written.
     await panel.locator('button[data-action="event-create"]').click()
@@ -711,7 +714,7 @@ test.describe('admin dashboard', () => {
     expect((await stillNothing.json()).keys).toHaveLength(0)
 
     // A bad optional field is caught before the Worker ever sees it.
-    await panel.locator('#ne-title').fill('CLAYFACE Preview Screening')
+    await panel.locator('#ne-title').fill('Zzyzx Preview Screening')
     await panel.locator('#ne-ticket').fill('http://tix.example.com')
     await panel.locator('button[data-action="event-create"]').click()
     await expect(page.locator('#ne-issues')).toContainText('https link')
@@ -726,24 +729,24 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#event-new-panel')).toHaveCount(0)
 
     const row = await expect.poll(async () => {
-      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2026-10-22-clayface')}`)
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2099-10-22-zzyzx-testfilm')}`)
       const raw = (await res.json()).value
       return raw ? JSON.parse(raw) : null
     }).not.toBeNull().then(async () => {
-      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2026-10-22-clayface')}`)
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2099-10-22-zzyzx-testfilm')}`)
       return JSON.parse((await res.json()).value)
     })
     expect(row).toMatchObject({
-      id: '2026-10-22-clayface', title: 'CLAYFACE Preview Screening', date: '2026-10-22',
-      film: 'Clayface', venue: 'Capri Theater', time: '20:30', kind: 'meetup', rsvp: true,
+      id: '2099-10-22-zzyzx-testfilm', title: 'Zzyzx Preview Screening', date: '2099-10-22',
+      film: 'Zzyzx Testfilm', venue: 'Capri Theater', time: '20:30', kind: 'meetup', rsvp: true,
     })
     // Never written half-made: the very first version in KV is the finished one.
     expect(row.title).not.toBe('Untitled')
 
     // A second event on the same day and film is caught as a duplicate id.
     await page.locator('button[data-action="event-new"]').click()
-    await page.locator('#ne-date').fill('2026-10-22')
-    await page.locator('#ne-film').fill('Clayface')
+    await page.locator('#ne-date').fill('2099-10-22')
+    await page.locator('#ne-film').fill('Zzyzx Testfilm')
     await page.locator('#ne-title').fill('Another one')
     await page.locator('button[data-action="event-create"]').click()
     await expect(page.locator('#ne-issues')).toContainText('already exists')

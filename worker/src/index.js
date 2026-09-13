@@ -346,7 +346,10 @@ async function handleSignup(request, env) {
   }
 
   if (await env.MEMBERS_KV.get(`member:${email}`)) {
-    return json(env, { error: 'this email is already a member — try signing in' }, 409)
+    // No "try signing in" tail: the signup page appends a real sign-in link to
+    // this message, and the two together read as a stutter. API callers still
+    // get an unambiguous reason.
+    return json(env, { error: 'this email is already a member' }, 409)
   }
   if (handle) {
     const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)

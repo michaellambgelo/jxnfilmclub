@@ -678,4 +678,74 @@ test.describe('admin dashboard', () => {
     await expect(card.locator('.event-titlecard')).toHaveCount(0)
     await expect(card.locator('img.event-poster')).toHaveAttribute('src', row.poster)
   })
+  // Creating used to be a prompt() for a slug that immediately wrote an
+  // "Untitled" row dated today — and since the public GET /events reads the
+  // same aggregate, that placeholder was live on the site until somebody
+  // finished it. The form is the editorial gate.
+  test('Events tab: the new-event form derives an id, refuses to write until valid, then publishes', async ({ page }) => {
+    await page.request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=event%3A`)
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+
+    // Wait for the list to actually render before counting it — the tab loads
+    // asynchronously, and a count taken too early reads 0 and proves nothing.
+    await expect(page.locator('#events-list')).toBeVisible()
+    await expect(page.locator('.event-form').first()).toBeVisible()
+    const before = await page.locator('.event-form').count()
+
+    await page.locator('button[data-action="event-new"]').click()
+    const panel = page.locator('#event-new-panel')
+    await expect(panel).toBeVisible()
+    // Opening the form must not have created anything.
+    await expect(page.locator('.event-form')).toHaveCount(before)
+
+    // The id derives from date + film as you type.
+    await panel.locator('#ne-date').fill('2026-10-22')
+    await panel.locator('#ne-film').fill('Clayface')
+    await expect(panel.locator('#ne-id')).toHaveValue('2026-10-22-clayface')
+
+    // No title yet: creating is refused, and still nothing is written.
+    await panel.locator('button[data-action="event-create"]').click()
+    await expect(page.locator('#ne-issues')).toContainText('Title is required')
+    const stillNothing = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent('event:')}`)
+    expect((await stillNothing.json()).keys).toHaveLength(0)
+
+    // A bad optional field is caught before the Worker ever sees it.
+    await panel.locator('#ne-title').fill('CLAYFACE Preview Screening')
+    await panel.locator('#ne-ticket').fill('http://tix.example.com')
+    await panel.locator('button[data-action="event-create"]').click()
+    await expect(page.locator('#ne-issues')).toContainText('https link')
+    await panel.locator('#ne-ticket').fill('')
+
+    // Now it publishes, complete.
+    await panel.locator('#ne-venue').fill('Capri Theater')
+    await panel.locator('#ne-time').fill('20:30')
+    await panel.locator('#ne-kind').selectOption('meetup')
+    await panel.locator('button[data-action="event-create"]').click()
+    await expect(page.locator('#toast')).toContainText('live on /events')
+    await expect(page.locator('#event-new-panel')).toHaveCount(0)
+
+    const row = await expect.poll(async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2026-10-22-clayface')}`)
+      const raw = (await res.json()).value
+      return raw ? JSON.parse(raw) : null
+    }).not.toBeNull().then(async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2026-10-22-clayface')}`)
+      return JSON.parse((await res.json()).value)
+    })
+    expect(row).toMatchObject({
+      id: '2026-10-22-clayface', title: 'CLAYFACE Preview Screening', date: '2026-10-22',
+      film: 'Clayface', venue: 'Capri Theater', time: '20:30', kind: 'meetup', rsvp: true,
+    })
+    // Never written half-made: the very first version in KV is the finished one.
+    expect(row.title).not.toBe('Untitled')
+
+    // A second event on the same day and film is caught as a duplicate id.
+    await page.locator('button[data-action="event-new"]').click()
+    await page.locator('#ne-date').fill('2026-10-22')
+    await page.locator('#ne-film').fill('Clayface')
+    await page.locator('#ne-title').fill('Another one')
+    await page.locator('button[data-action="event-create"]').click()
+    await expect(page.locator('#ne-issues')).toContainText('already exists')
+  })
 })

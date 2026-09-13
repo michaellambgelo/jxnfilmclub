@@ -149,6 +149,23 @@ Ticket URL instead turns RSVP off structurally (the theater keeps box-office
 control) and the public card shows a "Get tickets" link. An event with RSVPs
 off gets the post-hoc "I was there" attendance toggle instead — never both.
 
+**Creating an event.** The **+ new event** button opens a full form above the
+list. Nothing is written until it validates, so a half-made event never exists
+in public — the previous flow asked for a slug in a `prompt()` and immediately
+published an `Untitled` row dated today, which was live on `/events` until
+somebody finished it.
+
+- **Title and date are required**, matching what the Worker enforces. Every
+  other field is optional and editable afterwards.
+- **The id derives from date + film** as you type
+  (`2026-10-22` + `Clayface` → `2026-10-22-clayface`, the convention the 42
+  curated rows already follow) and is editable, since two events can share a
+  date and a film. A duplicate is caught in the form.
+- **The film field searches TMDB.** Picking a result fills film, year and
+  poster; it only seeds the title if you have not written one, because the
+  event title is editorial (*CLAYFACE Preview Screening*), not the film's.
+- Creating publishes immediately. There is deliberately no draft state.
+
 **Notifying RSVPs.** When an event has RSVPs, the form grows a checkbox
 naming its audience — *"Email 12 confirmed + 3 waitlisted about this change"*.
 It is **off by default**, so fixing a typo mails nobody. Tick it and the save

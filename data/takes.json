@@ -1,5 +1,16 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/blackifier/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/4/6/8/4/6/946846-blackifier-0-600-0-900-crop.jpg?v=33fe911cf1",
+    "rating": "3.0",
+    "review": "billed as a horror. is a comedy. this happens so often.",
+    "title": "Blackifier",
+    "watched_date": "2026-09-13",
+    "year": "2022"
+  },
+  {
     "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/harper-valley-pta/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/9/0/6/3/5/90635-harper-valley-p-t-a--0-600-0-900-crop.jpg?v=7fb7d5b3f4",
@@ -83,17 +94,6 @@
     "title": "Hope",
     "watched_date": "2026-09-10",
     "year": "2026"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/reality-2014-1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/0/3/1/5/9/303159-reality-2014-1-0-600-0-900-crop.jpg?v=16d9bf48e0",
-    "rating": "3.5",
-    "review": "ok so The Substance but in Paris",
-    "title": "Reality+",
-    "watched_date": "2026-09-10",
-    "year": "2014"
   },
   {
     "handle": "calissippi",

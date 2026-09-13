@@ -1746,6 +1746,15 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/blackifier/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/4/6/8/4/6/946846-blackifier-0-600-0-900-crop.jpg?v=33fe911cf1",
+      "rating": "3.0",
+      "title": "Blackifier",
+      "watched_date": "2026-09-13",
+      "year": "2022"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/prisoners/1/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/iw/eg/4g/nm/3w79tTsv6tmlT8Jww6snyPrgVok-0-600-0-900-crop.jpg?v=778c7ae8b8",
       "rating": "4.5",
@@ -1839,15 +1848,6 @@
       "title": "Dragonheart: Vengeance",
       "watched_date": "2026-09-07",
       "year": "2020"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/dragonheart-battle-for-the-heartfire/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/3/7/8/3/383783-dragonheart-battle-for-the-heartfire-0-600-0-900-crop.jpg?v=411c3e097d",
-      "rating": "3.0",
-      "title": "Dragonheart: Battle for the Heartfire",
-      "watched_date": "2026-09-07",
-      "year": "2017"
     }
   ],
   "mrbienkowski": [

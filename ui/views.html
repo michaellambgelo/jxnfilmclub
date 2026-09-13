@@ -902,13 +902,31 @@
       :session="session"
       :handles="handlesById"
       :avatars="avatars"
-      :attendees="attendance[el.id] || []"/>
+      :attendees="attendance[el.id] || []"
+      :rsvpme="rsvps[el.id] || null"/>
   </div>
 
   <script>
     // The Worker already resolves each entry's name off its member id, so the
     // only work left here is tolerating a legacy [name] payload from a worker
     // that predates the id migration.
+    // Every RSVP-taking upcoming event, keyed by id. Anonymous callers and
+    // past events cost nothing — neither can act on the answer.
+    async function loadMyRsvps(items, session) {
+      const out = {}
+      if (!session || !session.token) return out
+      const live = (items || []).filter(function(e) { return evRsvpOn(e) && evIsFuture(e) })
+      await Promise.all(live.map(async function(e) {
+        try {
+          const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(e.id) + '/rsvp/me', {
+            headers: { Authorization: 'Bearer ' + session.token },
+          })
+          if (r.ok) out[e.id] = await r.json()
+        } catch (err) {}
+      }))
+      return out
+    }
+
     async function loadAttendance() {
       try {
         const res = await fetch(`${WORKER_ORIGIN}/events/attendance`)
@@ -926,9 +944,24 @@
       return { attendance: {}, error: true }
     }
 
+    let evReloadSig = null
+
     state.on('query sort venue', () => this.reload())
 
     async reload() {
+      // The router emits query/sort/venue on first navigation, so mounted()
+      // and this listener both fire a load — two update({ items }) calls, and
+      // the second remounts every keyed event-card. A remounted child cannot
+      // repaint itself, so anything its own mounted() had fetched is silently
+      // discarded: the host panel lost its guest form that way, and the RSVP
+      // affordance lost its state. Dedupe on the query signature so the
+      // initial paint happens exactly once.
+      //
+      // Module scope, not `this`: nuedom hands a handler a fresh context after
+      // every update, so an instance field would not survive between calls.
+      const evSig = [state.query || '', state.sort || '', state.venue || ''].join('|')
+      if (evSig === evReloadSig) return
+      evReloadSig = evSig
       const [{ items, total }, { attendance, error }] = await Promise.all([
         getEvents({
           search: state.query,
@@ -938,22 +971,52 @@
         }),
         loadAttendance(),
       ])
-      this.update({ items, total, attendance, attendanceError: error })
+      // Fetched here, not in the card, and handed down as a prop.
+      //
+      // An event-card is a keyed child of this grid, so every update() on this
+      // component remounts it — and update() inside a remounted child is a
+      // no-op (the same constraint account-stats documents in ui/auth.html).
+      // A card that fetched its own /rsvp/me would set the field and never
+      // repaint, rendering the RSVP block with no button and no hint. It did
+      // exactly that for anyone whose session arrived after the first paint.
+      //
+      // One request per RSVP-taking upcoming event: there is no per-member
+      // RSVP index in KV, and the club runs one or two at a time — the same
+      // trade account-stats makes.
+      const rsvps = await loadMyRsvps(items, this.session)
+      this.update({ items, total, attendance, attendanceError: error, rsvps })
     }
 
     async mounted() {
-      const session = getSession()
-      this.update({ session: session, attendance: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
+      // A fresh mount must always load, even onto the same query it left.
+      evReloadSig = null
+      let session = getSession()
+      // (see loadMyRsvps below for why the RSVP state is fetched up here)
       // Remembered device with a lapsed token: trade the device token for a
-      // fresh session in the background so RSVP affordances light up without
-      // a trip through /signin. jxnfcEnsureSession is installed by the auth
-      // lib at bundle load.
+      // fresh session BEFORE any card mounts. jxnfcEnsureSession is installed
+      // by the auth lib at bundle load.
+      //
+      // This is awaited, not backgrounded, and the distinction is the whole
+      // bug it fixes. Each event-card fetches its own /rsvp/me in its own
+      // mounted(), and a Nue child cannot repaint itself after the parent
+      // re-renders — update() inside a remounted child is a no-op, sync or
+      // async (see the note in ui/auth.html). So a session that arrived after
+      // the cards mounted never reached myRsvp, and the card rendered with no
+      // RSVP button AND no Log in hint: a dead end for anyone who left a tab
+      // open longer than the one-hour token, on every RSVP event since they
+      // shipped.
+      //
+      // It costs nothing in the common cases: ensureSession() returns without
+      // a network call both for a live token and for no stored session, so
+      // only the lapsed-token path pays a round-trip — the path that was
+      // broken anyway.
       if (!session && globalThis.jxnfcEnsureSession) {
-        const self = this
-        globalThis.jxnfcEnsureSession().then(function(s) {
-          if (s) self.update({ session: s })
-        })
+        try { session = await globalThis.jxnfcEnsureSession() } catch { session = null }
       }
+      // rsvps starts as an object so the card prop can be written without a
+      // brace: { } inside an attribute value is template syntax, and a
+      // `|| {}` guard there compiles to a syntax error in the bundle.
+      this.update({ session: session, attendance: {}, rsvps: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
       const [all, { items: members }, avatars] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
@@ -1018,17 +1081,17 @@
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
       <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
-      <div :if="session && isFuture() && myRsvp && !isHost">
-        <p :if="myRsvp.status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
-        <p :if="myRsvp.status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
-        <p :if="myRsvp.status === 'confirmed' && !isHouse() && !isMeetup()" class="rsvp-status">You're in. Check your email for the details.</p>
-        <p :if="myRsvp.status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. The address will be emailed if a spot opens.</p>
-        <p :if="myRsvp.status === 'waitlisted' && !isHouse()" class="rsvp-status">You are #{ myRsvp.position } on the waitlist. You'll get an email if a spot opens.</p>
-        <button :if="myRsvp.status === 'none' && (!event.capacity || guestCount() < event.capacity)"
+      <div :if="session && isFuture() && rsvpState() && !isHost">
+        <p :if="rsvpState().status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
+        <p :if="rsvpState().status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
+        <p :if="rsvpState().status === 'confirmed' && !isHouse() && !isMeetup()" class="rsvp-status">You're in. Check your email for the details.</p>
+        <p :if="rsvpState().status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. The address will be emailed if a spot opens.</p>
+        <p :if="rsvpState().status === 'waitlisted' && !isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. You'll get an email if a spot opens.</p>
+        <button :if="rsvpState().status === 'none' && (!event.capacity || guestCount() < event.capacity)"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
-        <button :if="myRsvp.status === 'none' && event.capacity && guestCount() >= event.capacity"
+        <button :if="rsvpState().status === 'none' && event.capacity && guestCount() >= event.capacity"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Join waitlist' }</button>
-        <button :if="myRsvp.status === 'confirmed' || myRsvp.status === 'waitlisted'"
+        <button :if="rsvpState().status === 'confirmed' || rsvpState().status === 'waitlisted'"
           type="button" class="attend-btn attend-btn-remove" :disabled="busy" :onclick="cancelRsvp">{ busy ? 'Cancelling' : 'Cancel RSVP' }</button>
       </div>
       <p :if="rsvpError" class="rsvp-err">{ rsvpError }</p>
@@ -1101,14 +1164,12 @@
       // too, and without this it would render an RSVP block that never learns
       // the viewer's own status.
       if (!evRsvpOn(this.event)) return
-      if (this.session) {
-        try {
-          const r = await fetch(WORKER_ORIGIN + '/events/' + encodeURIComponent(this.event.id) + '/rsvp/me', {
-            headers: { Authorization: 'Bearer ' + this.session.token },
-          })
-          if (r.ok) this.update({ myRsvp: await r.json() })
-        } catch (e) {}
-      }
+      // This viewer own RSVP state arrives as the rsvpme prop — see
+      // loadMyRsvps in events-view. Fetching it here instead set a field that
+      // never repainted, because this card is a keyed child and every parent
+      // update remounts it.
+      // NOTE: no quote marks of any kind in these comments — the serializer
+      // runs out of delimiters and corrupts the whole lib bundle.
       const isHost = this.session && this.session.id === this.event.hostId
       this.update({ isHost: isHost, diary: [], lbBusy: false, lbLinkError: '' })
       if (isHost) {
@@ -1196,6 +1257,10 @@
     this.formatTime = function(hhmm) { return evFormatTime(hhmm) }
     this.isMeetup = function() { return evIsMeetup(this.event) }
     this.isHouse = function() { return evIsHouse(this.event) }
+    // The prop is the truth until this viewer acts on it; a click then
+    // overlays a local answer, which repaints because a card updating itself
+    // after its OWN handler is not a remount.
+    this.rsvpState = function() { return this.myRsvp || this.rsvpme }
     this.eyebrow = function() { return evEyebrow(this.event) }
     this.posterMeta = function() { return evPosterMeta(this.event) }
     this.rsvpOn = function() { return evRsvpOn(this.event) }

@@ -422,5 +422,17 @@
     "hostName": "Michael Lamb",
     "kind": "meetup",
     "time": "12:05"
+  },
+  {
+    "id": "2026-10-22-clayface",
+    "title": "CLAYFACE Preview Screening in partnership with Offbeat and MS Film Society",
+    "film": "Clayface",
+    "year": 2026,
+    "date": "2026-10-22",
+    "venue": "Capri Theater",
+    "poster": "https://image.tmdb.org/t/p/original/jWQwA5xuFVygMM3KHRiABzPqatf.jpg",
+    "kind": "meetup",
+    "time": "20:30",
+    "rsvp": true
   }
 ]

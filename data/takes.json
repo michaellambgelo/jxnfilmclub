@@ -1,6 +1,16 @@
 [
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/harper-valley-pta/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/0/6/3/5/90635-harper-valley-p-t-a--0-600-0-900-crop.jpg?v=7fb7d5b3f4",
+    "rating": "3.0",
+    "review": "put this on while organizing my closet and retained pretty much nothing but i love Southern women",
+    "title": "Harper Valley P.T.A.",
+    "watched_date": "2026-09-13",
+    "year": "1978"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/the-pink-cloud/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/ny/4q/i3/7s/IMG_5704-0-600-0-900-crop.jpg?v=c07c41e884",
     "rating": "3.0",
@@ -8,6 +18,39 @@
     "title": "The Pink Cloud",
     "watched_date": "2026-09-12",
     "year": "2021"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/the-doom-generation/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/7/9/2/43792-the-doom-generation-0-600-0-900-crop.jpg?v=72134ca389",
+    "rating": "4.5",
+    "review": "Never seen anything like that before",
+    "title": "The Doom Generation",
+    "watched_date": "2026-09-12",
+    "year": "1995"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/the-storyteller-1988/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/0/7/9/475079-the-storyteller-1988-0-600-0-900-crop.jpg?v=bf8c54dfe6",
+    "rating": "3.5",
+    "review": "Episode 8 The true bride When the mystical white lion tells you to go to sleep, you listen.",
+    "title": "The Storyteller",
+    "watched_date": "2026-09-12",
+    "year": "1988"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/6/5/4/45654-interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem-0-600-0-900-crop.jpg?v=5b837bee6d",
+    "rating": "5.0",
+    "review": "Another movie that\u2019s bringing some really tight story telling through visual elements paired with dialogue not created for the movie it\u2019s attached to",
+    "title": "Interstella 5555: The 5tory of the 5ecret 5tar 5ystem",
+    "watched_date": "2026-09-12",
+    "year": "2003"
   },
   {
     "handle": "michaellamb",
@@ -29,17 +72,6 @@
     "title": "The Fix",
     "watched_date": "2026-09-11",
     "year": "2026"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/romeo-juliet-1996/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/4/7/51647-romeo-juliet-0-600-0-900-crop.jpg?v=bbd8155493",
-    "rating": "4.0",
-    "review": "The visual elements they tie with 400 year old writing are so impressive to me because you don\u2019t necessarily have to understand the way they\u2019re talking but you can still follow the story",
-    "title": "Romeo + Juliet",
-    "watched_date": "2026-09-11",
-    "year": "1996"
   },
   {
     "handle": "michaellamb",
@@ -84,28 +116,6 @@
     "year": "2025"
   },
   {
-    "handle": "bearleebooks",
-    "liked": true,
-    "link": "https://letterboxd.com/bearleebooks/film/casper/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/8/2/47582-casper-0-600-0-900-crop.jpg?v=b9b5fbda43",
-    "rating": "3.5",
-    "review": "my dream home is a big creepy mansion filled with contraptions and three alcoholic ghosts getting into hijinks",
-    "title": "Casper",
-    "watched_date": "2026-09-10",
-    "year": "1995"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/wild-at-heart/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/bi/3h/zv/k4/5Lu9HbcGBxjm4R1KNthmqaD5VRT-0-600-0-900-crop.jpg?v=36a83d1697",
-    "rating": "4.5",
-    "review": "This whole world\u2019s wild at heart and weird on top",
-    "title": "Wild at Heart",
-    "watched_date": "2026-09-10",
-    "year": "1990"
-  },
-  {
     "handle": "Chrisbutbetter",
     "link": "https://letterboxd.com/chrisbutbetter/film/neighbors-2014/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/0/5/1/2/140512-neighbors-0-600-0-900-crop.jpg?v=9ddeec6ac0",
@@ -134,17 +144,6 @@
     "title": "The Hunger Games",
     "watched_date": "2026-09-10",
     "year": "2012"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/angels-egg/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/9/9/0/41990-angel-s-egg-0-600-0-900-crop.jpg?v=98f9bf2def",
-    "rating": "4.0",
-    "review": "I loved the color palette",
-    "title": "Angel's Egg",
-    "watched_date": "2026-09-09",
-    "year": "1985"
   },
   {
     "handle": "jon_knowledge",

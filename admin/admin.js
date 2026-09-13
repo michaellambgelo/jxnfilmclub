@@ -21,7 +21,8 @@ import {
   buildStatsContext, computeMemberStats, normalizeAttendees, fitBox,
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
   newsletterSendBlocker, newsletterSizeReport,
-  countPendingVoice, countOpenFeedback, rsvpEnabled, sanitizeAdminEvent } from './lib.js'
+  countPendingVoice, countOpenFeedback, rsvpEnabled, sanitizeAdminEvent,
+  eventIdFrom, newEventIssues } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -1597,6 +1598,7 @@ async function renderEvents() {
         </select>
       </label>
     </div>
+    ${renderNewEventForm()}
     <div id="events-list">${renderEventCards()}</div>
   `
   $('#ev-sort').value = eventsSort
@@ -1605,6 +1607,7 @@ async function renderEvents() {
     sortEvents()
     $('#events-list').innerHTML = renderEventCards()
   })
+  wireNewEventForm()
 }
 
 // Event writes go through the join Worker (PUT /admin/events/:id), never the
@@ -1650,6 +1653,102 @@ function describeEventChanges(before, after) {
     if (a !== b) out.push(`${f}: ${a || '(blank)'} → ${b || '(blank)'}`)
   }
   return out
+}
+
+// Creating an event used to be a prompt() for a slug, which immediately wrote
+// an "Untitled" row dated today — and since the public GET /events reads the
+// same aggregate, that placeholder was live on the site until somebody
+// finished it. This form is the editorial gate: nothing is written until every
+// required field is present and the id is free, so a half-made event cannot
+// exist in public. Open/closed state is module scope, because the tab
+// re-renders on every save.
+let newEventOpen = false
+let newEventTmdb = []
+
+function renderNewEventForm() {
+  if (!newEventOpen) return ''
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+  return `
+    <section class="event-new-panel" id="event-new-panel">
+      <h3>New event</h3>
+      <p class="section-hint">Creating publishes straight to <code>/events</code>. Title and date are required; everything else can be edited afterwards.</p>
+      <div class="grid">
+        <div style="grid-column:1/-1">
+          <label>Film <span class="muted">— search TMDB to fill title, year and poster</span></label>
+          <div class="toolbar">
+            <input type="text" name="film" id="ne-film" placeholder="Clayface">
+            <button type="button" data-action="event-new-tmdb">search</button>
+          </div>
+        </div>
+        <div id="ne-tmdb-results" class="nl-poster-strip" hidden></div>
+        <div><label>Title <span class="req">*</span></label><input type="text" name="title" id="ne-title" placeholder="CLAYFACE Preview Screening"></div>
+        <div><label>Date <span class="req">*</span></label><input type="date" name="date" id="ne-date" value="${attr(today)}"></div>
+        <div><label>Year</label><input type="number" name="year" id="ne-year" placeholder="2026"></div>
+        <div><label>Venue</label><input type="text" name="venue" id="ne-venue" placeholder="Capri Theater"></div>
+        <div><label>Kind</label><select name="kind" id="ne-kind">
+          ${['', 'house', 'meetup', 'social'].map(k => `<option value="${attr(k)}">${k || '(none — club screening)'}</option>`).join('')}
+        </select></div>
+        <div><label>Time <span class="muted">— showtime</span></label><input type="time" name="time" id="ne-time"></div>
+        <div><label>Capacity <span class="muted">— blank = uncapped</span></label><input type="number" name="capacity" id="ne-capacity" min="1"></div>
+        <div><label>Poster URL</label><input type="url" name="poster" id="ne-poster" placeholder="https://..."></div>
+        <div><label>Letterboxd URI</label><input type="url" name="letterboxd_uri" id="ne-lb" placeholder="https://boxd.it/..."></div>
+        <div><label>Ticket URL <span class="muted">— external box office; turns RSVP off</span></label>
+          <input type="url" name="ticketUrl" id="ne-ticket" placeholder="https://..."></div>
+        <div><label>RSVP</label>
+          <label class="cfg-inline"><input type="checkbox" name="rsvp" id="ne-rsvp" checked>
+            <span class="muted">collect RSVPs instead of post-hoc attendance</span></label></div>
+        <div style="grid-column:1/-1"><label>Notes <span class="muted">— included in every RSVP email; never public</span></label>
+          <textarea name="notes" id="ne-notes" rows="2"></textarea></div>
+        <div style="grid-column:1/-1"><label>ID <span class="muted">— derived from date + film; edit if two events share both</span></label>
+          <input type="text" name="id" id="ne-id" placeholder="2026-10-22-clayface"></div>
+      </div>
+      <p class="ne-issues" id="ne-issues" hidden></p>
+      <div class="toolbar">
+        <button class="primary" data-action="event-create">Create event</button>
+        <button type="button" data-action="event-new-cancel">Cancel</button>
+      </div>
+    </section>`
+}
+
+// Read the panel back into a row. Blank strings are dropped rather than sent:
+// this is a CREATE, so there is no stored value for an empty field to clear.
+function readNewEventForm() {
+  const v = (id) => ($(id) ? $(id).value.trim() : '')
+  const row = {
+    id: v('#ne-id'), title: v('#ne-title'), date: v('#ne-date'), film: v('#ne-film'),
+    year: v('#ne-year'), venue: v('#ne-venue'), kind: v('#ne-kind'), time: v('#ne-time'),
+    capacity: v('#ne-capacity'), poster: v('#ne-poster'), letterboxd_uri: v('#ne-lb'),
+    ticketUrl: v('#ne-ticket'), notes: v('#ne-notes'),
+    rsvp: !!($('#ne-rsvp') && $('#ne-rsvp').checked),
+  }
+  for (const k of Object.keys(row)) if (row[k] === '') delete row[k]
+  if (row.year) row.year = Number(row.year)
+  if (row.capacity) row.capacity = Number(row.capacity)
+  return row
+}
+
+// Re-derive the id from date + film/title, unless the operator has typed their
+// own. Tracked on the element so a re-render cannot lose the fact.
+function syncNewEventId() {
+  const idEl = $('#ne-id')
+  if (!idEl || idEl.dataset.touched === '1') return
+  idEl.value = eventIdFrom(
+    $('#ne-date') ? $('#ne-date').value : '',
+    ($('#ne-film') && $('#ne-film').value.trim()) || ($('#ne-title') && $('#ne-title').value.trim()) || '',
+  )
+}
+
+function wireNewEventForm() {
+  if (!newEventOpen) return
+  for (const sel of ['#ne-date', '#ne-film', '#ne-title']) {
+    const el = $(sel)
+    if (el) el.addEventListener('input', syncNewEventId)
+  }
+  const idEl = $('#ne-id')
+  if (idEl) idEl.addEventListener('input', () => { idEl.dataset.touched = '1' })
+  syncNewEventId()
+  const first = $('#ne-film')
+  if (first) first.focus()
 }
 
 function renderEventCards() {
@@ -2048,19 +2147,67 @@ document.addEventListener('click', async (e) => {
       await switchTab(currentTab)
     }
     else if (a === 'event-new') {
-      const id = prompt('Event id (slug, e.g. "2026-03-screening"):')
-      if (!id) return
-      if (eventsCache.some(e => e.id === id)) {
-        toast(`Event id "${id}" already exists`, true)
+      newEventOpen = true
+      newEventTmdb = []
+      await switchTab(currentTab)
+      const panel = $('#event-new-panel')
+      if (panel) panel.scrollIntoView()
+    }
+    else if (a === 'event-new-cancel') {
+      newEventOpen = false
+      newEventTmdb = []
+      await switchTab(currentTab)
+    }
+    else if (a === 'event-new-tmdb') {
+      const q = $('#ne-film').value.trim()
+      if (!q) { toast('Enter a film title to search', true); return }
+      const r = await api('GET', `/api/tmdb/search?${qs({ env: env(), q })}`)
+      newEventTmdb = r.results || []
+      const strip = $('#ne-tmdb-results')
+      if (!newEventTmdb.length) {
+        strip.hidden = true
+        toast(`No results for "${q}"`, true)
         return
       }
-      // rsvp is stamped explicitly rather than left absent: absence has to go
-      // on meaning "off" for the curated back catalogue, so "on by default"
-      // can only be delivered at create time.
-      const fresh = { id, title: 'Untitled', rsvp: true, date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()) }
-      const created = await saveEvent(fresh)
-      eventsCache.push({ ...fresh, ...created.event })
-      toast(`Created event "${id}"`)
+      strip.innerHTML = newEventTmdb.map((p, i) => `
+        <button type="button" class="nl-poster-thumb" data-action="event-new-tmdb-pick" data-idx="${i}"
+          title="Use this film">
+          <img src="${attr(p.thumb)}" alt="">
+          <span>${escapeHtml(p.title)}${p.year ? ` (${escapeHtml(p.year)})` : ''}</span>
+        </button>`).join('')
+      strip.hidden = false
+    }
+    else if (a === 'event-new-tmdb-pick') {
+      const p = newEventTmdb[Number(btn.dataset.idx)]
+      if (!p) return
+      $('#ne-film').value = p.title
+      if (p.year) $('#ne-year').value = p.year
+      if (p.poster) $('#ne-poster').value = p.poster
+      // The event title is editorial ("CLAYFACE Preview Screening"), so it is
+      // only seeded when still blank — never overwritten from TMDB.
+      if (!$('#ne-title').value.trim()) $('#ne-title').value = p.title
+      $('#ne-tmdb-results').hidden = true
+      syncNewEventId()
+      toast(`Filled from ${p.title}`)
+    }
+    else if (a === 'event-create') {
+      const row = readNewEventForm()
+      // Nothing is written until this passes: the whole point is that a
+      // half-made event never exists in public.
+      const issues = newEventIssues({ ...row, id: row.id || '' }, eventsCache.map(e => e.id))
+      const box = $('#ne-issues')
+      if (issues.length) {
+        box.textContent = issues[0]
+        box.hidden = false
+        toast(issues[0], true)
+        return
+      }
+      box.hidden = true
+      const created = await saveEvent(row)
+      newEventOpen = false
+      newEventTmdb = []
+      eventsCache.push({ ...row, ...created.event })
+      toast(`Created "${row.title}" — live on /events`)
       await switchTab(currentTab)
     }
     else if (a === 'guest-add') {

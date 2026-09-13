@@ -1389,3 +1389,52 @@ export function sanitizeAdminEvent(row) {
   else out.rsvp = out.rsvp === true || out.rsvp === 'on' || out.rsvp === 'true'
   return out
 }
+
+// Event id from the date plus the film (or the title, when there is no film).
+//
+// Mirrors slugifyForId() in worker/src/index.js, which is what stamps ids for
+// member-hosted screenings — and matches the convention the 42 curated rows
+// already follow (2021-01-13-whiplash, 2023-08-25-bar-snakes). The create
+// form derives this as you type and lets it be overridden, because two events
+// can legitimately share a date and a film.
+//
+// Returns '' when there is not enough to build one, so the form can say so
+// rather than offering a slug like "2026-10-22-".
+export function eventIdFrom(date, name) {
+  const d = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(date || '')) ? date : ''
+  const slug = String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '')
+  if (!d || !slug) return ''
+  return `${d}-${slug}`
+}
+
+// What is wrong with this event, in the order an operator should fix it.
+// The Worker's validAdminEvent() is the authority and rejects the same shapes
+// — this exists so the form can refuse before writing anything, rather than
+// surfacing a 400 after the fact.
+export function newEventIssues(row, existingIds = []) {
+  const out = []
+  const s = (k) => String((row || {})[k] || '').trim()
+  if (!s('title')) out.push('Title is required.')
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s('date'))) out.push('Date is required (YYYY-MM-DD).')
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(s('id'))) {
+    out.push('ID must be lowercase letters, numbers and hyphens.')
+  } else if ((existingIds || []).includes(s('id'))) {
+    out.push(`An event with the id "${s('id')}" already exists.`)
+  }
+  if (s('year') && !/^[0-9]{4}$/.test(s('year'))) out.push('Year must be four digits.')
+  if (s('time') && !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(s('time'))) out.push('Time must be HH:MM.')
+  if (s('capacity') && !/^[0-9]+$/.test(s('capacity'))) out.push('Capacity must be a whole number.')
+  for (const [k, label] of [['poster', 'Poster URL'], ['ticketUrl', 'Ticket URL'], ['letterboxd_uri', 'Letterboxd URI']]) {
+    if (s(k) && !/^https:\/\/\S+$/.test(s(k))) out.push(`${label} must be an https link.`)
+  }
+  if (s('letterboxd_uri') && !/^https:\/\/(www\.)?(letterboxd\.com|boxd\.it)\//.test(s('letterboxd_uri'))) {
+    out.push('Letterboxd URI must be a letterboxd.com or boxd.it link.')
+  }
+  if (s('kind') && !['house', 'meetup', 'social'].includes(s('kind'))) out.push('Unknown kind.')
+  return out
+}

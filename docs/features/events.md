@@ -179,7 +179,7 @@ flowchart TD
 | `model/index.ts` | `getEvents()` fetches `GET /events` from the Worker; falls back to `/data/events.json` on error |
 | `worker/src/index.js` | `GET /events` reads `events:all`; `bootstrapEvents` seeds from `data/events.json` on cold KV |
 | `admin/admin.js` | Events tab; owns the Kind / RSVP / Ticket URL / notify fields and proxies every write to the Worker |
-| `admin/lib.js` | `rsvpEnabled()` (rendering) + `sanitizeAdminEvent()` (checkbox coercion only — the Worker validates) |
+| `admin/lib.js` | `rsvpEnabled()` (rendering), `sanitizeAdminEvent()` (checkbox coercion only — the Worker validates), `eventIdFrom()` + `newEventIssues()` (the create form's derived slug and its pre-write gate) |
 | `worker/src/index.js` | `PUT`/`DELETE /admin/events/:id` — the admin write path (`validAdminEvent`, capacity guard, waitlist promotion, RSVP notification emails). See [hosting.md](hosting.md#admin-event-writes-go-through-the-worker) |
 | `data/events.json` | Archival snapshot, refreshed every 6h by `.github/workflows/snapshot-events.yml` |
 | `data/attendance.json` | Attendance archival snapshot (separate cron) |

@@ -163,13 +163,17 @@ textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.
   padding: 1rem;
   margin-bottom: 1rem;
 }
-.event-form .grid {
+/* Shared by the inline edit form and the new-event panel — the two are the
+   same set of fields, so they should not drift apart visually. */
+.event-form .grid,
+.event-new-panel .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.6rem;
   margin-bottom: 0.7rem;
 }
-.event-form label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.2rem }
+.event-form label,
+.event-new-panel label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.2rem }
 
 .attendance {
   background: #fafafa;
@@ -561,3 +565,26 @@ dialog pre.rich {
 /* The notify opt-in sits outside .grid — it is an instruction about this
    save, not a field of the event — so it needs its own emphasis. */
 .notify-rsvps { color: var(--warn, #c84); font-weight: 600; }
+
+/* New-event form — the editorial gate before an event is published. */
+.event-new-panel {
+  border: 1px solid var(--line, #333);
+  border-left: 3px solid var(--accent, #d7321f);
+  padding: 0.9rem 1rem 1rem;
+  margin: 0 0 1rem;
+}
+.event-new-panel h3 { margin: 0 0 0.25rem; }
+/* The TMDB result strip is a grid child; it needs the full row. */
+.event-new-panel #ne-tmdb-results { grid-column: 1 / -1; }
+/* Selects and time/date inputs size to content by default, which left Kind
+   and Time visibly narrower than every field beside them. */
+.event-new-panel select,
+.event-new-panel input[type="time"],
+.event-new-panel input[type="date"] { width: 100%; box-sizing: border-box; }
+.event-new-panel .cfg-inline { margin-bottom: 0; }
+.event-new-panel .req { color: var(--accent, #d7321f); }
+.ne-issues {
+  margin: 0.5rem 0 0;
+  color: var(--accent, #d7321f);
+  font-weight: 600;
+}

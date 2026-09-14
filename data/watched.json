@@ -919,6 +919,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/liar-liar/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/fq/hq/vj/re/qd8VcWKrE4cNfInl9Osb8o8h9KP-0-600-0-900-crop.jpg?v=848feea68e",
+      "rating": "4.0",
+      "title": "Liar Liar",
+      "watched_date": "2026-09-14",
+      "year": "1997"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/raya-and-the-last-dragon/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/7/1/8/0/457180-raya-and-the-last-dragon-0-600-0-900-crop.jpg?v=98f8b76caf",
       "rating": "3.5",
@@ -1008,15 +1016,6 @@
       "title": "The Banana Splits Movie",
       "watched_date": "2026-09-07",
       "year": "2019"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/coyote-vs-acme/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
-      "rating": "5.0",
-      "title": "Coyote vs. Acme",
-      "watched_date": "2026-09-06",
-      "year": "2026"
     }
   ],
   "calissippi": [

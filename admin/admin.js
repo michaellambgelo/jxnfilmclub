@@ -1692,7 +1692,10 @@ function renderNewEventForm() {
         <div><label>Capacity <span class="muted">— blank = uncapped</span></label><input type="number" name="capacity" id="ne-capacity" min="1"></div>
         <div><label>Poster URL</label><input type="url" name="poster" id="ne-poster" placeholder="https://..."></div>
         <div><label>Letterboxd URI</label><input type="url" name="letterboxd_uri" id="ne-lb" placeholder="https://boxd.it/..."></div>
-        <div><label>Ticket URL <span class="muted">— external box office; turns RSVP off</span></label>
+        <div><label>Tickets</label>
+          <label class="cfg-inline"><input type="checkbox" name="ticketed" id="ne-ticketed">
+            <span class="muted">sold by the venue, not the club</span></label></div>
+        <div><label>Ticket URL <span class="muted">— box office link; leave blank until tickets go on sale</span></label>
           <input type="url" name="ticketUrl" id="ne-ticket" placeholder="https://..."></div>
         <div><label>RSVP</label>
           <label class="cfg-inline"><input type="checkbox" name="rsvp" id="ne-rsvp" checked>
@@ -1720,6 +1723,7 @@ function readNewEventForm() {
     capacity: v('#ne-capacity'), poster: v('#ne-poster'), letterboxd_uri: v('#ne-lb'),
     ticketUrl: v('#ne-ticket'), notes: v('#ne-notes'),
     rsvp: !!($('#ne-rsvp') && $('#ne-rsvp').checked),
+    ticketed: !!($('#ne-ticketed') && $('#ne-ticketed').checked),
   }
   for (const k of Object.keys(row)) if (row[k] === '') delete row[k]
   if (row.year) row.year = Number(row.year)
@@ -1773,11 +1777,14 @@ function renderEventCards() {
         </select></div>
         <div><label>Time <span class="muted">— showtime</span></label><input type="time" name="time" value="${attr(e.time || '')}"></div>
         <div><label>Capacity <span class="muted">— blank = uncapped</span></label><input type="number" name="capacity" min="1" value="${attr(e.capacity || '')}"></div>
-        <div><label>Ticket URL <span class="muted">— external box office; turns RSVP off</span></label>
+        <div><label>Tickets</label>
+          <label class="cfg-inline"><input type="checkbox" name="ticketed"${e.ticketed ? ' checked' : ''}>
+            <span class="muted">sold by the venue, not the club</span></label></div>
+        <div><label>Ticket URL <span class="muted">— box office link; adding it releases the pre-sale list</span></label>
           <input type="url" name="ticketUrl" value="${attr(e.ticketUrl || '')}" placeholder="https://..."></div>
         <div><label>RSVP</label>
-          <label class="cfg-inline"><input type="checkbox" name="rsvp"${rsvpEnabled(e) ? ' checked' : ''}${e.ticketUrl ? ' disabled' : ''}>
-            <span class="muted">${e.ticketUrl ? 'off — this event sells tickets' : 'collect RSVPs instead of post-hoc attendance'}</span></label></div>
+          <label class="cfg-inline"><input type="checkbox" name="rsvp"${rsvpEnabled(e) ? ' checked' : ''}>
+            <span class="muted">${e.ticketed ? 'collect a headcount — never implies a seat' : 'collect RSVPs instead of post-hoc attendance'}</span></label></div>
         ${hosted ? `
         <div><label>Host name</label><input type="text" name="hostName" value="${attr(e.hostName || '')}"></div>
         <div style="grid-column:1/-1"><label>Address <span class="muted">— private; only emailed to confirmed RSVPs</span></label>
@@ -1786,6 +1793,7 @@ function renderEventCards() {
         <div style="grid-column:1/-1"><label>Notes <span class="muted">— included in every RSVP email; never public</span></label>
           <textarea name="notes" rows="3">${escapeHtml(e.notes || '')}</textarea></div>
       </div>
+      ${e.ticketed && !e.ticketUrl && rsvpEnabled(e) ? `<p class="muted" style="margin:0.5rem 0 0">🎟️ Tickets are not on sale yet, so RSVPs are queueing. Saving a <strong>Ticket URL</strong> releases the whole list and emails everyone the box office link.</p>` : ''}
       ${rsvpEnabled(e) && rsvpAudience(e.id) ? `
       <label class="cfg-inline notify-rsvps" style="margin:0.5rem 0 0">
         <input type="checkbox" name="notify-rsvps">

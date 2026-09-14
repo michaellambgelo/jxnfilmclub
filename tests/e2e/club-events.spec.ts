@@ -52,12 +52,15 @@ test.describe('club events', () => {
     await expect(card.getByRole('button', { name: 'I was there' })).toBeVisible()
   })
 
-  test('a ticketed event links out to the box office instead of taking an RSVP', async ({ page }) => {
+  // A ticket link with no RSVP: pure funnel to the box office, no headcount.
+  // (A ticket link ALONGSIDE an RSVP is the venue-ticketed flow, covered at
+  // the bottom of this file — the two used to be mutually exclusive.)
+  test('a ticket link with no RSVP links out and offers no RSVP block', async ({ page }) => {
     await signInAs(page, 'tix-e2e@example.com', { name: 'Ticket Tina' })
     await seedEvents(page, [{
       id: 'e2e-tix', title: 'Preview Screening', film: 'Nosferatu', year: 2024,
       date: FUTURE, venue: 'The Capri Theater',
-      rsvp: true, ticketUrl: 'https://tickets.example.com/nosferatu',
+      ticketed: true, ticketUrl: 'https://tickets.example.com/nosferatu',
     }])
 
     await page.goto('/events')
@@ -66,7 +69,7 @@ test.describe('club events', () => {
     await expect(tickets).toHaveAttribute('href', 'https://tickets.example.com/nosferatu')
     await expect(tickets).toHaveAttribute('target', '_blank')
 
-    // ticketUrl wins over rsvp: true, so no RSVP block is offered.
+    // rsvp was never set and there is no host, so the legacy fallback applies.
     await expect(card.locator('.event-rsvp')).toHaveCount(0)
   })
 
@@ -155,5 +158,75 @@ test.describe('club events', () => {
     // so match the one this test is about rather than the whole set.
     await expect(card.locator('.rsvp-hint').filter({ hasText: 'to RSVP' })).toHaveCount(1)
     await expect(card.getByRole('button', { name: 'RSVP' })).toHaveCount(0)
+  })
+  // Venue-ticketed: the club markets the screening and funnels members to the
+  // theater box office, but controls neither admission nor the door. The card
+  // must never imply a seat, and before tickets are on sale there is nothing
+  // to be confirmed for.
+  test('a venue-ticketed event queues RSVPs until tickets go on sale', async ({ page }) => {
+    await signInAs(page, 'tix-pre@example.com', { name: 'Pre Sale' })
+    await seedEvents(page, [{
+      id: 'e2e-pre', title: 'CLAYFACE Preview Screening', film: 'Clayface',
+      date: FUTURE, venue: 'Capri Theater', rsvp: true, ticketed: true,
+    }])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'CLAYFACE' })
+
+    // A confirmed-attendee meter would read 0 forever while every RSVP queues.
+    await expect(card.locator('.rsvp-meter')).toHaveCount(0)
+    await expect(card.locator('.rsvp-hint')).toContainText('not on sale yet')
+
+    await card.getByRole('button', { name: 'Count me in' }).click()
+    await expect(card.locator('.rsvp-status')).toContainText('email you the box office link')
+    // Never "you're in": nothing has been secured.
+    await expect(card.locator('.rsvp-status')).not.toContainText(/You.re in/)
+  })
+
+  test('once tickets are on sale, one click opens the box office and records the RSVP', async ({ page }) => {
+    await signInAs(page, 'tix-on@example.com', { name: 'On Sale' })
+    await seedEvents(page, [{
+      id: 'e2e-on', title: 'CLAYFACE Preview Screening', film: 'Clayface',
+      date: FUTURE, venue: 'Capri Theater', rsvp: true, ticketed: true,
+      ticketUrl: 'https://capri.example.com/clayface',
+    }])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'CLAYFACE' })
+    await expect(card.locator('.rsvp-hint')).toContainText('headcount, not a ticket')
+
+    // Wrap window.open rather than stub it: the recorded argument proves where
+    // the tab was aimed, and letting the call through still proves the browser
+    // did not block it. Reading popup.url() alone is not enough — the fake host
+    // fails to resolve and the URL becomes chrome-error before we can read it.
+    await page.evaluate(() => {
+      const real = window.open
+      ;(window as any).__opened = []
+      window.open = function (u, ...rest) { (window as any).__opened.push(u); return real.call(window, u, ...rest) }
+    })
+
+    // Hold the RSVP response open, then require the tab within a fraction of
+    // that. This tests the ordering directly — the tab must not wait on the
+    // POST — which is the invariant that keeps the browser from treating it as
+    // an unsolicited popup. Asserting only that a popup eventually appears
+    // does NOT discriminate: Chrome's transient user activation lasts about
+    // five seconds, so even an await-then-open passes on a fast local server
+    // while failing on a slow network.
+    await page.route('**/events/e2e-on/rsvp', async (route) => {
+      await new Promise(r => setTimeout(r, 4000))
+      await route.continue()
+    })
+
+    const popupSoon = page.context().waitForEvent('page', { timeout: 1500 })
+    await card.getByRole('button', { name: 'RSVP and get tickets' }).click()
+    const popup = await popupSoon
+    expect(popup).toBeTruthy()
+    expect(await page.evaluate(() => (window as any).__opened)).toEqual(['https://capri.example.com/clayface'])
+
+    await expect(card.locator('.rsvp-status')).toContainText('Your spot is not held')
+    // And the box office stays reachable afterwards, beside Cancel.
+    await expect(card.getByRole('link', { name: 'Get tickets' }))
+      .toHaveAttribute('href', 'https://capri.example.com/clayface')
+
+    const res = await page.request.get(`${WORKER_ORIGIN}/events/e2e-on/attendance`)
+    expect(JSON.stringify(await res.json())).toContain('On Sale')
   })
 })

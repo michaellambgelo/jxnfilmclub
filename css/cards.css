@@ -260,6 +260,12 @@
 }
 
 .attend-btn {
+  /* Also used on anchors (the box office link), which are inline by default —
+     so width alone would not make them match the buttons beside them. */
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
   width: 100%;
   font-family: var(--font-label);
   font-size: 85%;

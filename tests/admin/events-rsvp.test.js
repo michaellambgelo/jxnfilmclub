@@ -18,11 +18,15 @@ describe('rsvpEnabled', () => {
     expect(rsvpEnabled({ rsvp: false, hostId: 'm1' })).toBe(false)
   })
 
-  it('short-circuits to false when a ticket link is present', () => {
-    // The theater sells the seats; taking an RSVP as well would imply we hold
-    // one we do not hold.
-    expect(rsvpEnabled({ rsvp: true, ticketUrl: 'https://tix.example.com/a' })).toBe(false)
-    expect(rsvpEnabled({ hostId: 'm1', ticketUrl: 'https://tix.example.com/a' })).toBe(false)
+  // A ticket link used to short-circuit this to false, on the reasoning that
+  // taking an RSVP would imply we hold a seat we do not. That is carried by
+  // copy now rather than structure: an event whose admission the venue sells
+  // can still want a headcount, and its card and emails say so outright.
+  it('is unaffected by a ticket link — the two coexist', () => {
+    expect(rsvpEnabled({ rsvp: true, ticketUrl: 'https://tix.example.com/a' })).toBe(true)
+    expect(rsvpEnabled({ hostId: 'm1', ticketUrl: 'https://tix.example.com/a' })).toBe(true)
+    // ...but a ticketed event that never asked for RSVPs still has none.
+    expect(rsvpEnabled({ ticketed: true, ticketUrl: 'https://tix.example.com/a' })).toBe(false)
   })
 
   it('never throws on a missing or empty row', () => {
@@ -61,6 +65,18 @@ describe('sanitizeAdminEvent', () => {
     expect(out.kind).toBe('')
     expect(out.ticketUrl).toBe('')
     expect(out.notes).toBe('')
+  })
+
+  it('coerces the ticketed checkbox the same way as rsvp', () => {
+    expect(sanitizeAdminEvent({ id: 'e', ticketed: 'on' }).ticketed).toBe(true)
+    expect(sanitizeAdminEvent({ id: 'e', ticketed: false }).ticketed).toBe(false)
+    expect('ticketed' in sanitizeAdminEvent({ id: 'e' })).toBe(false)
+  })
+
+  it('keeps rsvp alongside a ticket URL — they are no longer exclusive', () => {
+    const out = sanitizeAdminEvent({ id: 'e', rsvp: 'on', ticketed: 'on', ticketUrl: 'https://tix.example.com/a' })
+    expect(out.rsvp).toBe(true)
+    expect(rsvpEnabled(out)).toBe(true)
   })
 
   it('leaves every other field untouched', () => {

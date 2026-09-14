@@ -2097,7 +2097,8 @@ function publicEventProjection(event) {
   // them. Note the filter below keeps `rsvp: false` (false !== ''), which it
   // must — an explicit false is how an admin turns RSVPs back off.
   for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
-                   'hostId', 'hostName', 'capacity', 'kind', 'time', 'rsvp', 'ticketUrl']) {
+                   'hostId', 'hostName', 'capacity', 'kind', 'time', 'rsvp', 'ticketUrl',
+                   'ticketed']) {
     if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
   }
   return out
@@ -2633,14 +2634,16 @@ function parseProfileAvatar(html) {
 // as well would give one event two sources of truth.
 //
 // Precedence, and why:
-//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
-//     control we link out; also taking an RSVP would imply we hold a seat we
-//     do not hold. Structural rather than a validation rule, so it cannot be
-//     misconfigured — the same reasoning as isMembersOnly().
-//  2. An explicit `rsvp` boolean wins. The admin portal stamps `rsvp: true` on
+//  1. An explicit `rsvp` boolean wins.
+//
+// A `ticketUrl` used to short-circuit this to false, on the reasoning that
+// taking an RSVP would imply we hold a seat we do not. That is now carried by
+// copy instead of structure: a venue-ticketed event (`ticketed`) can want a
+// headcount while the box office sells admission, and its card and emails say
+// so in as many words. See handleRsvp for the pre-sale waitlist. The admin portal stamps `rsvp: true` on
 //     every event it creates, which is what makes "on by default" true for new
 //     club events without making ABSENCE mean on.
-//  3. Otherwise fall back to `hostId`. Member-hosted screenings have always
+//  2. Otherwise fall back to `hostId`. Member-hosted screenings have always
 //     taken RSVPs; the curated rows in data/events.json have always taken
 //     attendance; neither carries an `rsvp` field. This branch is what keeps
 //     every pre-existing row behaving exactly as it did.
@@ -2649,7 +2652,6 @@ function parseProfileAvatar(html) {
 // (see docs/features/hosting.md).
 function rsvpEnabled(event) {
   if (!event) return false
-  if (event.ticketUrl) return false
   if (typeof event.rsvp === 'boolean') return event.rsvp
   return !!event.hostId
 }
@@ -2816,6 +2818,13 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   // venue and no address, house has an address) while covering club events,
   // which have a venue and no kind at all.
   lines.push(...eventWhereLines({ ...event, address }))
+  // The club does not control admission on a venue-ticketed event, so the mail
+  // must not read as though an RSVP is a ticket.
+  if (event.ticketed) {
+    lines.push('')
+    lines.push('This is a headcount, not a ticket — admission is sold by the venue.')
+    if (event.ticketUrl) lines.push('Buy yours here:', event.ticketUrl)
+  }
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
   if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   if (notes) {
@@ -2853,6 +2862,45 @@ async function sendGuestRsvpEmail(env, guest, event, origin) {
     ],
   })
   await sendEmail(env, guest.email, subject, body)
+}
+
+// Acknowledges an RSVP placed before tickets went on sale. Deliberately not
+// the confirmation mail: nothing is confirmed, because nothing is purchasable
+// yet. No cancel link either — cancelling a queue position that carries no
+// seat is not a thing anyone needs a one-click for, and the card offers it.
+async function sendTicketsPendingEmail(env, member, event) {
+  if (!member.email) return
+  const lines = [
+    `Thanks — we have you down for ${event.title}.`,
+    '',
+    'Tickets are not on sale yet. Admission is sold by the venue, not the',
+    'club, so this is a headcount rather than a reservation: we will email',
+    'you the box office link the moment tickets go live.',
+    '',
+    'Current details:',
+    `Date: ${fmtScreeningWhen(event)}`,
+  ]
+  if (event.venue) lines.push(`Venue: ${event.venue}`)
+  await sendEmail(env, member.email, `On the list: ${event.title}`, lines.join('\n'))
+}
+
+// The box office link has landed. Everyone who queued while tickets were
+// pending gets it at once — this is the whole reason the queue exists.
+async function sendTicketsOnSaleEmail(env, member, event) {
+  if (!member.email) return
+  const lines = [
+    `Tickets for ${event.title} are on sale now.`,
+    '',
+    'Admission is sold by the venue, so your spot is not held — buy yours',
+    'here:',
+    event.ticketUrl,
+    '',
+    'Current details:',
+    `Date: ${fmtScreeningWhen(event)}`,
+  ]
+  if (event.venue) lines.push(`Venue: ${event.venue}`)
+  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  await sendEmail(env, member.email, `Tickets on sale: ${event.title}`, lines.join('\n'))
 }
 
 async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
@@ -3059,6 +3107,11 @@ function validAdminEvent(body) {
     out.kind = body.kind
   }
   if (typeof body.rsvp === 'boolean') out.rsvp = body.rsvp
+  // Admission is sold by the venue, not the club. Set BEFORE a ticketUrl
+  // exists — it is what tells the difference between "tickets are not on sale
+  // yet" and an ordinary club event, which cannot be inferred from a missing
+  // URL because an ordinary club event has no URL either.
+  if (typeof body.ticketed === 'boolean') out.ticketed = body.ticketed
 
   for (const [k, max] of [['film', MAX_EVENT_FIELD], ['venue', MAX_EVENT_FIELD],
                           ['poster', 500], ['address', MAX_ADDRESS], ['notes', MAX_NOTES]]) {
@@ -3080,11 +3133,6 @@ function validAdminEvent(body) {
       out[k] = s
     }
   }
-
-  // A ticket link means the box office owns the seats, so an RSVP flag
-  // alongside it is a contradiction rather than a preference. Mirrors
-  // rsvpEnabled()'s short-circuit, enforced at the write so no reader has to.
-  if (out.ticketUrl) delete out.rsvp
 
   return { value: out }
 }
@@ -3446,6 +3494,11 @@ function diffEventNotifiable(before, after) {
 const ADMIN_EVENT_CLEARABLE = ['film', 'year', 'time', 'venue', 'address', 'capacity',
                                'notes', 'poster', 'letterboxd_uri', 'ticketUrl', 'kind']
 
+// Tickets are not on sale until the box office link exists. An RSVP on such an
+// event is an expression of interest, not a seat — so it queues rather than
+// confirming, and everyone queued is emailed the moment the link lands.
+const ticketsPending = (event) => !!(event && event.ticketed && !event.ticketUrl)
+
 async function handleAdminEventPut(request, env, eventId) {
   if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
   const body = await request.json().catch(() => ({}))
@@ -3506,6 +3559,29 @@ async function handleAdminEventPut(request, env, eventId) {
   // gated on `notify`: a promoted member is now holding a seat and has to be
   // told, the same as any other promotion in the system.
   let after = rsvp
+
+  // Tickets just went on sale: the queue existed only because they had not.
+  // Promote it whole — capacity does not gate this, because the club is not
+  // handing out seats, the venue is — and mail everyone the link. Runs before
+  // the capacity promotion below so the two cannot both fire on one write.
+  const salesJustOpened = existing && ticketsPending(existing) && !ticketsPending(updated)
+  if (salesJustOpened && rsvp.waitlist.length) {
+    after = { confirmed: [...rsvp.confirmed, ...rsvp.waitlist], waitlist: [] }
+    await writeRsvp(env, eventId, after, updated)
+    for (const w of rsvp.waitlist) {
+      try { await sendTicketsOnSaleEmail(env, { id: w.memberId, email: w.email, name: w.name }, updated) }
+      catch (e) { console.error('tickets-on-sale email failed:', e?.message || e) }
+    }
+    return json(env, {
+      ok: true,
+      created: false,
+      event: publicEventProjection(updated),
+      changes,
+      notified: rsvp.waitlist.length,
+      ticketsOnSale: true,
+    })
+  }
+
   const effCap = v.value.capacity == null ? Infinity : v.value.capacity
   if (effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
     const slots = effCap - rsvp.confirmed.length
@@ -3622,6 +3698,19 @@ async function handleRsvp(request, env, eventId) {
   // No capacity (uncapped meetup) → everyone confirms, nobody waitlists.
   const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
   const origin = new URL(request.url).origin
+
+  // Venue-ticketed event whose tickets are not on sale yet: queue rather than
+  // confirm, whatever the capacity says. Confirming would tell someone they
+  // are in when nobody can be in yet — nothing is purchasable. They are
+  // promoted and emailed the moment the box office link lands (see
+  // handleAdminEventPut).
+  if (ticketsPending(event)) {
+    rsvp.waitlist.push(entry)
+    await writeRsvp(env, eventId, rsvp, event)
+    try { await sendTicketsPendingEmail(env, member, event) }
+    catch (e) { console.error('tickets-pending email failed:', e?.message || e) }
+    return json(env, { ok: true, status: 'waitlisted', position: rsvp.waitlist.length, pending: true })
+  }
 
   if (rsvp.confirmed.length < capacity) {
     rsvp.confirmed.push(entry)

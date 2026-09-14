@@ -36,6 +36,30 @@ describe('branded static pages', () => {
   }
 })
 
+// This origin cannot see the session — member tokens deliberately never cross
+// origins — so a signed-in member arriving here gets a signup form with no
+// idea who they are. It cannot know; it can at least always offer the way out.
+describe('GET / — the way back for someone who is already a member', () => {
+  it('offers sign-in and a route back to the site, both fully rendered', async () => {
+    const body = await (await get('/')).text()
+    expect(body).toContain('Already a member?')
+    // Rendered to the real origin, not left as a template token — a dead link
+    // here strands exactly the person it exists for.
+    expect(body).toMatch(/href="https?:\/\/[^"]+\/signin"/)
+    expect(body).toMatch(/href="https?:\/\/[^"]+\/"[^>]*>jxnfilm\.club</)
+    expect(body).not.toContain('%SITE_ORIGIN%')
+  })
+
+  it('makes the already-a-member rejection actionable rather than a dead end', async () => {
+    const body = await (await get('/')).text()
+    // The 409 branch links to sign-in instead of just printing the error.
+    expect(body).toContain('err.status === 409')
+    expect(body).toContain('Sign in instead')
+    // The server message stays textContent: it must never be parsed as markup.
+    expect(body).toContain('status.textContent = err.message')
+  })
+})
+
 describe('GET /privacy/version', () => {
   it('returns the same revision date the served policy page carries', async () => {
     // Self-syncing: extract the date from the rendered /privacy page rather

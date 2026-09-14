@@ -426,7 +426,10 @@
     <p class="join-kicker">{ joinKicker }</p>
     <h2>{ joinHeading }</h2>
     <p class="join-lede">{ joinBody }</p>
-    <a href="https://join.jxnfilm.club/" class="ns-btn -ink join-btn">Join Jackson Film Club</a>
+    <!-- A signed-in member has nothing to join. Swapped by ternary rather
+         than :if, like the speak band above: toggling a node here would shift
+         its siblings and trip nuedom's diff after mount. -->
+    <a href="{ session ? '/edit' : 'https://join.jxnfilm.club/' }" class="ns-btn -ink join-btn">{ session ? 'Your account' : 'Join Jackson Film Club' }</a>
   </section>
 
   <script>

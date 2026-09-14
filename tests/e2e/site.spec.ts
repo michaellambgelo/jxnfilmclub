@@ -166,7 +166,10 @@ test.describe('signed-in nav', () => {
       })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Account' }).click()
+    // exact: the home page's join CTA now reads "Your account" for a signed-in
+    // member, and a substring match would catch both. This test is about the
+    // nav chip.
+    await page.getByRole('link', { name: 'Account', exact: true }).click()
     await page.waitForURL(/\/edit/, { timeout: 5_000 })
     expect(page.url()).toContain('/edit')
     expect(page.url()).not.toContain('join.jxnfilm.club')

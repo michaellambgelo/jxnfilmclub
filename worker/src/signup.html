@@ -8,6 +8,10 @@
   <!-- Shared "Night Shift" brand layer, injected by render() in index.js -->
   <style>%BRAND_CSS%</style>
   <style>
+    /* The already-a-member escape hatch: present for everyone, because this
+       origin cannot tell who is signed in. */
+    .already { margin: -0.4rem 0 1.4rem; font-size: 0.95rem; color: var(--ink-3); }
+    .already a { color: var(--brand); }
     h1 { font-size: 2.6rem; }
     .checkbox-row { display: flex; flex-direction: row; align-items: flex-start; gap: 0.5rem; }
     .checkbox-row input { margin-top: 0.25rem; width: auto; accent-color: var(--brand); }
@@ -24,6 +28,12 @@
   <h1>Join Jackson Film Club</h1>
   <p class="lede">Confirm your email to become a member. Letterboxd
     verification is optional and can be done any time after you sign up.</p>
+
+  <!-- This origin cannot see the session: it lives in jxnfilm.club's
+       localStorage and member tokens deliberately never cross origins. So the
+       page cannot know who you are — it offers the way out unconditionally
+       instead, above the form rather than after you have filled it in. -->
+  <p class="already">Already a member? <a href="%SITE_ORIGIN%/signin">Sign in</a>.</p>
 
   <form id="signup-form">
     <label>Display name
@@ -51,6 +61,7 @@
   <footer class="site-footer">
     <span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>
     <nav class="site-footer-links">
+      <a href="%SITE_ORIGIN%/">jxnfilm.club</a>
       <a href="/privacy">Privacy</a>
       <a href="mailto:privacy@jxnfilm.club">Contact</a>
     </nav>
@@ -79,14 +90,30 @@
           body: JSON.stringify(data),
         })
         const body = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(body.error || 'Signup failed')
+        if (!res.ok) {
+          const err = new Error(body.error || 'Signup failed')
+          err.status = res.status
+          throw err
+        }
 
         // Worker is API-only. Code entry happens on the main site so the
         // session we create lives in the right origin's localStorage.
         location.href = '%SITE_ORIGIN%/verify?email=' + encodeURIComponent(data.email)
       } catch (err) {
         status.className = 'err'
+        // textContent, not innerHTML: the message is server text and must not
+        // be parsed as markup. The link is appended as a real node instead.
         status.textContent = err.message
+        if (err.status === 409 && /already a member/i.test(err.message)) {
+          status.append('. ')
+          const a = document.createElement('a')
+          // No ?email= prefill: sign-in-view reading a registered query key is
+          // the documented footgun that got ?next= rejected — nuestate can
+          // hand mounted() the PREVIOUS page search string.
+          a.href = '%SITE_ORIGIN%/signin'
+          a.textContent = 'Sign in instead'
+          status.append(a)
+        }
         btn.disabled = false
       }
     })

@@ -1354,14 +1354,29 @@ describe('club events — RSVP without a host', () => {
 })
 
 describe('club events — ticket links', () => {
-  it('a ticketUrl turns RSVPs off even when rsvp is explicitly true', async () => {
-    await seedClubEvent({ rsvp: true, ticketUrl: 'https://tickets.example.com/xyz' })
+  // A ticketUrl used to switch RSVPs off outright. It no longer does: an event
+  // whose admission the venue sells can still want a headcount, and the card
+  // and emails say in as many words that an RSVP is not a ticket.
+  it('a ticketUrl no longer switches RSVPs off — the two coexist', async () => {
+    await seedClubEvent({ rsvp: true, ticketed: true, ticketUrl: 'https://tickets.example.com/xyz' })
     const { token } = await getTokenFor('tix-a@example.com')
-    captureEmails()
+    const sent = captureEmails()
 
     const res = await req('/events/club-1/rsvp', { method: 'POST', token })
-    expect(res.status).toBe(409)
-    // ...and the attendance toggle is what the viewer gets instead.
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe('confirmed')
+    // The mail must not read as though the RSVP bought anything.
+    const body = sent.map(e => e.text || '').join('\n')
+    expect(body).toContain('headcount, not a ticket')
+    expect(body).toContain('https://tickets.example.com/xyz')
+  })
+
+  it('still leaves RSVPs off when a ticketed event never asked for them', async () => {
+    // rsvp unset + no host → the legacy fallback, unchanged by any of this.
+    await seedClubEvent({ rsvp: undefined, ticketed: true, ticketUrl: 'https://tickets.example.com/xyz' })
+    const { token } = await getTokenFor('tix-b@example.com')
+    captureEmails()
+    expect((await req('/events/club-1/rsvp', { method: 'POST', token })).status).toBe(409)
     expect((await req('/events/club-1/attend', { method: 'POST', token })).status).toBe(200)
   })
 

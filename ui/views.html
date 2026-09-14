@@ -189,6 +189,16 @@
   // A club event with no film — a meetup at a bookshop, a members social.
   function evIsSocial(e) { return !!e && e.kind === 'social' }
 
+  // Admission is sold by the venue, not the club. An RSVP on one of these is a
+  // headcount and never a seat, and the copy has to say so — the club does not
+  // control the box office or the door.
+  function evIsTicketed(e) { return !!(e && e.ticketed) }
+
+  // Ticketed, but the box office link does not exist yet. RSVPs queue in that
+  // window and are released when the link lands, so the card must not offer
+  // anything that reads like a purchase.
+  function evTicketsPending(e) { return evIsTicketed(e) && !evTicketUrl(e) }
+
   // Hosted events without a kind predate meetups, so they are house
   // screenings. A club event has no kind and no host and is neither.
   function evIsMeetup(e) {
@@ -262,6 +272,20 @@
   // A social event is a club event but not a film, so it never sits under the
   // home page hero stamp, which reads "Next screening".
   function evNotSocial(e) { return !evIsSocial(e) }
+
+  // Host avatar via the id->handle and handle->avatar maps. A method rather
+  // than an inline expression because brace literals inside attribute values
+  // are template syntax.
+  function evHostAvatar(e, handles, avatars) {
+    const handle = (handles || {})[e && e.hostId]
+    return handle ? ((avatars || {})[handle] || '') : ''
+  }
+
+  // Attendee rows are { id, name }. Only a member id resolves to a Letterboxd
+  // handle — guests and pre-migration rows render as plain text.
+  function evHandleFor(a, handles) {
+    return (a && a.id && (handles || {})[a.id]) || ''
+  }
 
   function evFormatTime(hhmm) {
     if (!hhmm) return ''
@@ -1077,23 +1101,32 @@
     </p>
 
     <div :if="rsvpOn()" class="event-rsvp">
-      <div class="rsvp-meter">
+      <div :if="!ticketsPending()" class="rsvp-meter">
         { guestCount() + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
       <p :if="isMeetup()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
+      <p :if="ticketsPending() && !listed()" class="rsvp-hint">Tickets are not on sale yet. Add your name and we will email you the box office link when they go live.</p>
+      <p :if="isTicketed() && !ticketsPending() && !listed()" class="rsvp-hint">Admission is sold by { event.venue || 'the venue' } — an RSVP here is a headcount, not a ticket.</p>
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
       <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
       <div :if="session && isFuture() && rsvpState() && !isHost">
         <p :if="rsvpState().status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
         <p :if="rsvpState().status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
-        <p :if="rsvpState().status === 'confirmed' && !isHouse() && !isMeetup()" class="rsvp-status">You're in. Check your email for the details.</p>
+        <p :if="rsvpState().status === 'confirmed' && isTicketed()" class="rsvp-status">You're on the list. Your spot is not held — buy your ticket from { event.venue || 'the venue' }.</p>
+        <p :if="rsvpState().status === 'confirmed' && !isHouse() && !isMeetup() && !isTicketed()" class="rsvp-status">You're in. Check your email for the details.</p>
         <p :if="rsvpState().status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. The address will be emailed if a spot opens.</p>
-        <p :if="rsvpState().status === 'waitlisted' && !isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. You'll get an email if a spot opens.</p>
-        <button :if="rsvpState().status === 'none' && (!event.capacity || guestCount() < event.capacity)"
+        <p :if="rsvpState().status === 'waitlisted' && ticketsPending()" class="rsvp-status">You're on the list. We will email you the box office link when tickets go on sale.</p>
+        <p :if="rsvpState().status === 'waitlisted' && !isHouse() && !ticketsPending()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. You'll get an email if a spot opens.</p>
+        <button :if="rsvpState().status === 'none' && ticketsPending()"
+          type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Count me in' }</button>
+        <button :if="rsvpState().status === 'none' && isTicketed() && !ticketsPending()"
+          type="button" class="attend-btn" :disabled="busy" :onclick="rsvpAndTickets">{ busy ? 'Saving' : 'RSVP and get tickets' }</button>
+        <button :if="rsvpState().status === 'none' && !isTicketed() && (!event.capacity || guestCount() < event.capacity)"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'RSVP' }</button>
-        <button :if="rsvpState().status === 'none' && event.capacity && guestCount() >= event.capacity"
+        <button :if="rsvpState().status === 'none' && !isTicketed() && event.capacity && guestCount() >= event.capacity"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Join waitlist' }</button>
+        <a :if="isTicketed() && !ticketsPending() && listed()" href="{ event.ticketUrl }" target="_blank" rel="noopener" class="attend-btn">Get tickets</a>
         <button :if="rsvpState().status === 'confirmed' || rsvpState().status === 'waitlisted'"
           type="button" class="attend-btn attend-btn-remove" :disabled="busy" :onclick="cancelRsvp">{ busy ? 'Cancelling' : 'Cancel RSVP' }</button>
       </div>
@@ -1106,7 +1139,7 @@
            paint and never toggles after mount - the shape that crashes
            nuedom's diff. The capture listener in index.html already lets a
            target=_blank anchor through autolink. -->
-      <a :if="ticketUrl()" href="{ event.ticketUrl }" target="_blank" rel="noopener"
+      <a :if="ticketUrl() && !rsvpOn()" href="{ event.ticketUrl }" target="_blank" rel="noopener"
         class="attend-btn event-ticket-btn">Get tickets</a>
       <div :if="!rsvpOn()" class="attendance-count">{ (attendees || []).length } attended</div>
       <div :if="(attendees || []).length" class="attendance-list">
@@ -1196,20 +1229,9 @@
       }
     }
 
-    // Host avatar via the id->handle map + avatar map props. Lives here
-    // because brace literals inside attribute values are template syntax.
-    this.hostAvatarSrc = function() {
-      const handles = this.handles || {}
-      const avatars = this.avatars || {}
-      const handle = handles[this.event.hostId]
-      return handle ? (avatars[handle] || '') : ''
-    }
-
-    // Attendee rows are { id, name }. Only a member id resolves to a
-    // Letterboxd handle — guests and pre-migration rows render as plain text.
-    this.handleFor = function(a) {
-      return (a && a.id && (this.handles || {})[a.id]) || ''
-    }
+    // Thunks: the bodies are pure and live in the uncapped lib script.
+    this.hostAvatarSrc = function() { return evHostAvatar(this.event, this.handles, this.avatars) }
+    this.handleFor = function(a) { return evHandleFor(a, this.handles) }
 
     this.patchLbUri = async function(uri) {
       this.update({ lbBusy: true, lbLinkError: '' })
@@ -1264,6 +1286,9 @@
     // overlays a local answer, which repaints because a card updating itself
     // after its OWN handler is not a remount.
     this.rsvpState = function() { return this.myRsvp || this.rsvpme }
+    this.isTicketed = function() { return evIsTicketed(this.event) }
+    this.listed = function() { const r = this.rsvpState(); return !!r && r.status !== 'none' }
+    this.ticketsPending = function() { return evTicketsPending(this.event) }
     this.eyebrow = function() { return evEyebrow(this.event) }
     this.posterMeta = function() { return evPosterMeta(this.event) }
     this.rsvpOn = function() { return evRsvpOn(this.event) }
@@ -1292,6 +1317,20 @@
         console.error('attendance ' + method + ' failed:', err)
         this.update({ busy: false })
       }
+    }
+
+    // One click, two outcomes: open the box office and record the headcount.
+    //
+    // window.open must happen SYNCHRONOUSLY inside the click handler or the
+    // browser treats it as an unsolicited popup and blocks it — so the tab is
+    // opened first and the POST runs after, never awaited before it. That
+    // ordering means the tab is already open if the RSVP fails; the card shows
+    // the error and stays un-RSVPed, which is the right way round. Being sent
+    // to buy a ticket is the point of the click, and is useful on its own.
+    this.rsvpAndTickets = function() {
+      const url = evTicketUrl(this.event)
+      if (url) window.open(url, '_blank', 'noopener')
+      this.rsvp()
     }
 
     this.rsvp = async function() {

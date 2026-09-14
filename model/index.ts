@@ -272,14 +272,14 @@ export async function getEvents(opts = {}) {
 // affordance asks this, never `hostId` directly.
 //
 // Precedence, and why:
-//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
-//     control we link out; taking an RSVP as well would imply we hold a seat
-//     we do not hold. Making that structural (rather than a validation rule)
-//     means it cannot be misconfigured — the same reasoning as isMembersOnly().
-//  2. An explicit `rsvp` boolean wins. The admin portal stamps `rsvp: true` on
+//  1. An explicit `rsvp` boolean wins.
+//
+// A `ticketUrl` used to short-circuit this to false. That is now carried by
+// copy rather than structure: a venue-ticketed event can want a headcount
+// while the box office sells admission. The admin portal stamps `rsvp: true` on
 //     every event it creates, which is what makes "on by default" true for new
 //     club events without making absence mean on.
-//  3. Otherwise fall back to `hostId`. Member-hosted screenings have always
+//  2. Otherwise fall back to `hostId`. Member-hosted screenings have always
 //     taken RSVPs and the 42 curated rows in data/events.json have always
 //     taken attendance, and neither carries an `rsvp` field — so this branch
 //     is what keeps every pre-existing row behaving exactly as it did.
@@ -288,7 +288,6 @@ export async function getEvents(opts = {}) {
 // lockstep (see docs/features/hosting.md).
 export function rsvpEnabled(e: any): boolean {
   if (!e) return false
-  if (e.ticketUrl) return false
   if (typeof e.rsvp === 'boolean') return e.rsvp
   return !!e.hostId
 }

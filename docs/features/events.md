@@ -15,11 +15,15 @@ A card offers exactly one bottom affordance, chosen by `rsvpEnabled(event)`:
 ```js
 function rsvpEnabled(e) {
   if (!e) return false
-  if (e.ticketUrl) return false                   // box office sells the seats
   if (typeof e.rsvp === 'boolean') return e.rsvp  // explicit admin toggle wins
   return !!e.hostId                               // legacy: hosted = RSVP
 }
 ```
+
+A `ticketUrl` used to short-circuit this to `false`, so a ticket link and an
+RSVP could never coexist. They can now — see **Venue-ticketed events** below.
+That promise ("an RSVP never implies a seat we do not hold") is carried by
+copy rather than structure.
 
 The `hostId` fallback is what keeps every pre-existing row behaving as it did:
 the curated rows in `data/events.json` carry no `rsvp` field and no host, so
@@ -83,6 +87,43 @@ the newsletter events table, the social cards — gets it for free.
 
 Keep `drawTitleCard()` and `.event-titlecard` in step; the eyebrow wording is
 duplicated between `evEyebrow()` and that drawer.
+
+## Venue-ticketed events
+
+Some screenings the club markets but does not run: a preview at the Capri sold
+through the theater's own box office, where partners buy ticket blocks for
+bundles and giveaways. **The club controls neither admission nor the door.**
+`ticketed: true` says exactly that, and changes what an RSVP means:
+
+| State | Card | RSVP lands in |
+|---|---|---|
+| `ticketed`, no `ticketUrl` | *Tickets are not on sale yet…* → **Count me in** | the **waitlist** — a pre-sale queue |
+| `ticketed` + `ticketUrl` | *Admission is sold by {venue} — a headcount, not a ticket* → **RSVP and get tickets** | confirmed |
+
+**Why `ticketed` is its own field.** It cannot be inferred from a missing
+`ticketUrl`, because an ordinary club event has no ticket URL either —
+inferring it would silently turn every normal RSVP event into a queue.
+
+**The pre-sale queue reuses the waitlist**, but for a different reason than
+capacity: there is nothing to confirm anyone *for* until tickets exist. It
+ignores capacity entirely (the club is not the one rationing seats), and
+`handleAdminEventPut` promotes it **whole** the moment a `ticketUrl` is saved,
+emailing everyone the box office link. That transition is detected as
+`ticketsPending(before) && !ticketsPending(after)`, and returns
+`ticketsOnSale: true`.
+
+**One click, two outcomes.** `RSVP and get tickets` opens the box office in a
+new tab *and* records the headcount. The tab is opened **synchronously, before
+the POST** — a `window.open` after an `await` is treated as an unsolicited
+popup once the browser's transient user activation (~5s) expires, so the
+ordering is the invariant, not a style choice. If the RSVP then fails, the tab
+is already open and the card shows the error un-RSVPed, which is the right way
+round: being sent to buy a ticket is the point of the click.
+
+Note this makes the e2e test non-obvious: asserting *that* a popup appears does
+not discriminate, because an await-then-open still passes on a fast local
+server. `club-events.spec.ts` delays the RSVP response and requires the tab
+well before it resolves.
 
 ## Social events
 

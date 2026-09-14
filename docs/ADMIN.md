@@ -166,6 +166,16 @@ somebody finished it.
   event title is editorial (*CLAYFACE Preview Screening*), not the film's.
 - Creating publishes immediately. There is deliberately no draft state.
 
+**Venue-ticketed events.** Tick **Tickets: sold by the venue** for a screening
+the club markets but does not run — a preview sold through the theater's own
+box office. Leave **Ticket URL** blank until tickets are actually on sale:
+RSVPs queue in that window, and members are told tickets are not on sale yet
+rather than that they are confirmed. **Saving a Ticket URL releases the whole
+queue and emails everyone the box office link**, so add it once and only once
+sales are live. After that the card offers *RSVP and get tickets*, which opens
+the box office and records the headcount in one click. An RSVP on these events
+never implies a seat, and the card and emails say so.
+
 **Notifying RSVPs.** When an event has RSVPs, the form grows a checkbox
 naming its audience — *"Email 12 confirmed + 3 waitlisted about this change"*.
 It is **off by default**, so fixing a typo mails nobody. Tick it and the save

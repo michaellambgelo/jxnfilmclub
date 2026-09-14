@@ -1351,14 +1351,13 @@ export function countOpenFeedback(keys, values) {
 // confirmed list, so offering both gives one event two sources of truth.
 //
 // Precedence, and why:
-//  1. `ticketUrl` short-circuits to false. When a theater keeps box-office
-//     control we link out; also taking an RSVP would imply we hold a seat we
-//     do not hold. Structural rather than a validation rule, so it cannot be
-//     misconfigured.
-//  2. An explicit `rsvp` boolean wins. The Events tab stamps `rsvp: true` on
+//  1. An explicit `rsvp` boolean wins.
+//
+// A `ticketUrl` used to short-circuit this to false; that is now carried by
+// copy rather than structure. The Events tab stamps `rsvp: true` on
 //     every event it creates, which is what makes "on by default" true for
 //     new club events without making ABSENCE mean on.
-//  3. Otherwise fall back to `hostId` — member-hosted screenings have always
+//  2. Otherwise fall back to `hostId` — member-hosted screenings have always
 //     taken RSVPs, the curated rows have always taken attendance, and neither
 //     carries an `rsvp` field.
 //
@@ -1366,7 +1365,6 @@ export function countOpenFeedback(keys, values) {
 // lockstep (see docs/features/hosting.md).
 export function rsvpEnabled(e) {
   if (!e) return false
-  if (e.ticketUrl) return false
   if (typeof e.rsvp === 'boolean') return e.rsvp
   return !!e.hostId
 }
@@ -1385,8 +1383,10 @@ export function rsvpEnabled(e) {
 // row, so '' is how the dashboard says "clear this field".
 export function sanitizeAdminEvent(row) {
   const out = { ...(row || {}) }
-  if (out.rsvp === undefined || out.rsvp === null || out.rsvp === '') delete out.rsvp
-  else out.rsvp = out.rsvp === true || out.rsvp === 'on' || out.rsvp === 'true'
+  for (const k of ['rsvp', 'ticketed']) {
+    if (out[k] === undefined || out[k] === null || out[k] === '') delete out[k]
+    else out[k] = out[k] === true || out[k] === 'on' || out[k] === 'true'
+  }
   return out
 }
 

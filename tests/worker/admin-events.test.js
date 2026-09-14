@@ -319,3 +319,121 @@ describe('DELETE /admin/events/:id', () => {
     expect((await req('/admin/events/ghost', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(404)
   })
 })
+
+// Venue-ticketed events: the club markets the screening and funnels members to
+// the theater box office, but does not control admission or the door. An RSVP
+// is a headcount, never a seat — and before tickets go on sale there is
+// nothing to be confirmed for, so RSVPs queue instead.
+describe('venue-ticketed events — the pre-sale queue', () => {
+  const clay = (extra = {}) => ({
+    id: 'clay', title: 'CLAYFACE Preview Screening', film: 'Clayface',
+    date: '2099-10-22', venue: 'Capri Theater', time: '20:30',
+    rsvp: true, ticketed: true, ...extra,
+  })
+  const seed = async (extra = {}) => {
+    const e = clay(extra)
+    await env.ATTENDANCE_KV.put(`event:${e.id}`, JSON.stringify(e))
+    await env.ATTENDANCE_KV.put('events:all', JSON.stringify([e]))
+    await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
+    return e
+  }
+  const rsvpAs = async (email) => {
+    const res = await req('/events/clay/rsvp', { method: 'POST', token: (await tokenFor(email)) })
+    return res
+  }
+  // Local token helper (this file otherwise only exercises admin routes).
+  async function tokenFor(email) {
+    await env.MEMBERS_KV.put(`member:${email}`, JSON.stringify({
+      id: 'id-' + email, email, name: 'M-' + email.split('@')[0], joined: '2026-01-01',
+    }))
+    await env.MEMBERS_KV.put(`otp:${email}`, '111111', { expirationTtl: 600 })
+    const r = await req('/otp/verify', { method: 'POST', body: { email, code: '111111' } })
+    return (await r.json()).token
+  }
+
+  it('queues an RSVP while tickets are not on sale, rather than confirming it', async () => {
+    await seed()
+    const sent = captureEmails()
+
+    const res = await rsvpAs('q1@example.com')
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.status).toBe('waitlisted')
+    expect(data.pending).toBe(true)
+
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.confirmed).toHaveLength(0)
+    expect(rsvp.waitlist).toHaveLength(1)
+
+    // Not the confirmation mail — nothing is confirmed, nothing is purchasable.
+    const mail = sent.find(e => e.to === 'q1@example.com')
+    expect(mail.subject).toMatch(/^On the list:/)
+    expect(mail.text).toContain('Tickets are not on sale yet')
+    expect(mail.text).not.toMatch(/You.re confirmed/)
+  })
+
+  it('queues past capacity too — the club is not the one handing out seats', async () => {
+    await seed({ capacity: 1 })
+    captureEmails()
+    expect((await (await rsvpAs('q2@example.com')).json()).status).toBe('waitlisted')
+    expect((await (await rsvpAs('q3@example.com')).json()).status).toBe('waitlisted')
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.confirmed).toHaveLength(0)
+    expect(rsvp.waitlist).toHaveLength(2)
+  })
+
+  it('promotes the whole queue and mails the link the moment tickets go on sale', async () => {
+    await seed({ capacity: 1 })
+    captureEmails()
+    await rsvpAs('q4@example.com')
+    await rsvpAs('q5@example.com')
+
+    const sent = captureEmails()
+    const res = await put('clay', { ticketUrl: 'https://capri.example.com/clayface' })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.ticketsOnSale).toBe(true)
+    expect(data.notified).toBe(2)
+
+    // Whole queue promoted — capacity does not gate it, because the seats are
+    // not the club's to ration.
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.waitlist).toHaveLength(0)
+    expect(rsvp.confirmed.map(r => r.memberId).sort())
+      .toEqual(['id-q4@example.com', 'id-q5@example.com'])
+
+    for (const to of ['q4@example.com', 'q5@example.com']) {
+      const mail = sent.find(e => e.to === to)
+      expect(mail.subject).toMatch(/^Tickets on sale:/)
+      expect(mail.text).toContain('https://capri.example.com/clayface')
+      expect(mail.text).toContain('your spot is not held')
+    }
+  })
+
+  it('confirms straight away once tickets are on sale, and says it is not a ticket', async () => {
+    await seed({ ticketUrl: 'https://capri.example.com/clayface' })
+    const sent = captureEmails()
+    expect((await (await rsvpAs('q6@example.com')).json()).status).toBe('confirmed')
+    const mail = sent.find(e => e.to === 'q6@example.com')
+    expect(mail.text).toContain('headcount, not a ticket')
+    expect(mail.text).toContain('https://capri.example.com/clayface')
+  })
+
+  it('does not fire the on-sale promotion on unrelated edits', async () => {
+    await seed({ ticketUrl: 'https://capri.example.com/clayface' })
+    captureEmails()
+    await rsvpAs('q7@example.com')
+    const sent = captureEmails()
+    const res = await put('clay', { title: 'CLAYFACE Preview Screening (moved)' })
+    expect((await res.json()).ticketsOnSale).toBeUndefined()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('leaves an ordinary club RSVP event confirming immediately', async () => {
+    // The whole reason `ticketed` is an explicit flag: a missing ticketUrl
+    // cannot mean "pre-sale", because every ordinary club event lacks one too.
+    await seed({ ticketed: false })
+    captureEmails()
+    expect((await (await rsvpAs('q8@example.com')).json()).status).toBe('confirmed')
+  })
+})

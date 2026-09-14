@@ -336,7 +336,7 @@
       <h2>{ sectionProgram }</h2>
       <span class="ns-label">recent & upcoming</span>
     </header>
-    <div :each="e in program" key="{ e.id }" class="program-row">
+    <div :each="e in program" key="{ e.id }" class="program-row { (e.upcoming ? '-upcoming' : '-past') + (e.lead ? ' -lead' : '') }">
       <div class="program-date">
         <b>{ e.dn }</b>
         <span>{ e.mo } { e.yr }</span>
@@ -540,6 +540,14 @@
           action: evEventAction(e),
           upcoming: (e.date || '') >= today,
         }
+      })
+
+      // The list runs upcoming-then-past, so the first row of each bucket is
+      // where its heading goes. CSS draws those off this flag instead of extra
+      // nodes: nuedom's diff keys off sibling position, so the row list has to
+      // stay a flat :each of constant shape.
+      rows.forEach(function(r, i) {
+        r.lead = i === 0 || rows[i - 1].upcoming !== r.upcoming
       })
 
       // The hero stamp reads "Next screening", so it must name a screening.

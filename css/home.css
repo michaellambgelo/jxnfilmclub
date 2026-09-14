@@ -246,12 +246,68 @@
 /* ------- the program ------- */
 
 .program-row {
+  position: relative;
   display: grid;
   grid-template-columns: 110px 1fr 220px 130px;
   align-items: center;
   gap: 1.4rem;
   padding: 1.4rem 0;
   border-top: 1px solid var(--line);
+}
+
+/* The program runs upcoming first, then past. The bucket change is the one
+   thing a reader needs and the flat list never showed it, so the first row of
+   each bucket carries its heading as a ::before — no extra elements, because
+   nuedom's diff keys off sibling position. */
+.program-row.-lead {
+  margin-top: 2.2rem;
+  padding-top: 3rem;
+  border-top-color: var(--line-2);
+}
+
+.program-row.-lead::before {
+  content: 'Upcoming';
+  position: absolute;
+  top: 1.15rem;
+  left: 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-stamp);
+  color: var(--brand);
+}
+
+.program-row.-past.-lead::before {
+  content: 'Past';
+  color: var(--ink-5);
+}
+
+/* Red is the upcoming signal, so a past row spends none of it: the date drops
+   to the faintest stamp ink and the whole row steps back a level. The ghost
+   "Details" button already differs from the filled RSVP — this makes the row
+   agree with it instead of leaving the button to carry the distinction alone. */
+.program-row.-past .program-date b {
+  color: var(--ink-5);
+  font-weight: 700;
+}
+
+.program-row.-past .program-date span,
+.program-row.-past .program-film p {
+  color: var(--ink-5);
+}
+
+.program-row.-past .program-film h3 {
+  color: var(--ink-3);
+}
+
+.program-row.-past .program-venue p {
+  color: var(--ink-4);
+}
+
+.program-row.-past .program-tag {
+  color: var(--ink-5);
+  border-bottom-color: var(--line);
 }
 
 .program-date {
@@ -304,8 +360,8 @@
 }
 
 .program-tag.-house {
-  color: var(--brand);
-  border-bottom-color: var(--brand);
+  color: var(--ink-2);
+  border-bottom-color: var(--ink-4);
 }
 
 .program-venue p {

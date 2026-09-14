@@ -334,7 +334,6 @@
   <section class="program">
     <header class="ns-sechead">
       <h2>{ sectionProgram }</h2>
-      <span class="ns-label">recent & upcoming</span>
     </header>
     <div :each="e in program" key="{ e.id }" class="program-row { (e.upcoming ? '-upcoming' : '-past') + (e.lead ? ' -lead' : '') }">
       <div class="program-date">

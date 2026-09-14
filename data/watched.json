@@ -706,6 +706,24 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/nowhere/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/1c/re/ju/yk/9CaVnvBRbzsM7mcJoIMncpHSBBN-0-600-0-900-crop.jpg?v=067121cd23",
+      "rating": "5.0",
+      "title": "Nowhere",
+      "watched_date": "2026-09-13",
+      "year": "1997"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/ballast/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/2/7/8/36278-ballast-0-600-0-900-crop.jpg?v=6eb8e29276",
+      "rating": "5.0",
+      "title": "Ballast",
+      "watched_date": "2026-09-13",
+      "year": "2008"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/the-doom-generation/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/7/9/2/43792-the-doom-generation-0-600-0-900-crop.jpg?v=72134ca389",
       "rating": "4.5",
@@ -793,24 +811,6 @@
       "title": "Badlands",
       "watched_date": "2026-09-06",
       "year": "1973"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/do-the-right-thing/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/zm/fz/vn/ie/obNQLtdeJy3IiKnExWoWBJH8V67-0-600-0-900-crop.jpg?v=b4926532f8",
-      "rating": "5.0",
-      "title": "Do the Right Thing",
-      "watched_date": "2026-09-05",
-      "year": "1989"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/harold-and-maude/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/1/9/51719-harold-and-maude-0-600-0-900-crop.jpg?v=6a2f175ab5",
-      "rating": "4.0",
-      "title": "Harold and Maude",
-      "watched_date": "2026-09-04",
-      "year": "1971"
     }
   ],
   "badmov1eenjoyer": [
@@ -1336,6 +1336,15 @@
   ],
   "heath_walt": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/heath_walt/film/neon-genesis-evangelion-the-end-of-evangelion/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/0/3/1/1/40311-neon-genesis-evangelion-the-end-of-evangelion-0-600-0-900-crop.jpg?v=3f8b0ad85b",
+      "rating": "4.0",
+      "title": "Neon Genesis Evangelion: The End of Evangelion",
+      "watched_date": "2026-09-13",
+      "year": "1997"
+    },
+    {
       "link": "https://letterboxd.com/heath_walt/film/obsession-2025/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/3/4/4/7/2/1234472-obsession-2025-2-0-600-0-900-crop.jpg?v=cff6fc00b6",
       "rating": "2.5",
@@ -1431,16 +1440,6 @@
       "title": "For All Mankind",
       "watched_date": "2026-06-15",
       "year": "1989"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/heath_walt/film/hot-rod/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/5/7/2/46572-hot-rod-0-600-0-900-crop.jpg?v=8d78a72102",
-      "rating": "3.0",
-      "rewatch": true,
-      "title": "Hot Rod",
-      "watched_date": "2026-06-08",
-      "year": "2007"
     }
   ],
   "jdavidlewis": [

@@ -54,6 +54,17 @@
     "year": "1961"
   },
   {
+    "handle": "heath_walt",
+    "liked": true,
+    "link": "https://letterboxd.com/heath_walt/film/neon-genesis-evangelion-the-end-of-evangelion/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/0/3/1/1/40311-neon-genesis-evangelion-the-end-of-evangelion-0-600-0-900-crop.jpg?v=3f8b0ad85b",
+    "rating": "4.0",
+    "review": "Watched the series over the last few weeks. Extremely bold.",
+    "title": "Neon Genesis Evangelion: The End of Evangelion",
+    "watched_date": "2026-09-13",
+    "year": "1997"
+  },
+  {
     "handle": "calissippi",
     "link": "https://letterboxd.com/calissippi/film/yojimbo/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/nw/l2/zw/wy/tN7kYPjRhDolpui9sc9Eq9n5b2O-0-600-0-900-crop.jpg?v=5cea1d49c1",
@@ -104,6 +115,28 @@
     "year": "1978"
   },
   {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/nowhere/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/1c/re/ju/yk/9CaVnvBRbzsM7mcJoIMncpHSBBN-0-600-0-900-crop.jpg?v=067121cd23",
+    "rating": "5.0",
+    "review": "Best alien movie I\u2019ve ever seen?",
+    "title": "Nowhere",
+    "watched_date": "2026-09-13",
+    "year": "1997"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/ballast/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/2/7/8/36278-ballast-0-600-0-900-crop.jpg?v=6eb8e29276",
+    "rating": "5.0",
+    "review": "5 stars cause shot in mississippi set in mississippi actors were casted through open calls in mississippi But also like an excellent film Didn\u2019t expect it to be like a snapshot of this group of characters life A different kind of story arc ig Need to take a trip up to the delta again",
+    "title": "Ballast",
+    "watched_date": "2026-09-13",
+    "year": "2008"
+  },
+  {
     "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/the-pink-cloud/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/ny/4q/i3/7s/IMG_5704-0-600-0-900-crop.jpg?v=c07c41e884",
@@ -123,28 +156,6 @@
     "title": "The Doom Generation",
     "watched_date": "2026-09-12",
     "year": "1995"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/the-storyteller-1988/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/0/7/9/475079-the-storyteller-1988-0-600-0-900-crop.jpg?v=bf8c54dfe6",
-    "rating": "3.5",
-    "review": "Episode 8 The true bride When the mystical white lion tells you to go to sleep, you listen.",
-    "title": "The Storyteller",
-    "watched_date": "2026-09-12",
-    "year": "1988"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/6/5/4/45654-interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem-0-600-0-900-crop.jpg?v=5b837bee6d",
-    "rating": "5.0",
-    "review": "Another movie that\u2019s bringing some really tight story telling through visual elements paired with dialogue not created for the movie it\u2019s attached to",
-    "title": "Interstella 5555: The 5tory of the 5ecret 5tar 5ystem",
-    "watched_date": "2026-09-12",
-    "year": "2003"
   },
   {
     "handle": "calissippi",
@@ -374,16 +385,6 @@
     "title": "The Odyssey",
     "watched_date": "2026-08-04",
     "year": "2026"
-  },
-  {
-    "handle": "heath_walt",
-    "link": "https://letterboxd.com/heath_walt/film/cape-fear-1991/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/9/3/6/50936-cape-fear-1991-0-600-0-900-crop.jpg?v=fa3497476a",
-    "rating": "3.5",
-    "review": "Over the top De Niro and exaggerated Hitchcock moves. I enjoyed. Blown out Hermann score was cool.",
-    "title": "Cape Fear",
-    "watched_date": "2026-08-03",
-    "year": "1991"
   },
   {
     "handle": "draketerry",

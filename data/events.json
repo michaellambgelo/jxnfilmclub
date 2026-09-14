@@ -432,6 +432,7 @@
     "venue": "Capri Theater",
     "poster": "https://image.tmdb.org/t/p/original/jWQwA5xuFVygMM3KHRiABzPqatf.jpg",
     "time": "20:30",
-    "rsvp": true
+    "rsvp": true,
+    "ticketed": true
   }
 ]

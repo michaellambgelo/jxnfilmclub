@@ -14,7 +14,17 @@
     .already a { color: var(--brand); }
     h1 { font-size: 2.6rem; }
     .checkbox-row { display: flex; flex-direction: row; align-items: flex-start; gap: 0.5rem; }
-    .checkbox-row input { margin-top: 0.25rem; width: auto; accent-color: var(--brand); }
+    /* brand.css scopes its field styling to text/email, so this box was never
+       stretched — it was simply never sized, leaving the 13px user-agent
+       default. Matches the 1.15rem the main site uses in css/form.css. */
+    .checkbox-row input[type="checkbox"] {
+      margin-top: 0.2rem;
+      width: 1.15rem;
+      height: 1.15rem;
+      flex: none;
+      accent-color: var(--brand);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>

@@ -24,6 +24,25 @@ input, textarea {
   color: var(--ink);
 }
 
+/* A checkbox is not a text field. The rule above styles every input, so each
+   one used to escape it with `width: auto` — which handed the control back to
+   the user agent at its 13px default: unstyled, and pale against this dark
+   theme. Reset the text-field chrome and size them here, once, instead.
+   Placed after that rule and scoped by [type] so it wins without raising the
+   general rule's specificity, which other sheets override by class. */
+input[type="checkbox"], input[type="radio"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  /* Never let a flex row shrink the box out from under the label. */
+  flex: none;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
 textarea {
   form-sizing: normal;
   min-height: 80px;

@@ -920,6 +920,31 @@
   "bearleebooks": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/the-invisible-man/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/hb/62/sv/wn/15w76PDsXtPjBgnEJlZLZceBfZR-0-600-0-900-crop.jpg?v=7b891db489",
+      "rating": "4.0",
+      "title": "The Invisible Man",
+      "watched_date": "2026-09-15",
+      "year": "1933"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/daisies/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/8/4/4/7/18447-daisies-0-600-0-900-crop.jpg?v=4c08c58c03",
+      "rating": "0.5",
+      "title": "Daisies",
+      "watched_date": "2026-09-14",
+      "year": "1966"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/queens-of-the-dead/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/9/0/0/8/1199008-queens-of-the-dead-0-600-0-900-crop.jpg?v=27bf85f89e",
+      "rating": "3.0",
+      "title": "Queens of the Dead",
+      "watched_date": "2026-09-14",
+      "year": "2025"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/mermaid-2025/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/0/1/5/9/1/1301591-mermaid-2025-0-600-0-900-crop.jpg?v=599ed7d0d9",
       "rating": "3.5",
@@ -992,31 +1017,6 @@
       "title": "WALL\u00b7E",
       "watched_date": "2026-09-09",
       "year": "2008"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/confessions/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/65/d4/n3/eq/confessions-0-600-0-900-crop.jpg?v=0e93a578c8",
-      "rating": "5.0",
-      "title": "Confessions",
-      "watched_date": "2026-09-08",
-      "year": "2010"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/heavy-metal/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/9/7/3/44973-heavy-metal-0-600-0-900-crop.jpg?v=ccf9df9734",
-      "rating": "2.5",
-      "title": "Heavy Metal",
-      "watched_date": "2026-09-07",
-      "year": "1981"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/jurassic-world-fallen-kingdom/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/2/8/1/5/2/9/281529-jurassic-world-fallen-kingdom-0-600-0-900-crop.jpg?v=b0c50b6d29",
-      "rating": "3.5",
-      "title": "Jurassic World: Fallen Kingdom",
-      "watched_date": "2026-09-07",
-      "year": "2018"
     }
   ],
   "calissippi": [
@@ -1748,6 +1748,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/dune-part-two/19/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/6/1/7/4/4/3/617443-dune-part-two-0-600-0-900-crop.jpg?v=cc533700f8",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "Dune: Part Two",
+      "watched_date": "2026-09-14",
+      "year": "2024"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/dune-2021/11/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/nx/8b/vs/gc/cDbNAY0KM84cxXhmj8f0dLWza3t-0-600-0-900-crop.jpg?v=49eed12751",
       "rating": "5.0",
@@ -1845,14 +1855,6 @@
       "title": "World Trade Center",
       "watched_date": "2026-09-09",
       "year": "2006"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/quarantine-2-terminal/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/7/2/3/9/7239-quarantine-2-terminal-0-600-0-900-crop.jpg?v=c39e4407a8",
-      "rating": "1.5",
-      "title": "Quarantine 2: Terminal",
-      "watched_date": "2026-09-09",
-      "year": "2011"
     }
   ],
   "mrbienkowski": [

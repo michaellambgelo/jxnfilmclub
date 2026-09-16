@@ -415,13 +415,29 @@
     "film": "Coyote vs. Acme",
     "year": 2026,
     "date": "2026-08-28",
-    "venue": "Malco Grandview & IMAX in Madison",
+    "venue": "Malco Grandview & IMAX",
     "poster": "https://image.tmdb.org/t/p/w500/qgBAdr7kf7L6rhyxt4pVJFsReqm.jpg",
     "letterboxd_uri": "https://letterboxd.com/michaellamb/film/coyote-vs-acme/",
     "hostId": "ml-seed001",
     "hostName": "Michael Lamb",
     "kind": "meetup",
-    "time": "12:05"
+    "time": "12:05",
+    "rsvp": true,
+    "ticketed": false
+  },
+  {
+    "id": "2026-09-16-resident-evil",
+    "title": "Resident Evil IMAX Release Screening",
+    "film": "Resident Evil",
+    "year": 2026,
+    "date": "2026-09-17",
+    "venue": "Malco Grandview & IMAX",
+    "poster": "https://image.tmdb.org/t/p/w500/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
+    "kind": "meetup",
+    "time": "21:05",
+    "rsvp": true,
+    "ticketUrl": "https://tickets.malco.com/seat-select?showtimeId=01a0a63b-22a9-7586-9559-766ed345a64e&orderId=01a0aa8b-a621-7fc6-a6ae-b5db63336474",
+    "ticketed": true
   },
   {
     "id": "2026-10-22-clayface",

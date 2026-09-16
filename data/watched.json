@@ -1021,6 +1021,15 @@
   ],
   "calissippi": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/calissippi/film/heart-of-the-beast-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/4/7/4/6/8/1147468-heart-of-the-beast-2026-0-600-0-900-crop.jpg?v=9503afe033",
+      "rating": "3.5",
+      "title": "Heart of the Beast",
+      "watched_date": "2026-09-15",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/calissippi/film/highest-2-lowest/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/5/0/3/1/1125031-highest-2-lowest-0-600-0-900-crop.jpg?v=4bac6efe11",
       "rating": "2.5",
@@ -1109,14 +1118,6 @@
       "title": "Coyote vs. Acme",
       "watched_date": "2026-08-28",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/summer-tour/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/1/2/2/3/0/1412230-summer-tour-0-600-0-900-crop.jpg?v=2d29002d4b",
-      "rating": "3.0",
-      "title": "Summer Tour",
-      "watched_date": "2026-08-27",
-      "year": "2025"
     }
   ],
   "dacoats": [

@@ -815,6 +815,15 @@
   ],
   "badmov1eenjoyer": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/hope-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/4/6/6/3/954663-hope-2026-0-600-0-900-crop.jpg?v=102a8bfda2",
+      "rating": "4.5",
+      "title": "Hope",
+      "watched_date": "2026-09-15",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/badmov1eenjoyer/film/supergirl-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/7/4/2/8/6/974286-supergirl-2026-0-600-0-900-crop.jpg?v=e85ddf39db",
       "rating": "3.0",
@@ -860,7 +869,7 @@
       "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/teenage-sex-and-death-at-camp-miasma/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/3/8/6/7/1123867-teenage-sex-and-death-at-camp-miasma-0-600-0-900-crop.jpg?v=f6059120f8",
-      "rating": "4.0",
+      "rating": "3.5",
       "title": "Teenage Sex and Death at Camp Miasma",
       "watched_date": "2026-08-23",
       "year": "2026"
@@ -906,15 +915,6 @@
       "title": "Warfare",
       "watched_date": "2026-08-07",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/spider-man-brand-new-day/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
-      "rating": "4.0",
-      "title": "Spider-Man: Brand New Day",
-      "watched_date": "2026-08-06",
-      "year": "2026"
     }
   ],
   "bearleebooks": [

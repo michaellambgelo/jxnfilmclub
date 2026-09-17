@@ -1112,7 +1112,6 @@ async function drawVoicePromptCard(c, W, H, { prompt } = {}) {
   const lineH = Math.round(quotePx * 1.14)
   const subLines = [
     `Record or upload up to three minutes${p.deadline ? ` by ${fmtSocialDate(p.deadline, { short: true })}` : ''}.`,
-    'The best clips get aired on the podcast.',
   ]
   const blockH = labelPx + gap + lines.length * lineH + gap + subLines.length * Math.round(metaPx * 1.5)
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))

@@ -128,6 +128,30 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  // The Worker writes a public /n/:id copy of every broadcast and links it from
+  // that email's footer, but an admin who wants to share one had to go find the
+  // email. Sent history carries the link itself. Rows predating the archive
+  // have no archiveId, and must not render an href to /n/undefined.
+  test('sent history links each broadcast to its shareable copy', async ({ page }) => {
+    await seedKv(page, 'newsletter:sent:2026-09-01T00:00:00.000Z', JSON.stringify({
+      subject: 'September dispatch', count: 12, at: Date.parse('2026-09-01'),
+      archiveId: '2026-09-september-dispatch-a1b2c3d4e5',
+    }))
+    await seedKv(page, 'newsletter:sent:2026-05-01T00:00:00.000Z', JSON.stringify({
+      subject: 'Pre-archive dispatch', count: 7, at: Date.parse('2026-05-01'),
+    }))
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="newsletter"]').click()
+
+    const archived = page.locator('.nl-history tbody tr', { hasText: 'September dispatch' })
+    await expect(archived.getByRole('link', { name: 'view shared copy' })).toHaveAttribute(
+      'href', 'https://join.jxnfilm.club/n/2026-09-september-dispatch-a1b2c3d4e5')
+
+    const legacy = page.locator('.nl-history tbody tr', { hasText: 'Pre-archive dispatch' })
+    await expect(legacy.getByRole('link')).toHaveCount(0)
+  })
+
   // Inserts append generated blocks by assigning textarea .value, which never
   // enters the native undo stack — so the snapshot stack is the only thing
   // making them reversible. Cover both entry points: the button and Cmd/Ctrl+Z.

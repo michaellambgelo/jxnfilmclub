@@ -119,7 +119,7 @@ export function buildVoiceCtaHtml({ text }) {
         <td align="center" style="padding:28px 32px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
           <h2 style="margin:0 0 8px;font-size:20px;color:#100f0e">Your voice on the podcast</h2>
           <p style="margin:0 0 6px;font-size:16px;line-height:1.5">This round&rsquo;s prompt: <em style="color:#d7321f">&ldquo;${escapeHtml(text)}&rdquo;</em></p>
-          <p style="margin:0 0 14px;font-size:14px;color:#6b675f">Members can record or upload up to three minutes &mdash; the best clips get aired on the show.</p>
+          <p style="margin:0 0 14px;font-size:14px;color:#6b675f">Members can record or upload up to three minutes.</p>
           <a href="https://jxnfilm.club/speak" style="display:inline-block;background:#d7321f;color:#ffffff;text-decoration:none;padding:10px 22px;font-size:15px">Record a clip</a>
         </td>
       </tr>
@@ -772,11 +772,11 @@ function voicePromptCopy(platform, { prompt } = {}) {
 
   if (platform === 'instagram') {
     return `\ud83c\udf99\ufe0f THIS ROUND'S PROMPT\n\n${quoted}\n\n` +
-      `Record up to three minutes${by} and the best clips air on the show. Link in bio.\n\n${IG_TAGS}`
+      `Record up to three minutes${by}. Link in bio.\n\n${IG_TAGS}`
   }
   if (platform === 'discord') {
     return `\ud83c\udf99\ufe0f **This round's prompt**\n> ${text}\n\n` +
-      `Record or upload up to three minutes${by} — the best clips get aired.\n${SPEAK_URL}`
+      `Record or upload up to three minutes${by}.\n${SPEAK_URL}`
   }
   if (platform === 'bluesky' || platform === 'x') {
     const limit = PLATFORM_LIMITS[platform]
@@ -794,7 +794,7 @@ function voicePromptCopy(platform, { prompt } = {}) {
   }
   // facebook
   return `\ud83c\udf99\ufe0f This round's prompt: ${quoted}\n\n` +
-    `Members can record or upload up to three minutes${by} — the best clips get aired on the podcast.\n\n${SPEAK_URL}`
+    `Members can record or upload up to three minutes${by}.\n\n${SPEAK_URL}`
 }
 
 // Aggregate a /watched handle-keyed map into public-safe roundup data.

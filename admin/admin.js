@@ -419,15 +419,23 @@ async function renderNewsletter() {
       </tbody></table>
     </section>
 
+    <!-- Sent history. The Shareable copy column opens the public /n/:id archive
+         the Worker wrote at send time and linked from that email's footer, so
+         an admin can hand the newsletter to a non-member without digging the
+         link out of their own inbox. Rows written before the archive existed
+         carry no archiveId and get a muted dash rather than a dead link. -->
     <section class="nl-history">
       <h3>Sent history <span class="muted">(${history.length})</span></h3>
       ${history.length ? `
-      <table><thead><tr><th>When</th><th>Subject</th><th>Recipients</th></tr></thead><tbody>
+      <table><thead><tr><th>When</th><th>Subject</th><th>Recipients</th><th>Shareable copy</th></tr></thead><tbody>
         ${history.map(h => `
           <tr>
             <td>${fmtAge(h.at)}</td>
             <td>${escapeHtml(h.subject)}</td>
             <td>${escapeHtml(String(h.count))}</td>
+            <td class="actions">${h.archiveId
+              ? `<a class="nl-share" href="${attr(nlExpectedOrigin() + '/n/' + h.archiveId)}" target="_blank" rel="noopener">view shared copy</a>`
+              : '<span class="muted" title="Sent before the web archive existed \u2014 this broadcast has no permalink">\u2014</span>'}</td>
           </tr>
         `).join('')}
       </tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}

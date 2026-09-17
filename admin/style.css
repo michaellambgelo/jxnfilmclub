@@ -226,6 +226,18 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .nl-fmt { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.4rem }
 .nl-fmt button { font-size: 0.8rem; padding: 0.15rem 0.55rem }
 .nl-fmt-hist { color: var(--muted) }
+/* Button-shaped but a real anchor: the point of the shared copy is that it can
+   be right-clicked, copied and pasted into a message. */
+.nl-history .nl-share {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.85rem;
+  text-decoration: none;
+  color: inherit;
+}
+.nl-history .nl-share:hover { background: #f0f0f0 }
 .nl-fmt-hist-end { margin-right: 0.5rem; position: relative }
 .nl-fmt-hist-end::after {
   content: '';

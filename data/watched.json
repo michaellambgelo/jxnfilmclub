@@ -920,6 +920,15 @@
   "bearleebooks": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/ghostwatch/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/s9/t2/ri/81/xks8HMXD9s81slJakWhC98lLswg-0-600-0-900-crop.jpg?v=25bee86d53",
+      "rating": "4.0",
+      "title": "Ghostwatch",
+      "watched_date": "2026-09-18",
+      "year": "1992"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/all-the-boys-love-mandy-lane/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/4/2/1/47421-all-the-boys-love-mandy-lane-0-600-0-900-crop.jpg?v=e075a73eaf",
       "rating": "4.0",
@@ -1008,15 +1017,6 @@
       "title": "Nirvanna the Band the Show the Movie",
       "watched_date": "2026-09-10",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/casper/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/8/2/47582-casper-0-600-0-900-crop.jpg?v=b9b5fbda43",
-      "rating": "3.5",
-      "title": "Casper",
-      "watched_date": "2026-09-10",
-      "year": "1995"
     }
   ],
   "calissippi": [

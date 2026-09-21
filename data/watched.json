@@ -920,6 +920,15 @@
   "bearleebooks": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/resident-evil-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/0/2/7/1/7/1302717-untitled-resident-evil-reboot-0-600-0-900-crop.jpg?v=a688bf1bc7",
+      "rating": "4.0",
+      "title": "Resident Evil",
+      "watched_date": "2026-09-20",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/ghostwatch/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/s9/t2/ri/81/xks8HMXD9s81slJakWhC98lLswg-0-600-0-900-crop.jpg?v=25bee86d53",
       "rating": "4.0",
@@ -1009,14 +1018,6 @@
       "title": "The Pink Cloud",
       "watched_date": "2026-09-12",
       "year": "2021"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/nirvanna-the-band-the-show-the-movie/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/4/1/0/1/2/1041012-nirvanna-the-band-the-show-the-movie-0-600-0-900-crop.jpg?v=4d80f82f8a",
-      "rating": "4.0",
-      "title": "Nirvanna the Band the Show the Movie",
-      "watched_date": "2026-09-10",
-      "year": "2025"
     }
   ],
   "calissippi": [
@@ -1339,6 +1340,16 @@
   "heath_walt": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/heath_walt/film/12-angry-men/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/0/0/51700-12-angry-men-0-600-0-900-crop.jpg?v=b8aaf291a9",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "12 Angry Men",
+      "watched_date": "2026-09-20",
+      "year": "1957"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/heath_walt/film/neon-genesis-evangelion-the-end-of-evangelion/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/0/3/1/1/40311-neon-genesis-evangelion-the-end-of-evangelion-0-600-0-900-crop.jpg?v=3f8b0ad85b",
       "rating": "4.0",
@@ -1433,15 +1444,6 @@
       "title": "Married to the Mob",
       "watched_date": "2026-07-02",
       "year": "1988"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/heath_walt/film/for-all-mankind/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/2/0/39020-for-all-mankind-0-600-0-900-crop.jpg?v=0957dd4bbe",
-      "rating": "4.0",
-      "title": "For All Mankind",
-      "watched_date": "2026-06-15",
-      "year": "1989"
     }
   ],
   "jdavidlewis": [

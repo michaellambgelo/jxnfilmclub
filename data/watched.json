@@ -1753,6 +1753,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/mean-girls/5/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/0/4/9/46049-mean-girls-0-600-0-900-crop.jpg?v=e6378abb7b",
+      "rating": "4.0",
+      "rewatch": true,
+      "title": "Mean Girls",
+      "watched_date": "2026-09-21",
+      "year": "2004"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/theo-anthony-makes-a-stool/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/4/6/6/5/7/946657-theo-anthony-makes-a-stool-0-600-0-900-crop.jpg?v=b21b418afb",
       "rating": "4.0",
@@ -1853,15 +1863,6 @@
       "title": "Prisoners",
       "watched_date": "2026-09-12",
       "year": "2013"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/legend/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/fz/y8/qa/2f/mJ9dl6hzp3xhCbohMgrai8I2AZU-0-600-0-900-crop.jpg?v=4ad31f83de",
-      "rating": "2.5",
-      "title": "Legend",
-      "watched_date": "2026-09-11",
-      "year": "1985"
     }
   ],
   "mrbienkowski": [

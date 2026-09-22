@@ -706,6 +706,42 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/resident-evil-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/0/2/7/1/7/1302717-untitled-resident-evil-reboot-0-600-0-900-crop.jpg?v=a688bf1bc7",
+      "rating": "4.0",
+      "title": "Resident Evil",
+      "watched_date": "2026-09-21",
+      "year": "2026"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/caught-stealing/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/9/1/9/9/1129199-caught-stealing-0-600-0-900-crop.jpg?v=d3b8da3722",
+      "rating": "3.0",
+      "title": "Caught Stealing",
+      "watched_date": "2025-09-01",
+      "year": "2025"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/the-conjuring-last-rites/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/6/0/6/5/936065-the-conjuring-last-rites-0-600-0-900-crop.jpg?v=597eedcd06",
+      "rating": "3.5",
+      "title": "The Conjuring: Last Rites",
+      "watched_date": "2025-06-01",
+      "year": "2025"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/final-destination-bloodlines/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/2/6/2/2/502622-final-destination-bloodlines-0-600-0-900-crop.jpg?v=3c04d3a110",
+      "rating": "3.0",
+      "title": "Final Destination Bloodlines",
+      "watched_date": "2025-06-01",
+      "year": "2025"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/over-the-garden-wall-2014/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/4/3/9/1/1/343911-over-the-garden-wall-0-600-0-900-crop.jpg?v=85834d0555",
       "rating": "5.0",
@@ -775,45 +811,18 @@
       "title": "The Doom Generation",
       "watched_date": "2026-09-12",
       "year": "1995"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/the-storyteller-1988/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/5/0/7/9/475079-the-storyteller-1988-0-600-0-900-crop.jpg?v=bf8c54dfe6",
-      "rating": "3.5",
-      "title": "The Storyteller",
-      "watched_date": "2026-09-12",
-      "year": "1988"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/6/5/4/45654-interstella-5555-the-5tory-of-the-5ecret-5tar-5ystem-0-600-0-900-crop.jpg?v=5b837bee6d",
-      "rating": "5.0",
-      "title": "Interstella 5555: The 5tory of the 5ecret 5tar 5ystem",
-      "watched_date": "2026-09-12",
-      "year": "2003"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/romeo-juliet-1996/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/6/4/7/51647-romeo-juliet-0-600-0-900-crop.jpg?v=bbd8155493",
-      "rating": "4.0",
-      "title": "Romeo + Juliet",
-      "watched_date": "2026-09-11",
-      "year": "1996"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/wild-at-heart/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/bi/3h/zv/k4/5Lu9HbcGBxjm4R1KNthmqaD5VRT-0-600-0-900-crop.jpg?v=36a83d1697",
-      "rating": "4.5",
-      "title": "Wild at Heart",
-      "watched_date": "2026-09-10",
-      "year": "1990"
     }
   ],
   "badmov1eenjoyer": [
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/sleepless-in-seattle/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/2/9/4/51294-sleepless-in-seattle-0-600-0-900-crop.jpg?v=dfcd625aba",
+      "rating": "3.5",
+      "title": "Sleepless in Seattle",
+      "watched_date": "2026-09-21",
+      "year": "1993"
+    },
     {
       "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/resident-evil-2026/",
@@ -907,18 +916,33 @@
       "title": "Three Billboards Outside Ebbing, Missouri",
       "watched_date": "2026-08-13",
       "year": "2017"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/you-were-never-really-here/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/3/2/4/3/7/332437-you-were-never-really-here-0-600-0-900-crop.jpg?v=56e5177879",
-      "rating": "4.5",
-      "title": "You Were Never Really Here",
-      "watched_date": "2026-08-12",
-      "year": "2017"
     }
   ],
   "bearleebooks": [
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/girls-like-girls/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/1/2/3/0/1281230-girls-like-girls-0-600-0-900-crop.jpg?v=81265f1a60",
+      "rating": "3.0",
+      "title": "Girls Like Girls",
+      "watched_date": "2026-09-22",
+      "year": "2026"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-3/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/gf/pr/5e/cs/mOt5rOWhfF2GmbW1Dv51lrwwfw0-0-600-0-900-crop.jpg?v=50fd07fb68",
+      "rating": "1.5",
+      "title": "Paranormal Activity 3",
+      "watched_date": "2026-09-21",
+      "year": "2011"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/3/5/9/6/23596-paranormal-activity-2-0-600-0-900-crop.jpg?v=66627656f1",
+      "rating": "2.0",
+      "title": "Paranormal Activity 2",
+      "watched_date": "2026-09-21",
+      "year": "2010"
+    },
     {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/cinderella-1997/",
@@ -996,31 +1020,6 @@
       "title": "Queens of the Dead",
       "watched_date": "2026-09-14",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/mermaid-2025/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/0/1/5/9/1/1301591-mermaid-2025-0-600-0-900-crop.jpg?v=599ed7d0d9",
-      "rating": "3.5",
-      "title": "Mermaid",
-      "watched_date": "2026-09-14",
-      "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/the-haunted-mansion/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/9/2/6/45926-the-haunted-mansion-0-600-0-900-crop.jpg?v=eae8d718c6",
-      "rating": "4.0",
-      "title": "The Haunted Mansion",
-      "watched_date": "2026-09-14",
-      "year": "2003"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/liar-liar/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/fq/hq/vj/re/qd8VcWKrE4cNfInl9Osb8o8h9KP-0-600-0-900-crop.jpg?v=848feea68e",
-      "rating": "4.0",
-      "title": "Liar Liar",
-      "watched_date": "2026-09-14",
-      "year": "1997"
     }
   ],
   "calissippi": [
@@ -1651,6 +1650,14 @@
   ],
   "jon_knowledge": [
     {
+      "link": "https://letterboxd.com/jon_knowledge/film/breakfast-of-champions/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/5/5/6/44556-breakfast-of-champions-0-600-0-900-crop.jpg?v=62b3120c8c",
+      "rating": "3.5",
+      "title": "Breakfast of Champions",
+      "watched_date": "2026-09-21",
+      "year": "1999"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/manhunter/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/2/8/8/45288-manhunter-0-600-0-900-crop.jpg?v=082953f1e1",
       "rating": "4.0",
@@ -1740,14 +1747,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/8/9/7/1/4/1389714-buddy-2026-0-600-0-900-crop.jpg?v=6a078eb95a",
       "rating": "4.5",
       "title": "Buddy",
-      "watched_date": "2026-09-01",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/coyote-vs-acme/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
-      "rating": "5.0",
-      "title": "Coyote vs. Acme",
       "watched_date": "2026-09-01",
       "year": "2026"
     }

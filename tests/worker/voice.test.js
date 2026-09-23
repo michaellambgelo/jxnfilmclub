@@ -696,6 +696,131 @@ describe('mark reviewed without rewriting', () => {
 })
 
 
+// Automatic caption drafts. POST /voice nudges node0's transcriber, which
+// pulls the audio and posts a DRAFT back. A draft is never a reviewed
+// transcript: captions still need the admin panel's save / "mark reviewed".
+describe('automatic caption drafts (node0 transcriber)', () => {
+  const SRT = '1\n00:00:00,000 --> 00:00:02,400\nHey, this is Michael Lamb.\n'
+  const TT = 'test-transcribe-token'
+  const draft = (body, token = TT) => req('/transcriber/draft', { method: 'POST', token, body })
+
+  // Record every outbound fetch; the hook is fire-and-forget via waitUntil.
+  function captureFetch(status = 202) {
+    const calls = []
+    mockFetch(async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response('', { status })
+    })
+    return calls
+  }
+
+  async function submitted(email) {
+    const { token, member } = await getTokenFor(email)
+    const calls = captureFetch()
+    expect((await postVoice(token)).status).toBe(200)
+    const key = `voice:general:${member.id}`
+    return { token, member, key, calls, at: (await env.MEMBERS_KV.get(key, { type: 'json' })).at }
+  }
+
+  it('submitting a clip nudges the transcriber with the key and env only', async () => {
+    const { key, calls } = await submitted('hook@example.com')
+    await vi.waitFor(() => expect(calls.length).toBe(1))
+    expect(calls[0].url).toBe('https://transcribe.test/hook')
+    expect(calls[0].init.headers.Authorization).toBe(`Bearer ${TT}`)
+    // No audio, no callback origin: node0 decides where to fetch from.
+    expect(JSON.parse(calls[0].init.body)).toEqual({ key, env: 'production' })
+  })
+
+  it('a dead transcriber never fails the submission', async () => {
+    const { token } = await getTokenFor('hook-down@example.com')
+    mockFetch(async () => { throw new Error('tunnel down') })
+    expect((await postVoice(token)).status).toBe(200)
+  })
+
+  it('serves the clip audio with the submission it belongs to', async () => {
+    const { key, at } = await submitted('audio@example.com')
+    const res = await req(`/transcriber/audio?key=${encodeURIComponent(key)}`, { token: TT })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('X-Voice-At')).toBe(at)
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(WEBM_BYTES)
+  })
+
+  it('writes a draft that is NOT reviewed and keeps the retention clock', async () => {
+    const { key, at, member } = await submitted('draft@example.com')
+    const [before] = await listVoiceRows()
+
+    const res = await draft({ key, at, srt: SRT })
+    expect(res.status).toBe(200)
+    expect(await (await env.VOICE.get(`voice/general/${member.id}.srt`)).text()).toBe(SRT)
+
+    const [after] = await listVoiceRows()
+    expect(after.value.transcript.draftedAt).toEqual(expect.any(String))
+    expect(after.value.transcript.reviewedAt).toBeUndefined()
+    expect(after.key.expiration).toBe(before.value.expiresAt)
+
+    // The existing review step still works on it, and only then is it reviewed.
+    const marked = await req('/admin/voice/transcript', { method: 'POST', token: ADMIN, body: { key } })
+    expect(marked.status).toBe(200)
+    const row = await env.MEMBERS_KV.get(key, { type: 'json' })
+    expect(row.transcript.reviewedAt).toEqual(expect.any(String))
+  })
+
+  it('never overwrites an existing transcript (human edits, laptop drafts)', async () => {
+    const { key, at, member } = await submitted('draft-exists@example.com')
+    const srtKey = `voice/general/${member.id}.srt`
+    await env.VOICE.put(srtKey, 'edited by a human')
+    expect((await draft({ key, at, srt: SRT })).status).toBe(409)
+    expect(await (await env.VOICE.get(srtKey)).text()).toBe('edited by a human')
+  })
+
+  it('refuses a draft of a take the member has since replaced', async () => {
+    const { key, at, token, member } = await submitted('draft-replaced@example.com')
+    await clearThrottle('draft-replaced@example.com')
+    // Distinct timestamp for the new take.
+    await new Promise(r => setTimeout(r, 5))
+    expect((await postVoice(token)).status).toBe(200)
+
+    expect((await draft({ key, at, srt: SRT })).status).toBe(409)
+    expect(await env.VOICE.head(`voice/general/${member.id}.srt`)).toBeNull()
+  })
+
+  it('refuses a draft for a clip deleted while whisper ran', async () => {
+    const { key, at, token, member } = await submitted('draft-deleted@example.com')
+    expect((await req('/voice', { method: 'DELETE', token })).status).toBe(200)
+    expect((await draft({ key, at, srt: SRT })).status).toBe(404)
+    expect(await env.VOICE.head(`voice/general/${member.id}.srt`)).toBeNull()
+  })
+
+  it('validates the SRT like the admin endpoint', async () => {
+    const { key, at } = await submitted('draft-bad@example.com')
+    expect((await draft({ key, at, srt: 'no timing here' })).status).toBe(400)
+    expect((await draft({ key, at, srt: '' })).status).toBe(400)
+    expect((await draft({ key, at, srt: 'x-->'.repeat(70000) })).status).toBe(413)
+    expect((await draft({ key: 'member:someone', at, srt: SRT })).status).toBe(400)
+  })
+
+  it('the transcriber token and the admin token are not interchangeable', async () => {
+    const { key, at } = await submitted('draft-auth@example.com')
+    expect((await draft({ key, at, srt: SRT }, null)).status).toBe(401)
+    expect((await draft({ key, at, srt: SRT }, ADMIN)).status).toBe(401)
+    expect((await req(`/transcriber/audio?key=${encodeURIComponent(key)}`, { token: ADMIN })).status).toBe(401)
+    expect((await req('/transcriber/pending', { token: ADMIN })).status).toBe(401)
+    // ...and the transcriber token opens nothing on the admin side.
+    expect((await req('/admin/voice', { token: TT })).status).toBe(401)
+    expect((await req('/admin/voice/transcript', { method: 'POST', token: TT, body: { key } })).status).toBe(401)
+  })
+
+  it('pending lists clips with no transcript yet, and only those', async () => {
+    const a = await submitted('pending-a@example.com')
+    const b = await submitted('pending-b@example.com')
+    expect((await draft({ key: b.key, at: b.at, srt: SRT })).status).toBe(200)
+
+    const { keys } = await (await req('/transcriber/pending', { token: TT })).json()
+    expect(keys).toContain(a.key)
+    expect(keys).not.toContain(b.key)
+  })
+})
+
 // --- Free-form messages ------------------------------------------------------
 //
 // A message is a round of one: the member writes the subject, the server mints

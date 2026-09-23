@@ -955,8 +955,12 @@ function voiceStatusPill(status) {
 // Reviewed state comes off the KV row, not from the .srt existing in R2: the
 // DRAFT has to be uploaded before it can be edited here, so object presence
 // stops meaning "a human read it" (worker: handleAdminVoiceTranscript).
+//
+// node0 drafts every clip on submit (draftedAt, no reviewedAt). A draft is
+// ready to read, not ready to caption: it needs a save or "mark reviewed".
 function voiceTranscriptPill(t) {
-  if (!t || !t.reviewedAt) return '<span class="pill" title="No reviewed transcript — draft it locally with scripts/transcribe.mjs, upload, then edit here">no transcript</span>'
+  if (t && !t.reviewedAt && t.draftedAt) return `<span class="pill warn" title="Machine draft from node0 (${attr(t.draftedAt)}) — read it, fix what whisper misheard, then save or mark reviewed. Captions will not render until then.">draft ready</span>`
+  if (!t || !t.reviewedAt) return '<span class="pill" title="No reviewed transcript yet. node0 drafts one automatically on submit; if it has not, run scripts/transcribe.mjs locally and upload">no transcript</span>'
   return `<span class="pill on" title="Reviewed ${attr(t.reviewedAt)}">transcript reviewed</span>`
 }
 
@@ -2290,7 +2294,7 @@ document.addEventListener('click', async (e) => {
         area.value = await res.text()
         note.textContent = ''
       } else {
-        note.textContent = 'no transcript in R2 yet — draft one with scripts/transcribe.mjs and upload it'
+        note.textContent = 'no transcript in R2 yet — node0 drafts one on submit; if it has not, run scripts/transcribe.mjs and upload it'
       }
     }
     else if (a === 'voice-srt-review') {

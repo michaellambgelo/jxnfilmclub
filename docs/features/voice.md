@@ -85,7 +85,7 @@ Written by `handleVoiceSubmit`; the member-facing projection
 | `consent` | always `true`; the request is refused without it |
 | `at`, `expiresAt` | `expiresAt` mirrors the TTL so rewrites can preserve it |
 | `status` | `pending` → `approved` \| `rejected` |
-| `transcript?` | `{ reviewedAt, bytes }`, admin-only, never projected to the member |
+| `transcript?` | `{ draftedAt, bytes }` once node0 drafts it, `{ reviewedAt, bytes }` once an admin saves or marks it reviewed; admin-only, never projected to the member |
 
 `promptText` carries the subject rather than a separate `subject` field on
 purpose: `make_audiogram.mjs` headlines `clips[0].promptText`, and both
@@ -208,6 +208,52 @@ deletion is "immediate and complete".
 The two clocks are not synchronized (KV's TTL is exact, R2's lifecycle sweeps
 daily), so **a KV row outliving its R2 object is an expected state**, not an
 error: `/voice/audio` answers 404, and the UI relabels the row "audio expired".
+
+## Caption drafts (node0)
+
+Every clip gets a machine transcript within seconds of landing, so captions are
+there by default — but only a *draft*. Rendering captions still needs a human.
+
+```mermaid
+sequenceDiagram
+    participant W as Worker
+    participant N as node0 (transcribe_service.mjs)
+    participant A as Admin (Voice tab)
+
+    W-)N: POST /hook { key, env } (waitUntil, after the KV put)
+    N-->>W: 202 at once; one clip at a time after that
+    N->>W: GET /transcriber/audio?key=…  (X-Voice-At: row.at)
+    N->>N: ffmpeg 16k mono → mlx-whisper small → captionCues
+    N->>W: POST /transcriber/draft { key, at, srt }
+    W->>W: 409 if an .srt exists or `at` changed; else write + draftedAt
+    A->>W: read/edit in the Voice tab ("draft ready")
+    A->>W: POST /admin/voice/transcript → reviewedAt
+```
+
+- **Credential.** `TRANSCRIBE_TOKEN` (Worker secret, both envs; same value in
+  node0's `~/.config/node0/jxnfilm-transcribe.env`). It opens the three
+  `/transcriber/*` routes and nothing else; `ADMIN_TOKEN` is refused there and
+  it is refused on every admin route.
+- **Never overwrites.** A draft is only written beside a clip with no `.srt`,
+  so human edits and laptop drafts (`scripts/transcribe.mjs`) always win.
+- **Wrong-take guard.** The draft echoes the `at` it was fetched with. A clip
+  replaced or deleted while whisper ran gets a 409/404, and a draft written in
+  the race window is removed again after a re-read of the row.
+- **Missed hooks.** The daily cron re-nudges every clip with no `.srt`
+  (`renudgePendingTranscripts`), and the service sweeps `/transcriber/pending`
+  on start. node0 down costs at most a day.
+- **Nothing kept on node0.** Audio and SRT exist only in a per-clip temp dir,
+  removed in `finally`.
+- **Streaming.** With `TRANSCRIBE_DEFER` set, each job waits on cluster-ops'
+  `defer-if-streaming.sh --wait 60 7200` and gives up to the cron after two
+  hours.
+- **Hook URL.** `TRANSCRIBE_HOOK_URL` in `wrangler.toml` →
+  `transcribe.michaellamb.dev`, a public hostname on the node6 Cloudflare
+  Tunnel (dashboard-managed) to node0 `:8088`. Unset hook URL or token = inert.
+
+The laptop path is unchanged and still the fallback:
+`node scripts/transcribe.mjs --prompt <id>`. Both share
+`scripts/lib/whisper.mjs`, so they draft identically.
 
 ## Getting a message into an episode
 

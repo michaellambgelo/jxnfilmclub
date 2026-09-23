@@ -33,8 +33,7 @@ import {
 } from './lib/voices.mjs'
 import { selectClips } from './lib/audiogram.mjs'
 import { captionCues, coverage, formatSrt } from './lib/srt.mjs'
-
-const MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3']
+import { DEFAULT_MODEL, MODELS, RAW_SRT, wavArgs, whisperArgs } from './lib/whisper.mjs'
 const USAGE = `usage:
   node scripts/transcribe.mjs --prompt <promptId> [--member ID] [--env production|staging]
        [--model ${MODELS.join('|')}] [--out DIR] [--force]
@@ -59,7 +58,7 @@ process.on('exit', () => { if (tmp) rmSync(tmp, { recursive: true, force: true }
 
 const argv = process.argv.slice(2)
 const opts = { audioPath: null, promptId: null, members: [], envName: 'production',
-  model: 'small', outDir: 'out', force: false, upload: false, uploadOnly: false,
+  model: DEFAULT_MODEL, outDir: 'out', force: false, upload: false, uploadOnly: false,
   pull: false, noUpload: false }
 const flagValue = (flag, v) => {
   if (v === undefined || v.startsWith('--')) fail(`${flag} needs a value\n${USAGE}`)
@@ -95,18 +94,14 @@ if (opts.noUpload && (opts.upload || opts.uploadOnly || opts.pull)) {
 
 // --- whisper ---
 
-// Decode to what whisper actually wants — 16 kHz mono — rather than handing it
-// an Opus/WebM container and hoping. Deliberately the RAW audio, not the
-// loudnorm'd render input: normalization buys nothing for recognition.
+// Arguments shared with node0's drafter: scripts/lib/whisper.mjs.
 function toWhisperWav(src, dest) {
-  ffmpeg(['-i', src, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', dest])
+  ffmpeg(wavArgs(src, dest))
   return dest
 }
 
 function whisper(wavPath, outDir) {
-  const args = ['--from', 'mlx-whisper', 'mlx_whisper', wavPath,
-    '--model', `mlx-community/whisper-${opts.model}-mlx`,
-    '--output-dir', outDir, '--output-name', 'raw', '--output-format', 'srt']
+  const args = whisperArgs(wavPath, outDir, opts.model)
   console.log(`Transcribing with whisper-${opts.model}…`)
   // stdio inherit so whisper's progress streams through to the TUI's run pane
   // instead of arriving in one lump when it finishes.
@@ -115,7 +110,7 @@ function whisper(wavPath, outDir) {
     throw new Error('uvx not found — install uv (https://docs.astral.sh/uv/) to run whisper locally')
   }
   if (r.status !== 0) throw new Error(`whisper exited ${r.status}`)
-  const srt = join(outDir, 'raw.srt')
+  const srt = join(outDir, RAW_SRT)
   if (!existsSync(srt)) throw new Error(`whisper reported success but wrote no SRT to ${srt}`)
   return readFileSync(srt, 'utf8')
 }
@@ -127,7 +122,7 @@ function transcribeTo(audioPath, srtPath, label) {
   toWhisperWav(audioPath, wav)
   const cues = captionCues(whisper(wav, tmp))
   if (!cues.length) throw new Error(`whisper produced no cues for ${label} — is the clip silent?`)
-  rmSync(join(tmp, 'raw.srt'), { force: true })
+  rmSync(join(tmp, RAW_SRT), { force: true })
   mkdirSync(dirname(srtPath), { recursive: true })
   writeFileSync(srtPath, formatSrt(cues))
   console.log(`  ${cues.length} cue(s), ${fmtDur(coverage(cues))} of speech → ${srtPath}`)

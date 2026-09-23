@@ -43,6 +43,9 @@ bucket_name = "jxnfilm-news"
 
 [vars]
 ENVIRONMENT = "production"
+# node0's caption drafter (scripts/transcribe_service.mjs) behind the node6
+# Cloudflare Tunnel. Inert until the TRANSCRIBE_TOKEN secret is also set.
+TRANSCRIBE_HOOK_URL = "https://transcribe.michaellamb.dev/hook"
 GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"
@@ -94,6 +97,7 @@ bucket_name = "jxnfilm-news-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"                 # staging writes KV only; no repository_dispatch (prod JSON stays clean)
+TRANSCRIBE_HOOK_URL = "https://transcribe.michaellamb.dev/hook"   # same node0 hook; the payload says which env
 GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"                  # source branch for seeding KV from data/attendance.json

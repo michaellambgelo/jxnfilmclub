@@ -100,9 +100,9 @@ async function clearAttempts(env, key) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
-      return await route(request, env)
+      return await route(request, env, ctx)
     } catch (err) {
       // Any uncaught throw from a handler would otherwise become a default
       // 500 with no CORS headers, which browsers surface as a CORS violation
@@ -121,10 +121,14 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(scrubPastEvents(env))
     ctx.waitUntil(reconcileMembersAll(env))
+    // Re-send the transcription hook for any clip still without a draft, so a
+    // missed webhook (node0 or the tunnel down, a stream deferral) costs at
+    // most a day rather than a caption.
+    ctx.waitUntil(renudgePendingTranscripts(env))
   },
 }
 
-async function route(request, env) {
+async function route(request, env, ctx) {
     const url = new URL(request.url)
     const { pathname } = url
 
@@ -180,7 +184,7 @@ async function route(request, env) {
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
     // Member voice clips (podcast submissions from /speak).
-    if (request.method === 'POST'   && pathname === '/voice')         return handleVoiceSubmit(request, env)
+    if (request.method === 'POST'   && pathname === '/voice')         return handleVoiceSubmit(request, env, ctx)
     if (request.method === 'DELETE' && pathname === '/voice')         return handleVoiceDelete(request, env)
     if (request.method === 'GET'    && pathname === '/voice/mine')    return handleVoiceMine(request, env)
     if (request.method === 'GET'    && pathname === '/voice/history') return handleVoiceHistory(request, env)
@@ -196,6 +200,11 @@ async function route(request, env) {
     if (request.method === 'POST'   && pathname === '/admin/voice/publish') return handleAdminVoicePublish(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/transcript') return handleAdminVoiceTranscript(request, env)
     if (request.method === 'DELETE' && pathname === '/admin/voice')         return handleAdminVoiceDelete(request, env)
+    // node0's transcriber (scripts/transcribe_service.mjs). TRANSCRIBE_TOKEN,
+    // not ADMIN_TOKEN: it can read clip audio and add a draft, nothing else.
+    if (request.method === 'GET'    && pathname === '/transcriber/pending') return handleTranscriberPending(request, env)
+    if (request.method === 'GET'    && pathname === '/transcriber/audio')   return handleTranscriberAudio(request, env)
+    if (request.method === 'POST'   && pathname === '/transcriber/draft')   return handleTranscriberDraft(request, env)
     // Admin event writes. Same id-in-path shape as /events/:id; the ADMIN_TOKEN
     // gate lives in the handlers so an unset token can never read as a match.
     const adminEventMatch = /^\/admin\/events\/([^\/]+)$/.exec(pathname)
@@ -1088,7 +1097,7 @@ async function countLiveMessages(env, memberId) {
 // object, new 60-day clock (the lifecycle rule counts from upload, so the
 // fresh expirationTtl mirrors it). Consent is not optional — a voice clip is
 // identity — so no X-Voice-Consent: yes means no stored bytes, full stop.
-async function handleVoiceSubmit(request, env) {
+async function handleVoiceSubmit(request, env, ctx) {
   const claims = await authorize(request, env)
   if (!claims) return json(env, { error: 'unauthorized' }, 401)
   const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
@@ -1244,6 +1253,9 @@ async function handleVoiceSubmit(request, env) {
     if (note) row.note = note
   }
   await env.MEMBERS_KV.put(kvKey, JSON.stringify(row), { expirationTtl: VOICE_TTL })
+  // Draft captions straight away. Fire-and-forget: the member's submission
+  // never waits on, or fails because of, node0.
+  if (ctx) ctx.waitUntil(nudgeTranscriber(env, kvKey))
 
   // Contract: the response IS the safe projection (no wrapper object). The
   // published set is passed so a replace of a clip in an already-aired round
@@ -1503,8 +1515,9 @@ async function handleAdminVoiceStatus(request, env) {
 // or with `srt` omitted, marks the existing one reviewed without rewriting it
 // (the panel's "mark reviewed" button, for a transcript that needed no fixes).
 //
-// The admin panel only ever edits: transcripts are drafted locally by
-// scripts/transcribe.mjs and uploaded, so no model runs anywhere near
+// The admin panel only ever edits: transcripts are drafted by whisper on our
+// own hardware — node0 automatically on submit (handleTranscriberDraft), or
+// scripts/transcribe.mjs on a laptop — so no model runs anywhere near
 // Cloudflare. This endpoint writes the corrected SRT back beside its audio and
 // stamps the KV row as reviewed.
 //
@@ -1571,6 +1584,164 @@ async function handleAdminVoiceTranscript(request, env) {
   row.transcript = { reviewedAt: new Date().toISOString(), bytes }
   await env.MEMBERS_KV.put(body.key, JSON.stringify(row), { expiration: row.expiresAt })
   return json(env, { ok: true, key: body.key, transcriptKey, transcript: row.transcript })
+}
+
+// --- Automatic caption drafts (node0's transcriber) ---
+//
+// Every submitted clip is transcribed as soon as it lands: POST /voice nudges
+// TRANSCRIBE_HOOK_URL (node0, via the Cloudflare Tunnel), node0 pulls the
+// audio from /transcriber/audio, runs whisper locally, and posts the SRT back
+// to /transcriber/draft. The payload carries only the row key and which
+// environment sent it — never audio, and never an origin for node0 to call
+// back, so the token can only ever be presented to a host node0 already knows.
+//
+// A DRAFT is not a reviewed transcript. This path sets transcript.draftedAt
+// and never reviewedAt: captions still need a human to save or "mark
+// reviewed" in the admin panel (handleAdminVoiceTranscript) before
+// make_audiogram.mjs will burn them in.
+//
+// TRANSCRIBE_TOKEN is deliberately narrower than ADMIN_TOKEN: it reads clip
+// audio and adds a draft beside a clip that has none. It cannot list members,
+// moderate, overwrite a transcript, or delete anything — and it lives on an
+// always-on box.
+
+function transcriberAuthorized(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  return Boolean(env.TRANSCRIBE_TOKEN) && auth === env.TRANSCRIBE_TOKEN
+}
+
+async function nudgeTranscriber(env, key) {
+  if (!env.TRANSCRIBE_HOOK_URL || !env.TRANSCRIBE_TOKEN) return
+  try {
+    const res = await fetch(env.TRANSCRIBE_HOOK_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.TRANSCRIBE_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, env: env.ENVIRONMENT || 'production' }),
+    })
+    if (!res.ok) console.warn(`transcriber hook: ${res.status} for ${key}`)
+  } catch (err) {
+    // node0 or the tunnel is down. The daily cron re-nudges whatever is still
+    // undrafted, so this is a delay, not a lost caption.
+    console.warn(`transcriber hook failed for ${key}: ${err && err.message}`)
+  }
+}
+
+// Rows with audio but no transcript object in R2, whatever their moderation
+// status — the point is that a draft already exists when an admin opens the
+// panel. One KV list per call; a get + an R2 head per row.
+async function pendingTranscriptKeys(env) {
+  const keys = []
+  let cursor
+  do {
+    const page = await env.MEMBERS_KV.list({ prefix: 'voice:', cursor })
+    for (const { name } of page.keys) {
+      const raw = await env.MEMBERS_KV.get(name)
+      if (!raw) continue
+      let row
+      try { row = JSON.parse(raw) } catch { continue }
+      if (!row.r2Key) continue
+      if ((row.expiresAt || 0) - Math.floor(Date.now() / 1000) < 60) continue
+      if (await env.VOICE.head(srtKeyFor(row.r2Key))) continue
+      keys.push(name)
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+  return keys
+}
+
+async function renudgePendingTranscripts(env) {
+  if (!env.TRANSCRIBE_HOOK_URL || !env.TRANSCRIBE_TOKEN) return
+  for (const key of await pendingTranscriptKeys(env)) await nudgeTranscriber(env, key)
+}
+
+// Load a live clip row for the transcriber, or a ready-made error response.
+async function transcriberRow(env, key) {
+  if (typeof key !== 'string' || !key.startsWith('voice:')) {
+    return { error: json(env, { error: 'invalid key' }, 400) }
+  }
+  const raw = await env.MEMBERS_KV.get(key)
+  if (!raw) return { error: json(env, { error: 'clip not found' }, 404) }
+  let row
+  try { row = JSON.parse(raw) } catch { return { error: json(env, { error: 'clip not found' }, 404) } }
+  if (!row.r2Key) return { error: json(env, { error: 'clip has no audio' }, 404) }
+  if ((row.expiresAt || 0) - Math.floor(Date.now() / 1000) < 60) {
+    return { error: json(env, { error: 'clip has expired' }, 404) }
+  }
+  return { row }
+}
+
+// GET /transcriber/pending — { keys: [...] }. node0 sweeps this on startup to
+// catch clips submitted while it was down.
+async function handleTranscriberPending(request, env) {
+  if (!transcriberAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  return json(env, { keys: await pendingTranscriptKeys(env) })
+}
+
+// GET /transcriber/audio?key=voice:… — the clip bytes. X-Voice-At identifies
+// WHICH submission this is; the draft must echo it back, so a transcript of a
+// take the member has since replaced can never be attached to the new one.
+async function handleTranscriberAudio(request, env) {
+  if (!transcriberAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const { row, error } = await transcriberRow(env, new URL(request.url).searchParams.get('key'))
+  if (error) return error
+  const obj = await env.VOICE.get(row.r2Key)
+  if (!obj) return json(env, { error: 'clip has no audio' }, 404)
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': row.contentType || 'application/octet-stream',
+      'X-Voice-At': row.at || '',
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+// POST /transcriber/draft — { key, at, srt }. Adds a machine draft beside a
+// clip that has no transcript. Never overwrites: an existing .srt may carry a
+// human's edits, or be a laptop draft (scripts/transcribe.mjs) — 409 either
+// way, which the transcriber treats as done.
+async function handleTranscriberDraft(request, env) {
+  if (!transcriberAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const body = await request.json().catch(() => ({}))
+  if (typeof body.srt !== 'string' || !body.srt.trim()) {
+    return json(env, { error: 'srt is required' }, 400)
+  }
+  if (body.srt.length > VOICE_TRANSCRIPT_MAX) return json(env, { error: 'transcript too large' }, 413)
+  if (!body.srt.includes('-->')) {
+    return json(env, { error: 'that does not look like an SRT — no timing lines' }, 400)
+  }
+  const { row, error } = await transcriberRow(env, body.key)
+  if (error) return error
+  if (typeof body.at !== 'string' || body.at !== row.at) {
+    return json(env, { error: 'clip was replaced since it was fetched' }, 409)
+  }
+  const transcriptKey = srtKeyFor(row.r2Key)
+  if (await env.VOICE.head(transcriptKey)) {
+    return json(env, { error: 'a transcript already exists' }, 409)
+  }
+
+  await env.VOICE.put(transcriptKey, body.srt, {
+    httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+  })
+  // The clip may have been deleted (by the member, an admin, or account
+  // deletion) or replaced while whisper ran. Every delete path removes the
+  // .srt, but one that ran BEFORE the put above would have found nothing to
+  // remove — so re-check, and take the draft back out if its clip is gone.
+  const now = await env.MEMBERS_KV.get(body.key)
+  let current = null
+  try { current = now && JSON.parse(now) } catch { current = null }
+  if (!current || current.at !== row.at || current.r2Key !== row.r2Key) {
+    // What this call wrote transcribes a take that no longer exists. With a
+    // new extension it sits at an orphaned key; with the same extension it
+    // shares the new take's key, but that take's own draft cannot exist yet —
+    // the transcriber is serial, and the replace deleted the key before
+    // queueing the nudge. Either way it goes.
+    await env.VOICE.delete(transcriptKey)
+    return json(env, { error: 'clip changed while it was being transcribed' }, 409)
+  }
+  current.transcript = { draftedAt: new Date().toISOString(), bytes: body.srt.length }
+  // The row's ORIGINAL absolute expiry, so drafting never resets retention.
+  await env.MEMBERS_KV.put(body.key, JSON.stringify(current), { expiration: current.expiresAt })
+  return json(env, { ok: true, key: body.key, transcriptKey, transcript: current.transcript })
 }
 
 // DELETE /admin/voice — { key }. Removes the KV row and its R2 object.

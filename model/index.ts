@@ -91,6 +91,33 @@ export async function getAvatars(): Promise<Record<string, string>> {
   return {}
 }
 
+// Custom profile photos: a member row from GET /members carries
+// `avatar: '{sha256}.{ext}'` only while the photo is live (an admin flag drops
+// the field), and the Worker serves it at /av/{memberId}/{file}. Under Node
+// there is no Worker origin, so build-time renders use the fallbacks.
+const AVATAR_FILE_RE = /^[a-f0-9]{64}[.](webp|jpg|png)$/
+
+export function customAvatarUrl(member: any, origin: string | null = resolveWorkerOrigin()): string {
+  if (!origin || !member || !member.id || typeof member.avatar !== 'string') return ''
+  if (!AVATAR_FILE_RE.test(member.avatar)) return ''
+  return `${origin}/av/${encodeURIComponent(member.id)}/${member.avatar}`
+}
+
+// One id-keyed map of what each member's avatar should show: their own photo,
+// else their Letterboxd avatar (the handle-keyed map from getAvatars), else
+// nothing, which renders the letter avatar. Every view looks avatars up
+// through this so the precedence lives in one place.
+export function avatarsById(members: any[], letterboxd: Record<string, string> = {},
+  origin: string | null = resolveWorkerOrigin()): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const m of members || []) {
+    if (!m || !m.id) continue
+    const src = customAvatarUrl(m, origin) || (m.handle && letterboxd && letterboxd[m.handle]) || ''
+    if (src) out[m.id] = src
+  }
+  return out
+}
+
 // Hot takes: member review snippets scraped to data/takes.json by the 6h
 // refresh-letterboxd cron. Static-only — there is no live Worker endpoint,
 // matching how the home page consumes the same file.

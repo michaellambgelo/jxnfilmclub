@@ -64,10 +64,13 @@ the front, which read as broken. The result count reflects the filtered set.
 
 ## Avatar Widget
 
-Members with a linked Letterboxd handle show their Letterboxd avatar when the
-Worker's `GET /avatars` map has one (see [watched.md](watched.md) — og:image
-scrape, 7-day KV cache, default-avatar filtering). The widget's `:src` prop
-renders the image with an `onerror` fallback to the letter avatar.
+A member's avatar is, in order: their **uploaded profile photo** (see
+[member-profile.md § Profile Photo](member-profile.md#profile-photo)), else
+their Letterboxd avatar when the Worker's `GET /avatars` map has one (see
+[watched.md](watched.md) — og:image scrape, 7-day KV cache, default-avatar
+filtering), else the letter avatar. `avatarsById()` in `model/index.ts`
+builds that id-keyed map for every view. The widget's `:src` prop renders the
+image with an `onerror` fallback to the letter avatar.
 
 Everyone else gets the deterministic letter avatar with a colored background:
 - Color is derived from the first letter of the member's name

@@ -422,6 +422,15 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/member/unlink') {
     return proxyJoinAdmin(request, env, q, '/admin/member/unlink')
   }
+  // POST /api/member/avatar/{flag,unflag}?env=  body = JSON { email, reason? }
+  // -- after-the-fact photo moderation via the join Worker, which deletes the
+  // object, drops the public field and records the notice the member sees.
+  if (method === 'POST' && url.pathname === '/api/member/avatar/flag') {
+    return proxyJoinAdmin(request, env, q, '/admin/member/avatar/flag')
+  }
+  if (method === 'POST' && url.pathname === '/api/member/avatar/unflag') {
+    return proxyJoinAdmin(request, env, q, '/admin/member/avatar/unflag')
+  }
   // POST/DELETE /api/rsvp/guest?env=&event=  body = JSON { name, email?,
   // force? } (POST) or { id } (DELETE) — manual guest add/remove via the join
   // Worker's real handlers, so capacity/waitlist/email logic and the attend:

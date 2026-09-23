@@ -92,6 +92,8 @@ filtered out so those members keep the letter avatar. A total miss is not
 cached (same outage guard as watched). `E2E_MODE` returns `{}` so e2e specs
 keep asserting letter avatars.
 
+A member's uploaded profile photo takes precedence over this map everywhere
+(`avatarsById()` in `model/index.ts`; see [member-profile.md § Profile Photo](member-profile.md#profile-photo)).
 Consumers via `getAvatars()` in `model/index.ts` (no static fallback — the
 letter `<avatar>` in `ui/widgets.html` is the fallback, via its `:src` prop +
 onerror handler): member directory cards, `/watched` member headers, the

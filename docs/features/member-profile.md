@@ -1,6 +1,6 @@
 # Member Profile
 
-Authenticated members manage their display name, pronouns, and Letterboxd link from the `/edit` page. Changes propagate to the public site via GitHub Actions.
+Authenticated members manage their display name, pronouns, profile photo, and Letterboxd link from the `/edit` page. Name, pronoun and handle changes propagate to the public site via GitHub Actions; a profile photo is live the moment it uploads.
 
 ## Profile Editing
 
@@ -85,6 +85,73 @@ cache; see [watched.md](watched.md)) and the `/edit` panel shows it beside
 event host lines. Members without a custom Letterboxd avatar (or without a
 handle) keep the letter avatar.
 
+## Profile Photo
+
+A member can upload one photo. It replaces their Letterboxd avatar (and the
+letter avatar) everywhere the site draws one: the member directory, Watched
+headers, and "Hosted by" lines. Precedence lives in one place,
+`avatarsById()` in `model/index.ts`: **custom photo → Letterboxd avatar →
+letter**, keyed by member id.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Site as jxnfilm.club/edit
+    participant Worker as Cloudflare Worker
+    participant R2 as R2 (jxnfilm-news)
+
+    User->>Site: Picks an image
+    Site->>Site: Center-crop square, resize to 512px,<br/>re-encode WebP (JPEG on Safari)
+    Site->>User: Preview + "Use this photo"
+    User->>Site: Confirms
+    Site->>Worker: POST /member/avatar (raw bytes)
+    Worker->>Worker: Type allowlist + magic-byte sniff,<br/>512KB cap, blocked-hash check,<br/>10 uploads / 10 min
+    Worker->>R2: put avatars/{id}/{sha256}.{ext}
+    Worker->>Worker: member.avatar.file, members:all,<br/>session snapshot; delete the old object
+    Worker-->>Site: the new avatar file name
+```
+
+- **Client-side processing** (`avatarSquareBlob` in the `ui/auth.html` lib
+  script): the Worker never decodes images. Re-encoding through a canvas is
+  also what strips EXIF, including GPS, before anything leaves the device.
+  Images under 128px on the short side are refused.
+- **Serving**: `GET /av/{memberId}/{sha256}.{ext}` (public, path validated
+  before any R2 read). `Cache-Control: public, max-age=3600`, not the
+  newsletter images' year-long `immutable`, because a flagged photo has to
+  stop being served and no purge reaches every cache.
+- **Public data**: the member projection gains `avatar: '{sha256}.{ext}'`
+  only while the photo is live. No `update-member` dispatch: the 6-hourly
+  `snapshot-members` workflow copies it into `data/members.json`.
+- **Storage**: the `NEWS` bucket (`jxnfilm-news`) under `avatars/{memberId}/`,
+  chosen because it has no lifecycle rule. Keys are per member, so identical
+  uploads by two members never share an object one of them could delete.
+- **Remove**: `DELETE /member/avatar` deletes the object and the field.
+- **Account deletion** deletes the object in the `/member/delete` cascade.
+- **UI state lives on `edit-view`**, not a child component, because a Nue
+  child cannot repaint after its parent re-renders (see the note above
+  `avatarFields` in `ui/auth.html`).
+
+### Moderation (after the fact)
+
+Photos are public on upload. An organizer reviews them in the admin
+dashboard's **Members** tab (Photo column) and can **flag** one:
+
+1. `POST /admin/member/avatar/flag { email, reason }` (ADMIN_TOKEN; proxied
+   as `/api/member/avatar/flag` by both admin servers) deletes the R2 object,
+   evicts this colo's cached copy, and rewrites `member.avatar` to hold only
+   `flagged` (when, the reason, which file) and `blocked` (the flagged
+   hashes).
+   The public field disappears from `members:all` immediately.
+2. On `/edit` the member sees *"An organizer removed your photo"* with the
+   reason, and their Letterboxd or letter avatar shows meanwhile.
+3. They must **upload a different photo** — the flagged bytes' hash is in
+   `blocked` (last 20 kept), and re-uploading them is a 409. A new upload
+   clears the notice; *Dismiss notice* (`DELETE /member/avatar`) clears it
+   without one. `blocked` survives both.
+4. A mistaken flag is undone with **unflag photo**
+   (`POST /admin/member/avatar/unflag`): the notice clears and the hash is
+   unblocked. The photo itself was deleted, so the member re-uploads it.
+
 ### Unlink Confirmation
 
 When removing a Letterboxd link, the user sees:
@@ -162,6 +229,10 @@ Implementation notes:
 | Invalid handle format on `/member/update` | 400 | "invalid handle format" |
 | No Letterboxd to unlink | 400 | "no Letterboxd linked" |
 | `name` longer than 80 chars on `/member/update` | 400 | "name too long" |
+| Photo type outside JPEG/PNG/WebP, or bytes that are not that type | 415 | "unsupported image type…" / "that file is not a valid image" |
+| Photo over 512KB | 413 | "photo too large (512KB max)" |
+| Re-uploading a flagged photo | 409 | "this photo was removed by a moderator…" |
+| More than 10 photo uploads in 10 minutes | 429 | "too many photo uploads…" |
 | `pronouns` longer than 32 chars on `/member/update` | 400 | "pronouns too long" |
 | `/member/delete` called but the row was already gone (stale tab) | 404 | "member not found" |
 
@@ -174,7 +245,11 @@ Implementation notes:
 | File | Role |
 |------|------|
 | `worker/src/index.js` | `handleMemberMe()`, `handleMemberUpdate()` (now owns handle setting), `handleLbUnlink()` |
-| `ui/auth.html` | `edit-view` component (profile form + `.lb-panel`) |
+| `ui/auth.html` | `edit-view` component (profile form + profile photo panel + `.lb-panel`); photo helpers (`avatarSquareBlob`, `avatarFields`, `avatarUpload`…) in the lib script |
+| `worker/src/index.js` (photos) | `handleMemberAvatarUpload()`, `handleMemberAvatarDelete()`, `handleAvatarImageGet()`, `handleAdminAvatarFlag()`, `handleAdminAvatarUnflag()` |
+| `model/index.ts` | `customAvatarUrl()`, `avatarsById()` — the one avatar precedence rule |
+| `tests/worker/member-avatar.test.js` | upload validation, serving, replace/remove, flag/unflag, deletion cascade |
+| `tests/model/avatars.test.ts` | precedence + URL building |
 | `.github/workflows/update-member.yml` | Commits profile changes; retries if the row isn't in `data/members.json` yet (race with `add-member`) |
 | `tests/worker/member-update.test.js` | unit tests covering name/pronouns/handle paths |
 | `tests/worker/letterboxd.test.js` | unlink unit tests |

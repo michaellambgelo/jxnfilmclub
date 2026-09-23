@@ -361,6 +361,29 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // POST /api/member/avatar/{flag,unflag}?env=  body = JSON { email, reason? }
+  // Proxies the join Worker's after-the-fact photo moderation, same shape
+  // and token handling as /api/member/unlink above.
+  const avatarMod = /^\/api\/member\/avatar\/(flag|unflag)$/.exec(url.pathname)
+  if (method === 'POST' && avatarMod) {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before moderating photos`)
+    }
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/member/avatar/${avatarMod[1]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: await readBody(req),
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
   // POST/DELETE /api/rsvp/guest?env=&event=  body = JSON { name, email?,
   // force? } (POST) or { id } (DELETE) — proxies the join Worker's
   // /events/:id/rsvp/guest so manual guest adds/removes go through the real

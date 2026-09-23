@@ -600,3 +600,12 @@ dialog pre.rich {
   color: var(--accent, #d7321f);
   font-weight: 600;
 }
+
+/* Profile photo thumbnail in the Members table. */
+.member-photo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}

@@ -211,12 +211,13 @@ async function renderMembers() {
     </div>
     <table id="members-table">
       <thead><tr>
-        <th>Name</th><th>Email</th><th>Handle</th><th>Pronouns</th><th>Joined</th><th>ID</th><th>Actions</th>
+        <th>Name</th><th>Photo</th><th>Email</th><th>Handle</th><th>Pronouns</th><th>Joined</th><th>ID</th><th>Actions</th>
       </tr></thead>
       <tbody>
         ${rows.map(({ keyName, m }) => `
           <tr data-search="${attr([m.name, m.email, m.handle, m.id].filter(Boolean).join(' ').toLowerCase())}">
             <td>${escapeHtml(m.name)}</td>
+            <td>${memberPhotoCell(m)}</td>
             <td>${escapeHtml(m.email)}</td>
             <td>${m.handle ? `<code>@${escapeHtml(m.handle)}</code>` : '<span class="muted">—</span>'}</td>
             <td>${escapeHtml(m.pronouns) || '<span class="muted">—</span>'}</td>
@@ -227,6 +228,8 @@ async function renderMembers() {
               <button data-action="member-view" data-key="${attr(keyName)}">view</button>
               <button data-action="clear-rate" data-email="${attr(m.email)}">clear rate limits</button>
               ${(m.handle || agg[m.id]) ? `<button class="danger" data-action="unlink-lb" data-email="${attr(m.email)}" data-id="${attr(m.id)}" data-handle="${attr(m.handle || agg[m.id])}">${m.handle ? 'unlink LB' : 'repair LB'}</button>` : ''}
+              ${m.avatar && m.avatar.file ? `<button class="danger" data-action="flag-avatar" data-email="${attr(m.email)}" data-name="${attr(m.name)}">flag photo</button>` : ''}
+              ${m.avatar && m.avatar.flagged ? `<button data-action="unflag-avatar" data-email="${attr(m.email)}" data-name="${attr(m.name)}">unflag photo</button>` : ''}
               <button class="danger" data-action="evict-session" data-id="${attr(m.id)}">evict session</button>
             </td>
           </tr>
@@ -235,6 +238,22 @@ async function renderMembers() {
     </table>
   `
   wireFilter($('#filter'), '#members-table tbody tr')
+}
+
+// Custom profile photo: a thumbnail of the live photo, or a flag marker (the
+// flagged photo itself is already deleted, so there is nothing to show).
+// Moderation is after the fact -- photos are public on upload, and flagging
+// is what removes one. See docs/features/member-profile.md.
+function memberPhotoCell(m) {
+  const a = m.avatar || {}
+  if (a.file && m.id) {
+    const src = `${nlExpectedOrigin()}/av/${encodeURIComponent(m.id)}/${a.file}`
+    return `<a href="${attr(src)}" target="_blank" rel="noopener"><img class="member-photo" src="${attr(src)}" alt="photo of ${attr(m.name)}" width="40" height="40" loading="lazy"></a>`
+  }
+  if (a.flagged) {
+    return `<span class="stat-flag" title="${attr(`Flagged ${a.flagged.at || ''}: ${a.flagged.reason || ''}`)}">flagged</span>`
+  }
+  return '<span class="muted">—</span>'
 }
 
 // Default compose template — email-safe (single table, inline styles, no
@@ -1923,6 +1942,22 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Force-unlink @${handle} from ${email}?\n\nRuns the full unlink cascade on the join Worker (member row + reverse indices + pending token + members:all projection + session snapshot + update-member commit).`)) return
       await api('POST', `/api/member/unlink?${qs({ env: env() })}`, JSON.stringify({ email }))
       toast(`Unlinked @${handle} from ${email}`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'flag-avatar') {
+      const { email, name } = btn.dataset
+      const reason = prompt(`Remove ${name}'s profile photo?\n\nThe photo is deleted and they are asked to upload a different one. This reason is shown to them:`,
+        'Please use a photo that follows club guidelines.')
+      if (reason === null) return
+      await api('POST', `/api/member/avatar/flag?${qs({ env: env() })}`, JSON.stringify({ email, reason }))
+      toast(`Flagged ${name}'s photo`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'unflag-avatar') {
+      const { email, name } = btn.dataset
+      if (!confirm(`Clear the flag on ${name}'s photo?\n\nThe notice goes away and they may upload that photo again. The photo itself was deleted when it was flagged.`)) return
+      await api('POST', `/api/member/avatar/unflag?${qs({ env: env() })}`, JSON.stringify({ email }))
+      toast(`Cleared the flag on ${name}'s photo`)
       await switchTab(currentTab)
     }
     else if (a === 'evict-session') {

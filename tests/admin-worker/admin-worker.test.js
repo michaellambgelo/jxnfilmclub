@@ -829,3 +829,43 @@ describe('/api/img', () => {
     expect((await res.json()).error).toContain('image fetch failed: 404')
   })
 })
+
+// --- Profile photo moderation proxies: same shape as unlink ---
+
+describe('/api/member/avatar/{flag,unflag}', () => {
+  for (const action of ['flag', 'unflag']) {
+    it(`${action} forwards to the join worker with the admin token and body`, async () => {
+      const { service, calls } = stubService({ ok: true })
+      const body = JSON.stringify({ email: 'adm@example.com', reason: 'not club appropriate' })
+      const res = await call(`/api/member/avatar/${action}?env=production`, {
+        method: 'POST', body, token: await signToken(), envOverrides: { JOIN_WORKER: service },
+      })
+      expect(res.status).toBe(200)
+      expect(calls[0].url).toBe(`https://join.jxnfilm.club/admin/member/avatar/${action}`)
+      expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+      expect(calls[0].init.body).toBe(body)
+    })
+  }
+
+  it('routes staging to the staging join worker and relays errors', async () => {
+    const { service, calls } = stubService({ error: 'member has no custom photo' }, 400)
+    const res = await call('/api/member/avatar/flag?env=staging', {
+      method: 'POST', body: '{"email":"adm@example.com"}', token: await signToken(),
+      envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('member has no custom photo')
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/member/avatar/flag')
+  })
+
+  it('refuses without an Access token', async () => {
+    const { service, calls } = stubService({ ok: true })
+    const res = await call('/api/member/avatar/flag?env=production', {
+      method: 'POST', body: '{"email":"adm@example.com"}', envOverrides: { JOIN_WORKER: service },
+    })
+    // The Access-JWT gate fails closed with 403 before any proxying.
+    expect(res.status).toBe(403)
+    await res.text()
+    expect(calls).toHaveLength(0)
+  })
+})

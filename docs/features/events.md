@@ -145,9 +145,9 @@ events with the RSVP box ticked) swap the attendance toggle for an
 RSVP/waitlist affordance and are documented in
 [hosting.md](hosting.md); member-hosted cards additionally show a "Hosted by"
 line
-with the host's avatar (Letterboxd avatar via `GET /avatars` when the host
-has a linked handle, letter avatar otherwise — see
-[watched.md](watched.md)), the RSVP meter, an optional showtime (either
+with the host's avatar (their uploaded profile photo, else their Letterboxd
+avatar via `GET /avatars`, else the letter avatar — see
+[member-profile.md § Profile Photo](member-profile.md#profile-photo)), the RSVP meter, an optional showtime (either
 kind), and meetup self-organized copy.
 
 ## Page Layout

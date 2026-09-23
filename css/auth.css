@@ -608,3 +608,105 @@
   background: var(--surface-2);
   color: var(--ink-5);
 }
+
+/* Profile photo panel on /edit. The file input stays mounted (a label styled
+   as the primary button wraps it) because nuedom does not rebind handlers on
+   remount; the pick row is hidden with a class while a preview is pending. */
+.auth .av-panel {
+  margin: 2rem 0;
+}
+
+.auth .av-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.auth .av-photo {
+  width: 5.5rem;
+  height: 5.5rem;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: var(--line-2);
+}
+
+.auth .av-photo.-letter {
+  display: grid;
+  place-items: center;
+  font-size: 2.4rem;
+  font-weight: 500;
+  color: white;
+}
+
+.auth .av-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth .av-hint {
+  margin: 0 0 0.75rem;
+  color: var(--ink-2);
+}
+
+.auth .av-note {
+  margin: 0.75rem 0 0;
+  font-size: var(--fs-14);
+  color: var(--ink-3);
+}
+
+.auth .av-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.auth .av-actions.-hidden {
+  display: none;
+}
+
+.auth .av-pick {
+  position: relative;
+  display: inline-block;
+  padding: 0.7rem;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  background: var(--brand);
+  color: white;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.auth .av-pick:hover {
+  background: var(--ink-strong);
+  color: var(--bg);
+}
+
+.auth .av-pick:focus-within {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+/* Visually hidden but still focusable and clickable through the label. */
+.auth .av-pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.auth .av-flag {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 480px) {
+  .auth .av-row { flex-direction: column; align-items: center; text-align: center; }
+  .auth .av-actions { justify-content: center; }
+}

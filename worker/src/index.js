@@ -180,6 +180,10 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
     if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
+    // Custom profile photo. Raw image bytes, not JSON: the browser has already
+    // cropped and re-encoded it, so there is nothing to wrap.
+    if (request.method === 'POST'   && pathname === '/member/avatar') return handleMemberAvatarUpload(request, env)
+    if (request.method === 'DELETE' && pathname === '/member/avatar') return handleMemberAvatarDelete(request, env)
 
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
@@ -195,6 +199,8 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
+    if (request.method === 'POST' && pathname === '/admin/member/avatar/flag')   return handleAdminAvatarFlag(request, env)
+    if (request.method === 'POST' && pathname === '/admin/member/avatar/unflag') return handleAdminAvatarUnflag(request, env)
     if (request.method === 'GET'    && pathname === '/admin/voice')         return handleAdminVoiceList(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/status')  return handleAdminVoiceStatus(request, env)
     if (request.method === 'POST'   && pathname === '/admin/voice/publish') return handleAdminVoicePublish(request, env)
@@ -230,6 +236,9 @@ async function route(request, env, ctx) {
     }
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
+    if ((request.method === 'GET' || request.method === 'HEAD') && pathname.startsWith('/av/')) {
+      return handleAvatarImageGet(request, env, pathname.slice('/av/'.length))
+    }
     // Operator-editable config (admin portal writes config:* keys in
     // MEMBERS_KV). Public projection only — config:newsletter_template is
     // admin-only and deliberately absent here.
@@ -760,6 +769,10 @@ async function handleMemberDelete(request, env) {
   // can't be identity-stripped, it IS the identity. Same unguarded stance as
   // purgeRsvps: a failure here must block the deletion, not be swallowed.
   await purgeVoiceClips(env, member)
+
+  // The profile photo goes with the account. Unguarded for the same reason:
+  // claiming success while the photo stays public would break the promise.
+  await deleteAvatarObject(env, member)
 
   // KV cascade. Order doesn't matter for correctness — each delete is
   // independent — but doing the canonical row first means a mid-flight
@@ -2249,6 +2262,10 @@ function publicMemberProjection(member) {
   const out = { id: member.id, name: member.name, joined: member.joined }
   if (member.pronouns) out.pronouns = member.pronouns
   if (member.handle)   out.handle   = member.handle
+  // Only a live custom photo is public. A flagged one has no `file` (the
+  // object is already deleted), so it drops out of every public read the
+  // moment the flag lands.
+  if (member.avatar && member.avatar.file) out.avatar = member.avatar.file
   return out
 }
 
@@ -2779,6 +2796,233 @@ function parseProfileAvatar(html) {
   const m = /https:\/\/a\.ltrbxd\.com\/resized\/avatar\/upload\/[^"'\s]*avtr-[^"'\s]*/.exec(String(html))
   if (!m) return ''
   return m[0].replace(/avtr-0-[0-9]+-0-[0-9]+-crop/, 'avtr-0-80-0-80-crop')
+}
+
+// --- Custom profile photos ---
+//
+// A member can upload one photo; it replaces their Letterboxd avatar (and the
+// letter avatar) everywhere the site draws one. The browser crops it square
+// and re-encodes it to 512px before upload, which bounds the size and strips
+// camera metadata such as GPS location; the Worker never decodes images.
+//
+// Moderation is after the fact. The photo is public the moment it uploads.
+// An admin can flag it (POST /admin/member/avatar/flag): the R2 object is
+// deleted, the public projection drops the field, and the member sees the
+// reason on /edit. Its hash joins `blocked`, so re-uploading the same bytes is
+// refused -- the member has to choose a different photo before a custom
+// avatar shows again. POST /admin/member/avatar/unflag undoes a mistaken flag
+// (the photo is already gone, so the member re-uploads).
+//
+// member.avatar = {
+//   file?:    '{sha256}.{ext}'  live photo, served at /av/{memberId}/{file}
+//   at?:      ISO time of that upload
+//   flagged?: { at, reason, file }  set by an admin, cleared by a new upload
+//   blocked?: ['{sha256}', ...]     flagged hashes, most recent last
+// }
+//
+// Storage: the NEWS bucket under avatars/{memberId}/. That bucket has no
+// lifecycle rule, which is what a profile photo needs; deletion is explicit
+// (replace, remove, flag, account deletion). Keys are per member, so two
+// members uploading identical bytes never share an object that one of them
+// could delete out from under the other.
+
+const AVATAR_MAX_BYTES = 512 * 1024
+const AVATAR_TYPES = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' }
+const AVATAR_FILE = /^([a-f0-9]{64})\.(webp|jpg|png)$/
+const AVATAR_MEMBER_ID = /^[A-Za-z0-9_-]{1,40}$/
+const AVATAR_CONTENT_TYPE = { webp: 'image/webp', jpg: 'image/jpeg', png: 'image/png' }
+// An hour, not the newsletter images' year-long immutable: a flagged photo
+// must stop being served, and no purge reaches every edge and browser cache.
+const AVATAR_CACHE_CONTROL = 'public, max-age=3600'
+const AVATAR_UPLOADS_PER_WINDOW = 10
+const AVATAR_UPLOAD_WINDOW = 600 // seconds
+const AVATAR_BLOCKED_MAX = 20
+const MAX_FLAG_REASON = 200
+
+// The declared Content-Type is only a claim; the first bytes decide. The
+// member-facing route takes files from anyone with an account, unlike the
+// admin-only newsletter upload, so it checks what it stores.
+function sniffImage(bytes) {
+  const b = bytes
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg'
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'png'
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'webp'
+  return null
+}
+
+const avatarKey = (memberId, file) => `avatars/${memberId}/${file}`
+
+async function deleteAvatarObject(env, member) {
+  const file = member && member.avatar && member.avatar.file
+  if (!file || !member.id || !env.NEWS) return
+  await env.NEWS.delete(avatarKey(member.id, file))
+}
+
+// Persist a member row whose public projection may have changed: canonical
+// row, members:all, and the session snapshot /member/me reads. No GitHub
+// dispatch -- the 6-hourly snapshot-members workflow copies GET /members into
+// data/members.json, so an upload does not cost a commit.
+async function saveMemberRow(env, member) {
+  await env.MEMBERS_KV.put(`member:${member.email}`, JSON.stringify(member))
+  await patchMembersAll(env, publicMemberProjection(member))
+  await writeSession(env, member)
+}
+
+// POST /member/avatar -- authenticated. Body: the image bytes, Content-Type
+// image/webp | image/jpeg | image/png, 512KB max.
+async function handleMemberAvatarUpload(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  if (!env.NEWS) return json(env, { error: 'photo storage is not configured for this environment' }, 503)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+  // An id the /av/ route could not serve would store a photo nobody can see.
+  if (!AVATAR_MEMBER_ID.test(member.id || '')) return json(env, { error: 'member id cannot carry a photo' }, 409)
+
+  const declaredType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase()
+  const ext = AVATAR_TYPES[declaredType]
+  if (!ext) return json(env, { error: 'unsupported image type: use a JPEG, PNG or WebP' }, 415)
+  if (Number(request.headers.get('Content-Length') || 0) > AVATAR_MAX_BYTES) {
+    return json(env, { error: 'photo too large (512KB max)' }, 413)
+  }
+  const bytes = new Uint8Array(await request.arrayBuffer())
+  if (bytes.byteLength > AVATAR_MAX_BYTES) return json(env, { error: 'photo too large (512KB max)' }, 413)
+  if (!bytes.byteLength) return json(env, { error: 'empty photo' }, 400)
+  if (sniffImage(bytes) !== ext) return json(env, { error: 'that file is not a valid image' }, 415)
+
+  const sha = hex(await crypto.subtle.digest('SHA-256', bytes))
+  const prev = member.avatar || {}
+  const blocked = Array.isArray(prev.blocked) ? prev.blocked : []
+  if (blocked.includes(sha)) {
+    return json(env, { error: 'this photo was removed by a moderator; please choose a different one' }, 409)
+  }
+  const file = `${sha}.${ext}`
+  if (prev.file === file) return json(env, { ok: true, avatar: file })
+
+  // Counted only once an upload is valid, so a rejected file never uses up
+  // the member's allowance. checkAttempts/recordFailure are the generic
+  // windowed counter (named for the OTP failures they were written for);
+  // here they count accepted uploads.
+  const rateKey = `rate:avatar:${claims.email}`
+  if (!(await checkAttempts(env, rateKey, AVATAR_UPLOADS_PER_WINDOW))) {
+    return json(env, { error: 'too many photo uploads; try again in a few minutes' }, 429)
+  }
+  await recordFailure(env, rateKey, AVATAR_UPLOAD_WINDOW)
+
+  await env.NEWS.put(avatarKey(member.id, file), bytes, {
+    httpMetadata: { contentType: AVATAR_CONTENT_TYPE[ext], cacheControl: AVATAR_CACHE_CONTROL },
+  })
+  const oldFile = prev.file
+  member.avatar = { file, at: new Date().toISOString() }
+  if (blocked.length) member.avatar.blocked = blocked
+  await saveMemberRow(env, member)
+  // After the row points at the new photo, so a failure here leaves an
+  // orphaned object rather than a member pointing at nothing.
+  if (oldFile) await env.NEWS.delete(avatarKey(member.id, oldFile))
+  return json(env, { ok: true, avatar: file })
+}
+
+// DELETE /member/avatar -- authenticated. Back to the Letterboxd or letter
+// avatar. Also dismisses a moderation notice; the blocked hashes stay.
+async function handleMemberAvatarDelete(request, env) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const memberRaw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!memberRaw) return json(env, { error: 'member not found' }, 404)
+  const member = JSON.parse(memberRaw)
+  const prev = member.avatar || {}
+  if (!prev.file && !prev.flagged) return json(env, { error: 'no custom photo' }, 400)
+
+  await deleteAvatarObject(env, member)
+  if (Array.isArray(prev.blocked) && prev.blocked.length) member.avatar = { blocked: prev.blocked }
+  else delete member.avatar
+  await saveMemberRow(env, member)
+  return json(env, { ok: true })
+}
+
+// GET|HEAD /av/{memberId}/{sha256}.{ext} -- PUBLIC. Validated before any R2
+// read so a crafted path can never address another prefix.
+async function handleAvatarImageGet(request, env, rest) {
+  const [memberId, file, extra] = String(rest || '').split('/')
+  const m = AVATAR_FILE.exec(file || '')
+  if (extra !== undefined || !AVATAR_MEMBER_ID.test(memberId || '') || !m) {
+    return new Response('not found', { status: 404 })
+  }
+  if (!env.NEWS) return new Response('not configured', { status: 503 })
+
+  const cache = caches.default
+  const hit = await cache.match(request)
+  if (hit) return hit
+
+  const obj = await env.NEWS.get(avatarKey(memberId, file))
+  if (!obj) return new Response('not found', { status: 404 })
+  const headers = new Headers({
+    'Content-Type': AVATAR_CONTENT_TYPE[m[2]],
+    'Cache-Control': AVATAR_CACHE_CONTROL,
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
+  })
+  const res = new Response(request.method === 'HEAD' ? null : obj.body, { headers })
+  if (request.method === 'GET') await cache.put(request, res.clone())
+  return res
+}
+
+async function adminAvatarTarget(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) return { error: json(env, { error: 'unauthorized' }, 401) }
+  let body
+  try { body = await request.json() } catch { body = {} }
+  if (!isValidEmail(body.email)) return { error: json(env, { error: 'invalid email' }, 400) }
+  const memberRaw = await env.MEMBERS_KV.get(`member:${body.email}`)
+  if (!memberRaw) return { error: json(env, { error: 'member not found' }, 404) }
+  return { member: JSON.parse(memberRaw), body }
+}
+
+// POST /admin/member/avatar/flag -- ADMIN_TOKEN. Body { email, reason }.
+async function handleAdminAvatarFlag(request, env) {
+  const { member, body, error } = await adminAvatarTarget(request, env)
+  if (error) return error
+  const prev = member.avatar || {}
+  if (!prev.file) return json(env, { error: 'member has no custom photo' }, 400)
+  const reason = String(body.reason || '').trim().slice(0, MAX_FLAG_REASON) || 'Removed by a moderator.'
+
+  await deleteAvatarObject(env, member)
+  // Best effort: only this colo's cache. Other colos and browsers drop the
+  // copy within AVATAR_CACHE_CONTROL, and the site stops linking it now.
+  const url = new URL(request.url)
+  await caches.default.delete(`${url.origin}/av/${member.id}/${prev.file}`).catch(() => {})
+
+  const sha = prev.file.split('.')[0]
+  const blocked = (Array.isArray(prev.blocked) ? prev.blocked : []).filter(h => h !== sha)
+  blocked.push(sha)
+  member.avatar = {
+    flagged: { at: new Date().toISOString(), reason, file: prev.file },
+    blocked: blocked.slice(-AVATAR_BLOCKED_MAX),
+  }
+  await saveMemberRow(env, member)
+  return json(env, { ok: true, flagged: prev.file })
+}
+
+// POST /admin/member/avatar/unflag -- ADMIN_TOKEN. Body { email }. Clears the
+// notice and unblocks that hash. The photo itself was deleted when flagged,
+// so the member uploads it again.
+async function handleAdminAvatarUnflag(request, env) {
+  const { member, error } = await adminAvatarTarget(request, env)
+  if (error) return error
+  const prev = member.avatar || {}
+  if (!prev.flagged) return json(env, { error: 'member photo is not flagged' }, 400)
+  const sha = String(prev.flagged.file || '').split('.')[0]
+  const blocked = (Array.isArray(prev.blocked) ? prev.blocked : []).filter(h => h !== sha)
+  const next = {}
+  if (prev.file) { next.file = prev.file; next.at = prev.at }
+  if (blocked.length) next.blocked = blocked
+  if (Object.keys(next).length) member.avatar = next
+  else delete member.avatar
+  await saveMemberRow(env, member)
+  return json(env, { ok: true })
 }
 
 // --- Member-hosted screenings (RSVP + private address) ---

@@ -35,7 +35,7 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 2026-09-22</p>
+  <p class="updated">Last updated: 2026-09-23</p>
 
   <p>
     Jackson Film Club ("we") operates
@@ -56,6 +56,13 @@
       activity for the Watched page: we mirror up to the most recent 50 diary
       entries your public feed still serves, and nothing older than that feed
       already carries.</li>
+    <li><b>Profile photo</b> — optional. If you upload one, it replaces your
+      Letterboxd avatar or initial wherever the site shows your avatar, and
+      it is <b>public</b>. Your browser crops it square and shrinks it before
+      it is sent, which also strips the location and camera details a phone
+      photo usually carries; we store only that small square image. Club
+      organizers can remove a photo that breaks club guidelines — you are
+      told why on your account page and asked to choose a different one.</li>
     <li><b>RSVP records</b> — when you RSVP to an event that takes RSVPs —
       a member-hosted screening, or a club event an admin set up that way —
       we record your name, email, and the time you RSVP'd, so whoever is
@@ -103,8 +110,9 @@
     Your email, RSVP records, and host addresses are stored privately in
     Cloudflare Workers KV. Your email is <b>never published in the public
     members list</b> or committed to the public GitHub repository. What
-    <i>is</i> public: your display name, pronouns, Letterboxd handle, your
-    member id, and which screenings you attended — on the site and in the
+    <i>is</i> public: your display name, pronouns, Letterboxd handle, profile
+    photo if you uploaded one, your member id, and which screenings you
+    attended — on the site and in the
     repository's public <code>data/*.json</code> files. Attendance records
     your member id and display name, never your email.
   </p>
@@ -191,6 +199,10 @@
       entry falls out of that feed it falls out of ours. Unlinking your
       Letterboxd handle, or deleting your membership, drops your entries
       immediately.</li>
+    <li><b>Your profile photo stays until you replace or remove it</b>, an
+      organizer removes it, or you delete your membership — each of those
+      deletes the stored image. A copy can linger in browser and network
+      caches for up to an hour afterwards.</li>
     <li><b>Feedback deletes itself after 90 days</b> — usually sooner, once
       we've read and handled it.</li>
     <li><b>Voice recordings delete themselves 60 days after you submit
@@ -207,7 +219,7 @@
   <ul>
     <li><b>Delete your membership yourself, instantly</b> — the danger zone on
       your <a href="%SITE_ORIGIN%/edit">account page</a> removes your
-      email, profile, and upcoming RSVPs on the spot. Any feedback you sent
+      email, profile, profile photo, and upcoming RSVPs on the spot. Any feedback you sent
       keeps its text but loses your name and email in the same moment.
       Optionally, you can also anonymize your name in past attendance
       lists — with one exception, next.</li>
@@ -221,6 +233,9 @@
       hosted, ask us directly at
       <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a> — we
       do those by hand, one request at a time.</li>
+    <li><b>Replace or remove your profile photo</b> — anytime, on your
+      <a href="%SITE_ORIGIN%/edit">account page</a>. Deleting your membership
+      deletes it too.</li>
     <li><b>Unsubscribe from announcements</b> — one click from any
       announcement email, or the toggle on your account page.</li>
     <li><b>Cancel an RSVP</b> — one click from the confirmation email, or from

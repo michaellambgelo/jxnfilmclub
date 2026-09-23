@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, avatarsById, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled } from 'app'
 
   // Shared by every component in this lib file. Lib-script scope is NOT subject
   // to the 10k component-script truncation cap (Nue pushes the head script raw;
@@ -273,12 +273,11 @@
   // home page hero stamp, which reads "Next screening".
   function evNotSocial(e) { return !evIsSocial(e) }
 
-  // Host avatar via the id->handle and handle->avatar maps. A method rather
-  // than an inline expression because brace literals inside attribute values
-  // are template syntax.
-  function evHostAvatar(e, handles, avatars) {
-    const handle = (handles || {})[e && e.hostId]
-    return handle ? ((avatars || {})[handle] || '') : ''
+  // Host avatar from the id-keyed avatar map (custom photo, else Letterboxd).
+  // A method rather than an inline expression because brace literals inside
+  // attribute values are template syntax.
+  function evHostAvatar(e, avatars) {
+    return (e && e.hostId && (avatars || {})[e.hostId]) || ''
   }
 
   // Attendee rows are { id, name }. Only a member id resolves to a Letterboxd
@@ -671,7 +670,7 @@
 
   <div class="card-grid member-grid">
     <article :each="el in items" key="{ el.id || el.handle }" class="member-card">
-      <avatar :name="el.name" :src="avatarFor(el.handle)"/>
+      <avatar :name="el.name" :src="avatarFor(el)"/>
       <h3>{ el.name }</h3>
       <a :if="el.handle" class="handle"
         href="https://letterboxd.com/{ el.handle }/" target="_blank" rel="noopener">@{ el.handle }</a>
@@ -684,10 +683,11 @@
     state.on('query sort', () => this.reload())
 
     // NB: brace literals inside attribute values are template syntax, so the
-    // avatar map lookup lives here instead of inline in :src.
-    avatarFor(handle) {
+    // avatar map lookup lives here instead of inline in :src. The map is id
+    // keyed: a custom photo or a Letterboxd avatar, whichever wins.
+    avatarFor(el) {
       const map = this.avatars || {}
-      return handle ? (map[handle] || '') : ''
+      return (el && el.id && map[el.id]) || ''
     }
 
     // Sort state is the single ?sort= token: a key alone or key-asc / key-desc.
@@ -720,13 +720,14 @@
         sort: state.sort || 'joined-desc',
         limit: 1000,
       })
-      this.update({ items, total })
+      this.update({ items, total, avatars: avatarsById(items, this.lbAvatars || {}) })
     }
 
     async mounted() {
-      // Avatars land before the first card render so the grid paints once.
-      const avatars = await getAvatars().catch(function() { return {} })
-      this.update({ avatars: avatars })
+      // Letterboxd avatars land before the first card render so the grid
+      // paints once; reload merges them with custom photos per member.
+      const lbAvatars = await getAvatars().catch(function() { return {} })
+      this.update({ lbAvatars: lbAvatars })
       await this.reload()
     }
   </script>
@@ -844,7 +845,7 @@
         sections: this.applied(page.sections),
         strip: page.strip,
         handleless: page.handleless,
-        avatars: results[2],
+        avatars: avatarsById(results[0].items || [], results[2]),
       })
       // The router strips URL hashes, so /watched#handle scrolls manually on
       // load only. In-page links go through scrollToMember instead — autolink
@@ -865,7 +866,7 @@
      Mounts via :each after the parent data update, so props are final. -->
 <section :is="watched-member" id="member-{ member.handle }" class="watched-member">
   <header class="watched-member-header">
-    <avatar :name="member.name" :src="avatarFor(member.handle)"/>
+    <avatar :name="member.name" :src="avatarFor(member)"/>
     <div>
       <h2>{ member.name }</h2>
       <a href="https://letterboxd.com/{ member.handle }/" target="_blank" rel="noopener">@{ member.handle }</a>
@@ -892,9 +893,9 @@
   </div>
 
   <script>
-    this.avatarFor = function(handle) {
+    this.avatarFor = function(m) {
       const map = this.avatars || {}
-      return handle ? (map[handle] || '') : ''
+      return (m && m.id && map[m.id]) || ''
     }
   </script>
 </section>
@@ -1051,11 +1052,12 @@
       // brace: { } inside an attribute value is template syntax, and a
       // `|| {}` guard there compiles to a syntax error in the bundle.
       this.update({ session: session, attendance: {}, rsvps: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
-      const [all, { items: members }, avatars] = await Promise.all([
+      const [all, { items: members }, lbAvatars] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
         getAvatars().catch(() => ({})),
       ])
+      const avatars = avatarsById(members, lbAvatars)
       const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
       // Keyed by member id, not display name: an attendee row carries the id,
       // and two members could share a name.
@@ -1237,7 +1239,7 @@
     }
 
     // Thunks: the bodies are pure and live in the uncapped lib script.
-    this.hostAvatarSrc = function() { return evHostAvatar(this.event, this.handles, this.avatars) }
+    this.hostAvatarSrc = function() { return evHostAvatar(this.event, this.avatars) }
     this.handleFor = function(a) { return evHandleFor(a, this.handles) }
 
     this.patchLbUri = async function(uri) {

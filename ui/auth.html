@@ -86,6 +86,151 @@
 
   globalThis.jxnfcEnsureSession = ensureSession
 
+  // --- Profile photo (edit-view) ---
+  // The state lives on edit-view rather than a child component: a Nue child
+  // cannot repaint after its parent re-renders, and edit-view re-renders on
+  // the stats arrival and on every delete-confirm keystroke. The logic lives
+  // here because edit-view's script is near the 10k cap; the view carries only
+  // one-line wrappers, and its template reads the av* fields built below.
+  // Single-instance view, so the pending upload can sit at module scope.
+  let avatarPendingBlob = null
+  let avatarPreviewUrl = ''
+
+  const AVATAR_OUT_PX = 512
+  const AVATAR_MIN_PX = 128
+
+  // Center-crop to a square and re-encode at 512px. Re-encoding is also what
+  // strips camera metadata (GPS included) before anything leaves the device.
+  // WebP where the browser can encode it; Safari falls back to JPEG.
+  async function avatarSquareBlob(file) {
+    let src
+    if (typeof createImageBitmap === 'function') {
+      src = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    } else {
+      const url = URL.createObjectURL(file)
+      try {
+        src = await new Promise((resolve, reject) => {
+          const img = new Image()
+          img.onload = () => resolve(img)
+          img.onerror = reject
+          img.src = url
+        })
+      } finally { URL.revokeObjectURL(url) }
+    }
+    const w = src.width, h = src.height, side = Math.min(w, h)
+    if (side < AVATAR_MIN_PX) throw new Error('small')
+    const out = Math.min(AVATAR_OUT_PX, side)
+    const canvas = document.createElement('canvas')
+    canvas.width = out
+    canvas.height = out
+    const ctx = canvas.getContext('2d')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(src, (w - side) / 2, (h - side) / 2, side, side, 0, 0, out, out)
+    if (src.close) src.close()
+    const encode = (type, q) => new Promise(resolve => canvas.toBlob(resolve, type, q))
+    let blob = await encode('image/webp', 0.85)
+    if (!blob || blob.type !== 'image/webp') blob = await encode('image/jpeg', 0.88)
+    if (!blob) throw new Error('encode')
+    return blob
+  }
+
+  function avatarClearPreview() {
+    if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl)
+    avatarPreviewUrl = ''
+    avatarPendingBlob = null
+  }
+
+  // Everything the template shows, from the member, their Letterboxd avatar
+  // and the avatar record ({ file?, flagged? } from /member/me).
+  function avatarFields(member, lbAvatar, avatar, extra) {
+    const a = avatar || {}
+    const custom = a.file && member && member.id
+      ? `${WORKER_ORIGIN}/av/${encodeURIComponent(member.id)}/${a.file}` : ''
+    const fallback = lbAvatar ? 'your Letterboxd avatar' : 'your initial'
+    let hint
+    if (avatarPreviewUrl) hint = 'Preview. This is how it will look on the member directory, your events and Watched.'
+    else if (a.flagged) hint = `Until then ${fallback} shows instead.`
+    else if (a.file) hint = 'Shown on the member directory, events you host and Watched.'
+    else if (lbAvatar) hint = 'Upload a photo to use instead of your Letterboxd avatar.'
+    else hint = 'Upload a photo to show instead of your initial.'
+    return Object.assign({
+      avData: a,
+      avSrc: avatarPreviewUrl || custom || lbAvatar || '',
+      avLetter: String((member && (member.name || member.handle)) || '?')[0],
+      avHasFile: !!a.file,
+      avFlagged: !!a.flagged,
+      avFlagReason: (a.flagged && a.flagged.reason) || '',
+      avPreview: !!avatarPreviewUrl,
+      avHint: hint,
+      avBusy: false, avErr: '', avMsg: '',
+    }, extra || {})
+  }
+
+  async function avatarPick(view, e) {
+    const input = e && e.target
+    const file = input && input.files && input.files[0]
+    if (input) input.value = ''
+    if (!file) return
+    try {
+      const blob = await avatarSquareBlob(file)
+      avatarClearPreview()
+      avatarPendingBlob = blob
+      avatarPreviewUrl = URL.createObjectURL(blob)
+      view.update(avatarFields(view.member, view.lbAvatar, view.avData))
+    } catch (err) {
+      view.update({
+        avMsg: '',
+        avErr: err && err.message === 'small'
+          ? `That image is too small. Use one at least ${AVATAR_MIN_PX} pixels on each side.`
+          : 'We could not read that image. Try a JPEG or PNG.',
+      })
+    }
+  }
+
+  function avatarCancel(view) {
+    avatarClearPreview()
+    view.update(avatarFields(view.member, view.lbAvatar, view.avData))
+  }
+
+  async function avatarUpload(view) {
+    if (!avatarPendingBlob) return
+    view.update({ avBusy: true, avErr: '', avMsg: '' })
+    try {
+      const s = await ensureSession()
+      if (!s) { location.href = '/signin'; return }
+      const res = await fetch(`${WORKER_ORIGIN}/member/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${s.token}`, 'Content-Type': avatarPendingBlob.type },
+        body: avatarPendingBlob,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Upload failed (HTTP ${res.status}).`)
+      avatarClearPreview()
+      const blocked = view.avData && view.avData.blocked
+      view.update(avatarFields(view.member, view.lbAvatar, { file: data.avatar, blocked },
+        { avMsg: 'Saved. Your photo now shows across the site.' }))
+    } catch (err) {
+      view.update({ avBusy: false, avErr: (err && err.message) || 'Upload failed.' })
+    }
+  }
+
+  async function avatarRemove(view) {
+    const had = !!(view.avData && view.avData.file)
+    const fallback = view.lbAvatar ? 'Letterboxd avatar' : 'initial'
+    if (had && !confirm(`Remove your photo? Your ${fallback} will show instead.`)) return
+    view.update({ avBusy: true, avErr: '', avMsg: '' })
+    try {
+      const s = await ensureSession()
+      if (!s) { location.href = '/signin'; return }
+      await call('DELETE', '/member/avatar', undefined, s.token)
+      const blocked = view.avData && view.avData.blocked
+      view.update(avatarFields(view.member, view.lbAvatar, blocked ? { blocked } : null,
+        { avMsg: had ? 'Photo removed.' : '' }))
+    } catch (err) {
+      view.update({ avBusy: false, avErr: (err && err.message) || 'Could not remove the photo.' })
+    }
+  }
+
   // Account stats fan-out. Lives at module scope, not on the card component,
   // because a Nue child cannot repaint itself after its parent re-renders:
   // update() inside a remounted child is a no-op, sync or async. So edit-view
@@ -413,6 +558,36 @@
 
     <account-stats :stats="stats"/>
 
+    <section class="av-panel">
+      <h2>Profile photo</h2>
+      <div :if="avFlagged" class="err av-flag" role="alert">
+        <b>An organizer removed your photo.</b>
+        <span :if="avFlagReason">Reason: { avFlagReason }</span>
+        <span>Upload a different photo to show one again.</span>
+      </div>
+      <div class="av-row">
+        <img :if="avSrc" class="av-photo" src="{ avSrc }" alt="Your profile photo" :onerror="avImgFailed">
+        <span :if="!avSrc" class="av-photo -letter" aria-hidden="true">{ avLetter }</span>
+        <div class="av-body">
+          <p class="av-hint">{ avHint }</p>
+          <div class="av-actions { avPreview ? '-hidden' : '' }">
+            <label class="av-pick">
+              <input type="file" accept="image/*" :onchange="avPick" :disabled="avBusy">
+              <span>{ avHasFile ? 'Replace photo' : (avFlagged ? 'Upload a different photo' : 'Upload a photo') }</span>
+            </label>
+            <button :if="avHasFile || avFlagged" type="button" class="-ghost -danger" :onclick="avRemove" :disabled="avBusy">{ avHasFile ? 'Remove photo' : 'Dismiss notice' }</button>
+          </div>
+          <div :if="avPreview" class="av-actions">
+            <button type="button" :onclick="avUpload" :disabled="avBusy">{ avBusy ? 'Uploading…' : 'Use this photo' }</button>
+            <button type="button" class="-ghost" :onclick="avCancel" :disabled="avBusy">Cancel</button>
+          </div>
+          <p class="ok" :if="avMsg">{ avMsg }</p>
+          <p class="err" :if="avErr">{ avErr }</p>
+          <p class="av-note">Photos are public. They are cropped square and resized on your device before upload, which also removes location data. Organizers can remove a photo that breaks club guidelines.</p>
+        </div>
+      </div>
+    </section>
+
     <form :onsubmit="save">
       <label>Display name
         <input type="text" name="name" required value="{ member.name || '' }">
@@ -571,7 +746,7 @@
         } catch { /* letter avatar fallback */ }
       }
 
-      this.update({ loading: false, session: s, member, lbAvatar })
+      this.update(Object.assign({ loading: false, session: s, member, lbAvatar }, avatarFields(member, lbAvatar, member.avatar)))
 
       // Fired after the first paint on purpose: the profile form must not wait
       // on the stats fan-out. mounted() runs on a full load and on an SPA route
@@ -593,6 +768,12 @@
         self.update({ stats })
       }).catch(function() { /* card stays on its pending line */ })
     }
+
+    avPick(e) { avatarPick(this, e) }
+    avUpload() { avatarUpload(this) }
+    avRemove() { avatarRemove(this) }
+    avCancel() { avatarCancel(this) }
+    avImgFailed() { this.update({ avSrc: '' }) }
 
     async save(e) {
       e.preventDefault()

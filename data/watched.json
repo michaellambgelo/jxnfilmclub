@@ -920,6 +920,22 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/white-chicks/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/7/5/0/44750-white-chicks-0-600-0-900-crop.jpg?v=bfa48588cf",
+      "rating": "5.0",
+      "title": "White Chicks",
+      "watched_date": "2026-09-23",
+      "year": "2004"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/warning-from-space/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/8/5/9/5/58595-warning-from-space-0-600-0-900-crop.jpg?v=c3b2376c59",
+      "rating": "3.5",
+      "title": "Warning from Space",
+      "watched_date": "2026-09-23",
+      "year": "1956"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/girls-like-girls/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/1/2/3/0/1281230-girls-like-girls-0-600-0-900-crop.jpg?v=81265f1a60",
       "rating": "3.0",
@@ -1004,22 +1020,6 @@
       "title": "The Invisible Man",
       "watched_date": "2026-09-15",
       "year": "1933"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/daisies/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/8/4/4/7/18447-daisies-0-600-0-900-crop.jpg?v=4c08c58c03",
-      "rating": "0.5",
-      "title": "Daisies",
-      "watched_date": "2026-09-14",
-      "year": "1966"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/queens-of-the-dead/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/9/0/0/8/1199008-queens-of-the-dead-0-600-0-900-crop.jpg?v=27bf85f89e",
-      "rating": "3.0",
-      "title": "Queens of the Dead",
-      "watched_date": "2026-09-14",
-      "year": "2025"
     }
   ],
   "calissippi": [
@@ -1753,6 +1753,16 @@
   ],
   "michaellamb": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/superman-2025/3/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/7/0/5/0/957050-superman-2025-0-600-0-900-crop.jpg?v=54e41a55ff",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "Superman",
+      "watched_date": "2026-09-22",
+      "year": "2025"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/batman-the-killing-joke-2016/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/1/7/3/3/6/317336-batman-the-killing-joke-0-600-0-900-crop.jpg?v=484dfd6fc3",
       "rating": "3.0",
@@ -1848,16 +1858,6 @@
       "title": "Resident Evil",
       "watched_date": "2026-09-17",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/dune-part-two/19/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/6/1/7/4/4/3/617443-dune-part-two-0-600-0-900-crop.jpg?v=cc533700f8",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "Dune: Part Two",
-      "watched_date": "2026-09-14",
-      "year": "2024"
     }
   ],
   "mrbienkowski": [

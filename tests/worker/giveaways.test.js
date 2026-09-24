@@ -382,6 +382,24 @@ async function closedGiveawayWithEntrants(id, members, overrides = {}) {
   return people
 }
 
+// A closed giveaway whose pool is written straight into D1. For the race
+// tests only: they exercise the draw's transaction, and the real entry path
+// (sign in, enter, RSVP) is covered above and is too slow to repeat 40 times.
+async function seedClosedPool(id, n, overrides = {}) {
+  const now = Date.now()
+  await putGiveaway(id, {
+    ...overrides, status: 'closed',
+    starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString(),
+  })
+  const ts = new Date(now - HOUR).toISOString()
+  await env.GIVEAWAYS_DB.batch(Array.from({ length: n }, (_, i) => [
+    env.GIVEAWAYS_DB.prepare(`INSERT INTO participants (giveaway_id, member_id, name, email, rules_accepted_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).bind(id, `${id}-m${i}`, `M${i}`, `m${i}@example.com`, ts, ts),
+    env.GIVEAWAYS_DB.prepare(`INSERT INTO entries (giveaway_id, member_id, source, weight, created_at)
+      VALUES (?, ?, 'waitlist_signup', 1, ?)`).bind(id, `${id}-m${i}`, ts),
+  ]).flat())
+}
+
 const draw = (id, body = {}, headers = { 'X-Admin-Email': 'michael@michaellamb.dev' }) =>
   req(`/admin/giveaways/${id}/draw`, { method: 'POST', token: ADMIN, body, headers })
 
@@ -446,6 +464,32 @@ describe('draw', () => {
     expect(g.status).toBe('drawn')
     // And not twice.
     expect((await draw('clay-draw')).status).toBe(409)
+  })
+
+  it('concurrent draws with room for disjoint winner sets still commit exactly one', async () => {
+    // 10 entrants and 2 winners: two racing draws usually pick different
+    // people, so only the transaction guard (not a key collision) can stop
+    // the second one. Several rounds, because the race is probabilistic.
+    for (let round = 0; round < 4; round++) {
+      const id = `clay-race-draw-${round}`
+      await seedClosedPool(id, 10)
+      const results = await Promise.all([draw(id), draw(id), draw(id)])
+      expect(results.filter(r => r.status === 200)).toHaveLength(1)
+      const { results: winners } = await env.GIVEAWAYS_DB.prepare('SELECT * FROM winners WHERE giveaway_id = ?').bind(id).all()
+      expect(winners).toHaveLength(2)
+    }
+  })
+
+  it('concurrent redraws of one forfeit draw exactly one replacement', async () => {
+    await seedClosedPool('clay-race-redraw', 10, { winners: 1 })
+    const first = await (await draw('clay-race-redraw')).json()
+    const gone = first.winners[0]
+    const redraw = () => req('/admin/giveaways/clay-race-redraw/redraw', { method: 'POST', token: ADMIN, body: { memberId: gone } })
+    const results = await Promise.all([redraw(), redraw(), redraw()])
+    expect(results.filter(r => r.status === 200)).toHaveLength(1)
+    const { results: selected } = await env.GIVEAWAYS_DB.prepare(
+      "SELECT * FROM winners WHERE giveaway_id = 'clay-race-redraw' AND status = 'selected'").all()
+    expect(selected).toHaveLength(1)
   })
 
   it('concurrent draws produce exactly one set of winners', async () => {

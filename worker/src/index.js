@@ -410,11 +410,14 @@ function isValidName(s) {
 // Creates pending:{email} with OTP code. The optional handle is held on the
 // pending row and promoted to the member row at /signup/verify time.
 async function handleSignup(request, env) {
-  const { email, name, handle, newsletter, ref } = await request.json()
+  const { email, name, handle: rawHandle, newsletter, ref } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
   if (!isValidName(name)) return json(env, { error: 'invalid name' }, 400)
-  if (handle && !HANDLE_RE.test(handle)) {
+  // Same parsing as /member/update: a pasted profile link or @name is reduced
+  // to the username (signups arriving from Instagram tend to paste links).
+  const handle = rawHandle ? parseLetterboxdHandle(String(rawHandle)) : null
+  if (rawHandle && (!handle || !HANDLE_RE.test(handle))) {
     return json(env, { error: 'invalid handle format' }, 400)
   }
 

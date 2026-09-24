@@ -149,6 +149,9 @@ export async function letterboxdProfileExists(handle, fetchImpl = fetch) {
     const res = await fetchImpl(`https://letterboxd.com/${encodeURIComponent(handle)}/films/`, {
       method: 'GET', redirect: 'follow',
       headers: { 'User-Agent': 'jxnfilmclub-join (+https://jxnfilm.club)' },
+      // This runs inline on RSVP and profile-update requests: a slow
+      // letterboxd.com must not hang them. A timeout reads as 'unknown'.
+      signal: AbortSignal.timeout(5000),
     })
     if (res.status === 200) return 'yes'
     if (res.status === 404) return 'no'
@@ -397,8 +400,7 @@ export async function runDraw(db, g, { runBy, excludeFlagged = true, rand, now =
   const pool = await drawPool(db, g.id, { excludeFlagged })
   if (!pool.length) return { error: 'no eligible entries to draw from', code: 409 }
   const { winners, values } = weightedDraw(pool, g.winners, rand)
-  return commitDraw(db, g, { kind: 'draw', runBy, excludeFlagged, pool, winners, values, now,
-    statusGuard: "UPDATE giveaways SET status = 'drawn', updated_at = ?2 WHERE id = ?1 AND status = 'closed'" })
+  return commitDraw(db, g, { kind: 'draw', runBy, excludeFlagged, pool, winners, values, now })
 }
 
 // Replace one winner who did not respond: forfeit them, draw one more from
@@ -416,7 +418,14 @@ export async function runRedraw(db, g, forfeitMemberId, { runBy, excludeFlagged 
     replaces: forfeitMemberId })
 }
 
-async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, values, now, replaces = null, statusGuard }) {
+// Commit a draw or redraw as ONE D1 batch (a transaction). The precondition
+// (still closed / the forfeited winner still selected) is re-checked INSIDE
+// the transaction by every statement: each winner INSERT only fires if it
+// holds, and the state change runs last. D1 serializes batches, so when two
+// runs race, the second one sees the first one's committed state and inserts
+// nothing. Checking a status UPDATE's row count after the fact would be too
+// late: the INSERTs before it would already have committed.
+async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, values, now, replaces = null }) {
   const ts = nowIso(now)
   const hash = await poolHash(pool)
   const total = pool.reduce((s, p) => s + p.weight, 0)
@@ -427,26 +436,32 @@ async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, v
     .bind(g.id, kind, runBy, ts, excludeFlagged ? 1 : 0, pool.length, total, hash,
       JSON.stringify(values), JSON.stringify(winners), replaces)
     .first()
-  const stmts = []
-  if (kind === 'draw') {
-    stmts.push(db.prepare(statusGuard).bind(g.id, ts))
-  } else {
-    stmts.push(db.prepare(`UPDATE winners SET status = 'forfeited' WHERE giveaway_id = ? AND member_id = ? AND status = 'selected'`)
-      .bind(g.id, replaces))
-  }
-  for (const memberId of winners) {
-    stmts.push(db.prepare(`INSERT INTO winners (giveaway_id, member_id, draw_id, status, tickets, selected_at)
-      VALUES (?, ?, ?, 'selected', ?, ?)`).bind(g.id, memberId, log.id, g.tickets_per_winner, ts))
-  }
+
+  const precondition = kind === 'draw'
+    ? { sql: "EXISTS (SELECT 1 FROM giveaways WHERE id = ?6 AND status = 'closed')", args: [g.id] }
+    : { sql: "EXISTS (SELECT 1 FROM winners WHERE giveaway_id = ?6 AND member_id = ?7 AND status = 'selected')", args: [g.id, replaces] }
+  const stmts = winners.map(memberId => db.prepare(`
+    INSERT INTO winners (giveaway_id, member_id, draw_id, status, tickets, selected_at)
+    SELECT ?1, ?2, ?3, 'selected', ?4, ?5 WHERE ${precondition.sql}`)
+    .bind(g.id, memberId, log.id, g.tickets_per_winner, ts, ...precondition.args))
+  stmts.push(kind === 'draw'
+    ? db.prepare("UPDATE giveaways SET status = 'drawn', updated_at = ? WHERE id = ? AND status = 'closed'").bind(ts, g.id)
+    : db.prepare("UPDATE winners SET status = 'forfeited' WHERE giveaway_id = ? AND member_id = ? AND status = 'selected'").bind(g.id, replaces))
+
+  let committed = false
   try {
     const results = await db.batch(stmts)
-    if (kind === 'draw' && results[0].meta.changes !== 1) throw new Error('status changed under the draw')
-  } catch (e) {
-    // The log row records an attempt that did not commit; mark it rather than
-    // delete it, so the audit trail keeps every run.
-    await db.prepare(`UPDATE draws SET winners = '[]', random_values = ? WHERE id = ?`)
-      .bind(JSON.stringify({ aborted: String(e.message || e), values }), log.id).run()
-    return { error: 'draw did not commit (was another draw running?)', code: 409 }
+    // The last statement is the state change: exactly one row means this run
+    // held the precondition, so its inserts (gated on the same thing) landed.
+    committed = results[results.length - 1].meta.changes === 1
+  } catch {
+    committed = false   // e.g. a replacement who became a winner concurrently (primary key)
+  }
+  if (!committed) {
+    // Keep the attempt in the audit trail, marked as not committed.
+    await db.prepare('UPDATE draws SET winners = ?, random_values = ? WHERE id = ?')
+      .bind('[]', JSON.stringify({ aborted: 'another draw committed first', values }), log.id).run()
+    return { error: 'draw did not commit (another draw got there first)', code: 409 }
   }
   return { drawId: log.id, winners, poolMembers: pool.length, poolEntries: total, snapshot: hash }
 }

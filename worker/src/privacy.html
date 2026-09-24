@@ -35,7 +35,7 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 2026-09-23</p>
+  <p class="updated">Last updated: 2026-09-24</p>
 
   <p>
     Jackson Film Club ("we") operates
@@ -103,6 +103,18 @@
       rough draft for captions — a club admin checks it before any captions
       are used — and it is stored beside the audio and deleted with it. Your voice is inherently identifying, so we treat
       clips with the strictest deletion rules on this page (below).</li>
+    <li><b>Giveaway entries</b> — only if you press Enter on a giveaway and
+      accept its official rules. We keep your name and email with the entry
+      (to contact you if you win), which actions earned you entries (an RSVP,
+      a linked Letterboxd profile, a voice clip, a friend you referred), and
+      whether you asked to hear about future giveaways. Entering never
+      requires payment.</li>
+    <li><b>Referrals</b> — when someone joins through a member's referral
+      link, we record who referred whom, a normalized form of the new
+      member's email (so one inbox can't count twice), and a one-way keyed
+      <i>hash</i> of the network address they signed up from, used only to
+      spot many signups from one place. We never store the address itself,
+      and the hash can't be turned back into it.</li>
   </ul>
 
   <h2>Where it lives</h2>
@@ -127,8 +139,13 @@
       signup or the toggle on your account page. Every announcement includes
       a one-click unsubscribe link. Opting out never affects login codes or
       RSVP emails.</li>
+    <li>Giveaways you entered: if you win, we email you at the address on
+      your membership. News about future giveaways only if you tick that
+      box when you enter.</li>
   </ul>
-  <p>We never sell, rent, or share your email with anyone.</p>
+  <p>We never sell, rent, or share your email with anyone. When you win a
+    giveaway, the venue's box office gets your <b>name</b> and ticket count
+    for will-call — never your email.</p>
 
   <h2>Cookies and tracking</h2>
   <p>
@@ -140,7 +157,11 @@
     and the sign-in entries are cleared when you sign out. One more entry,
     <code>jxnfc_next</code>, is written only while you are logging in, so we
     can put you back on the page you started from; it lives in this tab's
-    sessionStorage and disappears when you close the tab.
+    sessionStorage and disappears when you close the tab. The giveaway page
+    adds two more to that tab-only sessionStorage: <code>jxnfc_giveaway_event</code>
+    (which screening you were looking at, so logging in brings you back to
+    it) and <code>jxnfc_ref</code> (a referral code from the link you
+    followed, so it reaches the join form).
     One exception worth naming: the homepage embeds our podcast via a Spotify
     player, and Spotify sets its own cookies inside that frame — see
     <a href="https://www.spotify.com/legal/privacy-policy/">Spotify's privacy
@@ -160,7 +181,10 @@
       than letting us see your request.</li>
     <li><b>TMDB</b> serves the film poster images your browser loads.</li>
     <li><b>Letterboxd</b> is the source of the public film activity we show;
-      we only read what you've already made public there.</li>
+      we only read what you've already made public there. When you link a
+      profile we load its public films page once, to check it exists.</li>
+    <li><b>The screening venue</b> receives giveaway winners' names and ticket
+      counts, and nothing else, so tickets can be held at will-call.</li>
     <li><b>Spotify</b> powers the podcast player on the homepage (see
       above).</li>
   </ul>
@@ -213,6 +237,11 @@
       part of that published episode's audio; the original upload still
       deletes on the same 60-day clock. Replacing your clip restarts the
       clock for the new recording.</li>
+    <li><b>Giveaway entries and referral records delete themselves 60 days
+      after the giveaway closes</b> — long enough to redraw if a winner
+      doesn't answer and to hand over the prize. What remains is the draw log
+      (when it ran, who ran it, and the winners' random member ids, with no
+      names or emails), kept so a draw can always be checked.</li>
   </ul>
 
   <h2>Your choices</h2>
@@ -251,6 +280,9 @@
       Deleting your membership deletes your clips, your messages and any
       transcripts of them with it, immediately and completely — a voice
       can't be anonymized, so we don't try.</li>
+    <li><b>Leave a giveaway</b> — deleting your voice clip withdraws the entry
+      it earned while the giveaway is open, and deleting your membership
+      removes you from every giveaway immediately.</li>
     <li>Questions, or want us to do any of this for you? Email
       <a href="mailto:privacy@jxnfilm.club">privacy@jxnfilm.club</a>.</li>
   </ul>

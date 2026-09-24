@@ -541,3 +541,260 @@ describe('account deletion', () => {
     expect(e.n + p.n).toBe(0)
   })
 })
+
+// --- referrals (phase 2) ------------------------------------------------------
+
+async function signupWithRef(email, ref, { ip = '203.0.113.9', name = 'New ' + email.split('@')[0] } = {}) {
+  const res = await req('/signup', { method: 'POST', body: { email, name, ref } })
+  if (res.status !== 200) return { status: res.status, body: await res.json() }
+  const pending = JSON.parse(await env.MEMBERS_KV.get(`pending:${email}`))
+  const verify = await req('/signup/verify', {
+    method: 'POST', body: { email, code: pending.code }, headers: { 'CF-Connecting-IP': ip },
+  })
+  return { status: verify.status, body: await verify.json(), pending }
+}
+
+async function referralGiveaway(id, cap = 10, extra = {}) {
+  return putGiveaway(id, { sources: { waitlist_signup: { weight: 1 }, referral: { weight: 1, cap } }, ...extra })
+}
+
+async function referrerFor(id, email = 'referrer@example.com') {
+  const m = await member(email)
+  const res = await enter(id, m.token)
+  const body = await res.json()
+  return { ...m, code: body.referral.code, link: body.referral.link }
+}
+
+const referralEntries = (id, memberId) => env.GIVEAWAYS_DB.prepare(
+  "SELECT * FROM entries WHERE giveaway_id = ? AND member_id = ? AND source = 'referral' ORDER BY id").bind(id, memberId).all()
+  .then(r => r.results)
+const referralRows = (id) => env.GIVEAWAYS_DB.prepare(
+  'SELECT * FROM referrals WHERE giveaway_id = ? ORDER BY id').bind(id).all().then(r => r.results)
+
+describe('referral link', () => {
+  it('appears once the member enters, is stable, and points at the giveaway page', async () => {
+    await referralGiveaway('clay-ref')
+    const r = await referrerFor('clay-ref')
+    expect(r.code).toMatch(/^[a-z0-9]{8}$/)
+    expect(r.link).toBe(`https://jxnfilm.club/giveaways?event=${EVENT_ID}&ref=${r.code}`)
+    const again = await me('clay-ref', r.token)
+    expect(again.referral.code).toBe(r.code)
+    expect(again.referral).toMatchObject({ credited: 0, cap: 10 })
+  })
+
+  it('is absent for a giveaway that does not count referrals', async () => {
+    await putGiveaway('clay-noref')
+    const m = await member('noref@example.com')
+    const body = await (await enter('clay-noref', m.token)).json()
+    expect(body.referral).toBeUndefined()
+  })
+})
+
+describe('referral credit', () => {
+  it('counts only once the referred email is verified', async () => {
+    await referralGiveaway('clay-ref-verify')
+    const r = await referrerFor('clay-ref-verify')
+    expect((await req('/signup', { method: 'POST', body: { email: 'friend@example.com', name: 'Friend', ref: r.code } })).status).toBe(200)
+    // Signed up but not verified: nothing yet.
+    expect(await referralEntries('clay-ref-verify', r.id)).toEqual([])
+    const pending = JSON.parse(await env.MEMBERS_KV.get('pending:friend@example.com'))
+    expect(pending.ref).toBe(r.code)
+    await req('/signup/verify', { method: 'POST', body: { email: 'friend@example.com', code: pending.code } })
+    expect(await referralEntries('clay-ref-verify', r.id)).toHaveLength(1)
+    expect((await me('clay-ref-verify', r.token)).referral.credited).toBe(1)
+  })
+
+  it('an email that already belongs to a member cannot be referred', async () => {
+    await referralGiveaway('clay-ref-existing')
+    const r = await referrerFor('clay-ref-existing')
+    await member('taken@example.com')
+    const out = await signupWithRef('taken@example.com', r.code)
+    expect(out.status).toBe(409)
+    expect(await referralRows('clay-ref-existing')).toEqual([])
+  })
+
+  it('blocks an alias of an existing member (case, +tag, gmail dots)', async () => {
+    await referralGiveaway('clay-ref-alias')
+    const r = await referrerFor('clay-ref-alias')
+    await member('jane.doe@gmail.com')
+    const out = await signupWithRef('JaneDoe+win@gmail.com', r.code)
+    expect(out.status).toBe(200)   // signing up is still allowed ...
+    const [row] = await referralRows('clay-ref-alias')
+    expect(row.status).toBe('rejected')   // ... it just earns nothing
+    expect(row.reason).toMatch(/alias of an existing member/)
+    expect(await referralEntries('clay-ref-alias', r.id)).toEqual([])
+  })
+
+  it('blocks self-referral, including through an alias of your own address', async () => {
+    await referralGiveaway('clay-ref-self')
+    const r = await referrerFor('clay-ref-self', 'me.myself@gmail.com')
+    await signupWithRef('memyself+second@gmail.com', r.code)
+    const [row] = await referralRows('clay-ref-self')
+    expect(row.status).toBe('rejected')
+    expect(row.reason).toMatch(/self-referral/)
+    expect(await referralEntries('clay-ref-self', r.id)).toEqual([])
+  })
+
+  it('stops at the cap and records the overflow as capped', async () => {
+    await referralGiveaway('clay-ref-cap', 2)
+    const r = await referrerFor('clay-ref-cap')
+    for (const [i, email] of ['c1@example.com', 'c2@example.com', 'c3@example.com'].entries()) {
+      await signupWithRef(email, r.code, { ip: `198.51.100.${i + 1}` })
+    }
+    expect(await referralEntries('clay-ref-cap', r.id)).toHaveLength(2)
+    expect((await referralRows('clay-ref-cap')).map(x => x.status)).toEqual(['credited', 'credited', 'capped'])
+    expect((await me('clay-ref-cap', r.token)).bySource.referral).toEqual({ count: 2, entries: 2 })
+  })
+
+  it('holds the cap when referrals are credited concurrently', async () => {
+    await referralGiveaway('clay-ref-race', 2)
+    const r = await referrerFor('clay-ref-race')
+    const emails = ['r1@example.com', 'r2@example.com', 'r3@example.com', 'r4@example.com', 'r5@example.com']
+    for (const e of emails) await req('/signup', { method: 'POST', body: { email: e, name: 'R', ref: r.code } })
+    const codes = await Promise.all(emails.map(async e => JSON.parse(await env.MEMBERS_KV.get(`pending:${e}`)).code))
+    await Promise.all(emails.map((e, i) => req('/signup/verify', {
+      method: 'POST', body: { email: e, code: codes[i] }, headers: { 'CF-Connecting-IP': `192.0.2.${i + 1}` },
+    })))
+    expect(await referralEntries('clay-ref-race', r.id)).toHaveLength(2)
+  })
+
+  it('does not credit a referrer who never entered the giveaway', async () => {
+    await referralGiveaway('clay-ref-noentry')
+    const other = await referrerFor('clay-ref-noentry', 'entered@example.com')
+    // A second giveaway the code owner never entered.
+    await referralGiveaway('clay-ref-other')
+    await signupWithRef('pal@example.com', other.code)
+    expect(await referralEntries('clay-ref-other', other.id)).toEqual([])
+    expect(await referralEntries('clay-ref-noentry', other.id)).toHaveLength(1)
+  })
+
+  it('ignores an unknown or malformed code', async () => {
+    await referralGiveaway('clay-ref-bogus')
+    await referrerFor('clay-ref-bogus')
+    expect((await signupWithRef('who@example.com', 'zzzzzzzz')).status).toBe(200)
+    expect((await signupWithRef('who2@example.com', '<script>')).status).toBe(200)
+    expect(await referralRows('clay-ref-bogus')).toEqual([])
+  })
+})
+
+describe('suspicious referrals are flagged, not rejected', () => {
+  it('a disposable email domain', async () => {
+    await referralGiveaway('clay-ref-disp')
+    const r = await referrerFor('clay-ref-disp')
+    await signupWithRef('burner@mailinator.com', r.code)
+    const [entry] = await referralEntries('clay-ref-disp', r.id)
+    expect(entry.flagged).toBe(1)
+    expect(entry.flag_reason).toMatch(/disposable/)
+    expect((await referralRows('clay-ref-disp'))[0].status).toBe('flagged')
+  })
+
+  it('many referral signups from one network', async () => {
+    await referralGiveaway('clay-ref-ip')
+    const r = await referrerFor('clay-ref-ip')
+    for (let i = 1; i <= 4; i++) await signupWithRef(`net${i}@example.com`, r.code, { ip: '203.0.113.77' })
+    const rows = await referralRows('clay-ref-ip')
+    expect(rows.map(x => x.status)).toEqual(['credited', 'credited', 'credited', 'flagged'])
+    expect(rows[3].reason).toMatch(/from one network/)
+    // The raw IP is never stored.
+    expect(JSON.stringify(rows)).not.toContain('203.0.113.77')
+    expect(rows[0].ip_hash).toMatch(/^[A-Za-z0-9_-]{32}$/)
+  })
+
+  it('a burst of referrals from one member (rate limit)', async () => {
+    await referralGiveaway('clay-ref-rate', 50)
+    const r = await referrerFor('clay-ref-rate')
+    for (let i = 1; i <= 6; i++) await signupWithRef(`burst${i}@example.com`, r.code, { ip: `198.18.0.${i}` })
+    const rows = await referralRows('clay-ref-rate')
+    expect(rows.slice(0, 5).every(x => x.status === 'credited')).toBe(true)
+    expect(rows[5].status).toBe('flagged')
+    expect(rows[5].reason).toMatch(/in an hour/)
+  })
+
+  it('flagged referral entries stay out of the draw unless the admin keeps them', async () => {
+    await referralGiveaway('clay-ref-draw', 10, { winners: 1 })
+    const r = await referrerFor('clay-ref-draw')
+    await signupWithRef('only@mailinator.com', r.code)
+    // Close it and draw: the referrer's only entry is flagged.
+    const now = Date.now()
+    await putGiveaway('clay-ref-draw', {
+      sources: { waitlist_signup: { weight: 1 }, referral: { weight: 1, cap: 10 } }, winners: 1, status: 'closed',
+      starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString(),
+    })
+    expect((await draw('clay-ref-draw')).status).toBe(409)   // empty pool
+  })
+})
+
+// --- voice prompt (phase 2) ---------------------------------------------------
+
+const WEBM = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4])
+function postClip(token, { duration = 30 } = {}) {
+  return SELF.fetch('https://join.jxnfilm.club/voice', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'audio/webm', 'X-Voice-Consent': 'yes', 'X-Voice-Duration': String(duration) },
+    body: WEBM,
+  })
+}
+
+async function voiceGiveaway(id, extra = {}) {
+  return putGiveaway(id, {
+    sources: { voice_prompt: { weight: 2 } }, voice_prompt_id: 'general', voice_max_seconds: 60, ...extra,
+  })
+}
+
+describe('voice prompt entries', () => {
+  it('a clip for the giveaway prompt earns its weight; length pending until measured', async () => {
+    await voiceGiveaway('clay-voice')
+    const m = await member('voice@example.com')
+    await enter('clay-voice', m.token)
+    expect((await postClip(m.token)).status).toBe(200)
+    const e = await env.GIVEAWAYS_DB.prepare(
+      "SELECT * FROM entries WHERE giveaway_id = 'clay-voice' AND source = 'voice_prompt'").first()
+    expect(e.weight).toBe(2)
+    expect(e.flagged).toBe(1)
+    expect(e.flag_reason).toMatch(/not yet measured/)
+
+    // node0 reports the real length: under the limit clears the flag.
+    const row = JSON.parse(await env.MEMBERS_KV.get(`voice:general:${m.id}`))
+    const res = await req('/transcriber/measure', {
+      method: 'POST', token: 'test-transcribe-token', body: { key: `voice:general:${m.id}`, at: row.at, seconds: 42.3 },
+    })
+    expect(res.status).toBe(200)
+    const after = await env.GIVEAWAYS_DB.prepare(
+      "SELECT flagged FROM entries WHERE giveaway_id = 'clay-voice' AND source = 'voice_prompt'").first()
+    expect(after.flagged).toBe(0)
+    expect((await me('clay-voice', m.token)).total).toBe(2)
+  })
+
+  it('a measured length over the limit keeps the entry flagged', async () => {
+    await voiceGiveaway('clay-voice-long')
+    const m = await member('long@example.com')
+    await enter('clay-voice-long', m.token)
+    await postClip(m.token)
+    const row = JSON.parse(await env.MEMBERS_KV.get(`voice:general:${m.id}`))
+    await req('/transcriber/measure', {
+      method: 'POST', token: 'test-transcribe-token', body: { key: `voice:general:${m.id}`, at: row.at, seconds: 95 },
+    })
+    const e = await env.GIVEAWAYS_DB.prepare(
+      "SELECT flagged, flag_reason FROM entries WHERE giveaway_id = 'clay-voice-long' AND source = 'voice_prompt'").first()
+    expect(e.flagged).toBe(1)
+    expect(e.flag_reason).toMatch(/length 95 s > 60 s/)
+  })
+
+  it('needs a logged-in member (the voice upload itself requires one)', async () => {
+    await voiceGiveaway('clay-voice-anon')
+    const res = await SELF.fetch('https://join.jxnfilm.club/voice', {
+      method: 'POST', headers: { 'Content-Type': 'audio/webm', 'X-Voice-Consent': 'yes' }, body: WEBM,
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('deleting the clip withdraws the entry while the giveaway is open', async () => {
+    await voiceGiveaway('clay-voice-del')
+    const m = await member('vdel@example.com')
+    await enter('clay-voice-del', m.token)
+    await postClip(m.token)
+    expect((await me('clay-voice-del', m.token)).bySource.voice_prompt).toBeTruthy()
+    expect((await req('/voice', { method: 'DELETE', token: m.token })).status).toBe(200)
+    expect((await me('clay-voice-del', m.token)).bySource.voice_prompt).toBeUndefined()
+  })
+})

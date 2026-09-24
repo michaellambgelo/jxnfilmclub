@@ -494,3 +494,141 @@ export async function scrubGiveaways(db, now = Date.now()) {
   }
   return results.length
 }
+
+// --- referrals ------------------------------------------------------------
+//
+// One stable code per member (referral_codes), carried as ?ref= from the
+// member's link through the signup page into the pending signup row, and
+// credited only in /signup/verify — i.e. only for a new, verified email.
+// Credit goes to every open giveaway that counts referrals and that the
+// referrer has entered.
+//
+// Suspicious patterns are FLAGGED (entry kept, excluded from the draw by
+// default, visible to the admin), never silently dropped. Hard rejects are
+// reserved for rule breaks: self-referral and an address that is an alias of
+// an existing member.
+
+export const REF_CODE_RE = /^[a-z0-9]{8}$/
+const REF_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'   // no 0/o/1/l/i: codes get read aloud
+export const REF_RATE_PER_HOUR = 5        // referrer credits per hour before flagging
+export const REF_IP_THRESHOLD = 3         // referrals from one network (24h) before flagging
+
+// Heuristic, not exhaustive: the common throwaway inbox providers.
+export const DISPOSABLE_DOMAINS = new Set([
+  '10minutemail.com', '10minutemail.net', '20minutemail.com', '33mail.com', 'anonaddy.me',
+  'burnermail.io', 'byom.de', 'discard.email', 'dispostable.com', 'emailondeck.com',
+  'fakeinbox.com', 'fakemail.net', 'getairmail.com', 'getnada.com', 'guerrillamail.biz',
+  'guerrillamail.com', 'guerrillamail.de', 'guerrillamail.info', 'guerrillamail.net',
+  'guerrillamail.org', 'guerrillamailblock.com', 'harakirimail.com', 'inboxbear.com',
+  'incognitomail.org', 'mail.tm', 'mail-temp.com', 'mailcatch.com', 'maildrop.cc',
+  'mailinator.com', 'mailinator.net', 'mailnesia.com', 'mailpoof.com', 'mailsac.com',
+  'mintemail.com', 'moakt.com', 'mohmal.com', 'mytemp.email', 'nada.email', 'sharklasers.com',
+  'spam4.me', 'spamgourmet.com', 'temp-mail.io', 'temp-mail.org', 'tempail.com',
+  'tempmail.dev', 'tempmail.net', 'tempmailo.com', 'tempr.email', 'throwawaymail.com',
+  'trashmail.com', 'trashmail.de', 'trashmail.net', 'yopmail.com', 'yopmail.fr', 'yopmail.net',
+])
+
+export function isDisposableEmail(email) {
+  const domain = String(email || '').trim().toLowerCase().split('@')[1] || ''
+  return DISPOSABLE_DOMAINS.has(domain)
+}
+
+function randomRefCode(rand) {
+  let out = ''
+  for (let i = 0; i < 8; i++) out += REF_ALPHABET[secureRandomInt(REF_ALPHABET.length, rand)]
+  return out
+}
+
+export async function getOrCreateReferralCode(db, memberId, now = Date.now()) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existing = await db.prepare('SELECT code FROM referral_codes WHERE member_id = ?').bind(memberId).first()
+    if (existing) return existing.code
+    // INSERT OR IGNORE covers both races: a concurrent call for the same
+    // member (member_id UNIQUE) and a code collision (code PRIMARY KEY).
+    await db.prepare('INSERT OR IGNORE INTO referral_codes (code, member_id, created_at) VALUES (?, ?, ?)')
+      .bind(randomRefCode(), memberId, nowIso(now)).run()
+  }
+  const row = await db.prepare('SELECT code FROM referral_codes WHERE member_id = ?').bind(memberId).first()
+  if (!row) throw new Error('could not mint a referral code')
+  return row.code
+}
+
+export async function referralStats(db, g, memberId) {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM entries
+    WHERE giveaway_id = ? AND member_id = ? AND source = 'referral' AND excluded = 0`)
+    .bind(g.id, memberId).first()
+  return { credited: row.n, cap: g.sources.referral ? g.sources.referral.cap : 0 }
+}
+
+// Credit a verified signup that arrived with ?ref=CODE. `referee` is the new
+// member; `aliasOfExisting` is whether their normalized email matches another
+// member (computed by the caller, which owns the KV member scan).
+// Returns one { giveawayId, status, reason } per giveaway considered.
+export async function creditReferral(db, { code, referee, ipHash = null, aliasOfExisting = false, now = Date.now() }) {
+  if (!REF_CODE_RE.test(code || '')) return []
+  const owner = await db.prepare('SELECT member_id FROM referral_codes WHERE code = ?').bind(code).first()
+  if (!owner) return []
+  const referrerId = owner.member_id
+
+  const { results } = await db.prepare(`
+    SELECT g.*, p.email AS referrer_email FROM giveaways g
+    JOIN participants p ON p.giveaway_id = g.id AND p.member_id = ?
+    WHERE g.status = 'open'`).bind(referrerId).all()
+  const refereeNorm = normalizeEmail(referee.email)
+  const ts = nowIso(now)
+  const outcomes = []
+
+  for (const row of results) {
+    const g = rowToGiveaway(row)
+    if (!g.sources.referral || !isAcceptingEntries(g, now)) continue
+
+    let status = 'credited'
+    const reasons = []
+    if (referee.id === referrerId || refereeNorm === normalizeEmail(row.referrer_email)) {
+      status = 'rejected'; reasons.push('self-referral')
+    } else if (aliasOfExisting) {
+      status = 'rejected'; reasons.push('email is an alias of an existing member')
+    } else {
+      if (isDisposableEmail(referee.email)) reasons.push('disposable email domain')
+      if (ipHash) {
+        const sameNet = await db.prepare(`SELECT COUNT(*) AS n FROM referrals
+          WHERE giveaway_id = ? AND ip_hash = ? AND created_at > ?`)
+          .bind(g.id, ipHash, nowIso(now - 86400 * 1000)).first()
+        if (sameNet.n >= REF_IP_THRESHOLD) reasons.push(`${sameNet.n + 1} referral signups from one network in 24h`)
+      }
+      const recent = await db.prepare(`SELECT COUNT(*) AS n FROM referrals
+        WHERE giveaway_id = ? AND referrer_member_id = ? AND created_at > ? AND status IN ('credited', 'flagged')`)
+        .bind(g.id, referrerId, nowIso(now - 3600 * 1000)).first()
+      if (recent.n >= REF_RATE_PER_HOUR) reasons.push(`more than ${REF_RATE_PER_HOUR} referrals in an hour`)
+      if (reasons.length) status = 'flagged'
+    }
+
+    // The unique index on (giveaway, referee) makes a second referral of the
+    // same person a no-op, whoever sends it.
+    const ref = await db.prepare(`INSERT OR IGNORE INTO referrals
+      (giveaway_id, referrer_member_id, referee_member_id, referee_email_norm, ip_hash, status, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+      .bind(g.id, referrerId, referee.id, refereeNorm, ipHash, status, reasons.join('; ') || null, ts).first()
+    if (!ref) { outcomes.push({ giveawayId: g.id, status: 'duplicate', reason: 'already referred' }); continue }
+
+    if (status === 'credited' || status === 'flagged') {
+      // Cap enforced inside the INSERT: the count and the write are one
+      // statement, so two referrals landing together cannot both squeeze
+      // under the cap.
+      const ins = await db.prepare(`
+        INSERT INTO entries (giveaway_id, member_id, source, weight, ref_id, detail, flagged, flag_reason, created_at)
+        SELECT ?1, ?2, 'referral', ?3, ?4, ?5, ?6, ?7, ?8
+        WHERE (SELECT COUNT(*) FROM entries WHERE giveaway_id = ?1 AND member_id = ?2 AND source = 'referral') < ?9`)
+        .bind(g.id, referrerId, g.sources.referral.weight, ref.id, `referred ${referee.id}`,
+          status === 'flagged' ? 1 : 0, status === 'flagged' ? reasons.join('; ') : null, ts, g.sources.referral.cap)
+        .run()
+      if (ins.meta.changes === 0) {
+        await db.prepare("UPDATE referrals SET status = 'capped', reason = ? WHERE id = ?")
+          .bind(`referrer reached the cap of ${g.sources.referral.cap}`, ref.id).run()
+        status = 'capped'
+      }
+    }
+    outcomes.push({ giveawayId: g.id, status, reason: reasons.join('; ') || null })
+  }
+  return outcomes
+}

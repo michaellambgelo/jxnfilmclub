@@ -7,7 +7,8 @@ const PRIVACY_UPDATED = (privacyHtml.match(/Last updated: (\d{4}-\d{2}-\d{2})/) 
 import brandCss from './brand.css'
 import faviconIco from './favicon.ico'
 import {
-  addParticipant, adminEntries, getGiveaway, isAcceptingEntries, letterboxdProfileExists,
+  addParticipant, adminEntries, creditReferral, getGiveaway, getOrCreateReferralCode,
+  isAcceptingEntries, letterboxdProfileExists, normalizeEmail, REF_CODE_RE, referralStats,
   listDraws, listGiveaways, listWinners, memberSummary, parseLetterboxdHandle, purgeMember,
   runDraw, runRedraw, saveGiveaway, scrubGiveaways, setEntryExcluded, syncEntries, toCsv,
   validGiveaway,
@@ -201,8 +202,19 @@ async function route(request, env, ctx) {
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
     // Member voice clips (podcast submissions from /speak).
-    if (request.method === 'POST'   && pathname === '/voice')         return handleVoiceSubmit(request, env, ctx)
-    if (request.method === 'DELETE' && pathname === '/voice')         return handleVoiceDelete(request, env)
+    if (request.method === 'POST'   && pathname === '/voice') {
+      const res = await handleVoiceSubmit(request, env, ctx)
+      // A clip for a giveaway prompt may earn a voice_prompt entry.
+      if (res.ok) await syncGiveawaysFor(env, await readMemberByClaims(env, await authorize(request, env)))
+      return res
+    }
+    if (request.method === 'DELETE' && pathname === '/voice') {
+      const res = await handleVoiceDelete(request, env)
+      // Deleting the clip withdraws the entry it earned, while entries are
+      // still open (after the close the pool is frozen for the draw).
+      if (res.ok) await withdrawVoiceEntries(env, await readMemberByClaims(env, await authorize(request, env)))
+      return res
+    }
     if (request.method === 'GET'    && pathname === '/voice/mine')    return handleVoiceMine(request, env)
     if (request.method === 'GET'    && pathname === '/voice/history') return handleVoiceHistory(request, env)
     if (request.method === 'GET'    && pathname === '/voice/audio')   return handleVoiceAudio(request, env)
@@ -224,6 +236,7 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'    && pathname === '/transcriber/pending') return handleTranscriberPending(request, env)
     if (request.method === 'GET'    && pathname === '/transcriber/audio')   return handleTranscriberAudio(request, env)
     if (request.method === 'POST'   && pathname === '/transcriber/draft')   return handleTranscriberDraft(request, env)
+    if (request.method === 'POST'   && pathname === '/transcriber/measure') return handleTranscriberMeasure(request, env)
     // Admin event writes. Same id-in-path shape as /events/:id; the ADMIN_TOKEN
     // gate lives in the handlers so an unset token can never read as a match.
     const adminEventMatch = /^\/admin\/events\/([^\/]+)$/.exec(pathname)
@@ -397,7 +410,7 @@ function isValidName(s) {
 // Creates pending:{email} with OTP code. The optional handle is held on the
 // pending row and promoted to the member row at /signup/verify time.
 async function handleSignup(request, env) {
-  const { email, name, handle, newsletter } = await request.json()
+  const { email, name, handle, newsletter, ref } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
   if (!isValidName(name)) return json(env, { error: 'invalid name' }, 400)
@@ -427,7 +440,11 @@ async function handleSignup(request, env) {
   const code = randomCode()
   await env.MEMBERS_KV.put(
     `pending:${email}`,
-    JSON.stringify({ name, handle: handle || null, newsletter: !!newsletter, code }),
+    // ref: a giveaway referral code from the member link that brought them
+    // here. Kept server-side across the email-code step and credited only once
+    // the address is verified (creditReferralSignup).
+    JSON.stringify({ name, handle: handle || null, newsletter: !!newsletter, code,
+      ...(typeof ref === 'string' && REF_CODE_RE.test(ref) ? { ref } : {}) }),
     { expirationTtl: OTP_TTL },
   )
 
@@ -491,6 +508,7 @@ async function handleSignupVerify(request, env) {
   const addPayload = { id, name: member.name, joined: member.joined }
   if (handle) addPayload.handle = handle
   await dispatchGithub(env, 'add-member', addPayload)
+  if (pending.ref) await creditReferralSignup(env, request, member, pending.ref)
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000, jti: randomToken(16) })
   const refresh = remember === true ? await issueRefreshToken(env, member) : undefined
@@ -1760,7 +1778,32 @@ async function handleTranscriberAudio(request, env) {
   })
 }
 
-// POST /transcriber/draft — { key, at, srt }. Adds a machine draft beside a
+// Record node0's measured clip length (ffprobe on the decoded audio). The
+// browser's X-Voice-Duration is only a claim; this is what giveaway voice
+// limits are checked against (syncEntries). Returns the updated row.
+async function recordMeasuredSeconds(env, key, row, seconds) {
+  if (!(typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 && seconds < 86400)) return row
+  const updated = { ...row, measuredSeconds: Math.round(seconds * 10) / 10 }
+  await env.MEMBERS_KV.put(key, JSON.stringify(updated), { expiration: updated.expiresAt })
+  await syncGiveawaysFor(env, { id: updated.memberId })
+  return updated
+}
+
+// POST /transcriber/measure — { key, at, seconds }. The length on its own, for
+// clips whisper found no speech in (so no draft is posted).
+async function handleTranscriberMeasure(request, env) {
+  if (!transcriberAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const body = await request.json().catch(() => ({}))
+  const { row, error } = await transcriberRow(env, body.key)
+  if (error) return error
+  if (typeof body.at !== 'string' || body.at !== row.at) {
+    return json(env, { error: 'clip was replaced since it was fetched' }, 409)
+  }
+  const updated = await recordMeasuredSeconds(env, body.key, row, body.seconds)
+  return json(env, { ok: true, measuredSeconds: updated.measuredSeconds ?? null })
+}
+
+// POST /transcriber/draft — { key, at, srt, seconds? }. Adds a machine draft beside a
 // clip that has no transcript. Never overwrites: an existing .srt may carry a
 // human's edits, or be a laptop draft (scripts/transcribe.mjs) — 409 either
 // way, which the transcriber treats as done.
@@ -1779,6 +1822,8 @@ async function handleTranscriberDraft(request, env) {
   if (typeof body.at !== 'string' || body.at !== row.at) {
     return json(env, { error: 'clip was replaced since it was fetched' }, 409)
   }
+  // Length first: it is worth recording even when a transcript already exists.
+  await recordMeasuredSeconds(env, body.key, row, body.seconds)
   const transcriptKey = srtKeyFor(row.r2Key)
   if (await env.VOICE.head(transcriptKey)) {
     return json(env, { error: 'a transcript already exists' }, 409)
@@ -5188,6 +5233,9 @@ function giveawayKv(env) {
 // this keeps a burst of entries from hammering letterboxd.com). 'unknown' is
 // never cached — the next sync retries.
 async function cachedLetterboxdCheck(env, handle) {
+  // E2E never reaches the outside world (same rule as Resend and GitHub):
+  // test handles are made up, and a real lookup would 404 them.
+  if (env.E2E_MODE === 'true') return 'yes'
   const key = `lbcheck:${String(handle).toLowerCase()}`
   const cached = await env.MEMBERS_KV.get(key)
   if (cached === 'yes' || cached === 'no') return cached
@@ -5212,6 +5260,23 @@ async function syncGiveawaysFor(env, member, { eventId = null } = {}) {
     }
   } catch (e) {
     console.error('giveaway sync failed:', e && e.message || e)
+  }
+}
+
+async function withdrawVoiceEntries(env, member) {
+  const db = giveawayDb(env)
+  if (!db || !member) return
+  try {
+    const { results } = await db.prepare(`SELECT id, voice_prompt_id, status, starts_at, ends_at FROM giveaways
+      WHERE status = 'open' AND voice_prompt_id IS NOT NULL`).all()
+    for (const g of results) {
+      if (!isAcceptingEntries(g)) continue
+      if (await env.MEMBERS_KV.get(`voice:${g.voice_prompt_id}:${member.id}`)) continue
+      await db.prepare(`DELETE FROM entries WHERE giveaway_id = ? AND member_id = ? AND source = 'voice_prompt'`)
+        .bind(g.id, member.id).run()
+    }
+  } catch (e) {
+    console.error('voice entry withdrawal failed:', e && e.message || e)
   }
 }
 
@@ -5352,9 +5417,45 @@ async function handleGiveawayRules(env, id) {
   return html(page(env, { title: `${g.title} — Official Rules`, body }))
 }
 
-// Referral link + counts for the member page. Phase 2 (referral source).
+// Referral link + counts for the member page. Only once they have entered a
+// giveaway that counts referrals — the link is meaningless otherwise. The link
+// lands on the giveaway page, which carries ?ref= on to the signup form.
 async function referralInfo(env, db, g, member) {
-  return {}
+  if (!g.sources.referral) return {}
+  if (!(await db.prepare('SELECT 1 FROM participants WHERE giveaway_id = ? AND member_id = ?').bind(g.id, member.id).first())) return {}
+  const code = await getOrCreateReferralCode(db, member.id)
+  const stats = await referralStats(db, g, member.id)
+  const link = `${siteOrigin(env)}/giveaways?event=${encodeURIComponent(g.event_id)}&ref=${code}`
+  return { referral: { code, link, ...stats } }
+}
+
+// Credit a verified signup that arrived with a referral code. Never throws —
+// signing up must succeed whatever happens here.
+async function creditReferralSignup(env, request, member, code) {
+  const db = giveawayDb(env)
+  if (!db || !REF_CODE_RE.test(code || '')) return
+  try {
+    // An IP is identifying; store only a keyed hash of it, enough to notice
+    // many signups from one network and useless for anything else.
+    const ip = request.headers.get('CF-Connecting-IP') || ''
+    const ipHash = ip ? (await hmac(env.OTP_SIGNING_KEY, `giveaway-ip:${ip}`)).slice(0, 32) : null
+    // Signup already refused this exact address; this catches the same inbox
+    // under another spelling (case, +tag, gmail dots).
+    const norm = normalizeEmail(member.email)
+    let aliasOfExisting = false
+    let cursor
+    do {
+      const page = await env.MEMBERS_KV.list({ prefix: 'member:', cursor })
+      for (const k of page.keys) {
+        const email = k.name.slice('member:'.length)
+        if (email !== member.email && normalizeEmail(email) === norm) { aliasOfExisting = true; break }
+      }
+      cursor = page.list_complete || aliasOfExisting ? undefined : page.cursor
+    } while (cursor)
+    await creditReferral(db, { code, referee: member, ipHash, aliasOfExisting })
+  } catch (e) {
+    console.error('referral credit failed:', e && e.message || e)
+  }
 }
 
 // --- admin ---

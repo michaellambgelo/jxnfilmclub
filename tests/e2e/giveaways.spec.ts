@@ -80,3 +80,51 @@ test('the official rules page is public', async ({ page }) => {
   await expect(page.getByText(/NO PURCHASE OR PAYMENT OF ANY KIND IS NECESSARY/)).toBeVisible()
   await expect(page.getByText('Sponsored by the Jackson Film Club.')).toBeVisible()
 })
+
+// Referral tracking must survive the whole signup flow: a member's link lands
+// on the giveaway page, the Join link carries ?ref= to the Worker's signup
+// form, the code rides the pending row through the email-code step, and the
+// referrer is credited only after the new address is verified.
+test('a referral link survives signup and credits the referrer after verification', async ({ page, browser }) => {
+  await seedEventAndGiveaway(page, {
+    sources: { waitlist_signup: { weight: 1 }, referral: { weight: 1, cap: 5 } },
+  })
+  await signInAs(page, 'referrer-e2e@example.com', { name: 'Ref Errer' })
+  await page.goto(`/giveaways?event=${EVENT.id}`)
+  await page.locator('.gw-accept').check()
+  await page.getByRole('button', { name: 'Enter the giveaway' }).click()
+  const link = await page.locator('.gw-ref input').inputValue()
+  expect(link).toMatch(/[?&]ref=[a-z0-9]{8}$/)
+  const code = new URL(link).searchParams.get('ref')
+
+  // A friend, in a fresh browser with no session, follows the link.
+  const friendCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const friend = await friendCtx.newPage()
+  await friend.addInitScript((origin) => { (window as any).JXNFC_WORKER_ORIGIN = origin }, WORKER_ORIGIN)
+  const path = new URL(link).pathname + new URL(link).search
+  await friend.goto(path)
+  await friend.getByRole('link', { name: 'Join free' }).click()
+  await friend.waitForURL(new RegExp(`ref=${code}`))
+
+  const email = 'referred-friend@example.com'
+  await friend.getByLabel('Display name').fill('Referred Friend')
+  await friend.getByLabel('Email', { exact: true }).fill(email)
+  await friend.getByRole('button', { name: /email me a code/i }).click()
+  await friend.waitForURL(/\/verify/)
+
+  // Not credited yet: the address is unverified.
+  await page.reload()
+  await expect(page.locator('.gw-ref .muted')).toContainText('0 of 5')
+
+  const pending = JSON.parse((await (await friend.request.get(
+    `${WORKER_ORIGIN}/__test/kv?key=pending:${encodeURIComponent(email)}`)).json()).value)
+  expect(pending.ref).toBe(code)
+  await friend.getByLabel('Code').fill(pending.code)
+  await friend.getByRole('button', { name: /confirm membership/i }).click()
+  await friend.waitForURL(/\/(edit|giveaways)/)
+
+  await page.reload()
+  await expect(page.locator('.gw-ref .muted')).toContainText('1 of 5')
+  await expect(page.locator('.gw-total')).toHaveText('1 entry so far')
+  await friendCtx.close()
+})

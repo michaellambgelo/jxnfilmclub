@@ -92,6 +92,10 @@
       // Unchecked checkboxes are absent from FormData; send an explicit boolean.
       data.newsletter = form.newsletter.checked
       if (!data.handle) delete data.handle
+      // A giveaway referral code from the member link that brought them here.
+      // The Worker validates it and credits it only after the email is verified.
+      const ref = new URLSearchParams(location.search).get('ref')
+      if (ref && /^[a-z0-9]{8}$/.test(ref)) data.ref = ref
 
       try {
         const res = await fetch('/signup', {

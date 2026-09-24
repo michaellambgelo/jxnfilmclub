@@ -251,6 +251,12 @@ sequenceDiagram
   `transcribe.michaellamb.dev`, a public hostname on the node6 Cloudflare
   Tunnel (dashboard-managed) to node0 `:8088`. Unset hook URL or token = inert.
 
+- **Measured length.** The drafter also runs ffprobe on the decoded audio and
+  reports `seconds` with the draft (or through `POST /transcriber/measure` when
+  whisper hears no speech). It is stored as `measuredSeconds` on the voice row,
+  and giveaway voice limits are checked against it; `duration` is still the
+  browser's claim (see [Giveaways](giveaways.md)).
+
 The laptop path is unchanged and still the fallback:
 `node scripts/transcribe.mjs --prompt <id>`. Both share
 `scripts/lib/whisper.mjs`, so they draft identically.

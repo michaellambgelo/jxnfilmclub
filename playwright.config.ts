@@ -89,7 +89,10 @@ export default defineConfig({
       // clash should fail loudly instead of polluting another environment. This
       // is what previously leaked e2e fixtures into production KV.
       command: [
-        'cd worker && npx wrangler dev --local --env staging',
+        // Giveaway tables live in D1; apply migrations to the local staging
+        // database first (idempotent — already-applied migrations are skipped).
+        'cd worker && npx wrangler d1 migrations apply GIVEAWAYS_DB --local --env staging &&',
+        'npx wrangler dev --local --env staging',
         `--port ${WORKER_PORT}`,
         `--var SITE_ORIGIN:http://localhost:${SITE_PORT}`,
         '--var E2E_MODE:true',

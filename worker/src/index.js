@@ -307,6 +307,14 @@ async function route(request, env, ctx) {
     }
 
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
+    // E2E-only: wipe giveaway tables between Playwright tests (wrangler dev's
+    // local D1 persists across runs, like its KV).
+    if (env.E2E_MODE === 'true' && pathname === '/__test/giveaways' && request.method === 'DELETE') {
+      if (!env.GIVEAWAYS_DB) return json(env, { ok: true, skipped: 'no GIVEAWAYS_DB' })
+      await env.GIVEAWAYS_DB.batch(['entries', 'winners', 'draws', 'referrals', 'referral_codes', 'participants', 'giveaways']
+        .map(t => env.GIVEAWAYS_DB.prepare(`DELETE FROM ${t}`)))
+      return json(env, { ok: true })
+    }
     // R2 read-back for e2e: the admin agent's local server proxies to this in
     // e2e mode so Playwright can verify uploaded clip bytes without R2 creds.
     if (env.E2E_MODE === 'true' && pathname === '/__test/r2' && request.method === 'GET') {

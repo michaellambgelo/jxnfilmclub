@@ -102,7 +102,7 @@
   // regex: '//evil.example' and a backslash variant both look same-origin,
   // and backslashes in this codebase are their own hazard. Seven routes is
   // a short enough list to simply enumerate.
-  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback']
+  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback', '/giveaways']
 
   globalThis.jxnfcStashNext = (path) => {
     try {
@@ -210,6 +210,7 @@
         type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
         type === 'speak'   ? 'speak-view' :       // member voice clips + messages for the podcast; in the nav since the message mode shipped
         type === 'feedback' ? 'feedback-view' :   // beta feedback form (anonymous ok)
+        type === 'giveaways' ? 'giveaways-view' : // event giveaways, reached from event cards and Instagram links
                              'home-view'
       this.mount(view, 'article')
     })

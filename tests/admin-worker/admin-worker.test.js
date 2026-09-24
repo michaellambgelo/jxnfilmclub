@@ -869,3 +869,47 @@ describe('/api/member/avatar/{flag,unflag}', () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+// Giveaways: the draw is logged under the Access identity, so the proxy must
+// forward it; GETs must carry no body; the CSV must arrive as a download.
+describe('/api/giveaways', () => {
+  it('forwards the Access email with a draw so the log names who ran it', async () => {
+    const { service, calls } = stubService({ winners: ['a'] })
+    const res = await call('/api/giveaways/draw?env=production&id=clay-wait', {
+      method: 'POST', body: JSON.stringify({ excludeFlagged: true }),
+      token: await signToken({ email: 'host@jxnfilm.club' }), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/giveaways/clay-wait/draw')
+    expect(calls[0].init.headers['X-Admin-Email']).toBe('host@jxnfilm.club')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+  })
+
+  it('lists over GET with no body, drafts included, on staging', async () => {
+    const { service, calls } = stubService({ giveaways: [] })
+    await call('/api/giveaways?env=staging&event=2026-10-22-clayface', {
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/giveaways?event=2026-10-22-clayface')
+    expect(calls[0].init.method).toBe('GET')
+    expect(calls[0].init.body).toBeUndefined()
+  })
+
+  it('passes the box-office CSV through as a download', async () => {
+    const { service, calls } = stubService('name,tickets\r\nA,2\r\n', 200, true)
+    const res = await call('/api/giveaways/winners.csv?env=production&id=clay-wait&format=boxoffice', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/giveaways/clay-wait/winners.csv?format=boxoffice')
+    expect(res.headers.get('Content-Type')).toMatch(/text\/csv/)
+    expect(await res.text()).toBe('name,tickets\r\nA,2\r\n')
+  })
+
+  it('needs an id for per-giveaway routes, and Access for all of them', async () => {
+    const { service } = stubService()
+    expect((await call('/api/giveaways/entries?env=production', {
+      token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })).status).toBe(400)
+    expect((await call('/api/giveaways?env=production', { envOverrides: { JOIN_WORKER: service } })).status).not.toBe(200)
+  })
+})

@@ -1,5 +1,15 @@
 [
   {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/the-love-hypothesis/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/1/1/8/1/931181-the-love-hypothesis-0-600-0-900-crop.jpg?v=af3d1729f2",
+    "rating": "3.0",
+    "review": "two of these three stars are for Lili Reinhart's absolutely iconic press tour outfits",
+    "title": "The Love Hypothesis",
+    "watched_date": "2026-09-25",
+    "year": "2026"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/the-little-prince-2015/",
@@ -81,16 +91,6 @@
     "title": "The Mist",
     "watched_date": "2026-09-22",
     "year": "2007"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/girls-like-girls/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/1/2/3/0/1281230-girls-like-girls-0-600-0-900-crop.jpg?v=81265f1a60",
-    "rating": "3.0",
-    "review": "You either die a hero (Girls Like Girls 2015) or live long enough to see yourself become the villain (Girls Like Girls 2026)",
-    "title": "Girls Like Girls",
-    "watched_date": "2026-09-22",
-    "year": "2026"
   },
   {
     "handle": "jon_knowledge",

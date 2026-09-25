@@ -1022,6 +1022,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/the-love-hypothesis/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/1/1/8/1/931181-the-love-hypothesis-0-600-0-900-crop.jpg?v=af3d1729f2",
+      "rating": "3.0",
+      "title": "The Love Hypothesis",
+      "watched_date": "2026-09-25",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/white-chicks/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/4/7/5/0/44750-white-chicks-0-600-0-900-crop.jpg?v=bfa48588cf",
       "rating": "5.0",
@@ -1113,15 +1121,6 @@
       "title": "All the Boys Love Mandy Lane",
       "watched_date": "2026-09-16",
       "year": "2006"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/the-invisible-man/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/hb/62/sv/wn/15w76PDsXtPjBgnEJlZLZceBfZR-0-600-0-900-crop.jpg?v=7b891db489",
-      "rating": "4.0",
-      "title": "The Invisible Man",
-      "watched_date": "2026-09-15",
-      "year": "1933"
     }
   ],
   "calissippi": [

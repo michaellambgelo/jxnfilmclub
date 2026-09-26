@@ -1022,6 +1022,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/dont-look-under-the-bed/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/8/6/9/4/58694-dont-look-under-the-bed-0-600-0-900-crop.jpg?v=4ea21c1227",
+      "rating": "2.5",
+      "title": "Don't Look Under the Bed",
+      "watched_date": "2026-09-25",
+      "year": "1999"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/the-love-hypothesis/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/1/1/8/1/931181-the-love-hypothesis-0-600-0-900-crop.jpg?v=af3d1729f2",
       "rating": "3.0",
@@ -1112,15 +1120,6 @@
       "title": "Ghostwatch",
       "watched_date": "2026-09-18",
       "year": "1992"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/all-the-boys-love-mandy-lane/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/4/2/1/47421-all-the-boys-love-mandy-lane-0-600-0-900-crop.jpg?v=e075a73eaf",
-      "rating": "4.0",
-      "title": "All the Boys Love Mandy Lane",
-      "watched_date": "2026-09-16",
-      "year": "2006"
     }
   ],
   "calissippi": [
@@ -1956,6 +1955,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/hamnet/5/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/2/2/3/2/772232-hamnet-0-600-0-900-crop.jpg?v=631489314d",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "Hamnet",
+      "watched_date": "2026-09-25",
+      "year": "2025"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/the-truman-show/8/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/xx/io/jp/45/the-truman-show-0-600-0-900-crop.jpg?v=704ba393f7",
       "rating": "5.0",
@@ -2055,14 +2064,6 @@
       "title": "The Mist",
       "watched_date": "2026-09-22",
       "year": "2007"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/ghost-in-the-machine-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/6/4/9/2/6/1464926-ghost-in-the-machine-2026-0-600-0-900-crop.jpg?v=7eaa2c4c35",
-      "rating": "4.0",
-      "title": "Ghost in the Machine",
-      "watched_date": "2026-09-22",
-      "year": "2026"
     }
   ],
   "mrbienkowski": [
@@ -2159,6 +2160,14 @@
   ],
   "winonarideher": [
     {
+      "link": "https://letterboxd.com/winonarideher/film/the-love-hypothesis/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/1/1/8/1/931181-the-love-hypothesis-0-600-0-900-crop.jpg?v=af3d1729f2",
+      "rating": "2.5",
+      "title": "The Love Hypothesis",
+      "watched_date": "2026-09-25",
+      "year": "2026"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/winonarideher/film/primetime-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
@@ -2247,15 +2256,6 @@
       "title": "X-Men: First Class",
       "watched_date": "2026-08-02",
       "year": "2011"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/winonarideher/film/spider-man-brand-new-day/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/2/8/7/1/872871-spider-man-brand-new-day-0-600-0-900-crop.jpg?v=ebe6beb4fc",
-      "rating": "4.0",
-      "title": "Spider-Man: Brand New Day",
-      "watched_date": "2026-07-30",
-      "year": "2026"
     }
   ],
   "witch21": [

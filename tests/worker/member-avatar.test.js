@@ -128,7 +128,7 @@ describe('POST /member/avatar', () => {
     for (let i = 0; i < 3; i++) expect((await upload(token, PNG, 'image/gif')).status).toBe(415)
     for (let i = 0; i < 10; i++) expect((await upload(token, jpeg(i), 'image/jpeg')).status).toBe(200)
     expect((await upload(token, jpeg(99), 'image/jpeg')).status).toBe(429)
-  })
+  }, 15_000)   // 14 sequential uploads: 4.2s on CI before giveaways, past the 5s default after
 })
 
 describe('DELETE /member/avatar', () => {

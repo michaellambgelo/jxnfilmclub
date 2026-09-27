@@ -48,7 +48,7 @@ bucket_name = "jxnfilm-news"
 [[d1_databases]]
 binding = "GIVEAWAYS_DB"
 database_name = "jxnfilm-giveaways"
-database_id = "REPLACE_WITH_PRODUCTION_D1_ID"
+database_id = "3e5abee9-21d5-4bc1-8264-38f354866025"
 migrations_dir = "migrations"
 
 [vars]
@@ -108,7 +108,7 @@ bucket_name = "jxnfilm-news-staging"
 [[env.staging.d1_databases]]
 binding = "GIVEAWAYS_DB"
 database_name = "jxnfilm-giveaways-staging"
-database_id = "REPLACE_WITH_STAGING_D1_ID"
+database_id = "4e6068d0-eb01-4795-b344-7ce65a2b51eb"
 migrations_dir = "migrations"
 
 [env.staging.vars]

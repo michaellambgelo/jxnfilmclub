@@ -5383,7 +5383,14 @@ async function handleGiveawayRules(env, id) {
     const worth = `${cfg.weight} ${cfg.weight === 1 ? 'entry' : 'entries'}`
     const cap = source === 'referral' ? ` each, up to ${cfg.cap} referrals` : ''
     const onePer = source === 'referral' ? '' : ' (once)'
-    return `<li>${esc(SOURCE_COPY[source])}: ${worth}${cap}${onePer}.</li>`
+    // The waitlist line has to say which RSVPs count: count_prior_waitlist
+    // decides it, and the rules are the promise.
+    const copy = source === 'waitlist_signup'
+      ? (g.count_prior_waitlist
+        ? 'RSVP to the screening (join its waitlist). An RSVP made before entries opened counts too, as long as you are still on the list when you enter'
+        : 'RSVP to the screening (join its waitlist) while the giveaway is open; an RSVP made before entries opened does not count')
+      : SOURCE_COPY[source]
+    return `<li>${esc(copy)}: ${worth}${cap}${onePer}.</li>`
   }).join('')
   const voiceLine = g.sources.voice_prompt
     ? `<p>Voice entries must be no longer than ${g.voice_max_seconds} seconds and no larger than ${Math.round(g.voice_max_bytes / 1048576)} MB.</p>`

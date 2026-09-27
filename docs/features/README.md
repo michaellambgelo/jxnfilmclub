@@ -19,6 +19,7 @@ Detailed documentation of every user-facing feature in jxnfilm.club, including M
 | [Deployment](deployment.md) | CI/CD for the static site and Cloudflare Worker |
 | [Navigation](navigation.md) | SPA routing, auth state, session management |
 | [Beta Feedback](feedback.md) | Anonymous-friendly feedback capture (widget + /feedback) with admin triage |
+| [Giveaways](giveaways.md) | Event-scoped prize draws: waitlist, Letterboxd, voice and referral entries; weighted, audited draw; winner CSVs |
 
 ## Architecture Overview
 

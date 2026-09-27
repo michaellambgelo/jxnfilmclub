@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  authorized, createHookServer, createQueue, createWorker, logfmt, ORIGINS, parseHook,
+  authorized, createHookServer, createQueue, createWorker, logfmt, ORIGINS, parseHook, parseProbeSeconds,
 } from '../../scripts/transcribe_service.mjs'
 import { MODELS, wavArgs, whisperArgs } from '../../scripts/lib/whisper.mjs'
 
@@ -161,5 +161,14 @@ describe('whisper args (shared with scripts/transcribe.mjs)', () => {
 describe('logfmt', () => {
   it('quotes values with spaces and drops empties', () => {
     expect(logfmt({ event: 'error', detail: 'a "b" c', none: null })).toBe('event=error detail="a \\"b\\" c"')
+  })
+})
+
+describe('parseProbeSeconds', () => {
+  it('reads ffprobe duration output, and refuses anything else', () => {
+    expect(parseProbeSeconds('42.345000\n')).toBeCloseTo(42.345)
+    expect(parseProbeSeconds('N/A')).toBeNull()
+    expect(parseProbeSeconds('')).toBeNull()
+    expect(parseProbeSeconds('-1')).toBeNull()
   })
 })

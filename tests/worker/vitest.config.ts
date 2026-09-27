@@ -1,4 +1,5 @@
-import { defineWorkersProject } from '@cloudflare/vitest-pool-workers/config'
+import { defineWorkersProject, readD1Migrations } from '@cloudflare/vitest-pool-workers/config'
+import path from 'node:path'
 import fs from 'node:fs'
 
 // Mirrors the wrangler.toml module rules: .html/.css imports as Text (string
@@ -35,12 +36,16 @@ const moduleRulesPlugin = {
   },
 }
 
+// Giveaway schema, applied to a fresh D1 per test file by apply-migrations.js.
+const migrations = await readD1Migrations(path.join(__dirname, '../../worker/migrations'))
+
 export default defineWorkersProject({
   plugins: [moduleRulesPlugin],
   test: {
     name: 'worker',
     include: ['**/*.test.js'],
     exclude: ['**/node_modules/**', '**/.dist/**', '**/dist/**'],
+    setupFiles: ['./apply-migrations.js'],
     poolOptions: {
       workers: {
         singleWorker: true,
@@ -50,6 +55,7 @@ export default defineWorkersProject({
           compatibilityFlags: ['nodejs_compat'],
           kvNamespaces: ['MEMBERS_KV', 'ATTENDANCE_KV'],
           r2Buckets: ['VOICE', 'NEWS'],
+          d1Databases: ['GIVEAWAYS_DB'],
           bindings: {
             SITE_ORIGIN: 'https://jxnfilm.club',
             GITHUB_OWNER: 'testowner',
@@ -58,6 +64,7 @@ export default defineWorkersProject({
             RESEND_API_KEY: 'test-resend-key',
             OTP_SIGNING_KEY: 'test-key',
             ADMIN_TOKEN: 'test-admin-token',
+            TEST_MIGRATIONS: migrations,
             TRANSCRIBE_TOKEN: 'test-transcribe-token',
             TRANSCRIBE_HOOK_URL: 'https://transcribe.test/hook',
             ENVIRONMENT: 'production',

@@ -93,6 +93,9 @@ export const test = base.extend<{ cleanKv: void }>({
     for (const prefix of ['attend:', 'attendance:', 'event:', 'events:', 'rsvp:']) {
       await wipe(prefix, 'ATTENDANCE_KV')
     }
+    // Giveaway tables (D1). Same checked-wipe rule as the KV prefixes above.
+    expect((await request.delete(`${WORKER_ORIGIN}/__test/giveaways`)).ok()).toBeTruthy()
+    for (const prefix of ['lbcheck:']) await wipe(prefix)
 
     // Seed the live read aggregates from the static JSON snapshots so SPA
     // tests that expect the production directory contents work the same way

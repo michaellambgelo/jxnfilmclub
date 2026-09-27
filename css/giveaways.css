@@ -1,0 +1,91 @@
+/* Event giveaways page (ui/giveaways.html). Mobile-first: one column, full-
+ * width tap targets, nothing that needs hover. Tokens from css/tokens.css. */
+
+.giveaways .gw-eyebrow {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--brand);
+}
+
+.gw-card {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.gw-card h2 { margin: 0 0 0.25rem; }
+.gw-prize { margin: 0 0 0.5rem; color: var(--ink); }
+.gw-dates { margin: 0 0 1rem; font-size: var(--fs-14); color: var(--ink-3); }
+
+.gw-steps { list-style: none; margin: 0 0 1rem; padding: 0; }
+
+.gw-steps li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.gw-steps li.done .gw-step-label::before { content: '✓ '; color: var(--ok-ink, var(--brand)); }
+.gw-step-worth { font-size: var(--fs-14); color: var(--ink-3); text-align: right; }
+
+.giveaways a.gw-step-cta {
+  grid-column: 1 / -1;
+  color: var(--brand);
+  justify-self: start;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+}
+
+.gw-total { margin: 0 0 1rem; font-size: var(--fs-18, 1.125rem); }
+
+.gw-ref-title { margin: 0 0 0.35rem; font-weight: 600; }
+.gw-ref-row { display: flex; gap: 0.5rem; }
+.gw-ref-row input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-14); }
+.gw-ref-row button { flex: none; min-height: 44px; }
+
+.gw-enter .actions button { width: 100%; min-height: 48px; }
+.gw-auth { display: grid; gap: 0.5rem; }
+
+/* Links on the dark surface: ink, underlined, never the UA blue. */
+.giveaways a { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; }
+.giveaways a:hover { color: var(--brand); }
+
+/* Link styled as a button (Join free / Log in). Full-width on phones. */
+.giveaways a.gw-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 1em;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  text-decoration: none;
+  color: white;
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+}
+.giveaways a.gw-btn:hover { color: var(--bg); background: var(--ink-strong, var(--ink)); border-color: var(--ink-strong, var(--ink)); }
+.giveaways a.gw-btn-ghost { color: var(--ink); background: none; border-color: var(--line-2); }
+.giveaways a.gw-btn-ghost:hover { color: var(--ink); background: none; border-color: var(--ink-3); }
+
+.gw-err { color: var(--err-ink, var(--brand)); }
+.gw-rules { margin: 0.75rem 0 0; font-size: var(--fs-14); }
+.gw-foot { margin-top: 1.5rem; font-size: var(--fs-14); color: var(--ink-3); }
+
+@media (min-width: 641px) {
+  .gw-card { padding: 1.5rem; }
+  .gw-auth { grid-template-columns: 1fr 1fr; }
+}

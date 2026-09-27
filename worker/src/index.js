@@ -6,6 +6,13 @@ import signupHtml from './signup.html'
 const PRIVACY_UPDATED = (privacyHtml.match(/Last updated: (\d{4}-\d{2}-\d{2})/) || [])[1] || null
 import brandCss from './brand.css'
 import faviconIco from './favicon.ico'
+import {
+  addParticipant, adminEntries, creditReferral, getGiveaway, getOrCreateReferralCode,
+  isAcceptingEntries, letterboxdProfileExists, normalizeEmail, REF_CODE_RE, referralStats,
+  listDraws, listGiveaways, listWinners, memberSummary, parseLetterboxdHandle, purgeMember,
+  runDraw, runRedraw, saveGiveaway, scrubGiveaways, setEntryExcluded, syncEntries, toCsv,
+  validGiveaway,
+} from './giveaways.js'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -125,6 +132,8 @@ export default {
     // missed webhook (node0 or the tunnel down, a stream deferral) costs at
     // most a day rather than a caption.
     ctx.waitUntil(renudgePendingTranscripts(env))
+    // Giveaway personal data expires RETENTION_DAYS after each giveaway ends.
+    if (env.GIVEAWAYS_DB) ctx.waitUntil(scrubGiveaways(env.GIVEAWAYS_DB))
   },
 }
 
@@ -178,7 +187,12 @@ async function route(request, env, ctx) {
     if (request.method === 'POST' && pathname === '/letterboxd/unlink')  return handleLbUnlink(request, env)
 
     if (request.method === 'GET'  && pathname === '/member/me')      return handleMemberMe(request, env)
-    if (request.method === 'POST' && pathname === '/member/update')  return handleMemberUpdate(request, env)
+    if (request.method === 'POST' && pathname === '/member/update') {
+      const res = await handleMemberUpdate(request, env)
+      // A newly linked Letterboxd profile may earn a giveaway entry.
+      if (res.ok) await syncGiveawaysFor(env, await readMemberByClaims(env, await authorize(request, env)))
+      return res
+    }
     if (request.method === 'POST' && pathname === '/member/delete')  return handleMemberDelete(request, env)
     // Custom profile photo. Raw image bytes, not JSON: the browser has already
     // cropped and re-encoded it, so there is nothing to wrap.
@@ -188,8 +202,19 @@ async function route(request, env, ctx) {
     if (request.method === 'POST' && pathname === '/feedback')       return handleFeedback(request, env)
 
     // Member voice clips (podcast submissions from /speak).
-    if (request.method === 'POST'   && pathname === '/voice')         return handleVoiceSubmit(request, env, ctx)
-    if (request.method === 'DELETE' && pathname === '/voice')         return handleVoiceDelete(request, env)
+    if (request.method === 'POST'   && pathname === '/voice') {
+      const res = await handleVoiceSubmit(request, env, ctx)
+      // A clip for a giveaway prompt may earn a voice_prompt entry.
+      if (res.ok) await syncGiveawaysFor(env, await readMemberByClaims(env, await authorize(request, env)))
+      return res
+    }
+    if (request.method === 'DELETE' && pathname === '/voice') {
+      const res = await handleVoiceDelete(request, env)
+      // Deleting the clip withdraws the entry it earned, while entries are
+      // still open (after the close the pool is frozen for the draw).
+      if (res.ok) await withdrawVoiceEntries(env, await readMemberByClaims(env, await authorize(request, env)))
+      return res
+    }
     if (request.method === 'GET'    && pathname === '/voice/mine')    return handleVoiceMine(request, env)
     if (request.method === 'GET'    && pathname === '/voice/history') return handleVoiceHistory(request, env)
     if (request.method === 'GET'    && pathname === '/voice/audio')   return handleVoiceAudio(request, env)
@@ -211,6 +236,7 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'    && pathname === '/transcriber/pending') return handleTranscriberPending(request, env)
     if (request.method === 'GET'    && pathname === '/transcriber/audio')   return handleTranscriberAudio(request, env)
     if (request.method === 'POST'   && pathname === '/transcriber/draft')   return handleTranscriberDraft(request, env)
+    if (request.method === 'POST'   && pathname === '/transcriber/measure') return handleTranscriberMeasure(request, env)
     // Admin event writes. Same id-in-path shape as /events/:id; the ADMIN_TOKEN
     // gate lives in the handlers so an unset token can never read as a match.
     const adminEventMatch = /^\/admin\/events\/([^\/]+)$/.exec(pathname)
@@ -264,7 +290,12 @@ async function route(request, env, ctx) {
       if (suffix === 'attendance' && request.method === 'GET')   return handleAttendanceGet(env, eventId)
       if (suffix === 'attend'     && request.method === 'POST')  return handleAttend(request, env, eventId)
       if (suffix === 'attend'     && request.method === 'DELETE') return handleUnattend(request, env, eventId)
-      if (suffix === 'rsvp'       && request.method === 'POST')   return handleRsvp(request, env, eventId)
+      if (suffix === 'rsvp'       && request.method === 'POST') {
+        const res = await handleRsvp(request, env, eventId)
+        // An RSVP may earn a waitlist_signup giveaway entry.
+        if (res.ok) await syncGiveawaysFor(env, await readMemberByClaims(env, await authorize(request, env)), { eventId })
+        return res
+      }
       if (suffix === 'rsvp'       && request.method === 'DELETE') return handleUnrsvp(request, env, eventId)
       if (suffix === 'rsvp/me'    && request.method === 'GET')    return handleRsvpMe(request, env, eventId)
       if (suffix === 'rsvp/guest' && request.method === 'POST')   return handleGuestAdd(request, env, eventId)
@@ -272,7 +303,31 @@ async function route(request, env, ctx) {
       if (suffix === 'host'       && request.method === 'GET')    return handleEventHostView(request, env, eventId)
     }
 
+    // Giveaways. Member-facing reads are public (never drafts); entering needs
+    // a session; everything under /admin/giveaways needs ADMIN_TOKEN.
+    if (request.method === 'GET' && pathname === '/giveaways') return handleGiveawaysList(request, env)
+    const giveawayMatch = /^\/giveaways\/([a-z0-9-]+)\/(me|enter|rules)$/.exec(pathname)
+    if (giveawayMatch) {
+      const [, gid, sub] = giveawayMatch
+      if (sub === 'me'    && request.method === 'GET')  return handleGiveawayMe(request, env, gid)
+      if (sub === 'enter' && request.method === 'POST') return handleGiveawayEnter(request, env, gid)
+      if (sub === 'rules' && request.method === 'GET')  return handleGiveawayRules(env, gid)
+    }
+    const adminGiveawayMatch = /^\/admin\/giveaways(?:\/([a-z0-9-]+)(?:\/(entries|draw|redraw|winners|winners\.csv)|\/entries\/([0-9]+))?)?$/.exec(pathname)
+    if (adminGiveawayMatch) {
+      const [, gid, action, entryId] = adminGiveawayMatch
+      return handleAdminGiveaways(request, env, gid || null, entryId ? 'entry' : (action || null), entryId || null)
+    }
+
     if (env.E2E_MODE === 'true' && pathname === '/__test/kv') return handleTestKv(request, env)
+    // E2E-only: wipe giveaway tables between Playwright tests (wrangler dev's
+    // local D1 persists across runs, like its KV).
+    if (env.E2E_MODE === 'true' && pathname === '/__test/giveaways' && request.method === 'DELETE') {
+      if (!env.GIVEAWAYS_DB) return json(env, { ok: true, skipped: 'no GIVEAWAYS_DB' })
+      await env.GIVEAWAYS_DB.batch(['entries', 'winners', 'draws', 'referrals', 'referral_codes', 'participants', 'giveaways']
+        .map(t => env.GIVEAWAYS_DB.prepare(`DELETE FROM ${t}`)))
+      return json(env, { ok: true })
+    }
     // R2 read-back for e2e: the admin agent's local server proxies to this in
     // e2e mode so Playwright can verify uploaded clip bytes without R2 creds.
     if (env.E2E_MODE === 'true' && pathname === '/__test/r2' && request.method === 'GET') {
@@ -355,11 +410,14 @@ function isValidName(s) {
 // Creates pending:{email} with OTP code. The optional handle is held on the
 // pending row and promoted to the member row at /signup/verify time.
 async function handleSignup(request, env) {
-  const { email, name, handle, newsletter } = await request.json()
+  const { email, name, handle: rawHandle, newsletter, ref } = await request.json()
   if (!email || !name) return json(env, { error: 'email and name required' }, 400)
   if (!isValidEmail(email)) return json(env, { error: 'invalid email format' }, 400)
   if (!isValidName(name)) return json(env, { error: 'invalid name' }, 400)
-  if (handle && !HANDLE_RE.test(handle)) {
+  // Same parsing as /member/update: a pasted profile link or @name is reduced
+  // to the username (signups arriving from Instagram tend to paste links).
+  const handle = rawHandle ? parseLetterboxdHandle(String(rawHandle)) : null
+  if (rawHandle && (!handle || !HANDLE_RE.test(handle))) {
     return json(env, { error: 'invalid handle format' }, 400)
   }
 
@@ -385,7 +443,11 @@ async function handleSignup(request, env) {
   const code = randomCode()
   await env.MEMBERS_KV.put(
     `pending:${email}`,
-    JSON.stringify({ name, handle: handle || null, newsletter: !!newsletter, code }),
+    // ref: a giveaway referral code from the member link that brought them
+    // here. Kept server-side across the email-code step and credited only once
+    // the address is verified (creditReferralSignup).
+    JSON.stringify({ name, handle: handle || null, newsletter: !!newsletter, code,
+      ...(typeof ref === 'string' && REF_CODE_RE.test(ref) ? { ref } : {}) }),
     { expirationTtl: OTP_TTL },
   )
 
@@ -449,6 +511,7 @@ async function handleSignupVerify(request, env) {
   const addPayload = { id, name: member.name, joined: member.joined }
   if (handle) addPayload.handle = handle
   await dispatchGithub(env, 'add-member', addPayload)
+  if (pending.ref) await creditReferralSignup(env, request, member, pending.ref)
 
   const token = await signToken(env, { email, id, exp: Date.now() + 3600_000, jti: randomToken(16) })
   const refresh = remember === true ? await issueRefreshToken(env, member) : undefined
@@ -656,16 +719,25 @@ async function handleMemberUpdate(request, env) {
   // Uniqueness is still enforced via the email:{handle} reverse index so two
   // members can't claim the same handle.
   if (typeof body.handle === 'string' && body.handle.length) {
-    if (!HANDLE_RE.test(body.handle)) {
+    // A pasted profile URL (letterboxd.com/name/, with or without scheme) or
+    // @name is accepted and reduced to the username.
+    const handle = parseLetterboxdHandle(body.handle)
+    if (!handle || !HANDLE_RE.test(handle)) {
       return json(env, { error: 'invalid handle format' }, 400)
     }
-    if (body.handle !== member.handle) {
-      const claimedBy = await env.MEMBERS_KV.get(`email:${body.handle}`)
+    if (handle !== member.handle) {
+      const claimedBy = await env.MEMBERS_KV.get(`email:${handle}`)
       if (claimedBy && claimedBy !== claims.email) {
         return json(env, { error: 'this Letterboxd handle is already claimed' }, 409)
       }
+      // No Letterboxd API: check the public /films/ page. Only a definite 404
+      // refuses the link; a bot challenge or outage ('unknown') lets it
+      // through, and giveaway entries earned from it are flagged for review.
+      if (await cachedLetterboxdCheck(env, handle) === 'no') {
+        return json(env, { error: `no public Letterboxd profile named "${handle}"` }, 422)
+      }
     }
-    updates.handle = body.handle
+    updates.handle = handle
   }
   // Newsletter consent toggle — the authenticated opt-out (and re-opt-in) path.
   if (typeof body.newsletter === 'boolean') {
@@ -769,6 +841,7 @@ async function handleMemberDelete(request, env) {
   // can't be identity-stripped, it IS the identity. Same unguarded stance as
   // purgeRsvps: a failure here must block the deletion, not be swallowed.
   await purgeVoiceClips(env, member)
+  if (env.GIVEAWAYS_DB) await purgeMember(env.GIVEAWAYS_DB, member.id)
 
   // The profile photo goes with the account. Unguarded for the same reason:
   // claiming success while the photo stays public would break the promise.
@@ -1708,7 +1781,32 @@ async function handleTranscriberAudio(request, env) {
   })
 }
 
-// POST /transcriber/draft — { key, at, srt }. Adds a machine draft beside a
+// Record node0's measured clip length (ffprobe on the decoded audio). The
+// browser's X-Voice-Duration is only a claim; this is what giveaway voice
+// limits are checked against (syncEntries). Returns the updated row.
+async function recordMeasuredSeconds(env, key, row, seconds) {
+  if (!(typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 && seconds < 86400)) return row
+  const updated = { ...row, measuredSeconds: Math.round(seconds * 10) / 10 }
+  await env.MEMBERS_KV.put(key, JSON.stringify(updated), { expiration: updated.expiresAt })
+  await syncGiveawaysFor(env, { id: updated.memberId })
+  return updated
+}
+
+// POST /transcriber/measure — { key, at, seconds }. The length on its own, for
+// clips whisper found no speech in (so no draft is posted).
+async function handleTranscriberMeasure(request, env) {
+  if (!transcriberAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const body = await request.json().catch(() => ({}))
+  const { row, error } = await transcriberRow(env, body.key)
+  if (error) return error
+  if (typeof body.at !== 'string' || body.at !== row.at) {
+    return json(env, { error: 'clip was replaced since it was fetched' }, 409)
+  }
+  const updated = await recordMeasuredSeconds(env, body.key, row, body.seconds)
+  return json(env, { ok: true, measuredSeconds: updated.measuredSeconds ?? null })
+}
+
+// POST /transcriber/draft — { key, at, srt, seconds? }. Adds a machine draft beside a
 // clip that has no transcript. Never overwrites: an existing .srt may carry a
 // human's edits, or be a laptop draft (scripts/transcribe.mjs) — 409 either
 // way, which the transcriber treats as done.
@@ -1727,6 +1825,8 @@ async function handleTranscriberDraft(request, env) {
   if (typeof body.at !== 'string' || body.at !== row.at) {
     return json(env, { error: 'clip was replaced since it was fetched' }, 409)
   }
+  // Length first: it is worth recording even when a transcript already exists.
+  await recordMeasuredSeconds(env, body.key, row, body.seconds)
   const transcriptKey = srtKeyFor(row.r2Key)
   if (await env.VOICE.head(transcriptKey)) {
     return json(env, { error: 'a transcript already exists' }, 409)
@@ -5099,6 +5199,347 @@ async function recordDispatchFailure(env, event_type, client_payload, reason) {
       { expirationTtl: 7 * 24 * 3600 },
     )
   } catch { /* audit failure is non-fatal — KV cascade has already succeeded */ }
+}
+
+// --- Giveaways (worker/src/giveaways.js; docs/features/giveaways.md) ---
+//
+// HTTP face over the giveaway module. Storage is the GIVEAWAYS_DB D1 binding;
+// with it unbound every route answers 503 and every hook is a no-op, so the
+// rest of the Worker never depends on giveaways being configured.
+
+function giveawayDb(env) {
+  return env.GIVEAWAYS_DB || null
+}
+
+const GIVEAWAYS_OFF = { error: 'giveaways are not configured' }
+
+async function readMemberByClaims(env, claims) {
+  if (!claims) return null
+  const raw = await env.MEMBERS_KV.get(`member:${claims.email}`)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+// KV reads the giveaway module needs, bound to this env.
+function giveawayKv(env) {
+  return {
+    readRsvp: eventId => readRsvp(env, eventId),
+    letterboxdCheck: handle => cachedLetterboxdCheck(env, handle),
+    readVoice: async (promptId, memberId) => {
+      const raw = await env.MEMBERS_KV.get(`voice:${promptId}:${memberId}`)
+      try { return raw ? JSON.parse(raw) : null } catch { return null }
+    },
+  }
+}
+
+// 'yes'/'no' cached for a day (a handle that exists today exists tomorrow, and
+// this keeps a burst of entries from hammering letterboxd.com). 'unknown' is
+// never cached — the next sync retries.
+async function cachedLetterboxdCheck(env, handle) {
+  // E2E never reaches the outside world (same rule as Resend and GitHub):
+  // test handles are made up, and a real lookup would 404 them.
+  if (env.E2E_MODE === 'true') return 'yes'
+  const key = `lbcheck:${String(handle).toLowerCase()}`
+  const cached = await env.MEMBERS_KV.get(key)
+  if (cached === 'yes' || cached === 'no') return cached
+  const result = await letterboxdProfileExists(handle)
+  if (result !== 'unknown') await env.MEMBERS_KV.put(key, result, { expirationTtl: 86400 })
+  return result
+}
+
+// Re-derive entries after a qualifying action. Never throws: an RSVP or a
+// profile edit must not fail because the giveaway side hiccuped.
+async function syncGiveawaysFor(env, member, { eventId = null } = {}) {
+  const db = giveawayDb(env)
+  if (!db || !member) return
+  try {
+    const { results } = await db.prepare(`
+      SELECT g.* FROM giveaways g JOIN participants p ON p.giveaway_id = g.id
+      WHERE p.member_id = ? AND g.status = 'open' ${eventId ? 'AND g.event_id = ?' : ''}`)
+      .bind(...(eventId ? [member.id, eventId] : [member.id])).all()
+    for (const row of results) {
+      const g = await getGiveaway(db, row.id)
+      await syncEntries(db, giveawayKv(env), g, member)
+    }
+  } catch (e) {
+    console.error('giveaway sync failed:', e && e.message || e)
+  }
+}
+
+async function withdrawVoiceEntries(env, member) {
+  const db = giveawayDb(env)
+  if (!db || !member) return
+  try {
+    const { results } = await db.prepare(`SELECT id, voice_prompt_id, status, starts_at, ends_at FROM giveaways
+      WHERE status = 'open' AND voice_prompt_id IS NOT NULL`).all()
+    for (const g of results) {
+      if (!isAcceptingEntries(g)) continue
+      if (await env.MEMBERS_KV.get(`voice:${g.voice_prompt_id}:${member.id}`)) continue
+      await db.prepare(`DELETE FROM entries WHERE giveaway_id = ? AND member_id = ? AND source = 'voice_prompt'`)
+        .bind(g.id, member.id).run()
+    }
+  } catch (e) {
+    console.error('voice entry withdrawal failed:', e && e.message || e)
+  }
+}
+
+function publicGiveaway(g, now = Date.now()) {
+  return {
+    id: g.id,
+    eventId: g.event_id,
+    title: g.title,
+    prize: g.prize,
+    winners: g.winners,
+    ticketsPerWinner: g.tickets_per_winner,
+    startsAt: g.starts_at,
+    endsAt: g.ends_at,
+    status: g.status,
+    accepting: isAcceptingEntries(g, now),
+    sources: g.sources,
+    voicePromptId: g.voice_prompt_id,
+    voiceMaxSeconds: g.voice_max_seconds,
+    voiceMaxBytes: g.voice_max_bytes,
+    // Relative to this Worker; the SPA prefixes its known Worker origin.
+    rulesPath: `/giveaways/${encodeURIComponent(g.id)}/rules`,
+  }
+}
+
+// GET /giveaways?event=ID — public. Never lists drafts.
+async function handleGiveawaysList(request, env) {
+  const db = giveawayDb(env)
+  if (!db) return json(env, GIVEAWAYS_OFF, 503)
+  const eventId = new URL(request.url).searchParams.get('event')
+  if (!eventId) return json(env, { error: 'event is required' }, 400)
+  const event = await readEvent(env, eventId)
+  if (!event || isMembersOnly(event)) return json(env, { error: 'event not found' }, 404)
+  const giveaways = await listGiveaways(db, { eventId })
+  return json(env, {
+    event: publicEventProjection(event),
+    giveaways: giveaways.map(g => publicGiveaway(g)),
+  })
+}
+
+async function loadPublicGiveaway(env, id) {
+  const db = giveawayDb(env)
+  if (!db) return { error: json(env, GIVEAWAYS_OFF, 503) }
+  const g = await getGiveaway(db, id)
+  if (!g || g.status === 'draft') return { error: json(env, { error: 'giveaway not found' }, 404) }
+  return { db, g }
+}
+
+// GET /giveaways/:id/me — the caller's standing: entered?, entries by source.
+async function handleGiveawayMe(request, env, id) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'unauthorized' }, 401)
+  const { db, g, error } = await loadPublicGiveaway(env, id)
+  if (error) return error
+  const member = await readMemberByClaims(env, claims)
+  if (!member) return json(env, { error: 'member not found' }, 404)
+  const summary = await memberSummary(db, g, member.id)
+  return json(env, { ...summary, handle: member.handle || null, ...(await referralInfo(env, db, g, member)) })
+}
+
+// POST /giveaways/:id/enter { acceptRules: true, commsConsent?: bool }
+// The explicit opt-in. Free by construction: nothing here, or anywhere in
+// the entry path, touches payment.
+async function handleGiveawayEnter(request, env, id) {
+  const claims = await authorize(request, env)
+  if (!claims) return json(env, { error: 'log in to enter' }, 401)
+  const { db, g, error } = await loadPublicGiveaway(env, id)
+  if (error) return error
+  if (!isAcceptingEntries(g)) return json(env, { error: 'this giveaway is not accepting entries' }, 409)
+  const member = await readMemberByClaims(env, claims)
+  if (!member) return json(env, { error: 'member not found' }, 404)
+  const body = await request.json().catch(() => ({}))
+  if (body.acceptRules !== true) return json(env, { error: 'you need to accept the official rules to enter' }, 400)
+  await addParticipant(db, g.id, member, body.commsConsent === true)
+  await syncEntries(db, giveawayKv(env), g, member)
+  const summary = await memberSummary(db, g, member.id)
+  return json(env, { ...summary, handle: member.handle || null, ...(await referralInfo(env, db, g, member)) })
+}
+
+function fmtCentral(iso) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', dateStyle: 'long', timeStyle: 'short',
+  }).format(new Date(iso)) + ' Central'
+}
+
+const SOURCE_COPY = {
+  waitlist_signup: 'RSVP to the screening (join its waitlist) while the giveaway is open',
+  letterboxd_link: 'Link a public Letterboxd profile to your membership',
+  voice_prompt: 'Record an answer to the podcast voice prompt on the Speak page',
+  referral: 'Invite friends with your referral link; each friend who joins with a new, verified email counts',
+}
+
+// GET /giveaways/:id/rules — public official rules. The fixed lines (no
+// purchase necessary, free membership, the draw method) are rendered here, not
+// left to the admin-written text, so no giveaway can ship without them.
+async function handleGiveawayRules(env, id) {
+  const { g, error } = await loadPublicGiveaway(env, id)
+  if (error) return error
+  const event = await readEvent(env, g.event_id)
+  const esc = escapeHtml
+  const entryLines = Object.entries(g.sources).map(([source, cfg]) => {
+    const worth = `${cfg.weight} ${cfg.weight === 1 ? 'entry' : 'entries'}`
+    const cap = source === 'referral' ? ` each, up to ${cfg.cap} referrals` : ''
+    const onePer = source === 'referral' ? '' : ' (once)'
+    return `<li>${esc(SOURCE_COPY[source])}: ${worth}${cap}${onePer}.</li>`
+  }).join('')
+  const voiceLine = g.sources.voice_prompt
+    ? `<p>Voice entries must be no longer than ${g.voice_max_seconds} seconds and no larger than ${Math.round(g.voice_max_bytes / 1048576)} MB.</p>`
+    : ''
+  const extra = (g.rules_md || '').trim()
+    ? '<h2>Additional terms</h2>' + g.rules_md.trim().split(/\n{2,}/).map(p => `<p>${esc(p)}</p>`).join('')
+    : ''
+  const eventLine = event
+    ? `${esc(event.title)} — ${esc(event.date || '')}${event.time ? ' ' + esc(event.time) : ''}${event.venue ? ', ' + esc(event.venue) : ''}`
+    : esc(g.event_id)
+  const body = `
+    <main class="page"><h1>${esc(g.title)} — Official Rules</h1>
+    <p><b>NO PURCHASE OR PAYMENT OF ANY KIND IS NECESSARY TO ENTER OR WIN.</b> A purchase will not improve your chances of winning.</p>
+    <h2>Prize</h2>
+    <p>${esc(g.prize)}. ${g.winners} ${g.winners === 1 ? 'winner' : 'winners'} will each receive ${g.tickets_per_winner} ${g.tickets_per_winner === 1 ? 'ticket' : 'tickets'} for ${eventLine}.</p>
+    <h2>Dates</h2>
+    <p>Entries open ${esc(fmtCentral(g.starts_at))} and close ${esc(fmtCentral(g.ends_at))}. Entries received outside that window do not count.</p>
+    <h2>Eligibility</h2>
+    <p>Open to members of the Jackson Film Club. Membership is free: joining needs only a name and an email address you verify.</p>
+    <h2>How to enter</h2>
+    <p>Log in, open the giveaway, accept these rules and press Enter. After that, each of the following earns entries:</p>
+    <ul>${entryLines}</ul>
+    ${voiceLine}
+    <p>Each way of entering counts once per person, except referrals, which count once per friend who joins, up to the limit above. Entries that break these rules (for example duplicate or fake accounts) may be disqualified.</p>
+    <h2>How winners are chosen</h2>
+    <p>After entries close, winners are drawn at random, weighted by entry count, using a cryptographically secure random number generator. Each person can win once. Every draw is logged with its time, the administrator who ran it, and a fingerprint of the entries it drew from.</p>
+    <h2>How winners are contacted</h2>
+    <p>By email, at the address on their membership. A winner who does not reply within ${g.winner_response_days} ${g.winner_response_days === 1 ? 'day' : 'days'} forfeits the prize, and a replacement is drawn. Tickets are held at the venue box office under the winner's name.</p>
+    ${extra}
+    <h2>Your information</h2>
+    <p>Entering stores your name, email and entries for this giveaway; see the <a href="/privacy">privacy policy</a>. Winners' names (not emails) are given to the venue box office for will-call.</p>
+    <p><a href="${siteOrigin(env)}/giveaways?event=${encodeURIComponent(g.event_id)}">&larr; Back to the giveaway</a></p>
+    </main>`
+  return html(page(env, { title: `${g.title} — Official Rules`, body }))
+}
+
+// Referral link + counts for the member page. Only once they have entered a
+// giveaway that counts referrals — the link is meaningless otherwise. The link
+// lands on the giveaway page, which carries ?ref= on to the signup form.
+async function referralInfo(env, db, g, member) {
+  if (!g.sources.referral) return {}
+  if (!(await db.prepare('SELECT 1 FROM participants WHERE giveaway_id = ? AND member_id = ?').bind(g.id, member.id).first())) return {}
+  const code = await getOrCreateReferralCode(db, member.id)
+  const stats = await referralStats(db, g, member.id)
+  const link = `${siteOrigin(env)}/giveaways?event=${encodeURIComponent(g.event_id)}&ref=${code}`
+  return { referral: { code, link, ...stats } }
+}
+
+// Credit a verified signup that arrived with a referral code. Never throws —
+// signing up must succeed whatever happens here.
+async function creditReferralSignup(env, request, member, code) {
+  const db = giveawayDb(env)
+  if (!db || !REF_CODE_RE.test(code || '')) return
+  try {
+    // An IP is identifying; store only a keyed hash of it, enough to notice
+    // many signups from one network and useless for anything else.
+    const ip = request.headers.get('CF-Connecting-IP') || ''
+    const ipHash = ip ? (await hmac(env.OTP_SIGNING_KEY, `giveaway-ip:${ip}`)).slice(0, 32) : null
+    // Signup already refused this exact address; this catches the same inbox
+    // under another spelling (case, +tag, gmail dots).
+    const norm = normalizeEmail(member.email)
+    let aliasOfExisting = false
+    let cursor
+    do {
+      const page = await env.MEMBERS_KV.list({ prefix: 'member:', cursor })
+      for (const k of page.keys) {
+        const email = k.name.slice('member:'.length)
+        if (email !== member.email && normalizeEmail(email) === norm) { aliasOfExisting = true; break }
+      }
+      cursor = page.list_complete || aliasOfExisting ? undefined : page.cursor
+    } while (cursor)
+    await creditReferral(db, { code, referee: member, ipHash, aliasOfExisting })
+  } catch (e) {
+    console.error('referral credit failed:', e && e.message || e)
+  }
+}
+
+// --- admin ---
+
+function adminActor(request) {
+  // The admin portal forwards its Cloudflare Access identity; only trusted
+  // because adminAuthorized() already passed. A direct curl with the token
+  // has no identity, and the log says so.
+  const who = (request.headers.get('X-Admin-Email') || '').trim()
+  return who && who.length <= 200 ? who : 'admin-token (no identity)'
+}
+
+async function handleAdminGiveaways(request, env, id, action, entryId) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const db = giveawayDb(env)
+  if (!db) return json(env, GIVEAWAYS_OFF, 503)
+  const method = request.method
+
+  if (!id) {
+    if (method !== 'GET') return json(env, { error: 'method not allowed' }, 405)
+    const eventId = new URL(request.url).searchParams.get('event')
+    return json(env, { giveaways: await listGiveaways(db, { eventId, includeDraft: true }) })
+  }
+
+  if (!action && method === 'PUT') {
+    const existing = await getGiveaway(db, id)
+    const body = await request.json().catch(() => ({}))
+    const { giveaway, error } = validGiveaway({ ...body, id }, existing)
+    if (error) return json(env, { error }, 400)
+    if (!(await readEvent(env, giveaway.event_id))) return json(env, { error: 'no such event' }, 400)
+    // Once drawn, the result stands; only status history moves forward.
+    if (existing && existing.status === 'drawn' && giveaway.status !== 'drawn') {
+      return json(env, { error: 'a drawn giveaway cannot be reopened' }, 409)
+    }
+    if (giveaway.status === 'drawn' && (!existing || existing.status !== 'drawn')) {
+      return json(env, { error: 'status becomes "drawn" by running the draw' }, 409)
+    }
+    return json(env, { giveaway: await saveGiveaway(db, giveaway) })
+  }
+
+  const g = await getGiveaway(db, id)
+  if (!g) return json(env, { error: 'giveaway not found' }, 404)
+
+  if (!action && method === 'GET') return json(env, { giveaway: g })
+  if (action === 'entries' && method === 'GET') return json(env, await adminEntries(db, id))
+  if (action === 'entry' && method === 'POST') {
+    const body = await request.json().catch(() => ({}))
+    if (typeof body.excluded !== 'boolean') return json(env, { error: 'excluded (boolean) is required' }, 400)
+    const ok = await setEntryExcluded(db, id, Number(entryId), body.excluded)
+    return ok ? json(env, { ok: true }) : json(env, { error: 'entry not found' }, 404)
+  }
+  if ((action === 'draw' || action === 'redraw') && method === 'POST') {
+    const body = await request.json().catch(() => ({}))
+    const opts = { runBy: adminActor(request), excludeFlagged: body.excludeFlagged !== false }
+    const result = action === 'draw'
+      ? await runDraw(db, g, opts)
+      : await runRedraw(db, g, String(body.memberId || ''), opts)
+    if (result.error) return json(env, { error: result.error }, result.code || 400)
+    return json(env, result)
+  }
+  if (action === 'winners' && method === 'GET') {
+    return json(env, { winners: await listWinners(db, id), draws: await listDraws(db, id) })
+  }
+  if (action === 'winners.csv' && method === 'GET') {
+    // format=boxoffice: names + ticket counts only — all will-call needs, and
+    // the privacy policy promises member emails are never shared.
+    const boxOffice = new URL(request.url).searchParams.get('format') === 'boxoffice'
+    const rows = (await listWinners(db, id)).filter(w => w.status === 'selected')
+    const csv = boxOffice
+      ? toCsv(['name', 'tickets'], rows.map(w => [w.name, w.tickets]))
+      : toCsv(['name', 'email', 'tickets'], rows.map(w => [w.name, w.email, w.tickets]))
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${id}-winners${boxOffice ? '-boxoffice' : ''}.csv"`,
+        'Cache-Control': 'no-store',
+        ...cors(env),
+      },
+    })
+  }
+  return json(env, { error: 'not found' }, 404)
 }
 
 // --- Tokens ---

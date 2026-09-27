@@ -166,6 +166,26 @@ function spawnP(cmd, args, { timeoutMs } = {}) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Duration in seconds via ffprobe (ships with ffmpeg), or null.
+export function parseProbeSeconds(stdout) {
+  const text = String(stdout || '').trim()
+  // Number('') is 0: empty output must read as unknown, not as a 0 s clip
+  // that would pass any length limit.
+  if (!/^[0-9]+([.][0-9]+)?$/.test(text)) return null
+  return Number(text)
+}
+
+function probeSeconds(file) {
+  return new Promise(resolve => {
+    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file],
+      { stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    child.stdout.on('data', d => { out += d })
+    child.on('error', () => resolve(null))
+    child.on('close', () => resolve(parseProbeSeconds(out)))
+  })
+}
+
 export function createWorker({ token, model = DEFAULT_MODEL, deferScript, log, fetchImpl = fetch }) {
   // Network and 5xx retry; 4xx is an answer, not a failure.
   async function call(url, init) {
@@ -206,11 +226,20 @@ export function createWorker({ token, model = DEFAULT_MODEL, deferScript, log, f
       const wav = join(tmp, 'clip-16k.wav')
       await spawnP('ffmpeg', ['-hide_banner', '-nostdin', '-y', ...wavArgs(audioPath, wav)])
       await spawnP('uvx', whisperArgs(wav, tmp, model), { timeoutMs: WHISPER_TIMEOUT_MS })
+      // The real length, from the decoded audio rather than the browser's
+      // claim; giveaway voice limits are checked against it.
+      const seconds = await probeSeconds(wav)
       const cues = captionCues(readFileSync(join(tmp, RAW_SRT), 'utf8'))
       if (!cues.length) {
-        // Silence, or a clip whisper could not hear. Nothing to caption; the
-        // cron will re-nudge daily and get the same answer, which is cheap.
-        log({ event: 'no_speech', env, key, ms: Date.now() - t0 })
+        // Silence, or a clip whisper could not hear. Nothing to caption, but
+        // the length still counts; the cron re-nudges daily, which is cheap.
+        if (seconds != null) {
+          await call(`${origin}/transcriber/measure`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, at, seconds }),
+          })
+        }
+        log({ event: 'no_speech', env, key, seconds, ms: Date.now() - t0 })
         return { result: 'no_speech' }
       }
 
@@ -218,13 +247,13 @@ export function createWorker({ token, model = DEFAULT_MODEL, deferScript, log, f
       const res = await call(`${origin}/transcriber/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, at, srt }),
+        body: JSON.stringify({ key, at, srt, seconds }),
       })
       // 409 = a transcript already exists, or the member replaced / deleted
       // the clip mid-run. Either way there is nothing more to do for this job.
       const result = res.ok ? 'drafted' : res.status === 409 ? 'superseded' : res.status === 404 ? 'gone' : null
       if (!result) throw new Error(`draft post ${res.status}: ${(await res.text()).slice(0, 200)}`)
-      log({ event: result, env, key, cues: cues.length, ms: Date.now() - t0, model })
+      log({ event: result, env, key, cues: cues.length, seconds, ms: Date.now() - t0, model })
       return { result }
     } catch (err) {
       log({ event: 'error', env, key, detail: err.message.slice(0, 300), ms: Date.now() - t0 })

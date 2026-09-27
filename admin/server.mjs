@@ -8,6 +8,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { giveawayRoute } from './giveaway-routes.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
@@ -331,6 +332,37 @@ async function handle(req, res) {
       body,
     })
     const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
+  // Giveaways tab — same route table as the hosted admin Worker. Local mode
+  // has no Cloudflare Access identity, so draws are logged as the OS user.
+  let giveaway
+  try { giveaway = giveawayRoute(method, url.pathname, q) } catch (e) { throw new HttpError(e.status || 400, e.message) }
+  if (giveaway) {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) throw new HttpError(400, `set ${q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'} in the admin server environment`)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}${giveaway.path}`, {
+      method: giveaway.method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-Admin-Email': `local:${process.env.USER || 'unknown'}`,
+      },
+      body: giveaway.method === 'GET' ? undefined : await readBody(req),
+    })
+    const text = await workerRes.text()
+    if (giveaway.csv && workerRes.ok) {
+      res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': workerRes.headers.get('Content-Disposition') || 'attachment',
+      })
+      return res.end(text)
+    }
     let data
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)

@@ -19,6 +19,7 @@ import adminJs from '../../admin.js'
 import libJs from '../../lib.js'
 import contentgenJs from '../../contentgen.js'
 import styleCss from '../../style.css'
+import { giveawayRoute } from '../../giveaway-routes.mjs'
 
 const VALID_ENVS = new Set(['production', 'staging'])
 const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
@@ -248,6 +249,40 @@ async function proxyJoinAdmin(request, env, q, adminPath, method = 'POST') {
   return json(workerRes.status, data)
 }
 
+// Giveaway admin routes. Differs from proxyJoinAdmin in two ways: GETs carry
+// no body, and the Cloudflare Access identity rides along as X-Admin-Email so
+// the join Worker can record WHO ran a draw. The join Worker only trusts that
+// header behind the ADMIN_TOKEN, which never leaves this Worker.
+async function proxyGiveaway(request, env, q, route, access) {
+  if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+  const staging = q.env === 'staging'
+  const service = staging ? env.JOIN_WORKER_STAGING : env.JOIN_WORKER
+  const token = staging ? (env.ADMIN_TOKEN_STAGING || env.ADMIN_TOKEN) : env.ADMIN_TOKEN
+  if (!token) throw new HttpError(400, `set the ${staging ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'} secret on the admin worker`)
+  const origin = staging ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+  if (access && access.email) headers['X-Admin-Email'] = access.email
+  const workerRes = await service.fetch(`${origin}${route.path}`, {
+    method: route.method,
+    headers,
+    body: route.method === 'GET' ? undefined : await request.text(),
+  })
+  if (route.csv && workerRes.ok) {
+    return new Response(workerRes.body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': workerRes.headers.get('Content-Disposition') || 'attachment',
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
+  const text = await workerRes.text()
+  let data
+  try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+  return json(workerRes.status, data)
+}
+
 // GET /api/tmdb/search?env=&q= — proxy the join Worker's admin-gated TMDB
 // poster search over the service binding. The TMDB key stays a join-Worker
 // secret; the admin token stays server-side here.
@@ -338,6 +373,11 @@ async function handle(request, env, access) {
   const url = new URL(request.url)
   const method = request.method
   const q = Object.fromEntries(url.searchParams)
+
+  // Giveaways tab — see admin/giveaway-routes.mjs for the route table.
+  let giveaway
+  try { giveaway = giveawayRoute(method, url.pathname, q) } catch (e) { throw new HttpError(e.status || 400, e.message) }
+  if (giveaway) return proxyGiveaway(request, env, q, giveaway, access)
 
   // GET /api/watched?env=  → handle-keyed map of recent member diary entries
   if (method === 'GET' && url.pathname === '/api/watched') {

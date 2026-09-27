@@ -1,0 +1,243 @@
+<!doctype dhtml lib>
+
+<!-- Event giveaways page, /giveaways?event=ID (docs/features/giveaways.md).
+     Lists a screening's open giveaways, how to enter each, the member's
+     entry count, and their referral link. Entering is an explicit opt-in
+     (accept the rules) handled by the join Worker; this page never touches
+     payment, and the Worker counts entries, not the browser.
+     Mobile-first: most visitors arrive from an Instagram link. -->
+
+<script>
+  // Every name declared in this lib script, even a local inside a function,
+  // is reserved in the templates below. Loop variables here use row, which
+  // nothing in this script declares. A class expression must never
+  // evaluate to an empty string: the DOM refuses an empty class token and the
+  // whole view stops rendering, so both branches name a class.
+  function gwResolveOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+  const GW_ORIGIN = gwResolveOrigin()
+
+  // The event survives a detour through sign-in or signup, which return to a
+  // bare path: remembered here, read back when the URL has no event.
+  function gwEventId() {
+    const fromUrl = new URLSearchParams(location.search).get('event')
+    try {
+      if (fromUrl) sessionStorage.jxnfc_giveaway_event = fromUrl
+      return fromUrl || sessionStorage.jxnfc_giveaway_event || ''
+    } catch { return fromUrl || '' }
+  }
+
+  async function gwSession() {
+    if (globalThis.jxnfcEnsureSession) return globalThis.jxnfcEnsureSession()
+    try {
+      const s = JSON.parse(localStorage.jxnfc_session || 'null')
+      return s && s.token && s.exp > Date.now() ? s : null
+    } catch { return null }
+  }
+
+  async function gwFetch(path, opts) {
+    const o = opts || {}
+    const headers = { 'Content-Type': 'application/json' }
+    const s = await gwSession()
+    if (s && s.token) headers.Authorization = 'Bearer ' + s.token
+    const res = await fetch(GW_ORIGIN + path, { method: o.method || 'GET', headers: headers, body: o.body ? JSON.stringify(o.body) : undefined })
+    const data = await res.json().catch(function() { return {} })
+    if (!res.ok) throw new Error(data.error || 'something went wrong, try again')
+    return data
+  }
+
+  function gwWhen(iso) {
+    return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+
+  // YYYY-MM-DD plus HH:MM, both already Central, rendered as Thu, Oct 22 at 8:30 PM.
+  // Built from parts, never parsed as a Date string, which would shift the day.
+  function gwEventWhen(date, time) {
+    if (!date) return ''
+    const parts = date.split('-').map(Number)
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12))
+    const day = d.toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })
+    if (!time) return day
+    const hm = time.split(':').map(Number)
+    const h12 = ((hm[0] + 11) % 12) + 1
+    return day + ' at ' + h12 + ':' + String(hm[1]).padStart(2, '0') + (hm[0] < 12 ? ' AM' : ' PM')
+  }
+
+  const GW_STEPS = {
+    waitlist_signup: { label: 'RSVP to the screening', href: '/events', cta: 'RSVP' },
+    letterboxd_link: { label: 'Link your Letterboxd profile', href: '/edit', cta: 'Link profile' },
+    voice_prompt: { label: 'Answer the voice prompt', href: '/speak', cta: 'Record' },
+    referral: { label: 'Invite friends who join', href: '', cta: '' },
+  }
+
+  function gwSteps(g, mine) {
+    const by = (mine && mine.bySource) || {}
+    return Object.keys(g.sources).map(function(key) {
+      const cfg = g.sources[key]
+      const step = GW_STEPS[key]
+      const got = by[key] ? by[key].entries : 0
+      const worth = cfg.weight + (cfg.weight === 1 ? ' entry' : ' entries') + (key === 'referral' ? ' each, up to ' + cfg.cap : '')
+      return { key: key, label: step.label, worth: worth, done: got > 0, got: got, href: step.href, cta: step.cta }
+    })
+  }
+</script>
+
+<article :is="giveaways-view" class="auth giveaways">
+  <p class="gw-eyebrow">Giveaway</p>
+  <h1>{ title }</h1>
+  <p class="lede" :if="subtitle">{ subtitle }</p>
+  <p class="gw-err" :if="error">{ error }</p>
+  <p class="muted" :if="loading">Loading…</p>
+  <p class="muted" :if="!loading && !error && giveaways && !giveaways.length">No giveaways are running for this screening right now.</p>
+
+  <giveaway-card :each="g in giveaways" key="{ g.id }" :g="g" :signedin="signedIn"/>
+
+  <p class="gw-foot">Entering is free. No purchase or payment of any kind is necessary to enter or win.</p>
+
+  <script>
+    this.mounted = async function() {
+      this.update({ title: 'Giveaways', subtitle: '', giveaways: [], loading: true, error: '', signedIn: false })
+      const self = this
+      const eventId = gwEventId()
+      if (!eventId) return self.update({ loading: false, error: 'This link is missing its screening. Open it from the event page.' })
+      try {
+        const data = await gwFetch('/giveaways?event=' + encodeURIComponent(eventId))
+        const s = await gwSession()
+        const e = data.event || {}
+        const when = gwEventWhen(e.date, e.time)
+        self.update({
+          title: e.title || 'Giveaways',
+          subtitle: [when, e.venue].filter(Boolean).join(' · '),
+          giveaways: data.giveaways || [],
+          signedIn: !!s,
+          loading: false,
+        })
+      } catch (err) {
+        self.update({ loading: false, error: err.message })
+      }
+    }
+  </script>
+</article>
+
+<section :is="giveaway-card" class="gw-card">
+  <h2>{ g.title }</h2>
+  <p class="gw-prize">{ g.prize }</p>
+  <p class="gw-dates">{ g.winners } { g.winners === 1 ? 'winner' : 'winners' }, { g.ticketsPerWinner } tickets each · { g.accepting ? 'Enter by ' + gwWhen(g.endsAt) + ' CT' : (g.status === 'open' ? 'Opens ' + gwWhen(g.startsAt) + ' CT' : 'Entries closed') }</p>
+
+  <ol class="gw-steps">
+    <li :each="row in steps" class="gw-step { row.done ? 'done' : 'todo' }">
+      <span class="gw-step-label">{ row.label }</span>
+      <span class="gw-step-worth">{ row.done ? row.got + ' earned' : row.worth }</span>
+      <a :if="!row.done && row.href && entered" class="gw-step-cta" href="{ row.href }">{ row.cta }</a>
+    </li>
+  </ol>
+
+  <div :if="entered" class="gw-status">
+    <p class="gw-total">{ total + (total === 1 ? ' entry' : ' entries') } so far</p>
+  </div>
+
+  <div :if="entered && referralLink" class="gw-ref">
+    <p class="gw-ref-title">Your referral link</p>
+    <div class="gw-ref-row">
+      <input type="text" readonly value="{ referralLink }" aria-label="Your referral link">
+      <button type="button" :onclick="copyLink">{ copied ? 'Copied' : 'Copy' }</button>
+    </div>
+    <p class="muted">{ referrals } of { referralCap } referral entries earned. Friends count when they join with a new, verified email.</p>
+  </div>
+
+  <div :if="g.accepting && !entered && signedin" class="gw-enter">
+    <label class="prefRow">
+      <input type="checkbox" class="gw-accept">
+      <span class="prefRow-text"><span class="prefRow-title">I accept the <a href="{ rulesUrl }" target="_blank" rel="noopener">official rules</a></span></span>
+    </label>
+    <label class="prefRow">
+      <input type="checkbox" class="gw-consent">
+      <span class="prefRow-text">
+        <span class="prefRow-title">Email me about future club giveaways</span>
+        <span class="prefRow-hint">Optional. Winners are emailed either way.</span>
+      </span>
+    </label>
+    <div class="actions"><button type="button" :onclick="enter" :disabled="busy">{ busy ? 'Entering…' : 'Enter the giveaway' }</button></div>
+  </div>
+
+  <div :if="g.accepting && !signedin" class="gw-enter">
+    <p>Membership is free: just a name and an email. Members can enter.</p>
+    <div class="actions gw-auth">
+      <a class="gw-btn" href="{ joinUrl }">Join free</a>
+      <a class="gw-btn gw-btn-ghost" href="/signin">Log in</a>
+    </div>
+  </div>
+
+  <p class="gw-err" :if="error">{ error }</p>
+  <p class="gw-rules"><a href="{ rulesUrl }" target="_blank" rel="noopener">Official rules</a></p>
+
+  <script>
+    this.mounted = function() {
+      this.update({
+        entered: false, total: 0, busy: false, error: '', copied: false,
+        referralLink: '', referrals: 0, referralCap: 0,
+        steps: gwSteps(this.g, null),
+        rulesUrl: GW_ORIGIN + this.g.rulesPath,
+        joinUrl: GW_ORIGIN + '/',
+      })
+      if (this.signedin) this.refresh()
+    }
+
+    this.apply = function(mine) {
+      const ref = (mine && mine.referral) || {}
+      this.update({
+        entered: !!mine.entered,
+        total: mine.total || 0,
+        steps: gwSteps(this.g, mine),
+        referralLink: ref.link || '',
+        referrals: ref.credited || 0,
+        referralCap: ref.cap || 0,
+      })
+    }
+
+    this.refresh = async function() {
+      const self = this
+      try {
+        const mine = await gwFetch('/giveaways/' + encodeURIComponent(this.g.id) + '/me')
+        self.apply(mine)
+      } catch (err) {
+        self.update({ error: err.message })
+      }
+    }
+
+    this.enter = async function() {
+      const accept = this.root.querySelector('.gw-accept')
+      const consent = this.root.querySelector('.gw-consent')
+      if (!accept || !accept.checked) return this.update({ error: 'Tick the box to accept the official rules first.' })
+      this.update({ busy: true, error: '' })
+      const self = this
+      try {
+        const mine = await gwFetch('/giveaways/' + encodeURIComponent(this.g.id) + '/enter', {
+          method: 'POST', body: { acceptRules: true, commsConsent: !!(consent && consent.checked) },
+        })
+        self.update({ busy: false })
+        self.apply(mine)
+      } catch (err) {
+        self.update({ busy: false, error: err.message })
+      }
+    }
+
+    this.copyLink = async function() {
+      const self = this
+      try {
+        await navigator.clipboard.writeText(this.referralLink)
+      } catch {
+        const box = this.root.querySelector('.gw-ref input')
+        if (box) { box.focus(); box.select() }
+      }
+      self.update({ copied: true })
+      setTimeout(function() { self.update({ copied: false }) }, 2000)
+    }
+  </script>
+</section>

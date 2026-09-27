@@ -160,6 +160,7 @@ const TABS = {
   events: renderEvents,
   feedback: renderFeedback,
   voice: renderVoice,
+  giveaways: renderGiveaways,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
   config: renderConfig,
   stats: renderStats,
@@ -2491,6 +2492,211 @@ document.addEventListener('click', async (e) => {
     }
   } catch (err) {
     toast(err.message || String(err), true)
+  }
+})
+
+// --- Giveaways tab ---
+//
+// Everything goes through /api/giveaways* (admin/giveaway-routes.mjs), which
+// proxies the join Worker's /admin/giveaways routes: validation, the draw's
+// single transaction and its audit log live there, never here.
+
+const GW_SOURCES = [
+  ['waitlist_signup', 'Waitlist / RSVP'],
+  ['letterboxd_link', 'Letterboxd link'],
+  ['voice_prompt', 'Voice prompt'],
+  ['referral', 'Referral'],
+]
+let gwView = { mode: 'list', id: null }
+
+const gwApi = (method, path, params = {}, body) =>
+  api(method, `${path}?${qs({ env: env(), ...params })}`, body === undefined ? undefined : JSON.stringify(body))
+
+// ISO (UTC) <-> <input type=datetime-local> in the browser's own zone.
+function gwLocalInput(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+const gwFmt = iso => iso ? new Date(iso).toLocaleString() : '—'
+
+async function renderGiveaways() {
+  if (gwView.mode === 'detail' && gwView.id) return renderGiveawayDetail(gwView.id)
+  if (gwView.mode === 'edit') return renderGiveawayForm(gwView.id)
+  const { giveaways } = await gwApi('GET', '/api/giveaways')
+  content().innerHTML = `
+    <h2>Giveaways <span class="muted">(${giveaways.length})</span></h2>
+    <p><button data-action="gw-new">New giveaway</button></p>
+    ${giveaways.length ? `<table>
+      <thead><tr><th>Title</th><th>Event</th><th>Status</th><th>Opens</th><th>Closes</th><th>Winners</th><th></th></tr></thead>
+      <tbody>${giveaways.map(g => `<tr>
+        <td>${escapeHtml(g.title)}<br><code class="id">${escapeHtml(g.id)}</code></td>
+        <td><code>${escapeHtml(g.event_id)}</code></td>
+        <td><span class="pill ${g.status === 'open' ? 'on' : g.status === 'drawn' ? 'warn' : 'off'}">${escapeHtml(g.status)}</span></td>
+        <td>${escapeHtml(gwFmt(g.starts_at))}</td>
+        <td>${escapeHtml(gwFmt(g.ends_at))}</td>
+        <td>${g.winners} × ${g.tickets_per_winner} tix</td>
+        <td><button data-action="gw-detail" data-id="${attr(g.id)}">entries &amp; draw</button>
+            <button data-action="gw-edit" data-id="${attr(g.id)}">edit</button></td>
+      </tr>`).join('')}</tbody></table>` : '<p class="empty">No giveaways yet.</p>'}`
+}
+
+async function renderGiveawayForm(id) {
+  const g = id ? (await gwApi('GET', '/api/giveaways')).giveaways.find(x => x.id === id) : null
+  const eventsRes = await loadKv('events:all', 'ATTENDANCE_KV')
+  const events = (tryParse(eventsRes.values['events:all']) || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  const src = g ? g.sources : { waitlist_signup: { weight: 1 } }
+  content().innerHTML = `
+    <h2>${g ? 'Edit' : 'New'} giveaway</h2>
+    <form id="gw-form" class="stack" onsubmit="return false">
+      <label>Id <input name="id" value="${attr(g ? g.id : '')}" ${g ? 'readonly' : ''} placeholder="2026-10-22-clayface-waitlist" required></label>
+      <label>Event <select name="event_id">${events.map(e =>
+        `<option value="${attr(e.id)}" ${g && g.event_id === e.id ? 'selected' : ''}>${escapeHtml(e.date || '')} — ${escapeHtml(e.title || e.id)}</option>`).join('')}</select></label>
+      <label>Title <input name="title" value="${attr(g ? g.title : '')}" required></label>
+      <label>Prize <input name="prize" value="${attr(g ? g.prize : '')}" placeholder="A pair of tickets to…" required></label>
+      <label>Winners <input name="winners" type="number" min="1" max="100" value="${attr(g ? g.winners : 1)}"></label>
+      <label>Tickets per winner <input name="tickets_per_winner" type="number" min="1" max="20" value="${attr(g ? g.tickets_per_winner : 2)}"></label>
+      <label>Opens <input name="starts_at" type="datetime-local" value="${attr(gwLocalInput(g && g.starts_at))}" required></label>
+      <label>Closes <input name="ends_at" type="datetime-local" value="${attr(gwLocalInput(g && g.ends_at))}" required></label>
+      <label>Status <select name="status">${['draft', 'open', 'closed'].map(s =>
+        `<option ${(g ? g.status : 'draft') === s ? 'selected' : ''}>${s}</option>`).join('')}${g && g.status === 'drawn' ? '<option selected>drawn</option>' : ''}</select></label>
+      <fieldset><legend>Entry sources (entries each)</legend>
+        ${GW_SOURCES.map(([key, label]) => `
+          <label><input type="checkbox" name="src_${key}" ${src[key] ? 'checked' : ''}> ${escapeHtml(label)}
+            — weight <input name="w_${key}" type="number" min="1" max="100" value="${attr(src[key] ? src[key].weight : 1)}" style="width:4em">
+            ${key === 'referral' ? `cap <input name="cap_referral" type="number" min="1" max="1000" value="${attr(src.referral ? src.referral.cap : 10)}" style="width:5em">` : ''}
+          </label>`).join('')}
+      </fieldset>
+      <label><input type="checkbox" name="count_prior_waitlist" ${g && g.count_prior_waitlist ? 'checked' : ''}>
+        RSVPs made before the giveaway opened count for the waitlist entry</label>
+      <label>Voice prompt id (voice source only) <input name="voice_prompt_id" value="${attr(g && g.voice_prompt_id || '')}"></label>
+      <label>Voice max seconds <input name="voice_max_seconds" type="number" min="1" max="600" value="${attr(g ? g.voice_max_seconds : 180)}"></label>
+      <label>Voice max MB <input name="voice_max_mb" type="number" min="1" max="8" step="0.5" value="${attr(g ? g.voice_max_bytes / 1048576 : 8)}"></label>
+      <label>Winner must reply within (days) <input name="winner_response_days" type="number" min="1" max="30" value="${attr(g ? g.winner_response_days : 3)}"></label>
+      <label>Additional terms (sponsor, eligibility such as minimum age, anything giveaway-specific). Blank lines separate paragraphs.
+        <textarea name="rules_md" rows="8">${escapeHtml(g ? g.rules_md : '')}</textarea></label>
+      <p><button data-action="gw-save">Save</button> <button data-action="gw-back">Cancel</button></p>
+    </form>`
+}
+
+function gwFormBody() {
+  const f = new FormData($('#gw-form'))
+  const sources = {}
+  for (const [key] of GW_SOURCES) {
+    if (!f.get(`src_${key}`)) continue
+    sources[key] = { weight: Number(f.get(`w_${key}`)) }
+    if (key === 'referral') sources.referral.cap = Number(f.get('cap_referral'))
+  }
+  const iso = v => v ? new Date(v).toISOString() : ''
+  return {
+    id: f.get('id').trim(),
+    body: {
+      event_id: f.get('event_id'), title: f.get('title'), prize: f.get('prize'),
+      winners: Number(f.get('winners')), tickets_per_winner: Number(f.get('tickets_per_winner')),
+      starts_at: iso(f.get('starts_at')), ends_at: iso(f.get('ends_at')), status: f.get('status'),
+      sources, count_prior_waitlist: !!f.get('count_prior_waitlist'),
+      voice_prompt_id: f.get('voice_prompt_id') || null,
+      voice_max_seconds: Number(f.get('voice_max_seconds')),
+      voice_max_bytes: Math.round(Number(f.get('voice_max_mb')) * 1048576),
+      winner_response_days: Number(f.get('winner_response_days')),
+      rules_md: f.get('rules_md'),
+    },
+  }
+}
+
+async function renderGiveawayDetail(id) {
+  const [{ giveaway: g }, data, win] = await Promise.all([
+    gwApi('GET', '/api/giveaways').then(r => ({ giveaway: r.giveaways.find(x => x.id === id) })),
+    gwApi('GET', '/api/giveaways/entries', { id }),
+    gwApi('GET', '/api/giveaways/winners', { id }),
+  ])
+  if (!g) throw new Error(`giveaway ${id} not found`)
+  const csv = (format) => `/api/giveaways/winners.csv?${qs({ env: env(), id, ...(format ? { format } : {}) })}`
+  const selected = win.winners.filter(w => w.status === 'selected')
+  content().innerHTML = `
+    <p><button data-action="gw-back">&larr; All giveaways</button></p>
+    <h2>${escapeHtml(g.title)} <span class="pill">${escapeHtml(g.status)}</span></h2>
+    <p class="muted">${escapeHtml(gwFmt(g.starts_at))} → ${escapeHtml(gwFmt(g.ends_at))} · ${data.participants} entrant(s) ·
+      <a href="${attr(`https://${env() === 'staging' ? 'join-staging' : 'join'}.jxnfilm.club/giveaways/${encodeURIComponent(id)}/rules`)}" target="_blank" rel="noopener">official rules</a></p>
+
+    <h3>Entries by source</h3>
+    <table><thead><tr><th>Source</th><th>Rows</th><th>Entries</th><th>Flagged</th><th>Excluded</th></tr></thead>
+    <tbody>${data.bySource.map(r => `<tr><td>${escapeHtml(r.source)}</td><td>${r.rows}</td><td>${r.entries}</td>
+      <td>${r.flagged ? `<span class="pill warn">${r.flagged}</span>` : 0}</td><td>${r.excluded}</td></tr>`).join('') ||
+      '<tr><td colspan="5" class="muted">No entries yet.</td></tr>'}</tbody></table>
+
+    <h3>Draw</h3>
+    ${g.status === 'drawn' ? `
+      <table><thead><tr><th>Winner</th><th>Email</th><th>Tickets</th><th>Status</th><th></th></tr></thead>
+      <tbody>${win.winners.map(w => `<tr>
+        <td>${escapeHtml(w.name || w.member_id)}</td><td>${escapeHtml(w.email || '')}</td><td>${w.tickets}</td>
+        <td><span class="pill ${w.status === 'selected' ? 'on' : 'off'}">${escapeHtml(w.status)}</span></td>
+        <td>${w.status === 'selected' ? `<button class="danger" data-action="gw-redraw" data-id="${attr(id)}" data-member="${attr(w.member_id)}" data-name="${attr(w.name || w.member_id)}">no response — redraw</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table>
+      <p>${selected.length ? `<a href="${attr(csv())}">Download winners CSV (name, email, tickets)</a> ·
+        <a href="${attr(csv('boxoffice'))}">Box-office CSV (names + tickets only)</a>` : ''}</p>`
+    : g.status === 'closed' ? `
+      <p><label><input type="checkbox" id="gw-exclude-flagged" checked> Leave flagged entries out of the pool</label></p>
+      <p><button data-action="gw-draw" data-id="${attr(id)}" data-winners="${g.winners}">Run the draw (${g.winners} winner${g.winners === 1 ? '' : 's'})</button></p>`
+    : '<p class="muted">Set the status to <b>closed</b> after the giveaway ends to run the draw.</p>'}
+
+    ${win.draws.length ? `<h3>Draw log</h3>
+      <table><thead><tr><th>#</th><th>Kind</th><th>When</th><th>Run by</th><th>Pool</th><th>Flagged out?</th><th>Snapshot</th><th>Result</th></tr></thead>
+      <tbody>${win.draws.map(d => `<tr>
+        <td>${d.id}</td><td>${escapeHtml(d.kind)}</td><td>${escapeHtml(gwFmt(d.run_at))}</td><td>${escapeHtml(d.run_by)}</td>
+        <td>${d.pool_members} people / ${d.pool_entries} entries</td><td>${d.exclude_flagged ? 'yes' : 'no'}</td>
+        <td><code title="${attr(d.snapshot_sha256)}">${escapeHtml(d.snapshot_sha256.slice(0, 12))}…</code></td>
+        <td><code>${escapeHtml(d.winners)}</code>${d.replaces_member ? ` <span class="muted">replaces ${escapeHtml(d.replaces_member)}</span>` : ''}</td>
+      </tr>`).join('')}</tbody></table>` : ''}
+
+    <h3>All entries <span class="muted">(${data.entries.length})</span></h3>
+    <table><thead><tr><th>Member</th><th>Source</th><th>Entries</th><th>Detail</th><th>When</th><th>Review</th><th></th></tr></thead>
+    <tbody>${data.entries.map(e => `<tr class="${e.excluded ? 'muted' : ''}">
+      <td>${escapeHtml(e.name || e.member_id)}<br><span class="muted">${escapeHtml(e.email || '')}</span></td>
+      <td>${escapeHtml(e.source)}</td><td>${e.weight}</td><td>${escapeHtml(e.detail || '')}</td>
+      <td>${escapeHtml(gwFmt(e.created_at))}</td>
+      <td>${e.flagged ? `<span class="pill warn" title="${attr(e.flag_reason || '')}">flagged</span> ${escapeHtml(e.flag_reason || '')}` : ''}</td>
+      <td><button data-action="gw-exclude" data-id="${attr(id)}" data-entry="${e.id}" data-excluded="${e.excluded ? '0' : '1'}">${e.excluded ? 'include' : 'exclude'}</button></td>
+    </tr>`).join('')}</tbody></table>`
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action^="gw-"]')
+  if (!btn) return
+  const a = btn.dataset.action
+  try {
+    if (a === 'gw-new') { gwView = { mode: 'edit', id: null }; return switchTab('giveaways') }
+    if (a === 'gw-edit') { gwView = { mode: 'edit', id: btn.dataset.id }; return switchTab('giveaways') }
+    if (a === 'gw-detail') { gwView = { mode: 'detail', id: btn.dataset.id }; return switchTab('giveaways') }
+    if (a === 'gw-back') { gwView = { mode: 'list', id: null }; return switchTab('giveaways') }
+    if (a === 'gw-save') {
+      const { id, body } = gwFormBody()
+      await gwApi('PUT', '/api/giveaways', { id }, body)
+      toast(`Saved ${id}`)
+      gwView = { mode: 'detail', id }
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-exclude') {
+      await gwApi('POST', '/api/giveaways/entry', { id: btn.dataset.id, entry: btn.dataset.entry },
+        { excluded: btn.dataset.excluded === '1' })
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-draw') {
+      if (!confirm(`Run the draw for ${btn.dataset.winners} winner(s) on ${env()}?\n\nThis is final and logged under your name.`)) return
+      const out = await gwApi('POST', '/api/giveaways/draw', { id: btn.dataset.id },
+        { excludeFlagged: $('#gw-exclude-flagged').checked })
+      toast(`Drew ${out.winners.length} winner(s) from ${out.poolMembers} entrant(s)`)
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-redraw') {
+      if (!confirm(`Forfeit ${btn.dataset.name} and draw a replacement?\n\nThis is final and logged under your name.`)) return
+      const out = await gwApi('POST', '/api/giveaways/redraw', { id: btn.dataset.id }, { memberId: btn.dataset.member })
+      toast(out.winners.length ? 'Replacement drawn' : 'Forfeited — nobody left in the pool')
+      return switchTab('giveaways')
+    }
+  } catch (err) {
+    toast(err.message, true)
   }
 })
 

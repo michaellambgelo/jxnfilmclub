@@ -53,8 +53,8 @@
       <input type="email" name="email" required autocomplete="email">
     </label>
     <label>Letterboxd username <span class="hint">— optional</span>
-      <input type="text" name="handle" pattern="[a-zA-Z0-9_-]+"
-             placeholder="e.g. davidehrlich" autocomplete="off">
+      <input type="text" name="handle"
+             placeholder="davidehrlich or letterboxd.com/davidehrlich" autocomplete="off">
     </label>
     <label class="checkbox-row">
       <input type="checkbox" name="newsletter">
@@ -92,6 +92,10 @@
       // Unchecked checkboxes are absent from FormData; send an explicit boolean.
       data.newsletter = form.newsletter.checked
       if (!data.handle) delete data.handle
+      // A giveaway referral code from the member link that brought them here.
+      // The Worker validates it and credits it only after the email is verified.
+      const ref = new URLSearchParams(location.search).get('ref')
+      if (ref && /^[a-z0-9]{8}$/.test(ref)) data.ref = ref
 
       try {
         const res = await fetch('/signup', {

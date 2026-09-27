@@ -60,6 +60,27 @@
   }
   const WORKER_ORIGIN = resolveWorkerOrigin()
 
+  // Giveaway referral code from a member link (?ref=). Kept for the session
+  // and added to Join links at click time, so it reaches the signup form
+  // whichever Join the visitor taps. The join Worker validates it again and
+  // credits it only after the new email is verified.
+  try {
+    const refParam = new URLSearchParams(location.search).get('ref')
+    if (refParam && /^[a-z0-9]{8}$/.test(refParam)) sessionStorage.jxnfc_ref = refParam
+  } catch { /* storage blocked: the referral is simply not carried */ }
+  addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href]')
+    if (!a || a.pathname !== '/') return
+    const joinHosts = [new URL(WORKER_ORIGIN).host, 'join.jxnfilm.club', 'join-staging.jxnfilm.club']
+    if (!joinHosts.includes(a.host)) return
+    let refCode = ''
+    try { refCode = sessionStorage.jxnfc_ref || '' } catch { /* none */ }
+    if (!refCode) return
+    const u = new URL(a.href)
+    u.searchParams.set('ref', refCode)
+    a.href = u.href
+  }, true)
+
   // One-time "privacy policy updated" toast. The worker serves the policy's
   // revision date (parsed from the page itself); we compare it to a
   // per-browser ack in localStorage. First visit stores silently — a brand
@@ -102,7 +123,7 @@
   // regex: '//evil.example' and a backslash variant both look same-origin,
   // and backslashes in this codebase are their own hazard. Seven routes is
   // a short enough list to simply enumerate.
-  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback']
+  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback', '/giveaways']
 
   globalThis.jxnfcStashNext = (path) => {
     try {
@@ -210,6 +231,7 @@
         type === 'host'    ? 'events-new-view' :  // member-only "host a screening" form
         type === 'speak'   ? 'speak-view' :       // member voice clips + messages for the podcast; in the nav since the message mode shipped
         type === 'feedback' ? 'feedback-view' :   // beta feedback form (anonymous ok)
+        type === 'giveaways' ? 'giveaways-view' : // event giveaways, reached from event cards and Instagram links
                              'home-view'
       this.mount(view, 'article')
     })

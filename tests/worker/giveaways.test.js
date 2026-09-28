@@ -385,7 +385,7 @@ async function closedGiveawayWithEntrants(id, members, overrides = {}) {
 // A closed giveaway whose pool is written straight into D1. For the race
 // tests only: they exercise the draw's transaction, and the real entry path
 // (sign in, enter, RSVP) is covered above and is too slow to repeat 40 times.
-async function seedClosedPool(id, n, overrides = {}) {
+async function seedClosedPool(id, n, overrides = {}, memberIds = null) {
   const now = Date.now()
   await putGiveaway(id, {
     ...overrides, status: 'closed',
@@ -394,9 +394,9 @@ async function seedClosedPool(id, n, overrides = {}) {
   const ts = new Date(now - HOUR).toISOString()
   await env.GIVEAWAYS_DB.batch(Array.from({ length: n }, (_, i) => [
     env.GIVEAWAYS_DB.prepare(`INSERT INTO participants (giveaway_id, member_id, name, email, rules_accepted_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`).bind(id, `${id}-m${i}`, `M${i}`, `m${i}@example.com`, ts, ts),
+      VALUES (?, ?, ?, ?, ?, ?)`).bind(id, memberIds ? memberIds[i] : `${id}-m${i}`, `M${i}`, `m${i}@example.com`, ts, ts),
     env.GIVEAWAYS_DB.prepare(`INSERT INTO entries (giveaway_id, member_id, source, weight, created_at)
-      VALUES (?, ?, 'waitlist_signup', 1, ?)`).bind(id, `${id}-m${i}`, ts),
+      VALUES (?, ?, 'waitlist_signup', 1, ?)`).bind(id, memberIds ? memberIds[i] : `${id}-m${i}`, ts),
   ]).flat())
 }
 
@@ -936,23 +936,15 @@ describe('instagram giveaways', () => {
 
 describe('one prize per person per event', () => {
   it('a member who already won one giveaway for the event is out of the next pool', async () => {
-    const [a, b] = await closedGiveawayWithEntrants('clay-first', ['one@example.com', 'two@example.com'], { winners: 1 })
+    // Same two members in two giveaways for one event; the pool is seeded
+    // directly (the entry path is covered above and is slow on CI runners).
+    const people = ['pp-one', 'pp-two']
+    await seedClosedPool('clay-first', 2, { winners: 1 }, people)
     const first = await (await draw('clay-first')).json()
     const winner = first.winners[0]
-    const other = winner === a.id ? b : a
-
-    // Second giveaway, same event, same two entrants.
-    await putGiveaway('clay-second', { winners: 1 })
-    for (const m of [a, b]) {
-      const fresh = await member(m.email)
-      await enter('clay-second', fresh.token)
-      await rsvp(fresh.token)
-    }
-    const now = Date.now()
-    await putGiveaway('clay-second', { winners: 1, status: 'closed',
-      starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString() })
+    await seedClosedPool('clay-second', 2, { winners: 1 }, people)
     const second = await (await draw('clay-second')).json()
-    expect(second.winners).toEqual([other.id])
     expect(second.poolMembers).toBe(1)
+    expect(second.winners).toEqual(people.filter(p => p !== winner))
   })
 })

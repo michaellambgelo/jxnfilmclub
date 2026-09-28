@@ -24,11 +24,32 @@ export function nowIso(now = Date.now()) {
   return new Date(now).toISOString()
 }
 
+// External giveaways take their entries somewhere the portal cannot see
+// (Instagram follows and comment tags). The portal hosts their official rules
+// and records their winners, so they reach the box-office CSV and the
+// one-prize-per-event rule, but it never holds entries or runs their draw.
+export const EXTERNAL_SOURCES = ['instagram']
+const INSTAGRAM_POST_RE = /^https:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_./?=&-]+$/
+
+export function isExternal(g) {
+  return !!(g && g.sources && g.sources.instagram)
+}
+
 // { source: { weight, cap? } } -> validated copy, or throws with a message.
+// instagram: { how, post_url? } and must be the only source.
 export function parseSources(raw) {
   const obj = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {})
   if (typeof obj !== 'object' || Array.isArray(obj)) throw new Error('sources must be an object')
   const out = {}
+  if (obj.instagram) {
+    if (Object.keys(obj).length !== 1) throw new Error('an instagram giveaway cannot also take portal entries')
+    const how = typeof obj.instagram.how === 'string' ? obj.instagram.how.trim() : ''
+    if (!how || how.length > 1500) throw new Error('instagram.how (how to enter, up to 1500 chars) is required')
+    const postUrl = obj.instagram.post_url ? String(obj.instagram.post_url).trim() : ''
+    if (postUrl && !INSTAGRAM_POST_RE.test(postUrl)) throw new Error('instagram.post_url must be an https://instagram.com/... link')
+    out.instagram = { weight: 1, how, ...(postUrl ? { post_url: postUrl } : {}) }
+    return out
+  }
   for (const [source, cfg] of Object.entries(obj)) {
     if (!SOURCES.includes(source)) throw new Error(`unknown source: ${source}`)
     const weight = Number(cfg?.weight ?? 1)
@@ -380,13 +401,21 @@ export async function setEntryExcluded(db, giveawayId, entryId, excluded) {
 
 // The draw pool: summed weight per member, skipping excluded entries, flagged
 // ones when asked, and anyone already selected or forfeited in this giveaway.
-export async function drawPool(db, giveawayId, { excludeFlagged }) {
+//
+// One prize per person per event: anyone currently holding a prize in ANY
+// giveaway for the same event is out of the pool too. (Instagram winners are
+// keyed by handle, not member id, so matching them to members stays a manual
+// check; see the admin tab.)
+export async function drawPool(db, giveawayId, { excludeFlagged, eventId = null }) {
   const { results } = await db.prepare(`
     SELECT e.member_id, SUM(e.weight) AS weight FROM entries e
     JOIN participants p ON p.giveaway_id = e.giveaway_id AND p.member_id = e.member_id
     WHERE e.giveaway_id = ?1 AND e.excluded = 0 ${excludeFlagged ? 'AND e.flagged = 0' : ''}
       AND e.member_id NOT IN (SELECT member_id FROM winners WHERE giveaway_id = ?1)
-    GROUP BY e.member_id ORDER BY e.member_id`).bind(giveawayId).all()
+      AND e.member_id NOT IN (
+        SELECT w.member_id FROM winners w JOIN giveaways g2 ON g2.id = w.giveaway_id
+        WHERE g2.event_id = ?2 AND w.status = 'selected')
+    GROUP BY e.member_id ORDER BY e.member_id`).bind(giveawayId, eventId).all()
   return results.map(r => ({ member_id: r.member_id, weight: Number(r.weight) }))
 }
 
@@ -395,9 +424,10 @@ export async function drawPool(db, giveawayId, { excludeFlagged }) {
 // transaction, so a concurrent second draw fails on the winners primary key
 // instead of producing two sets of winners.
 export async function runDraw(db, g, { runBy, excludeFlagged = true, rand, now = Date.now() }) {
+  if (isExternal(g)) return { error: 'this giveaway is drawn on Instagram; record its winners instead', code: 409 }
   if (g.status !== 'closed') return { error: `draw needs status "closed" (is "${g.status}")`, code: 409 }
   if (now < Date.parse(g.ends_at)) return { error: 'the giveaway has not ended yet', code: 409 }
-  const pool = await drawPool(db, g.id, { excludeFlagged })
+  const pool = await drawPool(db, g.id, { excludeFlagged, eventId: g.event_id })
   if (!pool.length) return { error: 'no eligible entries to draw from', code: 409 }
   const { winners, values } = weightedDraw(pool, g.winners, rand)
   return commitDraw(db, g, { kind: 'draw', runBy, excludeFlagged, pool, winners, values, now })
@@ -406,11 +436,12 @@ export async function runDraw(db, g, { runBy, excludeFlagged = true, rand, now =
 // Replace one winner who did not respond: forfeit them, draw one more from
 // everyone not yet selected or forfeited.
 export async function runRedraw(db, g, forfeitMemberId, { runBy, excludeFlagged = true, rand, now = Date.now() }) {
+  if (isExternal(g)) return { error: 'this giveaway is drawn on Instagram; record the replacement instead', code: 409 }
   if (g.status !== 'drawn') return { error: 'redraw needs a completed draw', code: 409 }
   const current = await db.prepare(`SELECT * FROM winners WHERE giveaway_id = ? AND member_id = ? AND status = 'selected'`)
     .bind(g.id, forfeitMemberId).first()
   if (!current) return { error: 'that member is not a current winner', code: 404 }
-  const pool = await drawPool(db, g.id, { excludeFlagged })
+  const pool = await drawPool(db, g.id, { excludeFlagged, eventId: g.event_id })
   const { winners, values } = weightedDraw(pool, 1, rand)
   // An empty pool still forfeits: the non-responder loses the prize either
   // way, and the log records that nobody was left to replace them.
@@ -425,7 +456,7 @@ export async function runRedraw(db, g, forfeitMemberId, { runBy, excludeFlagged 
 // runs race, the second one sees the first one's committed state and inserts
 // nothing. Checking a status UPDATE's row count after the fact would be too
 // late: the INSERTs before it would already have committed.
-async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, values, now, replaces = null }) {
+async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, values, now, replaces = null, pre = [] }) {
   const ts = nowIso(now)
   const hash = await poolHash(pool)
   const total = pool.reduce((s, p) => s + p.weight, 0)
@@ -440,10 +471,10 @@ async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, v
   const precondition = kind === 'draw'
     ? { sql: "EXISTS (SELECT 1 FROM giveaways WHERE id = ?6 AND status = 'closed')", args: [g.id] }
     : { sql: "EXISTS (SELECT 1 FROM winners WHERE giveaway_id = ?6 AND member_id = ?7 AND status = 'selected')", args: [g.id, replaces] }
-  const stmts = winners.map(memberId => db.prepare(`
+  const stmts = [...pre, ...winners.map(memberId => db.prepare(`
     INSERT INTO winners (giveaway_id, member_id, draw_id, status, tickets, selected_at)
     SELECT ?1, ?2, ?3, 'selected', ?4, ?5 WHERE ${precondition.sql}`)
-    .bind(g.id, memberId, log.id, g.tickets_per_winner, ts, ...precondition.args))
+    .bind(g.id, memberId, log.id, g.tickets_per_winner, ts, ...precondition.args))]
   stmts.push(kind === 'draw'
     ? db.prepare("UPDATE giveaways SET status = 'drawn', updated_at = ? WHERE id = ? AND status = 'closed'").bind(ts, g.id)
     : db.prepare("UPDATE winners SET status = 'forfeited' WHERE giveaway_id = ? AND member_id = ? AND status = 'selected'").bind(g.id, replaces))
@@ -464,6 +495,65 @@ async function commitDraw(db, g, { kind, runBy, excludeFlagged, pool, winners, v
     return { error: 'draw did not commit (another draw got there first)', code: 409 }
   }
   return { drawId: log.id, winners, poolMembers: pool.length, poolEntries: total, snapshot: hash }
+}
+
+// --- external (Instagram) winners -------------------------------------------
+//
+// The draw happens on Instagram (a comment picker); the admin records who won.
+// Winners are keyed by an opaque id derived from the handle, so the draw log
+// (kept past retention) holds no handle; name and handle live on the
+// participants row, which the 60-day scrub deletes.
+
+const IG_HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/
+
+export function parseInstagramWinner(line) {
+  // "Jane Doe, @janedoe", "Jane Doe, janedoe" or "Jane Doe @janedoe". A bare
+  // space is not enough ("no handle here" must not read as handle "here").
+  const m = String(line || '').trim().match(/^(.+?)(?:\s*,\s*@?|\s+@)([A-Za-z0-9._]{1,30})$/)
+  if (!m) return null
+  const name = m[1].trim()
+  if (!name || name.length > 120 || !IG_HANDLE_RE.test(m[2])) return null
+  return { name, handle: m[2].toLowerCase() }
+}
+
+async function instagramMemberId(giveawayId, handle) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${giveawayId}:${handle.toLowerCase()}`))
+  return 'ig-' + [...new Uint8Array(digest)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// kind 'draw': record all winners (status must be closed and ended).
+// kind 'redraw': forfeit `replaces` and record exactly one replacement.
+export async function recordExternalWinners(db, g, { winners, replaces = null, runBy, note = '', now = Date.now() }) {
+  if (!isExternal(g)) return { error: 'only Instagram giveaways take recorded winners', code: 409 }
+  const people = (winners || []).map(w => (typeof w === 'string' ? parseInstagramWinner(w) : w))
+  if (!people.length || people.some(p => !p || !p.name || !IG_HANDLE_RE.test(p.handle || ''))) {
+    return { error: 'each winner needs a name and an Instagram handle, e.g. "Jane Doe, @janedoe"', code: 400 }
+  }
+  if (new Set(people.map(p => p.handle.toLowerCase())).size !== people.length) {
+    return { error: 'the same handle is listed twice', code: 400 }
+  }
+  const kind = replaces ? 'redraw' : 'draw'
+  if (kind === 'draw') {
+    if (g.status !== 'closed') return { error: `recording winners needs status "closed" (is "${g.status}")`, code: 409 }
+    if (now < Date.parse(g.ends_at)) return { error: 'the giveaway has not ended yet', code: 409 }
+    if (people.length > g.winners) return { error: `this giveaway has ${g.winners} winner(s)`, code: 400 }
+  } else {
+    if (g.status !== 'drawn') return { error: 'replacing a winner needs recorded winners first', code: 409 }
+    if (people.length !== 1) return { error: 'record exactly one replacement', code: 400 }
+    const current = await db.prepare(`SELECT 1 FROM winners WHERE giveaway_id = ? AND member_id = ? AND status = 'selected'`)
+      .bind(g.id, replaces).first()
+    if (!current) return { error: 'that person is not a current winner', code: 404 }
+  }
+  const ts = nowIso(now)
+  const ids = await Promise.all(people.map(p => instagramMemberId(g.id, p.handle)))
+  const pre = people.map((p, i) => db.prepare(`
+    INSERT INTO participants (giveaway_id, member_id, name, email, comms_consent, rules_accepted_at, created_at)
+    VALUES (?, ?, ?, '', 0, ?, ?)
+    ON CONFLICT (giveaway_id, member_id) DO UPDATE SET name = excluded.name`)
+    .bind(g.id, ids[i], `${p.name} (@${p.handle})`, ts, ts))
+  const pool = ids.map(id => ({ member_id: id, weight: 1 }))
+  const values = { method: 'instagram comment picker (external)', note: String(note || '').slice(0, 500) }
+  return commitDraw(db, g, { kind, runBy, excludeFlagged: false, pool, winners: ids, values, now, replaces, pre })
 }
 
 export async function listWinners(db, giveawayId) {

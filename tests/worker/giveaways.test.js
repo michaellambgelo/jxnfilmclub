@@ -385,7 +385,7 @@ async function closedGiveawayWithEntrants(id, members, overrides = {}) {
 // A closed giveaway whose pool is written straight into D1. For the race
 // tests only: they exercise the draw's transaction, and the real entry path
 // (sign in, enter, RSVP) is covered above and is too slow to repeat 40 times.
-async function seedClosedPool(id, n, overrides = {}) {
+async function seedClosedPool(id, n, overrides = {}, memberIds = null) {
   const now = Date.now()
   await putGiveaway(id, {
     ...overrides, status: 'closed',
@@ -394,9 +394,9 @@ async function seedClosedPool(id, n, overrides = {}) {
   const ts = new Date(now - HOUR).toISOString()
   await env.GIVEAWAYS_DB.batch(Array.from({ length: n }, (_, i) => [
     env.GIVEAWAYS_DB.prepare(`INSERT INTO participants (giveaway_id, member_id, name, email, rules_accepted_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`).bind(id, `${id}-m${i}`, `M${i}`, `m${i}@example.com`, ts, ts),
+      VALUES (?, ?, ?, ?, ?, ?)`).bind(id, memberIds ? memberIds[i] : `${id}-m${i}`, `M${i}`, `m${i}@example.com`, ts, ts),
     env.GIVEAWAYS_DB.prepare(`INSERT INTO entries (giveaway_id, member_id, source, weight, created_at)
-      VALUES (?, ?, 'waitlist_signup', 1, ?)`).bind(id, `${id}-m${i}`, ts),
+      VALUES (?, ?, 'waitlist_signup', 1, ?)`).bind(id, memberIds ? memberIds[i] : `${id}-m${i}`, ts),
   ]).flat())
 }
 
@@ -847,5 +847,104 @@ describe('voice prompt entries', () => {
     expect((await me('clay-voice-del', m.token)).bySource.voice_prompt).toBeTruthy()
     expect((await req('/voice', { method: 'DELETE', token: m.token })).status).toBe(200)
     expect((await me('clay-voice-del', m.token)).bySource.voice_prompt).toBeUndefined()
+  })
+})
+
+// --- Instagram (external) giveaways -------------------------------------------
+
+const IG_HOW = 'Follow @jxnfilmclub, @offbeat and @msfilmsociety\nTag a friend in the comments; each comment tagging a different friend is one entry'
+
+async function igGiveaway(id, extra = {}) {
+  return putGiveaway(id, {
+    winners: 2, sources: { instagram: { how: IG_HOW, post_url: 'https://www.instagram.com/p/ABC123/' } }, ...extra,
+  })
+}
+const record = (id, body) => req(`/admin/giveaways/${id}/record-winners`, {
+  method: 'POST', token: ADMIN, body, headers: { 'X-Admin-Email': 'michael@michaellamb.dev' },
+})
+async function closeIt(id, extra = {}) {
+  const now = Date.now()
+  await igGiveaway(id, { ...extra, status: 'closed',
+    starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString() })
+}
+
+describe('instagram giveaways', () => {
+  it('cannot be mixed with portal sources, and needs how-to-enter text', async () => {
+    expect(() => parseSources({ instagram: { how: 'x' }, referral: { weight: 1, cap: 2 } })).toThrow(/cannot also take portal entries/)
+    expect(() => parseSources({ instagram: {} })).toThrow(/instagram.how/)
+    expect(() => parseSources({ instagram: { how: 'x', post_url: 'https://evil.example/p/1' } })).toThrow(/post_url/)
+  })
+
+  it('refuses portal entry', async () => {
+    await igGiveaway('clay-ig-enter')
+    const m = await member('igenter@example.com')
+    const res = await enter('clay-ig-enter', m.token)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/Instagram/)
+  })
+
+  it('has its own official rules: Instagram entry, no membership needed, DM contact', async () => {
+    await igGiveaway('clay-ig-rules', { rules_md: 'Eligibility: 18+, Mississippi residents.' })
+    const page = await (await req('/giveaways/clay-ig-rules/rules')).text()
+    expect(page).toMatch(/NO PURCHASE OR PAYMENT OF ANY KIND IS NECESSARY/)
+    expect(page).toMatch(/You do not need to be a club member/)
+    expect(page).toMatch(/Tag a friend in the comments/)
+    expect(page).toMatch(/instagram.com\/p\/ABC123/)
+    expect(page).toMatch(/comment-picker/)
+    expect(page).toMatch(/Instagram direct message/)
+    expect(page).toMatch(/18\+, Mississippi residents/)
+    expect(page).not.toMatch(/Log in, open the giveaway/)
+  })
+
+  it('records the comment-picker winners into the CSV; the log holds no handle', async () => {
+    await closeIt('clay-ig-win')
+    const res = await record('clay-ig-win', { winners: ['Jane Doe, @JaneDoe', 'Sam Roe @sam.roe'], note: 'commentpicker, 212 comments' })
+    expect(res.status).toBe(200)
+    const box = await (await req('/admin/giveaways/clay-ig-win/winners.csv?format=boxoffice', { token: ADMIN })).text()
+    expect(box).toBe('name,tickets\r\nJane Doe (@janedoe),2\r\nSam Roe (@sam.roe),2\r\n')
+    const log = await env.GIVEAWAYS_DB.prepare("SELECT * FROM draws WHERE giveaway_id = 'clay-ig-win'").first()
+    expect(log.run_by).toBe('michael@michaellamb.dev')
+    expect(log.winners).not.toMatch(/janedoe|sam/)
+    expect(JSON.parse(log.random_values).note).toMatch(/212 comments/)
+    const g = (await (await req('/admin/giveaways/clay-ig-win', { token: ADMIN })).json()).giveaway
+    expect(g.status).toBe('drawn')
+  })
+
+  it('refuses to record before the giveaway is closed and over, or more winners than it has', async () => {
+    await igGiveaway('clay-ig-early')
+    expect((await record('clay-ig-early', { winners: ['A B, @ab'] })).status).toBe(409)
+    await closeIt('clay-ig-many')
+    expect((await record('clay-ig-many', { winners: ['A, @a1', 'B, @b1', 'C, @c1'] })).status).toBe(400)
+    expect((await record('clay-ig-many', { winners: ['no handle here'] })).status).toBe(400)
+  })
+
+  it('replaces a winner who did not reply', async () => {
+    await closeIt('clay-ig-swap')
+    const first = await (await record('clay-ig-swap', { winners: ['Jane Doe, @janedoe', 'Sam Roe, @samroe'] })).json()
+    const res = await record('clay-ig-swap', { replaces: first.winners[0], winners: ['Pat Poe, @patpoe'] })
+    expect(res.status).toBe(200)
+    const box = await (await req('/admin/giveaways/clay-ig-swap/winners.csv?format=boxoffice', { token: ADMIN })).text()
+    expect(box).toContain('Pat Poe (@patpoe),2')
+    expect(box).not.toContain('Jane Doe')
+  })
+
+  it('cannot be drawn by the portal', async () => {
+    await closeIt('clay-ig-draw')
+    expect((await draw('clay-ig-draw')).status).toBe(409)
+  })
+})
+
+describe('one prize per person per event', () => {
+  it('a member who already won one giveaway for the event is out of the next pool', async () => {
+    // Same two members in two giveaways for one event; the pool is seeded
+    // directly (the entry path is covered above and is slow on CI runners).
+    const people = ['pp-one', 'pp-two']
+    await seedClosedPool('clay-first', 2, { winners: 1 }, people)
+    const first = await (await draw('clay-first')).json()
+    const winner = first.winners[0]
+    await seedClosedPool('clay-second', 2, { winners: 1 }, people)
+    const second = await (await draw('clay-second')).json()
+    expect(second.poolMembers).toBe(1)
+    expect(second.winners).toEqual(people.filter(p => p !== winner))
   })
 })

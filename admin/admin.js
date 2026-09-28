@@ -2568,6 +2568,12 @@ async function renderGiveawayForm(id) {
             ${key === 'referral' ? `cap <input name="cap_referral" type="number" min="1" max="1000" value="${attr(src.referral ? src.referral.cap : 10)}" style="width:5em">` : ''}
           </label>`).join('')}
       </fieldset>
+      <fieldset><legend>…or an Instagram giveaway (entries happen on Instagram; the site hosts the rules and records the winners)</legend>
+        <label><input type="checkbox" name="src_instagram" ${src.instagram ? 'checked' : ''}> Instagram giveaway (overrides the sources above)</label>
+        <label>How to enter (shown on the rules page; one step per line)
+          <textarea name="ig_how" rows="4" placeholder="Follow @jxnfilmclub, @offbeat and @msfilmsociety&#10;Tag a friend in the comments; each comment tagging a different friend is one entry">${escapeHtml(src.instagram ? src.instagram.how : '')}</textarea></label>
+        <label>Giveaway post URL (optional) <input name="ig_post_url" value="${attr(src.instagram && src.instagram.post_url || '')}" placeholder="https://www.instagram.com/p/…"></label>
+      </fieldset>
       <label><input type="checkbox" name="count_prior_waitlist" ${g && g.count_prior_waitlist ? 'checked' : ''}>
         RSVPs made before the giveaway opened count for the waitlist entry</label>
       <label>Voice prompt id (voice source only) <input name="voice_prompt_id" value="${attr(g && g.voice_prompt_id || '')}"></label>
@@ -2582,11 +2588,14 @@ async function renderGiveawayForm(id) {
 
 function gwFormBody() {
   const f = new FormData($('#gw-form'))
-  const sources = {}
+  let sources = {}
   for (const [key] of GW_SOURCES) {
     if (!f.get(`src_${key}`)) continue
     sources[key] = { weight: Number(f.get(`w_${key}`)) }
     if (key === 'referral') sources.referral.cap = Number(f.get('cap_referral'))
+  }
+  if (f.get('src_instagram')) {
+    sources = { instagram: { how: f.get('ig_how') || '', post_url: (f.get('ig_post_url') || '').trim() || undefined } }
   }
   const iso = v => v ? new Date(v).toISOString() : ''
   return {
@@ -2626,13 +2635,19 @@ async function renderGiveawayDetail(id) {
       <td>${r.flagged ? `<span class="pill warn">${r.flagged}</span>` : 0}</td><td>${r.excluded}</td></tr>`).join('') ||
       '<tr><td colspan="5" class="muted">No entries yet.</td></tr>'}</tbody></table>
 
-    <h3>Draw</h3>
-    ${g.status === 'drawn' ? `
+    <h3>${g.sources.instagram ? 'Winners (picked on Instagram)' : 'Draw'}</h3>
+    ${g.sources.instagram && g.status === 'closed' ? `
+      <p class="muted">Pick the winners with your comment-picker tool, then record them here, one per line. They land in the CSVs and in the log under your name.</p>
+      <p><textarea id="gw-ig-winners" rows="${g.winners + 1}" style="width:100%" placeholder="Jane Doe, @janedoe"></textarea></p>
+      <p><input id="gw-ig-note" style="width:100%" placeholder="Note for the log, e.g. picker used and total comments"></p>
+      <p><button data-action="gw-record" data-id="${attr(id)}">Record ${g.winners} winner${g.winners === 1 ? '' : 's'}</button></p>`
+    : g.sources.instagram && g.status !== 'drawn' ? '<p class="muted">Set the status to <b>closed</b> after the giveaway ends, then record the winners the comment picker chose.</p>'
+    : g.status === 'drawn' ? `
       <table><thead><tr><th>Winner</th><th>Email</th><th>Tickets</th><th>Status</th><th></th></tr></thead>
       <tbody>${win.winners.map(w => `<tr>
         <td>${escapeHtml(w.name || w.member_id)}</td><td>${escapeHtml(w.email || '')}</td><td>${w.tickets}</td>
         <td><span class="pill ${w.status === 'selected' ? 'on' : 'off'}">${escapeHtml(w.status)}</span></td>
-        <td>${w.status === 'selected' ? `<button class="danger" data-action="gw-redraw" data-id="${attr(id)}" data-member="${attr(w.member_id)}" data-name="${attr(w.name || w.member_id)}">no response — redraw</button>` : ''}</td>
+        <td>${w.status === 'selected' ? `<button class="danger" data-action="${g.sources.instagram ? 'gw-ig-replace' : 'gw-redraw'}" data-id="${attr(id)}" data-member="${attr(w.member_id)}" data-name="${attr(w.name || w.member_id)}">no response — ${g.sources.instagram ? 'replace' : 'redraw'}</button>` : ''}</td>
       </tr>`).join('')}</tbody></table>
       <p>${selected.length ? `<a href="${attr(csv())}">Download winners CSV (name, email, tickets)</a> ·
         <a href="${attr(csv('boxoffice'))}">Box-office CSV (names + tickets only)</a>` : ''}</p>`
@@ -2687,6 +2702,20 @@ document.addEventListener('click', async (e) => {
       const out = await gwApi('POST', '/api/giveaways/draw', { id: btn.dataset.id },
         { excludeFlagged: $('#gw-exclude-flagged').checked })
       toast(`Drew ${out.winners.length} winner(s) from ${out.poolMembers} entrant(s)`)
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-record') {
+      const winners = $('#gw-ig-winners').value.split('\n').map(l => l.trim()).filter(Boolean)
+      if (!confirm(`Record ${winners.length} Instagram winner(s) on ${env()}?\n\n${winners.join('\n')}\n\nThis is final and logged under your name.`)) return
+      await gwApi('POST', '/api/giveaways/record-winners', { id: btn.dataset.id }, { winners, note: $('#gw-ig-note').value })
+      toast(`Recorded ${winners.length} winner(s)`)
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-ig-replace') {
+      const line = prompt(`${btn.dataset.name} did not reply. Replacement winner (Name, @handle), from your comment picker:`)
+      if (!line) return
+      await gwApi('POST', '/api/giveaways/record-winners', { id: btn.dataset.id }, { replaces: btn.dataset.member, winners: [line] })
+      toast('Replacement recorded')
       return switchTab('giveaways')
     }
     if (a === 'gw-redraw') {

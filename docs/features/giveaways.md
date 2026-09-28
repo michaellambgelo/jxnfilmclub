@@ -106,6 +106,32 @@ Flagged referrals still create an entry, but it's flagged: visible in admin,
 enforced inside the `INSERT` itself (the count and the write are one
 statement), so concurrent verifications can't overshoot it.
 
+### Instagram giveaways
+
+A giveaway whose only source is `instagram` (`{ how, post_url? }`) takes its
+entries on Instagram, where the portal can't see them. The site still:
+
+- **hosts its official rules** (`/giveaways/:id/rules`), with an Instagram
+  variant: entry happens on Instagram, entrants don't have to be members,
+  winners are picked by comment picker and contacted by DM;
+- **lists it** on the event's giveaway page, with the how-to-enter steps and a
+  link to the post (no Enter button, since `POST /enter` refuses it);
+- **records its winners.** Once it's `closed` and over, the admin pastes the
+  comment picker's result (`Jane Doe, @janedoe` per line) with a note. That
+  writes a logged draw and winner rows, so the winners reach the box-office CSV.
+  "No response" records one replacement.
+
+Winners are stored under an opaque id (`ig-` plus a hash of the giveaway id and
+handle). The name and handle live only on the participants row, which the
+60-day scrub deletes. Nothing is stored about Instagram entrants who didn't win.
+
+### One prize per person per event
+
+A portal draw's pool excludes anyone currently holding a prize (`selected`) in
+**any** giveaway for the same event, so a member can't win twice across the
+Clayface giveaways. Instagram winners are keyed by handle, not member id, so
+checking them against member names stays a manual step.
+
 ## Admin
 
 **Giveaways tab** (both the hosted portal and `npm run admin`):

@@ -78,7 +78,7 @@
 
   function gwSteps(g, mine) {
     const by = (mine && mine.bySource) || {}
-    return Object.keys(g.sources).map(function(key) {
+    return Object.keys(g.sources).filter(function(key) { return key !== 'instagram' }).map(function(key) {
       const cfg = g.sources[key]
       const step = GW_STEPS[key]
       const got = by[key] ? by[key].entries : 0
@@ -130,7 +130,13 @@
   <p class="gw-prize">{ g.prize }</p>
   <p class="gw-dates">{ g.winners } { g.winners === 1 ? 'winner' : 'winners' }, { g.ticketsPerWinner } tickets each · { g.accepting ? 'Enter by ' + gwWhen(g.endsAt) + ' CT' : (g.status === 'open' ? 'Opens ' + gwWhen(g.startsAt) + ' CT' : 'Entries closed') }</p>
 
-  <ol class="gw-steps">
+  <div :if="isIg" class="gw-ig">
+    <p class="gw-ig-title">This one happens on Instagram</p>
+    <p :each="line in igHow" class="gw-ig-step">{ line }</p>
+    <div :if="igPost" class="actions gw-auth"><a class="gw-btn" href="{ igPost }" target="_blank" rel="noopener">Open the Instagram post</a></div>
+  </div>
+
+  <ol :if="!isIg" class="gw-steps">
     <li :each="row in steps" class="gw-step { row.done ? 'done' : 'todo' }">
       <span class="gw-step-label">{ row.label }</span>
       <span class="gw-step-worth">{ row.done ? row.got + ' earned' : row.worth }</span>
@@ -151,7 +157,7 @@
     <p class="muted">{ referrals } of { referralCap } referral entries earned. Friends count when they join with a new, verified email.</p>
   </div>
 
-  <div :if="g.accepting && !entered && signedin" class="gw-enter">
+  <div :if="g.accepting && !entered && signedin && !isIg" class="gw-enter">
     <label class="prefRow">
       <input type="checkbox" class="gw-accept">
       <span class="prefRow-text"><span class="prefRow-title">I accept the <a href="{ rulesUrl }" target="_blank" rel="noopener">official rules</a></span></span>
@@ -166,7 +172,7 @@
     <div class="actions"><button type="button" :onclick="enter" :disabled="busy">{ busy ? 'Entering…' : 'Enter the giveaway' }</button></div>
   </div>
 
-  <div :if="g.accepting && !signedin" class="gw-enter">
+  <div :if="g.accepting && !signedin && !isIg" class="gw-enter">
     <p>Membership is free: just a name and an email. Members can enter.</p>
     <div class="actions gw-auth">
       <a class="gw-btn" href="{ joinUrl }">Join free</a>
@@ -179,14 +185,18 @@
 
   <script>
     this.mounted = function() {
+      const insta = this.g.sources.instagram || null
       this.update({
+        isIg: !!insta,
+        igHow: insta ? insta.how.split(String.fromCharCode(10)).map(function(t) { return t.trim() }).filter(Boolean) : [],
+        igPost: insta && insta.post_url ? insta.post_url : '',
         entered: false, total: 0, busy: false, error: '', copied: false,
         referralLink: '', referrals: 0, referralCap: 0,
         steps: gwSteps(this.g, null),
         rulesUrl: GW_ORIGIN + this.g.rulesPath,
         joinUrl: GW_ORIGIN + '/',
       })
-      if (this.signedin) this.refresh()
+      if (this.signedin && !insta) this.refresh()
     }
 
     this.apply = function(mine) {

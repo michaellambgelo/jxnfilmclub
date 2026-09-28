@@ -81,6 +81,11 @@
 .giveaways a.gw-btn-ghost { color: var(--ink); background: none; border-color: var(--line-2); }
 .giveaways a.gw-btn-ghost:hover { color: var(--ink); background: none; border-color: var(--ink-3); }
 
+.gw-ig { margin: 0 0 1rem; }
+.gw-ig-title { margin: 0 0 0.5rem; font-weight: 600; }
+.gw-ig-step { margin: 0 0 0.35rem; }
+.gw-ig .gw-auth { margin-top: 0.75rem; }
+
 .gw-err { color: var(--err-ink, var(--brand)); }
 .gw-rules { margin: 0.75rem 0 0; font-size: var(--fs-14); }
 .gw-foot { margin-top: 1.5rem; font-size: var(--fs-14); color: var(--ink-3); }

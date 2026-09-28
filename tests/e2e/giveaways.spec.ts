@@ -128,3 +128,21 @@ test('a referral link survives signup and credits the referrer after verificatio
   await expect(page.locator('.gw-total')).toHaveText('1 entry so far')
   await friendCtx.close()
 })
+
+test('an Instagram giveaway shows how to enter there, with no Enter button', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', e => errors.push(e.message))
+  await seedEventAndGiveaway(page, {
+    sources: { instagram: {
+      how: 'Follow all three accounts\nTag a friend in the comments',
+      post_url: 'https://www.instagram.com/p/ABC123/',
+    } },
+  })
+  await signInAs(page, 'ig-viewer@example.com', { name: 'Ig Viewer' })
+  await page.goto(`/giveaways?event=${EVENT.id}`)
+  await expect(page.getByText('This one happens on Instagram')).toBeVisible()
+  await expect(page.getByText('Tag a friend in the comments')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Open the Instagram post' })).toHaveAttribute('href', 'https://www.instagram.com/p/ABC123/')
+  await expect(page.getByRole('button', { name: 'Enter the giveaway' })).toHaveCount(0)
+  expect(errors).toEqual([])
+})

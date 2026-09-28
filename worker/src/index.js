@@ -8,7 +8,7 @@ import brandCss from './brand.css'
 import faviconIco from './favicon.ico'
 import {
   addParticipant, adminEntries, creditReferral, getGiveaway, getOrCreateReferralCode,
-  isAcceptingEntries, letterboxdProfileExists, normalizeEmail, REF_CODE_RE, referralStats,
+  isAcceptingEntries, isExternal, letterboxdProfileExists, normalizeEmail, recordExternalWinners, REF_CODE_RE, referralStats,
   listDraws, listGiveaways, listWinners, memberSummary, parseLetterboxdHandle, purgeMember,
   runDraw, runRedraw, saveGiveaway, scrubGiveaways, setEntryExcluded, syncEntries, toCsv,
   validGiveaway,
@@ -313,7 +313,7 @@ async function route(request, env, ctx) {
       if (sub === 'enter' && request.method === 'POST') return handleGiveawayEnter(request, env, gid)
       if (sub === 'rules' && request.method === 'GET')  return handleGiveawayRules(env, gid)
     }
-    const adminGiveawayMatch = /^\/admin\/giveaways(?:\/([a-z0-9-]+)(?:\/(entries|draw|redraw|winners|winners\.csv)|\/entries\/([0-9]+))?)?$/.exec(pathname)
+    const adminGiveawayMatch = /^\/admin\/giveaways(?:\/([a-z0-9-]+)(?:\/(entries|draw|redraw|record-winners|winners|winners\.csv)|\/entries\/([0-9]+))?)?$/.exec(pathname)
     if (adminGiveawayMatch) {
       const [, gid, action, entryId] = adminGiveawayMatch
       return handleAdminGiveaways(request, env, gid || null, entryId ? 'entry' : (action || null), entryId || null)
@@ -5347,6 +5347,7 @@ async function handleGiveawayEnter(request, env, id) {
   if (!claims) return json(env, { error: 'log in to enter' }, 401)
   const { db, g, error } = await loadPublicGiveaway(env, id)
   if (error) return error
+  if (isExternal(g)) return json(env, { error: 'enter this giveaway on Instagram' }, 409)
   if (!isAcceptingEntries(g)) return json(env, { error: 'this giveaway is not accepting entries' }, 409)
   const member = await readMemberByClaims(env, claims)
   if (!member) return json(env, { error: 'member not found' }, 404)
@@ -5379,7 +5380,7 @@ async function handleGiveawayRules(env, id) {
   if (error) return error
   const event = await readEvent(env, g.event_id)
   const esc = escapeHtml
-  const entryLines = Object.entries(g.sources).map(([source, cfg]) => {
+  const entryLines = Object.entries(g.sources).filter(([source]) => source !== 'instagram').map(([source, cfg]) => {
     const worth = `${cfg.weight} ${cfg.weight === 1 ? 'entry' : 'entries'}`
     const cap = source === 'referral' ? ` each, up to ${cfg.cap} referrals` : ''
     const onePer = source === 'referral' ? '' : ' (once)'
@@ -5398,6 +5399,8 @@ async function handleGiveawayRules(env, id) {
   const extra = (g.rules_md || '').trim()
     ? '<h2>Additional terms</h2>' + g.rules_md.trim().split(/\n{2,}/).map(p => `<p>${esc(p)}</p>`).join('')
     : ''
+  const external = isExternal(g)
+  const ig = external ? g.sources.instagram : null
   const eventLine = event
     ? `${esc(event.title)} — ${esc(event.date || '')}${event.time ? ' ' + esc(event.time) : ''}${event.venue ? ', ' + esc(event.venue) : ''}`
     : esc(g.event_id)
@@ -5408,6 +5411,20 @@ async function handleGiveawayRules(env, id) {
     <p>${esc(g.prize)}. ${g.winners} ${g.winners === 1 ? 'winner' : 'winners'} will each receive ${g.tickets_per_winner} ${g.tickets_per_winner === 1 ? 'ticket' : 'tickets'} for ${eventLine}.</p>
     <h2>Dates</h2>
     <p>Entries open ${esc(fmtCentral(g.starts_at))} and close ${esc(fmtCentral(g.ends_at))}. Entries received outside that window do not count.</p>
+    ${external ? `
+    <h2>Eligibility</h2>
+    <p>Open to people with an Instagram account who meet the eligibility terms below. You do not need to be a club member.</p>
+    <h2>How to enter</h2>
+    <p>This giveaway runs on Instagram${ig.post_url ? ` (<a href="${esc(ig.post_url)}" rel="noopener">the giveaway post</a>)` : ''}.</p>
+    ${ig.how.split(/\n+/).map(line => `<p>${esc(line)}</p>`).join('')}
+    <p>Entries that break these rules (for example fake or duplicate accounts, or tagging accounts that are not real people) may be disqualified.</p>
+    <h2>How winners are chosen</h2>
+    <p>After entries close, winners are picked at random from eligible entries using a random comment-picker tool. The pick is recorded, and each person can win once.</p>
+    <h2>How winners are contacted</h2>
+    <p>By Instagram direct message from the club account. We will never ask for payment, a password or card details. A winner who does not reply within ${g.winner_response_days} ${g.winner_response_days === 1 ? 'day' : 'days'} forfeits the prize, and another winner is picked. Tickets are held at the venue box office under the winner's name.</p>
+    ${extra}
+    <h2>Your information</h2>
+    <p>For winners only, we keep the name and Instagram handle needed to hold the tickets; see the <a href="/privacy">privacy policy</a>. Winners' names are given to the venue box office for will-call.</p>` : `
     <h2>Eligibility</h2>
     <p>Open to members of the Jackson Film Club. Membership is free: joining needs only a name and an email address you verify.</p>
     <h2>How to enter</h2>
@@ -5421,7 +5438,7 @@ async function handleGiveawayRules(env, id) {
     <p>By email, at the address on their membership. A winner who does not reply within ${g.winner_response_days} ${g.winner_response_days === 1 ? 'day' : 'days'} forfeits the prize, and a replacement is drawn. Tickets are held at the venue box office under the winner's name.</p>
     ${extra}
     <h2>Your information</h2>
-    <p>Entering stores your name, email and entries for this giveaway; see the <a href="/privacy">privacy policy</a>. Winners' names (not emails) are given to the venue box office for will-call.</p>
+    <p>Entering stores your name, email and entries for this giveaway; see the <a href="/privacy">privacy policy</a>. Winners' names (not emails) are given to the venue box office for will-call.</p>`}
     <p><a href="${siteOrigin(env)}/giveaways?event=${encodeURIComponent(g.event_id)}">&larr; Back to the giveaway</a></p>
     </main>`
   return html(page(env, { title: `${g.title} — Official Rules`, body }))
@@ -5516,6 +5533,19 @@ async function handleAdminGiveaways(request, env, id, action, entryId) {
     if (typeof body.excluded !== 'boolean') return json(env, { error: 'excluded (boolean) is required' }, 400)
     const ok = await setEntryExcluded(db, id, Number(entryId), body.excluded)
     return ok ? json(env, { ok: true }) : json(env, { error: 'entry not found' }, 404)
+  }
+  if (action === 'record-winners' && method === 'POST') {
+    // Instagram giveaways: { winners: ["Name, @handle", ...], note? } records
+    // the comment-picker result; { replaces, winners: ["Name, @handle"] }
+    // swaps one non-responder.
+    const body = await request.json().catch(() => ({}))
+    const result = await recordExternalWinners(db, g, {
+      winners: Array.isArray(body.winners) ? body.winners : [],
+      replaces: typeof body.replaces === 'string' ? body.replaces : null,
+      note: body.note, runBy: adminActor(request),
+    })
+    if (result.error) return json(env, { error: result.error }, result.code || 400)
+    return json(env, result)
   }
   if ((action === 'draw' || action === 'redraw') && method === 'POST') {
     const body = await request.json().catch(() => ({}))

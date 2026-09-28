@@ -10,6 +10,7 @@
 //   POST /api/giveaways/entry?env=&id=&entry=    { excluded }
 //   POST /api/giveaways/draw?env=&id=            { excludeFlagged }
 //   POST /api/giveaways/redraw?env=&id=          { memberId, excludeFlagged }
+//   POST /api/giveaways/record-winners?env=&id=  Instagram: { winners, note } / { replaces, winners }
 //   GET  /api/giveaways/winners?env=&id=         winners + draw log
 //   GET  /api/giveaways/winners.csv?env=&id=[&format=boxoffice]
 
@@ -17,6 +18,7 @@ const ACTIONS = {
   'GET /api/giveaways/entries': 'entries',
   'POST /api/giveaways/draw': 'draw',
   'POST /api/giveaways/redraw': 'redraw',
+  'POST /api/giveaways/record-winners': 'record-winners',
   'GET /api/giveaways/winners': 'winners',
   'GET /api/giveaways/winners.csv': 'winners.csv',
 }

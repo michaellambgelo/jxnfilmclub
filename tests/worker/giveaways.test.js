@@ -849,3 +849,110 @@ describe('voice prompt entries', () => {
     expect((await me('clay-voice-del', m.token)).bySource.voice_prompt).toBeUndefined()
   })
 })
+
+// --- Instagram (external) giveaways -------------------------------------------
+
+const IG_HOW = 'Follow @jxnfilmclub, @offbeat and @msfilmsociety\nTag a friend in the comments; each comment tagging a different friend is one entry'
+
+async function igGiveaway(id, extra = {}) {
+  return putGiveaway(id, {
+    winners: 2, sources: { instagram: { how: IG_HOW, post_url: 'https://www.instagram.com/p/ABC123/' } }, ...extra,
+  })
+}
+const record = (id, body) => req(`/admin/giveaways/${id}/record-winners`, {
+  method: 'POST', token: ADMIN, body, headers: { 'X-Admin-Email': 'michael@michaellamb.dev' },
+})
+async function closeIt(id, extra = {}) {
+  const now = Date.now()
+  await igGiveaway(id, { ...extra, status: 'closed',
+    starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString() })
+}
+
+describe('instagram giveaways', () => {
+  it('cannot be mixed with portal sources, and needs how-to-enter text', async () => {
+    expect(() => parseSources({ instagram: { how: 'x' }, referral: { weight: 1, cap: 2 } })).toThrow(/cannot also take portal entries/)
+    expect(() => parseSources({ instagram: {} })).toThrow(/instagram.how/)
+    expect(() => parseSources({ instagram: { how: 'x', post_url: 'https://evil.example/p/1' } })).toThrow(/post_url/)
+  })
+
+  it('refuses portal entry', async () => {
+    await igGiveaway('clay-ig-enter')
+    const m = await member('igenter@example.com')
+    const res = await enter('clay-ig-enter', m.token)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/Instagram/)
+  })
+
+  it('has its own official rules: Instagram entry, no membership needed, DM contact', async () => {
+    await igGiveaway('clay-ig-rules', { rules_md: 'Eligibility: 18+, Mississippi residents.' })
+    const page = await (await req('/giveaways/clay-ig-rules/rules')).text()
+    expect(page).toMatch(/NO PURCHASE OR PAYMENT OF ANY KIND IS NECESSARY/)
+    expect(page).toMatch(/You do not need to be a club member/)
+    expect(page).toMatch(/Tag a friend in the comments/)
+    expect(page).toMatch(/instagram.com\/p\/ABC123/)
+    expect(page).toMatch(/comment-picker/)
+    expect(page).toMatch(/Instagram direct message/)
+    expect(page).toMatch(/18\+, Mississippi residents/)
+    expect(page).not.toMatch(/Log in, open the giveaway/)
+  })
+
+  it('records the comment-picker winners into the CSV; the log holds no handle', async () => {
+    await closeIt('clay-ig-win')
+    const res = await record('clay-ig-win', { winners: ['Jane Doe, @JaneDoe', 'Sam Roe @sam.roe'], note: 'commentpicker, 212 comments' })
+    expect(res.status).toBe(200)
+    const box = await (await req('/admin/giveaways/clay-ig-win/winners.csv?format=boxoffice', { token: ADMIN })).text()
+    expect(box).toBe('name,tickets\r\nJane Doe (@janedoe),2\r\nSam Roe (@sam.roe),2\r\n')
+    const log = await env.GIVEAWAYS_DB.prepare("SELECT * FROM draws WHERE giveaway_id = 'clay-ig-win'").first()
+    expect(log.run_by).toBe('michael@michaellamb.dev')
+    expect(log.winners).not.toMatch(/janedoe|sam/)
+    expect(JSON.parse(log.random_values).note).toMatch(/212 comments/)
+    const g = (await (await req('/admin/giveaways/clay-ig-win', { token: ADMIN })).json()).giveaway
+    expect(g.status).toBe('drawn')
+  })
+
+  it('refuses to record before the giveaway is closed and over, or more winners than it has', async () => {
+    await igGiveaway('clay-ig-early')
+    expect((await record('clay-ig-early', { winners: ['A B, @ab'] })).status).toBe(409)
+    await closeIt('clay-ig-many')
+    expect((await record('clay-ig-many', { winners: ['A, @a1', 'B, @b1', 'C, @c1'] })).status).toBe(400)
+    expect((await record('clay-ig-many', { winners: ['no handle here'] })).status).toBe(400)
+  })
+
+  it('replaces a winner who did not reply', async () => {
+    await closeIt('clay-ig-swap')
+    const first = await (await record('clay-ig-swap', { winners: ['Jane Doe, @janedoe', 'Sam Roe, @samroe'] })).json()
+    const res = await record('clay-ig-swap', { replaces: first.winners[0], winners: ['Pat Poe, @patpoe'] })
+    expect(res.status).toBe(200)
+    const box = await (await req('/admin/giveaways/clay-ig-swap/winners.csv?format=boxoffice', { token: ADMIN })).text()
+    expect(box).toContain('Pat Poe (@patpoe),2')
+    expect(box).not.toContain('Jane Doe')
+  })
+
+  it('cannot be drawn by the portal', async () => {
+    await closeIt('clay-ig-draw')
+    expect((await draw('clay-ig-draw')).status).toBe(409)
+  })
+})
+
+describe('one prize per person per event', () => {
+  it('a member who already won one giveaway for the event is out of the next pool', async () => {
+    const [a, b] = await closedGiveawayWithEntrants('clay-first', ['one@example.com', 'two@example.com'], { winners: 1 })
+    const first = await (await draw('clay-first')).json()
+    const winner = first.winners[0]
+    const other = winner === a.id ? b : a
+
+    // Second giveaway, same event, same two entrants.
+    await putGiveaway('clay-second', { winners: 1 })
+    for (const m of [a, b]) {
+      const fresh = await member(m.email)
+      await enter('clay-second', fresh.token)
+      await rsvp(fresh.token)
+    }
+    const now = Date.now()
+    await putGiveaway('clay-second', { winners: 1, status: 'closed',
+      starts_at: new Date(now - 2 * HOUR).toISOString(), ends_at: new Date(now - 60 * 1000).toISOString() })
+    const second = await (await draw('clay-second')).json()
+    expect(second.winners).toEqual([other.id])
+    expect(second.poolMembers).toBe(1)
+  })
+})

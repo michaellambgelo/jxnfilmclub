@@ -1,5 +1,16 @@
 [
   {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/z-o-m-b-i-e-s/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/4/7/7/4/414774-zombies-0-600-0-900-crop.jpg?v=8301bf02aa",
+    "rating": "1.0",
+    "review": "this was HORRIBLE and I had a great time eating my Talenti",
+    "title": "Z-O-M-B-I-E-S",
+    "watched_date": "2026-09-28",
+    "year": "2018"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/the-social-network/2/",
@@ -22,6 +33,17 @@
   },
   {
     "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/buzzkill-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/8/3/4/3/9/1483439-buzzkill-2026-0-600-0-900-crop.jpg?v=f880819ffa",
+    "rating": "5.0",
+    "review": "This must be to make up for the lack of Scream Queens in AHS:13",
+    "title": "Buzzkill",
+    "watched_date": "2026-09-27",
+    "year": "2026"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/tales-from-the-crypt-demon-knight/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/3/8/5/47385-demon-knight-0-600-0-900-crop.jpg?v=a402e74edf",
     "rating": "4.0",
@@ -29,26 +51,6 @@
     "title": "Tales from the Crypt: Demon Knight",
     "watched_date": "2026-09-27",
     "year": "1995"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/whisper-of-the-heart/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/7/1/3/26713-whisper-of-the-heart-0-600-0-900-crop.jpg?v=d1e50d223e",
-    "rating": "4.0",
-    "review": "I really wish I would've watched more Ghibli as a kid",
-    "title": "Whisper of the Heart",
-    "watched_date": "2026-09-27",
-    "year": "1995"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-4/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/ar/7q/qf/zc/42jFoe08KWdcip93Vx7oyGkXkoM-0-600-0-900-crop.jpg?v=72f25a556b",
-    "rating": "3.0",
-    "review": "it's the best of a bad franchise\" doesn't mean \"it's a good movie",
-    "title": "Paranormal Activity 4",
-    "watched_date": "2026-09-27",
-    "year": "2012"
   },
   {
     "handle": "VesperEvensong",
@@ -262,7 +264,7 @@
   {
     "handle": "calissippi",
     "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=ae23afa84a",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=cc01a37c60",
     "rating": "3.0",
     "review": "Got whiplash from the plot twists but cool to see Mississippi on the big screen.",
     "title": "The Fix",

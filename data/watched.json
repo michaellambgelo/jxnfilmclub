@@ -1022,6 +1022,24 @@
   ],
   "bearleebooks": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/z-o-m-b-i-e-s/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/4/7/7/4/414774-zombies-0-600-0-900-crop.jpg?v=8301bf02aa",
+      "rating": "1.0",
+      "title": "Z-O-M-B-I-E-S",
+      "watched_date": "2026-09-28",
+      "year": "2018"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/buzzkill-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/8/3/4/3/9/1483439-buzzkill-2026-0-600-0-900-crop.jpg?v=f880819ffa",
+      "rating": "5.0",
+      "title": "Buzzkill",
+      "watched_date": "2026-09-27",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/tales-from-the-crypt-demon-knight/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/3/8/5/47385-demon-knight-0-600-0-900-crop.jpg?v=a402e74edf",
       "rating": "4.0",
@@ -1100,27 +1118,18 @@
       "title": "Paranormal Activity 2",
       "watched_date": "2026-09-21",
       "year": "2010"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/cinderella-1997/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/2/2/2/1/6/22216-cinderella-0-600-0-900-crop.jpg?v=8310f5ba7c",
-      "rating": "5.0",
-      "title": "Cinderella",
-      "watched_date": "2026-09-21",
-      "year": "1997"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/james-and-the-giant-peach/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/1/3/3/46133-james-and-the-giant-peach-0-600-0-900-crop.jpg?v=4d3e4d1bde",
-      "rating": "4.0",
-      "title": "James and the Giant Peach",
-      "watched_date": "2026-09-21",
-      "year": "1996"
     }
   ],
   "calissippi": [
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/calissippi/film/your-mother-your-mother-your-mother/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/1/5/2/1/6/1315216-your-mother-your-mother-your-mother-0-600-0-900-crop.jpg?v=a644997d58",
+      "rating": "4.5",
+      "title": "Your Mother Your Mother Your Mother",
+      "watched_date": "2026-09-27",
+      "year": "2026"
+    },
     {
       "liked": true,
       "link": "https://letterboxd.com/calissippi/film/resident-evil-2026/",
@@ -1157,7 +1166,7 @@
     },
     {
       "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=ae23afa84a",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=cc01a37c60",
       "rating": "3.0",
       "title": "The Fix",
       "watched_date": "2026-09-11",
@@ -1212,14 +1221,6 @@
       "title": "The Uninvited",
       "watched_date": "2026-08-31",
       "year": "1944"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/the-dog-stars/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/9/2/8/7/1269287-the-dog-stars-0-600-0-900-crop.jpg?v=b44af504b0",
-      "rating": "2.5",
-      "title": "The Dog Stars",
-      "watched_date": "2026-08-30",
-      "year": "2026"
     }
   ],
   "dacoats": [

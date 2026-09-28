@@ -86,3 +86,68 @@ Q: Where does my email go?
 A: Stored privately for sign-in only. It's never shown on the public
    directory. Full policy: join.jxnfilm.club/privacy.
 ```
+
+---
+
+## Replying to Instagram DMs ("how do I get involved?")
+
+Instagram DMs are casual and short, so these are written to fit that.
+Start with the main reply. If they ask something specific, send the
+matching follow-up. Swap the next screening into the optional line, or
+delete that line if nothing is on the calendar yet.
+
+### Main reply
+
+```
+Hey, thanks for reaching out! We'd love to have you 🎬
+
+Easiest way in is to join at jxnfilm.club. It's free and just takes
+an email (Letterboxd is optional). Once you're in you'll see
+everything that's coming up at jxnfilm.club/events and can RSVP there.
+
+Our next one is [FILM] at [THEATER] on [DATE]. Come hang!
+```
+
+### Short version (for quick replies)
+
+```
+Hey! Join free at jxnfilm.club (just an email), then check
+jxnfilm.club/events for what's next. Hope to see you at one soon!
+```
+
+### "What do you all actually do?"
+
+```
+We get together to watch movies around Jackson. Sometimes it's a
+theater meetup where everyone buys their own ticket and we sit
+together, and sometimes a member hosts a screening at their house.
+Afterward we usually hang around and talk about the film.
+
+Everything's listed at jxnfilm.club/events.
+```
+
+### "Do I need to know a lot about movies?" / "I don't know anyone"
+
+```
+Not at all! Plenty of people come solo the first time, and you don't
+need to be a film buff. If you like watching movies and talking about
+them, you'll fit right in.
+```
+
+### "Can I host / help out?"
+
+```
+Yes please! Once you've joined, you can post your own screening at
+jxnfilm.club/host. It can be a movie night at your place (your address
+only goes to people who RSVP) or a meetup at a local theater.
+
+We also have a podcast, and members can send in voice clips for it at
+jxnfilm.club/speak.
+```
+
+### "Is it free?"
+
+```
+Joining is free. For theater meetups you buy your own ticket, and
+house screenings are free.
+```

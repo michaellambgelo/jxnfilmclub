@@ -567,6 +567,13 @@ describe('rules page', () => {
     expect(page).toMatch(/Sponsored by the Jackson Film Club/)
   })
 
+  it('says which RSVPs count, following count_prior_waitlist', async () => {
+    await putGiveaway('clay-rules-prior', { count_prior_waitlist: true })
+    await putGiveaway('clay-rules-window', { count_prior_waitlist: false })
+    expect(await (await req('/giveaways/clay-rules-prior/rules')).text()).toMatch(/made before entries opened counts too/)
+    expect(await (await req('/giveaways/clay-rules-window/rules')).text()).toMatch(/made before entries opened does not count/)
+  })
+
   it('escapes admin-written text', async () => {
     await putGiveaway('clay-xss', { rules_md: '<script>alert(1)</script>' })
     const page = await (await req('/giveaways/clay-xss/rules')).text()

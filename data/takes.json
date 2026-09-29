@@ -12,6 +12,16 @@
   },
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/m3gan-20/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/6/5/8/8/5/965885-m3gan-20-0-600-0-900-crop.jpg?v=4427bb61b1",
+    "rating": "2.5",
+    "review": "it's fiiiiiiine I guess I just don't like action movies all that much",
+    "title": "M3GAN 2.0",
+    "watched_date": "2026-09-28",
+    "year": "2025"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/return-to-silent-hill/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/6/0/5/0/6/8/605068-return-to-silent-hill-0-600-0-900-crop.jpg?v=157d4db589",
     "rating": "0.5",
@@ -29,17 +39,6 @@
     "title": "House",
     "watched_date": "2026-09-28",
     "year": "1985"
-  },
-  {
-    "handle": "bearleebooks",
-    "liked": true,
-    "link": "https://letterboxd.com/bearleebooks/film/z-o-m-b-i-e-s/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/4/7/7/4/414774-zombies-0-600-0-900-crop.jpg?v=8301bf02aa",
-    "rating": "1.0",
-    "review": "this was HORRIBLE and I had a great time eating my Talenti",
-    "title": "Z-O-M-B-I-E-S",
-    "watched_date": "2026-09-28",
-    "year": "2018"
   },
   {
     "handle": "michaellamb",

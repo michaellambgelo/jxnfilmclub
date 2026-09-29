@@ -1,5 +1,26 @@
 [
   {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/elio/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/2/1/5/7/5/921575-elio-0-600-0-900-crop.jpg?v=d3f4e92f5e",
+    "rating": "4.0",
+    "review": "oh how i wish every day that i could get abducted by friendly extraterrestrials",
+    "title": "Elio",
+    "watched_date": "2026-09-29",
+    "year": "2025"
+  },
+  {
+    "handle": "michaellamb",
+    "link": "https://letterboxd.com/michaellamb/film/blue-film-2025/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/2/4/2/3/1282423-blue-film-2025-0-600-0-900-crop.jpg?v=8295b01b96",
+    "rating": "5.0",
+    "review": "the most heartbreaking credits. my first rental from the Letterboxd Video Store. i saw a friend in town tonight who has been living in Egypt for years and told her I was going home to relax. then i rented this movie.",
+    "title": "Blue Film",
+    "watched_date": "2026-09-28",
+    "year": "2025"
+  },
+  {
     "handle": "Crockett1848",
     "liked": true,
     "link": "https://letterboxd.com/crockett1848/film/the-exorcist/",
@@ -12,6 +33,16 @@
   },
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/theres-something-wrong-with-the-children/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/8/0/9/7/6/7/809767-there-s-something-wrong-with-the-children-0-600-0-900-crop.jpg?v=508b255c6c",
+    "rating": "2.5",
+    "review": "It was NOT bad but literally nothing about this grabbed my interest",
+    "title": "There's Something Wrong with the Children",
+    "watched_date": "2026-09-28",
+    "year": "2023"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/m3gan-20/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/9/6/5/8/8/5/965885-m3gan-20-0-600-0-900-crop.jpg?v=4427bb61b1",
     "rating": "2.5",
@@ -19,26 +50,6 @@
     "title": "M3GAN 2.0",
     "watched_date": "2026-09-28",
     "year": "2025"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/return-to-silent-hill/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/6/0/5/0/6/8/605068-return-to-silent-hill-0-600-0-900-crop.jpg?v=157d4db589",
-    "rating": "0.5",
-    "review": "movie bad",
-    "title": "Return to Silent Hill",
-    "watched_date": "2026-09-28",
-    "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/house-1985/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/zn/qd/89/fj/fuyqcUGZ0d2b1MZAKKPBmjF1QHS-0-600-0-900-crop.jpg?v=4fbe0f3e57",
-    "rating": "3.5",
-    "review": "wasn't into it until he put on that slutty little gray v-neck sweater and then i was locked tf in",
-    "title": "House",
-    "watched_date": "2026-09-28",
-    "year": "1985"
   },
   {
     "handle": "michaellamb",
@@ -104,17 +115,6 @@
     "title": "Nine Inch Nails: And All That Could Have Been",
     "watched_date": "2026-09-26",
     "year": "2002"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/hamnet/5/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/2/2/3/2/772232-hamnet-0-600-0-900-crop.jpg?v=631489314d",
-    "rating": "5.0",
-    "review": "Shelby and mom broke in the blu-ray with me",
-    "title": "Hamnet",
-    "watched_date": "2026-09-25",
-    "year": "2025"
   },
   {
     "handle": "badmov1eenjoyer",

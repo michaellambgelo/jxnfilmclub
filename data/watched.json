@@ -810,6 +810,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/hoppers/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/7/5/5/7/1207557-hoppers-0-600-0-900-crop.jpg?v=7711e7b5a7",
+      "rating": "4.0",
+      "title": "Hoppers",
+      "watched_date": "2026-09-29",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/primetime-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
       "rating": "4.5",
@@ -906,15 +915,6 @@
       "title": "Bj\u00f6rk: Vespertine Live at the Royal Opera House",
       "watched_date": "2026-09-16",
       "year": "2001"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/alice-in-chains-mtv-unplugged/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/2/2/7/9/32279-alice-in-chains-mtv-unplugged-0-600-0-900-crop.jpg?v=0e997df333",
-      "rating": "5.0",
-      "title": "Alice in Chains: MTV Unplugged",
-      "watched_date": "2026-09-16",
-      "year": "1996"
     }
   ],
   "badmov1eenjoyer": [

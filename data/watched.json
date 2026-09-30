@@ -810,6 +810,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/django-unchained/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/2/5/1/6/52516-django-unchained-0-600-0-900-crop.jpg?v=f02aed63a3",
+      "rating": "5.0",
+      "title": "Django Unchained",
+      "watched_date": "2026-09-29",
+      "year": "2012"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/hoppers/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/7/5/5/7/1207557-hoppers-0-600-0-900-crop.jpg?v=7711e7b5a7",
       "rating": "4.0",
@@ -906,15 +915,6 @@
       "title": "My Neighbor Totoro",
       "watched_date": "2026-09-18",
       "year": "1988"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/bjork-vespertine-live-at-the-royal-opera/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/8/2/5/16825-bjork-vespertine-live-at-the-royal-opera-0-600-0-900-crop.jpg?v=d7ca5edfd6",
-      "rating": "5.0",
-      "title": "Bj\u00f6rk: Vespertine Live at the Royal Opera House",
-      "watched_date": "2026-09-16",
-      "year": "2001"
     }
   ],
   "badmov1eenjoyer": [
@@ -1024,6 +1024,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/helen-keller-vs-nightwolves/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/0/4/9/8/260498-helen-keller-vs-nightwolves-0-600-0-900-crop.jpg?v=ad82db4324",
+      "rating": "2.5",
+      "title": "Helen Keller vs. Nightwolves",
+      "watched_date": "2026-09-30",
+      "year": "2015"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/elio/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/2/1/5/7/5/921575-elio-0-600-0-900-crop.jpg?v=d3f4e92f5e",
@@ -1113,14 +1121,6 @@
       "title": "Don't Look Under the Bed",
       "watched_date": "2026-09-25",
       "year": "1999"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/the-love-hypothesis/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/1/1/8/1/931181-the-love-hypothesis-0-600-0-900-crop.jpg?v=af3d1729f2",
-      "rating": "3.0",
-      "title": "The Love Hypothesis",
-      "watched_date": "2026-09-25",
-      "year": "2026"
     }
   ],
   "calissippi": [
@@ -1956,6 +1956,15 @@
   ],
   "michaellamb": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/hell-house-llc/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/9/1/1/1/2/291112-hell-house-llc-0-600-0-900-crop.jpg?v=51957d5e8b",
+      "rating": "3.0",
+      "title": "Hell House LLC",
+      "watched_date": "2026-09-29",
+      "year": "2015"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/blue-film-2025/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/2/4/2/3/1282423-blue-film-2025-0-600-0-900-crop.jpg?v=8295b01b96",
       "rating": "5.0",
@@ -2057,16 +2066,6 @@
       "rating": "3.0",
       "title": "Man Finds Tape",
       "watched_date": "2026-09-23",
-      "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/superman-2025/3/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/5/7/0/5/0/957050-superman-2025-0-600-0-900-crop.jpg?v=54e41a55ff",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "Superman",
-      "watched_date": "2026-09-22",
       "year": "2025"
     }
   ],

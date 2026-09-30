@@ -10,6 +10,17 @@
     "year": "2015"
   },
   {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/nomadland/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/9/6/6/2/509662-nomadland-0-600-0-900-crop.jpg?v=942a672158",
+    "rating": "3.5",
+    "review": "Frances mcdormand is a queen",
+    "title": "Nomadland",
+    "watched_date": "2026-09-30",
+    "year": "2020"
+  },
+  {
     "handle": "bearleebooks",
     "liked": true,
     "link": "https://letterboxd.com/bearleebooks/film/elio/",
@@ -25,7 +36,7 @@
     "liked": true,
     "link": "https://letterboxd.com/vesperevensong/film/django-unchained/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/5/2/5/1/6/52516-django-unchained-0-600-0-900-crop.jpg?v=f02aed63a3",
-    "rating": "5.0",
+    "rating": "4.5",
     "review": "Most 2012 coded soundtrack But the shoot outs make up for it",
     "title": "Django Unchained",
     "watched_date": "2026-09-29",
@@ -98,7 +109,7 @@
     "liked": true,
     "link": "https://letterboxd.com/vesperevensong/film/primetime-2026/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
-    "rating": "4.5",
+    "rating": "4.0",
     "review": "Another movie that feels more like a snapshot of a moment rather than a story arc",
     "title": "Primetime",
     "watched_date": "2026-09-27",
@@ -114,17 +125,6 @@
     "title": "Her",
     "watched_date": "2026-09-26",
     "year": "2013"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/beastie-boys-video-anthology/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/0/8/7/7/6/208776-beastie-boys-video-anthology-0-600-0-900-crop.jpg?v=b51f261858",
-    "rating": "5.0",
-    "review": "I like my sugar with coffee and cream!",
-    "title": "Beastie Boys: Video Anthology",
-    "watched_date": "2026-09-26",
-    "year": "2000"
   },
   {
     "handle": "badmov1eenjoyer",

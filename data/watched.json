@@ -917,6 +917,15 @@
   ],
   "badmov1eenjoyer": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/primetime-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
+      "rating": "4.0",
+      "title": "Primetime",
+      "watched_date": "2026-09-30",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/badmov1eenjoyer/film/the-bone-collector/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/1/1/7/47117-the-bone-collector-0-600-0-900-crop.jpg?v=5561f5c63a",
       "rating": "3.0",
@@ -1009,15 +1018,6 @@
       "title": "Teenage Sex and Death at Camp Miasma",
       "watched_date": "2026-08-23",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/rocky/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/0/9/0/51090-rocky-0-600-0-900-crop.jpg?v=da48c9eb5a",
-      "rating": "4.0",
-      "title": "Rocky",
-      "watched_date": "2026-08-17",
-      "year": "1976"
     }
   ],
   "bearleebooks": [

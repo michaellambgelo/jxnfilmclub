@@ -1023,6 +1023,15 @@
   ],
   "bearleebooks": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/the-velocipastor/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/9/6/2/0/389620-the-velocipastor-0-600-0-900-crop.jpg?v=03b454177a",
+      "rating": "3.0",
+      "title": "The VelociPastor",
+      "watched_date": "2026-10-02",
+      "year": "2017"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/helen-keller-vs-nightwolves/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/0/4/9/8/260498-helen-keller-vs-nightwolves-0-600-0-900-crop.jpg?v=ad82db4324",
       "rating": "2.5",
@@ -1112,14 +1121,6 @@
       "title": "Paranormal Activity 4",
       "watched_date": "2026-09-27",
       "year": "2012"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/dont-look-under-the-bed/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/8/6/9/4/58694-dont-look-under-the-bed-0-600-0-900-crop.jpg?v=4ea21c1227",
-      "rating": "2.5",
-      "title": "Don't Look Under the Bed",
-      "watched_date": "2026-09-25",
-      "year": "1999"
     }
   ],
   "calissippi": [
@@ -1956,6 +1957,15 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/youre-next/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/8i/yg/d5/m5/qhVj0F09RFtQdBrBMPhrdzivRcI-0-600-0-900-crop.jpg?v=14c38e8d4b",
+      "rating": "4.0",
+      "title": "You're Next",
+      "watched_date": "2026-10-02",
+      "year": "2011"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/midnight-mass-2021/4/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/4/9/2/3/774923-midnight-mass-0-600-0-900-crop.jpg?v=4f5a735828",
       "rating": "4.5",
@@ -2059,16 +2069,6 @@
       "title": "Resident Evil",
       "watched_date": "2026-09-25",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/steel-magnolias/1/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/8/2/5/45825-steel-magnolias-0-600-0-900-crop.jpg?v=0f213d4783",
-      "rating": "4.0",
-      "rewatch": true,
-      "title": "Steel Magnolias",
-      "watched_date": "2026-09-25",
-      "year": "1989"
     }
   ],
   "mrbienkowski": [

@@ -2,6 +2,28 @@
   {
     "handle": "michaellamb",
     "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/youre-next/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/8i/yg/d5/m5/qhVj0F09RFtQdBrBMPhrdzivRcI-0-600-0-900-crop.jpg?v=14c38e8d4b",
+    "rating": "4.0",
+    "review": "thank you Dead Meat",
+    "title": "You're Next",
+    "watched_date": "2026-10-02",
+    "year": "2011"
+  },
+  {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/the-velocipastor/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/9/6/2/0/389620-the-velocipastor-0-600-0-900-crop.jpg?v=03b454177a",
+    "rating": "3.0",
+    "review": "*vfx: my pussy on fire*",
+    "title": "The VelociPastor",
+    "watched_date": "2026-10-02",
+    "year": "2017"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/midnight-mass-2021/4/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/4/9/2/3/774923-midnight-mass-0-600-0-900-crop.jpg?v=4f5a735828",
     "rating": "4.5",
@@ -20,17 +42,6 @@
     "title": "The Witch",
     "watched_date": "2026-10-01",
     "year": "2015"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/the-green-knight/13/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/8/8/3/9/9/488399-the-green-knight-0-600-0-900-crop.jpg?v=874a267b92",
-    "rating": "5.0",
-    "review": "starting off October with a double feature of The Green Knight and The Witch : Kate Dickie and Ralph Ineson are mommy and daddy. in the chapter \"A Meeting with St. Winifred,\" Gawain encounters a young woman who claims to have lost her head. She recounts the tale of a lord, who \"came seeking\u2026",
-    "title": "The Green Knight",
-    "watched_date": "2026-10-01",
-    "year": "2021"
   },
   {
     "handle": "VesperEvensong",
@@ -117,16 +128,6 @@
     "title": "The Exorcist",
     "watched_date": "2026-09-28",
     "year": "1973"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/theres-something-wrong-with-the-children/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/8/0/9/7/6/7/809767-there-s-something-wrong-with-the-children-0-600-0-900-crop.jpg?v=508b255c6c",
-    "rating": "2.5",
-    "review": "It was NOT bad but literally nothing about this grabbed my interest",
-    "title": "There's Something Wrong with the Children",
-    "watched_date": "2026-09-28",
-    "year": "2023"
   },
   {
     "handle": "jon_knowledge",

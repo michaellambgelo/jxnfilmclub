@@ -810,6 +810,16 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/the-blair-witch-project/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
+      "rating": "4.5",
+      "rewatch": true,
+      "title": "The Blair Witch Project",
+      "watched_date": "2026-10-01",
+      "year": "1999"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/american-splendor/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/0/0/50100-american-splendor-0-600-0-900-crop.jpg?v=848de42001",
       "rating": "5.0",
@@ -902,15 +912,6 @@
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/6/0/6/5/936065-the-conjuring-last-rites-0-600-0-900-crop.jpg?v=597eedcd06",
       "rating": "3.5",
       "title": "The Conjuring: Last Rites",
-      "watched_date": "2025-06-01",
-      "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/final-destination-bloodlines/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/2/6/2/2/502622-final-destination-bloodlines-0-600-0-900-crop.jpg?v=3c04d3a110",
-      "rating": "3.0",
-      "title": "Final Destination Bloodlines",
       "watched_date": "2025-06-01",
       "year": "2025"
     }
@@ -1955,6 +1956,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/midnight-mass-2021/4/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/4/9/2/3/774923-midnight-mass-0-600-0-900-crop.jpg?v=4f5a735828",
+      "rating": "4.5",
+      "rewatch": true,
+      "title": "Midnight Mass",
+      "watched_date": "2026-10-01",
+      "year": "2021"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/the-witch-2015/3/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/y2/i8/9s/h1/tNr2KYytArZNSh0K8PUcHU3JnX4-0-600-0-900-crop.jpg?v=45f739a242",
       "rating": "4.0",
@@ -2058,15 +2069,6 @@
       "title": "Steel Magnolias",
       "watched_date": "2026-09-25",
       "year": "1989"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/batman-year-one/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/9/6/7/5/59675-batman-year-one-0-600-0-900-crop.jpg?v=d8348e07be",
-      "rating": "3.5",
-      "title": "Batman: Year One",
-      "watched_date": "2026-09-23",
-      "year": "2011"
     }
   ],
   "mrbienkowski": [

@@ -22,6 +22,17 @@
     "year": "2017"
   },
   {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/the-conjuring/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/6/2/6/2/106262-the-conjuring-0-600-0-900-crop.jpg?v=8cbb976912",
+    "rating": "5.0",
+    "review": "Movie freaks me out",
+    "title": "The Conjuring",
+    "watched_date": "2026-10-02",
+    "year": "2013"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/midnight-mass-2021/4/",
@@ -64,17 +75,6 @@
     "title": "American Splendor",
     "watched_date": "2026-10-01",
     "year": "2003"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/the-daytrippers/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/8/1/8/15818-the-daytrippers-0-600-0-900-crop.jpg?v=5f1dfa0f8b",
-    "rating": "4.0",
-    "review": "I need to take a day trip soon",
-    "title": "The Daytrippers",
-    "watched_date": "2026-10-01",
-    "year": "1996"
   },
   {
     "handle": "badmov1eenjoyer",

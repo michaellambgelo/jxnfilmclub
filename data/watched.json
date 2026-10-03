@@ -810,6 +810,16 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/the-conjuring/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/6/2/6/2/106262-the-conjuring-0-600-0-900-crop.jpg?v=8cbb976912",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "The Conjuring",
+      "watched_date": "2026-10-02",
+      "year": "2013"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/the-blair-witch-project/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
       "rating": "4.5",
@@ -904,15 +914,6 @@
       "rating": "3.0",
       "title": "Caught Stealing",
       "watched_date": "2025-09-01",
-      "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/the-conjuring-last-rites/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/3/6/0/6/5/936065-the-conjuring-last-rites-0-600-0-900-crop.jpg?v=597eedcd06",
-      "rating": "3.5",
-      "title": "The Conjuring: Last Rites",
-      "watched_date": "2025-06-01",
       "year": "2025"
     }
   ],

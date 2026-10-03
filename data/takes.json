@@ -1,6 +1,16 @@
 [
   {
     "handle": "michaellamb",
+    "link": "https://letterboxd.com/michaellamb/film/the-amazing-bulk/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/6/6/3/87663-the-amazing-bulk-0-600-0-900-crop.jpg?v=e230b6ab79",
+    "rating": "1.0",
+    "review": "the filmmakers subject viewers to the most godawful cold open, then 30 minutes later in the runtime make them watch it again. i guess the misogyny is supposed to be funny? i turned this to 2x speed and it was still too long. fuck you, Parker.",
+    "title": "The Amazing Bulk",
+    "watched_date": "2026-10-03",
+    "year": "2012"
+  },
+  {
+    "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/youre-next/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/8i/yg/d5/m5/qhVj0F09RFtQdBrBMPhrdzivRcI-0-600-0-900-crop.jpg?v=14c38e8d4b",
@@ -53,17 +63,6 @@
     "title": "Midnight Mass",
     "watched_date": "2026-10-01",
     "year": "2021"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/the-witch-2015/3/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/y2/i8/9s/h1/tNr2KYytArZNSh0K8PUcHU3JnX4-0-600-0-900-crop.jpg?v=45f739a242",
-    "rating": "4.0",
-    "review": "I'm nervous and excited for Werwulf . Like, this movie is where Eggers really proves himself and he only gets better. I've not seen him miss, yet. Closes out my Mommy Kate Dickie and Daddy Ralph Ineson double feature.",
-    "title": "The Witch",
-    "watched_date": "2026-10-01",
-    "year": "2015"
   },
   {
     "handle": "VesperEvensong",

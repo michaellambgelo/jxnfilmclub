@@ -1,6 +1,17 @@
 [
   {
     "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/donnie-darko/2/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/ye/jq/f3/22/nmb4QhCRmdfNP6rgb81yUFgI83l-0-600-0-900-crop.jpg?v=caa3999c6f",
+    "rating": "5.0",
+    "review": "I caught this in theaters for the 25th anniversary. I would have preferred to watch it last night (Oct 2) but I had to work. Drew Barrymore is so bad in this, but it's perfect? Also Noah Wyle continues to be hot",
+    "title": "Donnie Darko",
+    "watched_date": "2026-10-03",
+    "year": "2001"
+  },
+  {
+    "handle": "michaellamb",
     "link": "https://letterboxd.com/michaellamb/film/the-amazing-bulk/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/6/6/3/87663-the-amazing-bulk-0-600-0-900-crop.jpg?v=e230b6ab79",
     "rating": "1.0",
@@ -52,17 +63,6 @@
     "title": "The Conjuring",
     "watched_date": "2026-10-02",
     "year": "2013"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/midnight-mass-2021/4/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/7/7/4/9/2/3/774923-midnight-mass-0-600-0-900-crop.jpg?v=4f5a735828",
-    "rating": "4.5",
-    "review": "crazy to think this was only released 5 years ago. another Oct 1 entry!",
-    "title": "Midnight Mass",
-    "watched_date": "2026-10-01",
-    "year": "2021"
   },
   {
     "handle": "VesperEvensong",

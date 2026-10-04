@@ -2,6 +2,17 @@
   {
     "handle": "michaellamb",
     "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/the-end-of-oak-street/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/9/9/2/9/6/2/992962-the-end-of-oak-street-0-600-0-900-crop.jpg?v=b06dbfb4c9",
+    "rating": "3.5",
+    "review": "i fucken loved it where anne hath a will, anne hathaway STARBUCK! the Cornell memorabilia is... not great, at present",
+    "title": "The End of Oak Street",
+    "watched_date": "2026-10-03",
+    "year": "2026"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/donnie-darko/2/",
     "poster": "https://a.ltrbxd.com/resized/sm/upload/ye/jq/f3/22/nmb4QhCRmdfNP6rgb81yUFgI83l-0-600-0-900-crop.jpg?v=caa3999c6f",
     "rating": "5.0",
@@ -19,17 +30,6 @@
     "title": "The Amazing Bulk",
     "watched_date": "2026-10-03",
     "year": "2012"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/youre-next/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/8i/yg/d5/m5/qhVj0F09RFtQdBrBMPhrdzivRcI-0-600-0-900-crop.jpg?v=14c38e8d4b",
-    "rating": "4.0",
-    "review": "thank you Dead Meat",
-    "title": "You're Next",
-    "watched_date": "2026-10-02",
-    "year": "2011"
   },
   {
     "handle": "bearleebooks",
@@ -58,7 +58,7 @@
     "liked": true,
     "link": "https://letterboxd.com/vesperevensong/film/the-conjuring/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/6/2/6/2/106262-the-conjuring-0-600-0-900-crop.jpg?v=8cbb976912",
-    "rating": "5.0",
+    "rating": "4.0",
     "review": "Movie freaks me out",
     "title": "The Conjuring",
     "watched_date": "2026-10-02",
@@ -274,7 +274,7 @@
   {
     "handle": "calissippi",
     "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=cc01a37c60",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=0a5144d883",
     "rating": "3.0",
     "review": "Got whiplash from the plot twists but cool to see Mississippi on the big screen.",
     "title": "The Fix",

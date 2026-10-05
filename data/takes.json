@@ -1,5 +1,15 @@
 [
   {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/tourist-trap/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/7/7/5/43775-tourist-trap-0-600-0-900-crop.jpg?v=f8784557aa",
+    "rating": "3.5",
+    "review": "y'know what. i don't like this but there are some really decent moments.",
+    "title": "Tourist Trap",
+    "watched_date": "2026-10-05",
+    "year": "1979"
+  },
+  {
     "handle": "heath_walt",
     "liked": true,
     "link": "https://letterboxd.com/heath_walt/film/hearts-of-fire/",
@@ -107,16 +117,6 @@
     "title": "Primetime",
     "watched_date": "2026-09-30",
     "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/helen-keller-vs-nightwolves/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/2/6/0/4/9/8/260498-helen-keller-vs-nightwolves-0-600-0-900-crop.jpg?v=ad82db4324",
-    "rating": "2.5",
-    "review": "watched this instead of killing myself tonight",
-    "title": "Helen Keller vs. Nightwolves",
-    "watched_date": "2026-09-30",
-    "year": "2015"
   },
   {
     "handle": "draketerry",

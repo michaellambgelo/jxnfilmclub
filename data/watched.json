@@ -1024,6 +1024,15 @@
   "bearleebooks": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/beware-boiuna/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/7/0/9/5/1127095-beware-boiuna-0-600-0-900-crop.jpg?v=df1e66d6c2",
+      "rating": "4.0",
+      "title": "Beware Boi\u00fana",
+      "watched_date": "2026-10-04",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/the-velocipastor/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/9/6/2/0/389620-the-velocipastor-0-600-0-900-crop.jpg?v=03b454177a",
       "rating": "3.0",
@@ -1113,14 +1122,6 @@
       "title": "Whisper of the Heart",
       "watched_date": "2026-09-27",
       "year": "1995"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-4/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/ar/7q/qf/zc/42jFoe08KWdcip93Vx7oyGkXkoM-0-600-0-900-crop.jpg?v=72f25a556b",
-      "rating": "3.0",
-      "title": "Paranormal Activity 4",
-      "watched_date": "2026-09-27",
-      "year": "2012"
     }
   ],
   "calissippi": [

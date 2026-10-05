@@ -11,6 +11,17 @@
     "year": "1987"
   },
   {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/beware-boiuna/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/7/0/9/5/1127095-beware-boiuna-0-600-0-900-crop.jpg?v=df1e66d6c2",
+    "rating": "4.0",
+    "review": "Must a movie be good ? Is it not simply enough for a giant snake of lore to devour white savior colonizers?",
+    "title": "Beware Boi\u00fana",
+    "watched_date": "2026-10-04",
+    "year": "2026"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/the-end-of-oak-street/",
@@ -106,17 +117,6 @@
     "title": "Helen Keller vs. Nightwolves",
     "watched_date": "2026-09-30",
     "year": "2015"
-  },
-  {
-    "handle": "bearleebooks",
-    "liked": true,
-    "link": "https://letterboxd.com/bearleebooks/film/elio/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/9/2/1/5/7/5/921575-elio-0-600-0-900-crop.jpg?v=d3f4e92f5e",
-    "rating": "4.0",
-    "review": "oh how i wish every day that i could get abducted by friendly extraterrestrials",
-    "title": "Elio",
-    "watched_date": "2026-09-29",
-    "year": "2025"
   },
   {
     "handle": "draketerry",

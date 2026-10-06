@@ -807,6 +807,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/temple-grandin/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/9/6/7/0/29670-temple-grandin-0-600-0-900-crop.jpg?v=4d647b80c1",
+      "rating": "4.0",
+      "title": "Temple Grandin",
+      "watched_date": "2026-10-06",
+      "year": "2010"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/donnie-darko/2/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/ye/jq/f3/22/nmb4QhCRmdfNP6rgb81yUFgI83l-0-600-0-900-crop.jpg?v=caa3999c6f",
       "rating": "5.0",
@@ -904,15 +913,6 @@
       "rating": "4.0",
       "title": "Hoppers",
       "watched_date": "2026-09-29",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/primetime-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
-      "rating": "4.0",
-      "title": "Primetime",
-      "watched_date": "2026-09-27",
       "year": "2026"
     }
   ],
@@ -1023,6 +1023,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/arsenic-and-old-lace/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/4/4/51844-arsenic-and-old-lace-0-600-0-900-crop.jpg?v=abc1436810",
+      "rating": "3.5",
+      "title": "Arsenic and Old Lace",
+      "watched_date": "2026-10-06",
+      "year": "1944"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/buffet-infinity/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/7/1/3/2/8/1371328-buffet-infinity-0-600-0-900-crop.jpg?v=18889a6c7c",
@@ -1113,15 +1121,6 @@
       "title": "House",
       "watched_date": "2026-09-28",
       "year": "1985"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/z-o-m-b-i-e-s/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/4/7/7/4/414774-zombies-0-600-0-900-crop.jpg?v=8301bf02aa",
-      "rating": "1.0",
-      "title": "Z-O-M-B-I-E-S",
-      "watched_date": "2026-09-28",
-      "year": "2018"
     }
   ],
   "calissippi": [

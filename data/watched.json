@@ -1023,6 +1023,15 @@
   ],
   "bearleebooks": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/bearleebooks/film/buffet-infinity/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/3/7/1/3/2/8/1371328-buffet-infinity-0-600-0-900-crop.jpg?v=18889a6c7c",
+      "rating": "4.5",
+      "title": "Buffet Infinity",
+      "watched_date": "2026-10-06",
+      "year": "2025"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/last-straw/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/4/9/4/2/1024942-last-straw-0-600-0-900-crop.jpg?v=c176e1d5b2",
       "rating": "2.0",
@@ -1113,15 +1122,6 @@
       "title": "Z-O-M-B-I-E-S",
       "watched_date": "2026-09-28",
       "year": "2018"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/buzzkill-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/8/3/4/3/9/1483439-buzzkill-2026-0-600-0-900-crop.jpg?v=f880819ffa",
-      "rating": "5.0",
-      "title": "Buzzkill",
-      "watched_date": "2026-09-27",
-      "year": "2026"
     }
   ],
   "calissippi": [

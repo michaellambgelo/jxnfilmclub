@@ -807,6 +807,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/digger-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/6/8/8/1132688-digger-2026-0-600-0-900-crop.jpg?v=81ec883a95",
+      "rating": "5.0",
+      "title": "Digger",
+      "watched_date": "2026-10-06",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/temple-grandin/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/9/6/7/0/29670-temple-grandin-0-600-0-900-crop.jpg?v=4d647b80c1",
       "rating": "4.0",
@@ -905,15 +914,6 @@
       "title": "Django Unchained",
       "watched_date": "2026-09-29",
       "year": "2012"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/hoppers/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/0/7/5/5/7/1207557-hoppers-0-600-0-900-crop.jpg?v=7711e7b5a7",
-      "rating": "4.0",
-      "title": "Hoppers",
-      "watched_date": "2026-09-29",
-      "year": "2026"
     }
   ],
   "badmov1eenjoyer": [

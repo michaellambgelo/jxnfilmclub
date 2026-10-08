@@ -200,6 +200,22 @@
   ],
   "Crockett1848": [
     {
+      "link": "https://letterboxd.com/crockett1848/film/the-rocky-horror-picture-show/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/6/9/8/27698-the-rocky-horror-picture-show-0-600-0-900-crop.jpg?v=737e51d6bc",
+      "rating": "5.0",
+      "title": "The Rocky Horror Picture Show",
+      "watched_date": "2026-10-08",
+      "year": "1975"
+    },
+    {
+      "link": "https://letterboxd.com/crockett1848/film/noroi-the-curse/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/3/6/0/38360-noroi-the-curse-0-600-0-900-crop.jpg?v=de264a9267",
+      "rating": "4.5",
+      "title": "Noroi: The Curse",
+      "watched_date": "2026-10-08",
+      "year": "2005"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/crockett1848/film/the-exorcist/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/0/4/8/47048-the-exorcist-0-600-0-900-crop.jpg?v=897c9aa211",
@@ -280,23 +296,6 @@
       "title": "Us",
       "watched_date": "2026-08-21",
       "year": "2019"
-    },
-    {
-      "link": "https://letterboxd.com/crockett1848/film/the-hunger-games/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/x3/tw/wu/z4/vAkjFEm76Lu5hSevquxPgQ91OtI-0-600-0-900-crop.jpg?v=f4bfaf16df",
-      "rating": "4.0",
-      "title": "The Hunger Games",
-      "watched_date": "2026-08-13",
-      "year": "2012"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/crockett1848/film/the-matrix/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/5/1/8/51518-the-matrix-0-600-0-900-crop.jpg?v=fc7c366afe",
-      "rating": "4.5",
-      "title": "The Matrix",
-      "watched_date": "2026-08-12",
-      "year": "1999"
     }
   ],
   "Gigi": [],
@@ -1021,6 +1020,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/the-craft-legacy/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/5/4/6/518546-the-craft-legacy-0-600-0-900-crop.jpg?v=bd8a16cf58",
+      "rating": "3.0",
+      "title": "The Craft: Legacy",
+      "watched_date": "2026-10-08",
+      "year": "2020"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/tiger-stripes/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/7/1/5/4/9/971549-tiger-stripes-0-600-0-900-crop.jpg?v=d01b9808e3",
@@ -1112,14 +1119,6 @@
       "title": "There's Something Wrong with the Children",
       "watched_date": "2026-09-28",
       "year": "2023"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/m3gan-20/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/6/5/8/8/5/965885-m3gan-20-0-600-0-900-crop.jpg?v=4427bb61b1",
-      "rating": "2.5",
-      "title": "M3GAN 2.0",
-      "watched_date": "2026-09-28",
-      "year": "2025"
     }
   ],
   "calissippi": [

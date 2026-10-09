@@ -1953,6 +1953,14 @@
   ],
   "michaellamb": [
     {
+      "link": "https://letterboxd.com/michaellamb/film/the-wolfman/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/9/4/4/47944-the-wolfman-0-600-0-900-crop.jpg?v=85817211a1",
+      "rating": "2.5",
+      "title": "The Wolfman",
+      "watched_date": "2026-10-08",
+      "year": "2010"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/nope/2/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/6/8/2/5/4/7/682547-nope-0-600-0-900-crop.jpg?v=d6a6158cc3",
@@ -2052,15 +2060,6 @@
       "title": "The Amazing Bulk",
       "watched_date": "2026-10-03",
       "year": "2012"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/youre-next/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/8i/yg/d5/m5/qhVj0F09RFtQdBrBMPhrdzivRcI-0-600-0-900-crop.jpg?v=14c38e8d4b",
-      "rating": "4.0",
-      "title": "You're Next",
-      "watched_date": "2026-10-02",
-      "year": "2011"
     }
   ],
   "mrbienkowski": [

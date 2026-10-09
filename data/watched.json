@@ -1953,6 +1953,15 @@
   ],
   "michaellamb": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/other-mommy/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/4/4/8/0/1284480-other-mommy-0-600-0-900-crop.jpg?v=297427826f",
+      "rating": "3.0",
+      "title": "Other Mommy",
+      "watched_date": "2026-10-09",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/michaellamb/film/the-wolfman/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/9/4/4/47944-the-wolfman-0-600-0-900-crop.jpg?v=85817211a1",
       "rating": "2.5",
@@ -2052,14 +2061,6 @@
       "title": "Donnie Darko",
       "watched_date": "2026-10-03",
       "year": "2001"
-    },
-    {
-      "link": "https://letterboxd.com/michaellamb/film/the-amazing-bulk/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/7/6/6/3/87663-the-amazing-bulk-0-600-0-900-crop.jpg?v=e230b6ab79",
-      "rating": "1.0",
-      "title": "The Amazing Bulk",
-      "watched_date": "2026-10-03",
-      "year": "2012"
     }
   ],
   "mrbienkowski": [

@@ -200,6 +200,14 @@
   ],
   "Crockett1848": [
     {
+      "link": "https://letterboxd.com/crockett1848/film/the-blair-witch-project/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
+      "rating": "4.0",
+      "title": "The Blair Witch Project",
+      "watched_date": "2026-10-10",
+      "year": "1999"
+    },
+    {
       "link": "https://letterboxd.com/crockett1848/film/the-rocky-horror-picture-show/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/2/7/6/9/8/27698-the-rocky-horror-picture-show-0-600-0-900-crop.jpg?v=737e51d6bc",
       "rating": "5.0",
@@ -288,14 +296,6 @@
       "title": "The Odyssey",
       "watched_date": "2026-08-22",
       "year": "1997"
-    },
-    {
-      "link": "https://letterboxd.com/crockett1848/film/us-2019/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/0/5/2/0/390520-us-0-600-0-900-crop.jpg?v=968884c876",
-      "rating": "3.5",
-      "title": "Us",
-      "watched_date": "2026-08-21",
-      "year": "2019"
     }
   ],
   "Gigi": [],

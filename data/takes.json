@@ -1,5 +1,27 @@
 [
   {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/carrie-2026/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/1/8/1/6/8/1618168-carrie-2026-0-600-0-900-crop.jpg?v=bef2e5cffd",
+    "rating": "3.5",
+    "review": "Bravo, Flanagan and team. I thought the fire effects were a bit cheap, but I chalk that up to budgeting and maybe a little slop. I loved Carrie. That poor girl.",
+    "title": "Carrie",
+    "watched_date": "2026-10-11",
+    "year": "2026"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/the-social-reckoning/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/6/4/6/6/9/1164669-the-social-reckoning-0-600-0-900-crop.jpg?v=e880229a7f",
+    "rating": "3.5",
+    "review": "I enhanced my viewing experience by going into it just after episode 7 of Mike Flanagan\u2019s Carrie (2026) This works. It\u2019s not boring, and it\u2019s not attempting to be The Social Network (2010).",
+    "title": "The Social Reckoning",
+    "watched_date": "2026-10-11",
+    "year": "2026"
+  },
+  {
     "handle": "Crockett1848",
     "link": "https://letterboxd.com/crockett1848/film/the-blair-witch-project/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
@@ -19,16 +41,6 @@
     "title": "Other Mommy",
     "watched_date": "2026-10-09",
     "year": "2026"
-  },
-  {
-    "handle": "michaellamb",
-    "link": "https://letterboxd.com/michaellamb/film/the-wolfman/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/9/4/4/47944-the-wolfman-0-600-0-900-crop.jpg?v=85817211a1",
-    "rating": "2.5",
-    "review": "how do you have a stacked cast and give them nothing interesting to do?",
-    "title": "The Wolfman",
-    "watched_date": "2026-10-08",
-    "year": "2010"
   },
   {
     "handle": "Crockett1848",
@@ -59,17 +71,6 @@
     "title": "The Craft: Legacy",
     "watched_date": "2026-10-08",
     "year": "2020"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/nope/2/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/6/8/2/5/4/7/682547-nope-0-600-0-900-crop.jpg?v=d6a6158cc3",
-    "rating": "4.0",
-    "review": "Better than I recall Break-in viewing of the physical media",
-    "title": "Nope",
-    "watched_date": "2026-10-07",
-    "year": "2022"
   },
   {
     "handle": "jon_knowledge",
@@ -575,16 +576,6 @@
     "review": "\ud83d\ude2d\ud83d\ude2d my man my man my man my man my man",
     "title": "The Monkey",
     "watched_date": "2026-01-23",
-    "year": "2025"
-  },
-  {
-    "handle": "winonarideher",
-    "link": "https://letterboxd.com/winonarideher/film/primate-2025/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/9/6/0/8/6/1196086-primate-2025-0-600-0-900-crop.jpg?v=a12c6e9ce8",
-    "rating": "3.0",
-    "review": "good effects. interesting score.",
-    "title": "Primate",
-    "watched_date": "2026-01-05",
     "year": "2025"
   },
   {

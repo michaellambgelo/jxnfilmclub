@@ -919,7 +919,7 @@
       "liked": true,
       "link": "https://letterboxd.com/badmov1eenjoyer/film/digger-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/6/8/8/1132688-digger-2026-0-600-0-900-crop.jpg?v=81ec883a95",
-      "rating": "3.5",
+      "rating": "4.0",
       "title": "Digger",
       "watched_date": "2026-10-05",
       "year": "2026"
@@ -1021,6 +1021,22 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/hellbent/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/7/9/1/4/17914-hellbent-0-600-0-900-crop.jpg?v=e2dd315c18",
+      "rating": "4.0",
+      "title": "Hellbent",
+      "watched_date": "2026-10-11",
+      "year": "2004"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/rl-stines-pumpkinhead-2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/1/8/3/0/4/1518304-rl-stines-pumpkinhead-2-0-600-0-900-crop.jpg?v=ded795d27e",
+      "rating": "2.5",
+      "title": "R.L. Stine's Pumpkinhead 2",
+      "watched_date": "2026-10-11",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/the-craft-legacy/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/5/4/6/518546-the-craft-legacy-0-600-0-900-crop.jpg?v=bd8a16cf58",
       "rating": "3.0",
@@ -1103,23 +1119,6 @@
       "title": "Helen Keller vs. Nightwolves",
       "watched_date": "2026-09-30",
       "year": "2015"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/elio/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/9/2/1/5/7/5/921575-elio-0-600-0-900-crop.jpg?v=d3f4e92f5e",
-      "rating": "4.0",
-      "title": "Elio",
-      "watched_date": "2026-09-29",
-      "year": "2025"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/theres-something-wrong-with-the-children/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/0/9/7/6/7/809767-there-s-something-wrong-with-the-children-0-600-0-900-crop.jpg?v=508b255c6c",
-      "rating": "2.5",
-      "title": "There's Something Wrong with the Children",
-      "watched_date": "2026-09-28",
-      "year": "2023"
     }
   ],
   "calissippi": [
@@ -1340,6 +1339,14 @@
   ],
   "draketerry": [
     {
+      "link": "https://letterboxd.com/draketerry/film/the-social-reckoning/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/6/4/6/6/9/1164669-the-social-reckoning-0-600-0-900-crop.jpg?v=e880229a7f",
+      "rating": "3.0",
+      "title": "The Social Reckoning",
+      "watched_date": "2026-10-11",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/draketerry/film/digger-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/6/8/8/1132688-digger-2026-0-600-0-900-crop.jpg?v=81ec883a95",
       "rating": "4.5",
@@ -1431,17 +1438,17 @@
       "title": "Fargo",
       "watched_date": "2026-07-04",
       "year": "1996"
-    },
-    {
-      "link": "https://letterboxd.com/draketerry/film/memento/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/v1/3q/s4/aa/memento-0-600-0-900-crop.jpg?v=80f0732247",
-      "rating": "4.0",
-      "title": "Memento",
-      "watched_date": "2026-07-01",
-      "year": "2000"
     }
   ],
   "heath_walt": [
+    {
+      "link": "https://letterboxd.com/heath_walt/film/creepshow-2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/6/7/7/41677-creepshow-2-0-600-0-900-crop.jpg?v=9b3438dc2b",
+      "rating": "3.0",
+      "title": "Creepshow 2",
+      "watched_date": "2026-10-11",
+      "year": "1987"
+    },
     {
       "liked": true,
       "link": "https://letterboxd.com/heath_walt/film/hearts-of-fire/",
@@ -1538,16 +1545,6 @@
       "title": "Be Here to Love Me",
       "watched_date": "2026-07-12",
       "year": "2004"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/heath_walt/film/the-silence-of-the-lambs/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/8/2/51782-the-silence-of-the-lambs-0-600-0-900-crop.jpg?v=18d88bdff4",
-      "rating": "4.0",
-      "rewatch": true,
-      "title": "The Silence of the Lambs",
-      "watched_date": "2026-07-09",
-      "year": "1991"
     }
   ],
   "isawthatontv": [
@@ -1852,6 +1849,14 @@
   ],
   "jon_knowledge": [
     {
+      "link": "https://letterboxd.com/jon_knowledge/film/re-animator/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/wd/b8/27/m3/hJnP2O0uTuh8HsR094WLTi3sQwc-0-600-0-900-crop.jpg?v=229c35a394",
+      "rating": "4.0",
+      "title": "Re-Animator",
+      "watched_date": "2026-10-11",
+      "year": "1985"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/the-living-daylights/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/4/1/8/51418-the-living-daylights-0-600-0-900-crop.jpg?v=92994e87bb",
       "rating": "4.5",
@@ -1942,14 +1947,6 @@
       "title": "King of New York",
       "watched_date": "2026-09-06",
       "year": "1990"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/they-live/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/7/9/8/47798-they-live-0-600-0-900-crop.jpg?v=816bf826a0",
-      "rating": "4.0",
-      "title": "They Live",
-      "watched_date": "2026-09-06",
-      "year": "1988"
     }
   ],
   "michaellamb": [

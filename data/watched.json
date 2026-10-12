@@ -805,6 +805,25 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/napoleon-dynamite/2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/8/6/7/47867-napoleon-dynamite-0-600-0-900-crop.jpg?v=dc5d6552f9",
+      "rating": "5.0",
+      "rewatch": true,
+      "title": "Napoleon Dynamite",
+      "watched_date": "2026-10-12",
+      "year": "2004"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/a-few-good-men/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/dw/l7/qy/bb/WgWLwk55YaXFZdlMnPJTKlxGcz-0-600-0-900-crop.jpg?v=60ddf4aa47",
+      "rating": "5.0",
+      "title": "A Few Good Men",
+      "watched_date": "2026-10-12",
+      "year": "1992"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/the-departed/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/jr/th/pu/pb/laefkgrfa3oKwvBtWTBtf2suiI4-0-600-0-900-crop.jpg?v=f5d8231026",
       "rating": "4.0",
@@ -892,26 +911,6 @@
       "title": "Insidious",
       "watched_date": "2026-10-02",
       "year": "2010"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/the-conjuring/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/6/2/6/2/106262-the-conjuring-0-600-0-900-crop.jpg?v=8cbb976912",
-      "rating": "4.0",
-      "rewatch": true,
-      "title": "The Conjuring",
-      "watched_date": "2026-10-02",
-      "year": "2013"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/the-blair-witch-project/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
-      "rating": "4.5",
-      "rewatch": true,
-      "title": "The Blair Witch Project",
-      "watched_date": "2026-10-01",
-      "year": "1999"
     }
   ],
   "badmov1eenjoyer": [
@@ -1020,6 +1019,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/pinocchio-unstrung/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/5/5/6/9/1115569-pinocchio-unstrung-0-600-0-900-crop.jpg?v=3165dff75f",
+      "rating": "4.0",
+      "title": "Pinocchio: Unstrung",
+      "watched_date": "2026-10-12",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/other-mommy/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/4/4/8/0/1284480-other-mommy-0-600-0-900-crop.jpg?v=297427826f",
       "rating": "3.0",
@@ -1109,15 +1116,6 @@
       "title": "Beware Boi\u00fana",
       "watched_date": "2026-10-04",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/bearleebooks/film/the-velocipastor/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/8/9/6/2/0/389620-the-velocipastor-0-600-0-900-crop.jpg?v=03b454177a",
-      "rating": "3.0",
-      "title": "The VelociPastor",
-      "watched_date": "2026-10-02",
-      "year": "2017"
     }
   ],
   "calissippi": [
@@ -1951,6 +1949,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/digger-2026/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/6/8/8/1132688-digger-2026-0-600-0-900-crop.jpg?v=81ec883a95",
+      "rating": "4.5",
+      "rewatch": true,
+      "title": "Digger",
+      "watched_date": "2026-10-12",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/red-state/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/yx/0w/dj/os/h43jPTebYOabSXqNQqrRQpg6DPc-0-600-0-900-crop.jpg?v=a149642943",
       "rating": "4.0",
@@ -2050,15 +2058,6 @@
       "title": "Five Star",
       "watched_date": "2026-10-05",
       "year": "2025"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/the-dropout/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/8/4/1/1/9/9/841199-the-dropout-0-600-0-900-crop.jpg?v=91d21c6026",
-      "rating": "4.0",
-      "title": "The Dropout",
-      "watched_date": "2026-10-04",
-      "year": "2022"
     }
   ],
   "mrbienkowski": [

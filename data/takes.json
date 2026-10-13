@@ -1,6 +1,26 @@
 [
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/attack-of-the-killer-tomatoes/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/4/5/5/50455-attack-of-the-killer-tomatoes--0-600-0-900-crop.jpg?v=42c19b37e0",
+    "rating": "2.0",
+    "review": "I've been wanting to watch a horror movie musical this month but Jesus Christ",
+    "title": "Attack of the Killer Tomatoes!",
+    "watched_date": "2026-10-13",
+    "year": "1978"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/the-grudge/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/6/3/8/50638-the-grudge-0-600-0-900-crop.jpg?v=e6e6a40884",
+    "rating": "3.0",
+    "review": "Ghosts creepy as fuck but the rest kinda flopped for me tbh. Maybe the original is better (as is usually the case with these early 2000s westernized versions)",
+    "title": "The Grudge",
+    "watched_date": "2026-10-13",
+    "year": "2004"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/under-wraps/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/6/6/2/62662-under-wraps-0-600-0-900-crop.jpg?v=cee70cd7df",
     "rating": "3.5",
@@ -28,26 +48,6 @@
     "rating": "3.0",
     "review": "Watched with Bear and Angel This one-show screening in Pearl, MS, brought out 16 moviegoers I think it could have dropped 3 segments but there\u2019s a lot to enjoy here I voted Jinx as my favorite short",
     "title": "Fresh Meat",
-    "watched_date": "2026-10-12",
-    "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/fresh-meat-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/3/8/1/3/1603813-fresh-meat-2026-0-600-0-900-crop.jpg?v=b092a85d5e",
-    "rating": "3.5",
-    "review": "Earworm: 8/10 You'll Be Fine: 3/10 The Witchening: 6/10 Closing Hour: 6/10 Why Did You Stop Me?: 7/10 The Way I Feel: 4/10 Koko The Invisible Dog: 4/10 Tchotchke: 7/10 Jinx: 10/10 (fave, would love to see it developed into a feature) What's In Your Bag: 3/10 Dagnabbit!: 6/10 Psycopomp: 4/10 Vape\u2026",
-    "title": "Fresh Meat",
-    "watched_date": "2026-10-12",
-    "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/pinocchio-unstrung/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/5/5/6/9/1115569-pinocchio-unstrung-0-600-0-900-crop.jpg?v=3165dff75f",
-    "rating": "4.0",
-    "review": "need someone to do that to me (rip out my organs and tear off my skin)",
-    "title": "Pinocchio: Unstrung",
     "watched_date": "2026-10-12",
     "year": "2026"
   },

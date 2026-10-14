@@ -805,6 +805,16 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/badlands/1/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/8/4/4/49844-badlands-0-600-0-900-crop.jpg?v=d57e83e76f",
+      "rating": "4.0",
+      "rewatch": true,
+      "title": "Badlands",
+      "watched_date": "2026-10-13",
+      "year": "1973"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/napoleon-dynamite/2/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/8/6/7/47867-napoleon-dynamite-0-600-0-900-crop.jpg?v=dc5d6552f9",
       "rating": "5.0",
@@ -902,15 +912,6 @@
       "title": "Portishead: Roseland New York",
       "watched_date": "2026-10-03",
       "year": "1998"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/insidious/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/te/ew/lb/gd/urAaOffVaxQzRJ8X5Z0oDqOWAjl-0-600-0-900-crop.jpg?v=7016f25e4f",
-      "rating": "2.5",
-      "title": "Insidious",
-      "watched_date": "2026-10-02",
-      "year": "2010"
     }
   ],
   "badmov1eenjoyer": [
@@ -2152,6 +2153,13 @@
   ],
   "winonarideher": [
     {
+      "link": "https://letterboxd.com/winonarideher/film/fruit-nut-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/4/9/0/1/3/1649013-fruit-nut-2026-0-600-0-900-crop.jpg?v=c5a497b8b3",
+      "title": "Fruit & Nut",
+      "watched_date": "2026-10-13",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/winonarideher/film/the-warriors/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/2/7/0/45270-the-warriors-0-600-0-900-crop.jpg?v=acf7a78e78",
       "rating": "2.0",
@@ -2240,14 +2248,6 @@
       "title": "Seven Brides for Seven Brothers",
       "watched_date": "2026-08-29",
       "year": "1954"
-    },
-    {
-      "link": "https://letterboxd.com/winonarideher/film/the-long-walk-2025/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/3/1/3/1/6/531316-the-long-walk-2025-0-600-0-900-crop.jpg?v=9cf0c245aa",
-      "rating": "2.5",
-      "title": "The Long Walk",
-      "watched_date": "2026-08-21",
-      "year": "2025"
     }
   ],
   "witch21": [

@@ -181,6 +181,7 @@
       <div class="mastnav-links">
         <a href="/members">Members</a>
         <a href="/events">Events</a>
+        <a href="/map">Map</a>
         <a href="/watched">Watched</a>
         <a href="/speak">Speak</a>
         <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
@@ -225,6 +226,7 @@
         type === 'members' ? 'members-view' :
         type === 'events'  ? 'events-view' :
         type === 'watched' ? 'watched-view' :
+        type === 'map'     ? 'map-view' :         // venue map; tiles and MapLibre are self-hosted, see docs/features/map.md
         type === 'signin'  ? 'sign-in-view' :
         type === 'verify'  ? 'verify-view' :
         type === 'edit'    ? 'edit-view' :

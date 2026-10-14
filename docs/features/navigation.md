@@ -12,12 +12,12 @@ stateDiagram-v2
 
     state Anonymous {
         [*] --> AnonymousNav
-        AnonymousNav: Members | Events | Watched | Speak | Join · [Log in]
+        AnonymousNav: Members | Events | Map | Watched | Speak | Join · [Log in]
     }
 
     state SignedIn {
         [*] --> SignedInNav
-        SignedInNav: Members | Events | Watched | Speak · [Account]
+        SignedInNav: Members | Events | Map | Watched | Speak · [Account]
     }
 ```
 
@@ -71,6 +71,7 @@ Session validity check: `s?.token && s.exp > Date.now()`
 | `/` | `home-view` | (default) |
 | `/members` | `members-view` | `type=members` |
 | `/events` | `events-view` | `type=events` |
+| `/map` | `map-view` | `type=map` |
 | `/watched` | `watched-view` | `type=watched` |
 | `/signin` | `sign-in-view` | `type=signin` |
 | `/verify` | `verify-view` | `type=verify` |

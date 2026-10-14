@@ -18,7 +18,7 @@ import { test, expect } from '@playwright/test'
 // playwright.config.ts), because the repair lives in postbuild.
 test.describe('the site boots in a second engine', () => {
   // No sign-in, no worker: a page that fails this way fails before any of that.
-  for (const path of ['/', '/speak', '/members', '/events']) {
+  for (const path of ['/', '/speak', '/members', '/events', '/map']) {
     test(`${path} mounts and renders its view`, async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
@@ -27,7 +27,7 @@ test.describe('the site boots in a second engine', () => {
 
       // The masthead is server-rendered, so asserting on it alone would pass
       // even with a dead SPA. The nav links come from the mounted app.
-      await expect(page.locator('.mastnav-links a')).toHaveCount(5)
+      await expect(page.locator('.mastnav-links a')).toHaveCount(6)
       // The mount point is <article nue="...">; a mounted view is an element
       // inside it. Counted rather than checked for visibility — the first child
       // is not always a visible node — and 'article' alone is ambiguous once a

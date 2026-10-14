@@ -13,6 +13,7 @@ import {
   runDraw, runRedraw, saveGiveaway, scrubGiveaways, setEntryExcluded, syncEntries, toCsv,
   validGiveaway,
 } from './giveaways.js'
+import { buildVenueMap, DEFAULT_VENUES, validVenueList } from './venues.js'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -269,6 +270,8 @@ async function route(request, env, ctx) {
     // MEMBERS_KV). Public projection only — config:newsletter_template is
     // admin-only and deliberately absent here.
     if (request.method === 'GET' && pathname === '/config')  return handleConfigGet(env)
+    // Venue pins for /map: config:venues joined to the public event list.
+    if (request.method === 'GET' && pathname === '/map')     return handleMapGet(env)
     // Poster search for the /host form — members only (keeps the TMDB key
     // server-side and the endpoint un-scrapeable).
     if (request.method === 'GET' && pathname === '/tmdb/search') return handleTmdbSearch(request, env)
@@ -3530,6 +3533,24 @@ async function handleConfigGet(env) {
   // voicePrompt(), so the two can never disagree about what the round is.
   const prompt = voice_prompt && isMessageId(voice_prompt.id) ? null : voice_prompt
   return json(env, { theaters: validTheaterList(theaters), podcast, copy, voice_prompt: prompt })
+}
+
+// GET /map — the venue pins behind the /map page (docs/features/map.md).
+//
+// Always the ANONYMOUS view, even for a signed-in caller: this endpoint takes
+// no auth at all, so a members-only house screening cannot reach it however
+// its venue is spelled. buildVenueMap() drops private events a second time and
+// keeps only events whose venue matches a configured venue, so a pin is
+// always a public place the operator put on the list.
+//
+// config:venues (MEMBERS_KV, edited in the admin Config tab) overrides
+// DEFAULT_VENUES when valid; any invalid entry voids the whole value, the
+// same precedence as config:theaters.
+async function handleMapGet(env) {
+  const [all, configured] = await Promise.all([readEventsAll(env), readConfig(env, 'venues')])
+  const events = all.filter(e => !isMembersOnly(e)).map(publicEventProjection).filter(Boolean)
+  const venues = validVenueList(configured) || DEFAULT_VENUES
+  return json(env, { venues: buildVenueMap(events, venues) })
 }
 
 // Venue allowlist for theater meetups (kind: 'meetup'). Precedence: the KV

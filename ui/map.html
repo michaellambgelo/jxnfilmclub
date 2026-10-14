@@ -1,0 +1,284 @@
+<!doctype dhtml lib>
+
+<!-- Venue map, /map (docs/features/map.md). Every public place the club has
+     gathered, pinned, with its upcoming and past screenings. The pins and
+     their events come from GET /map on the join Worker, which only pins
+     venues on the admin-edited config:venues list, so a house screening can
+     never appear here.
+
+     Everything the map draws is served from this site: the tile extract and
+     glyphs under /tiles, MapLibre and the pmtiles reader under /vendor. No
+     tile, font or CDN company ever sees a visitor.
+
+     The view renders imperatively on purpose. MapLibre owns its container,
+     and nuedom replaces a component root on update(), which would orphan
+     the map. So mounted() never calls update(): the template below is a
+     static skeleton and the lib script fills it in. -->
+
+<script>
+  // Every name declared here is reserved in the templates of this file, so
+  // all of them carry the jm prefix. Nothing in this script uses a backslash
+  // (the dhtml serializer doubles them).
+  function jmResolveOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+
+  // Panning stops a little past the tile extract (-90.42, 32.15 to -89.92,
+  // 32.60), which shows as plain ground. Not exactly at its edge: that box is
+  // shorter than the view needed to fit every pin with padding, and a
+  // maxBounds that tight forces the map to zoom in and clip the outer pins.
+  const JM_BOUNDS = [[-90.80, 31.95], [-89.55, 32.80]]
+  const JM_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+  // One live map per page. Remounting the view (leaving and coming back)
+  // removes the old one first: browsers cap live WebGL contexts.
+  let jmMap = null
+  let jmLibsPromise = null
+
+  // MapLibre is about 1 MB, so it loads only when someone opens the map.
+  function jmLibs() {
+    if (!jmLibsPromise) {
+      jmLibsPromise = (async function() {
+        // Wait for the stylesheet too: a map created before it lands sizes
+        // its canvas wrong and fits the pins to the wrong box.
+        const css = new Promise(function(resolve) {
+          const link = document.createElement('link')
+          link.rel = 'stylesheet'
+          link.href = '/vendor/maplibre/maplibre-gl.css'
+          link.onload = resolve
+          link.onerror = resolve
+          document.head.appendChild(link)
+        })
+        const mods = await Promise.all([
+          import('/vendor/maplibre/maplibre-gl.mjs'),
+          import('/vendor/pmtiles/pmtiles.mjs'),
+        ])
+        await css
+        const ml = mods[0]
+        const protocol = new mods[1].Protocol()
+        ml.addProtocol('pmtiles', protocol.tile)
+        return ml
+      })()
+      // A failed load may be a flaky network: let the next visit retry.
+      jmLibsPromise.catch(function() { jmLibsPromise = null })
+    }
+    return jmLibsPromise
+  }
+
+  async function jmStyle() {
+    const res = await fetch('/tiles/style.json')
+    if (!res.ok) throw new Error('style ' + res.status)
+    const style = await res.json()
+    style.glyphs = style.glyphs.split('{origin}').join(location.origin)
+    const src = style.sources.protomaps
+    src.url = src.url.split('{origin}').join(location.origin)
+    return style
+  }
+
+  // Today in Central, as YYYY-MM-DD. Event dates are strings and stay strings:
+  // parsing one as a Date shifts it a day west of UTC.
+  function jmToday() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
+  }
+
+  function jmDay(date) {
+    const p = String(date || '').split('-').map(Number)
+    if (p.length !== 3 || !p[0] || !p[1]) return ''
+    return JM_MONTHS[p[1] - 1] + ' ' + p[2] + ', ' + p[0]
+  }
+
+  function jmEl(tag, cls, text) {
+    const el = document.createElement(tag)
+    if (cls) el.className = cls
+    if (text !== undefined && text !== null) el.textContent = text
+    return el
+  }
+
+  function jmDirections(v) {
+    const dest = v.address || (v.lat + ',' + v.lng)
+    return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(dest)
+  }
+
+  // Split each venue into upcoming (soonest first) and past (newest first),
+  // then order venues: anything coming up first, by the soonest date, then
+  // the rest by how often the club has been there.
+  function jmPrepare(venues, today) {
+    const out = venues.map(function(v) {
+      const upcoming = v.events.filter(function(e) { return (e.date || '') >= today })
+      const past = v.events.filter(function(e) { return (e.date || '') < today }).reverse()
+      return Object.assign({}, v, { upcoming: upcoming, past: past })
+    })
+    out.sort(function(a, b) {
+      if (a.upcoming.length && b.upcoming.length) return a.upcoming[0].date.localeCompare(b.upcoming[0].date)
+      if (a.upcoming.length !== b.upcoming.length) return a.upcoming.length ? -1 : (b.upcoming.length ? 1 : 0)
+      return b.events.length - a.events.length
+    })
+    return out
+  }
+
+  function jmEventItem(e) {
+    const li = jmEl('li', 'jm-event')
+    const label = e.film ? e.film + (e.year ? ' (' + e.year + ')' : '') : (e.title || 'Screening')
+    const a = jmEl('a', 'jm-event-film', label)
+    a.href = '/events?query=' + encodeURIComponent(e.film || e.title || '')
+    li.appendChild(a)
+    li.appendChild(jmEl('span', 'jm-event-date', jmDay(e.date)))
+    return li
+  }
+
+  function jmVenueCard(v, onShow) {
+    const card = jmEl('section', 'jm-venue' + (v.upcoming.length ? ' jm-venue-soon' : ''))
+    card.id = 'venue-' + v.id
+    card.appendChild(jmEl('h2', '', v.name))
+    const meta = jmEl('p', 'jm-venue-meta')
+    if (v.address) meta.appendChild(jmEl('span', 'jm-addr', v.address))
+    const dir = jmEl('a', 'jm-link', 'Directions')
+    dir.href = jmDirections(v)
+    dir.target = '_blank'
+    dir.rel = 'noopener'
+    meta.appendChild(dir)
+    const show = jmEl('button', 'jm-link jm-show', 'Show on map')
+    show.type = 'button'
+    show.addEventListener('click', function() { onShow(v) })
+    meta.appendChild(show)
+    card.appendChild(meta)
+
+    const n = v.events.length
+    const since = v.events[0] && v.events[0].date ? ' since ' + v.events[0].date.slice(0, 4) : ''
+    card.appendChild(jmEl('p', 'jm-count', n + (n === 1 ? ' screening' : ' screenings') + since))
+
+    if (v.upcoming.length) {
+      card.appendChild(jmEl('h3', 'jm-sub jm-sub-soon', 'Coming up'))
+      const ul = jmEl('ul', 'jm-events')
+      v.upcoming.forEach(function(e) { ul.appendChild(jmEventItem(e)) })
+      card.appendChild(ul)
+    }
+    if (v.past.length) {
+      card.appendChild(jmEl('h3', 'jm-sub', 'Past'))
+      const ul = jmEl('ul', 'jm-events')
+      v.past.forEach(function(e) { ul.appendChild(jmEventItem(e)) })
+      card.appendChild(ul)
+    }
+    return card
+  }
+
+  function jmPopup(v) {
+    const box = jmEl('div', 'jm-pop')
+    box.appendChild(jmEl('p', 'jm-pop-name', v.name))
+    if (v.address) box.appendChild(jmEl('p', 'jm-pop-addr', v.address))
+    const next = v.upcoming[0]
+    const line = next
+      ? 'Next: ' + (next.film || next.title || 'Screening') + ', ' + jmDay(next.date)
+      : v.events.length + (v.events.length === 1 ? ' screening' : ' screenings')
+    box.appendChild(jmEl('p', next ? 'jm-pop-next' : 'jm-pop-count', line))
+    const links = jmEl('p', 'jm-pop-links')
+    const details = jmEl('a', 'jm-link', 'Details')
+    details.href = '#venue-' + v.id
+    details.addEventListener('click', function(ev) {
+      ev.preventDefault()
+      const card = document.getElementById('venue-' + v.id)
+      if (card) card.scrollIntoView()
+    })
+    links.appendChild(details)
+    const dir = jmEl('a', 'jm-link', 'Directions')
+    dir.href = jmDirections(v)
+    dir.target = '_blank'
+    dir.rel = 'noopener'
+    links.appendChild(dir)
+    box.appendChild(links)
+    return box
+  }
+
+  async function jmStart(root) {
+    const status = root.querySelector('.jm-status')
+    const list = root.querySelector('.jm-venues')
+    const holder = root.querySelector('.jm-map')
+    if (jmMap) { jmMap.remove(); jmMap = null }
+
+    let venues
+    try {
+      const res = await fetch(jmResolveOrigin() + '/map')
+      if (!res.ok) throw new Error('map ' + res.status)
+      venues = jmPrepare((await res.json()).venues || [], jmToday())
+    } catch (err) {
+      status.textContent = 'The venue list could not be loaded right now. Try again in a minute.'
+      holder.hidden = true
+      return
+    }
+    if (!venues.length) {
+      status.textContent = 'No venues on the map yet.'
+      holder.hidden = true
+      return
+    }
+
+    const pins = {}
+    function showOnMap(v) {
+      holder.scrollIntoView()
+      const pin = pins[v.id]
+      if (!jmMap || !pin) return
+      jmMap.flyTo({ center: [v.lng, v.lat], zoom: Math.max(jmMap.getZoom(), 14) })
+      if (!pin.getPopup().isOpen()) pin.togglePopup()
+    }
+
+    // The list renders before the map so it works even if WebGL does not.
+    list.textContent = ''
+    venues.forEach(function(v) { list.appendChild(jmVenueCard(v, showOnMap)) })
+    status.textContent = ''
+
+    try {
+      const ml = await jmLibs()
+      const style = await jmStyle()
+      if (!root.isConnected) return
+      const bounds = new ml.LngLatBounds()
+      venues.forEach(function(v) { bounds.extend([v.lng, v.lat]) })
+      const map = new ml.Map({
+        container: holder,
+        style: style,
+        bounds: bounds,
+        fitBoundsOptions: { padding: 56, maxZoom: 14 },
+        maxBounds: JM_BOUNDS,
+        minZoom: 9,
+        maxZoom: 17,
+        attributionControl: { compact: true },
+        cooperativeGestures: true,
+      })
+      jmMap = map
+      map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right')
+      // Upcoming venues go on last so they draw on top where pins overlap,
+      // as the Capri and Duling Hall do a block apart in Fondren.
+      const order = venues.filter(function(v) { return !v.upcoming.length })
+        .concat(venues.filter(function(v) { return v.upcoming.length }))
+      order.forEach(function(v) {
+        const dot = jmEl('button', 'jm-pin' + (v.upcoming.length ? ' jm-pin-soon' : ''), String(v.events.length))
+        dot.type = 'button'
+        dot.setAttribute('aria-label', v.name + ', ' + v.events.length + (v.events.length === 1 ? ' screening' : ' screenings'))
+        const popup = new ml.Popup({ offset: 16, closeButton: true, maxWidth: '260px' }).setDOMContent(jmPopup(v))
+        pins[v.id] = new ml.Marker({ element: dot }).setLngLat([v.lng, v.lat]).setPopup(popup).addTo(map)
+      })
+    } catch (err) {
+      console.warn('map unavailable:', err)
+      holder.hidden = true
+      status.textContent = 'The map could not be drawn in this browser, but every venue is listed below.'
+    }
+  }
+</script>
+
+<article :is="map-view" class="map-page">
+  <p class="jm-eyebrow">Map</p>
+  <h1>Where the club gathers</h1>
+  <p class="lede">Every theater and public venue the club has screened at, with what is coming up. Screenings at a member home are never on the map.</p>
+  <div class="jm-map" role="region" aria-label="Map of club venues"></div>
+  <p class="jm-status" role="status">Loading the map…</p>
+  <div class="jm-venues"></div>
+
+  <script>
+    this.mounted = function() {
+      jmStart(this.root)
+    }
+  </script>
+</article>

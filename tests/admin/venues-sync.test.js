@@ -25,6 +25,20 @@ describe('admin ↔ worker venue mirrors', () => {
   })
 })
 
+describe('theaters ↔ map venues', () => {
+  // config:theaters is where future meetups come from. A theater with no
+  // matching map venue would make every meetup there silently vanish from
+  // /map, so each built-in theater must resolve to a default venue.
+  it('every built-in theater resolves to a default map venue', () => {
+    const src = readFileSync('worker/src/index.js', 'utf8')
+    const m = src.match(/const THEATERS = (\[[\s\S]*?\n\])/)
+    expect(m).not.toBeNull()
+    const theaters = Function(`return ${m[1]}`)()
+    const keys = new Set(DEFAULT_VENUES.flatMap(v => [v.name, ...v.aliases]).map(workerVenueKey))
+    expect(theaters.filter(t => !keys.has(workerVenueKey(t)))).toEqual([])
+  })
+})
+
 describe('parseCoords', () => {
   it('reads the pair a map app copies', () => {
     expect(parseCoords('32.33554, -90.17678')).toEqual({ lat: 32.33554, lng: -90.17678 })

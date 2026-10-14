@@ -1,6 +1,16 @@
 [
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-the-marked-ones/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/e6/fn/sy/z5/f9zf4k8VSqkcv65plF5Wi9jy0Sr-0-600-0-900-crop.jpg?v=a9433604c2",
+    "rating": "4.0",
+    "review": "finally some good fucking food (i hate this franchise)",
+    "title": "Paranormal Activity: The Marked Ones",
+    "watched_date": "2026-10-14",
+    "year": "2014"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/attack-of-the-killer-tomatoes/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/4/5/5/50455-attack-of-the-killer-tomatoes--0-600-0-900-crop.jpg?v=42c19b37e0",
     "rating": "2.0",
@@ -18,16 +28,6 @@
     "title": "The Grudge",
     "watched_date": "2026-10-13",
     "year": "2004"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/under-wraps/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/6/6/2/62662-under-wraps-0-600-0-900-crop.jpg?v=cee70cd7df",
-    "rating": "3.5",
-    "review": "Not bad for the first official DCOM",
-    "title": "Under Wraps",
-    "watched_date": "2026-10-13",
-    "year": "1997"
   },
   {
     "handle": "michaellamb",

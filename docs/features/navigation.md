@@ -12,12 +12,12 @@ stateDiagram-v2
 
     state Anonymous {
         [*] --> AnonymousNav
-        AnonymousNav: Members | Events | Map | Watched | Speak | Join · [Log in]
+        AnonymousNav: Members | Watched | Events | Map | Speak | Giveaways | Join · [Log in]
     }
 
     state SignedIn {
         [*] --> SignedInNav
-        SignedInNav: Members | Events | Map | Watched | Speak · [Account]
+        SignedInNav: Members | Watched | Events | Map | Speak | Giveaways · [Account]
     }
 ```
 
@@ -29,7 +29,7 @@ stateDiagram-v2
 
 Join lives inside `.mastnav-links`. The auth chip — "Log in", or "Account" when signed in — lives in a separate `.mastnav-auth` group rendered before `.nav-toggle`, so the hamburger never hides it. On a phone it was previously two taps *and* invisible until you opened the menu, which made logging back in harder to find than joining for the first time; it is one tap now, on the logo row.
 
-`.mastnav-links` is `display: contents` at desktop, which is *how* `.auth-link`'s `margin-left: auto` right-aligns the group by document order — so `.mastnav-auth` matches it there, and only becomes a real flex box inside the 640px block, where explicit `order` keeps it on the logo row while the link list wraps below.
+`.mastnav-links` is `display: contents` at desktop, which is *how* `.auth-link`'s `margin-left: auto` right-aligns the group by document order — so `.mastnav-auth` matches it there, and only becomes a real flex box inside the 900px block, where explicit `order` keeps it on the logo row while the link list wraps below.
 
 ### Return-to after login
 
@@ -45,7 +45,7 @@ The landing is now `globalThis.jxnfcNext()`, backed by `sessionStorage.jxnfc_nex
 
 ## Responsive Behavior
 
-The mastnav is a horizontal flex row above 640px. At `max-width: 640px` it collapses behind a hamburger toggle (`.nav-toggle`); the link group (`.mastnav-links`) is hidden and revealed by toggling `.open` on the nav, driven by a `menuOpen` flag on `index.html`'s root component. The flag is reset to `false` on every route change so the menu auto-closes after navigation.
+The mastnav is a horizontal flex row above 900px (with tighter link spacing from 901 to 1100px, since six tabs plus Join and Log in need ~1060px at full spacing). At `max-width: 900px` it collapses behind a hamburger toggle (`.nav-toggle`); the link group (`.mastnav-links`) is hidden and revealed by toggling `.open` on the nav, driven by a `menuOpen` flag on `index.html`'s root component. The flag is reset to `false` on every route change so the menu auto-closes after navigation.
 
 ## Session Management
 

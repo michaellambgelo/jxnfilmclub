@@ -146,3 +146,19 @@ test('an Instagram giveaway shows how to enter there, with no Enter button', asy
   await expect(page.getByRole('button', { name: 'Enter the giveaway' })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('the Giveaways nav tab lists every open giveaway and links to how to enter', async ({ page }) => {
+  await seedEventAndGiveaway(page)
+  await page.goto('/')
+  // Phone width: the links sit behind the menu button.
+  await page.getByRole('button', { name: 'Menu' }).click()
+  await page.locator('.mastnav-links').getByRole('link', { name: 'Giveaways' }).click()
+  await expect(page).toHaveURL(/\/giveaways$/)
+  await expect(page.locator('h1')).toHaveText('Win tickets to club screenings')
+  const card = page.locator('.gw-event')
+  await expect(card.getByRole('heading', { name: 'CLAYFACE Preview Screening' })).toBeVisible()
+  await expect(card).toContainText('Two tickets to the preview')
+  await card.getByRole('link', { name: 'How to enter' }).click()
+  await expect(page).toHaveURL(new RegExp(`/giveaways\\?event=${EVENT.id}$`))
+  await expect(page.getByRole('heading', { name: 'Win a pair of Clayface tickets' })).toBeVisible()
+})

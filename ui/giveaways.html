@@ -27,9 +27,16 @@
   // bare path: remembered here, read back when the URL has no event.
   function gwEventId() {
     const fromUrl = new URLSearchParams(location.search).get('event')
+    // Used once: a later visit to the bare path (the nav tab) lists every
+    // giveaway instead of reopening this one. The URL keeps it for reloads.
     try {
-      if (fromUrl) sessionStorage.jxnfc_giveaway_event = fromUrl
-      return fromUrl || sessionStorage.jxnfc_giveaway_event || ''
+      if (fromUrl) { sessionStorage.jxnfc_giveaway_event = fromUrl; return fromUrl }
+      const saved = sessionStorage.jxnfc_giveaway_event || ''
+      if (saved) {
+        delete sessionStorage.jxnfc_giveaway_event
+        history.replaceState(history.state, '', location.pathname + '?event=' + encodeURIComponent(saved))
+      }
+      return saved
     } catch { return fromUrl || '' }
   }
 
@@ -89,23 +96,33 @@
 </script>
 
 <article :is="giveaways-view" class="auth giveaways">
-  <p class="gw-eyebrow">Giveaway</p>
+  <p class="gw-eyebrow">{ events ? 'Giveaways' : 'Giveaway' }</p>
   <h1>{ title }</h1>
   <p class="lede" :if="subtitle">{ subtitle }</p>
   <p class="gw-err" :if="error">{ error }</p>
   <p class="muted" :if="loading">Loading…</p>
-  <p class="muted" :if="!loading && !error && giveaways && !giveaways.length">No giveaways are running for this screening right now.</p>
+  <p class="muted" :if="!loading && !error && !events && giveaways && !giveaways.length">No giveaways are running for this screening right now.</p>
 
   <giveaway-card :each="g in giveaways" key="{ g.id }" :g="g" :signedin="signedIn"/>
+
+  <p class="muted" :if="!loading && !error && events && !events.length">No giveaways are open right now. They are announced with each screening, on the Events page and on Instagram.</p>
+  <giveaway-event :each="row in events" key="{ row.event.id }" :row="row"/>
 
   <p class="gw-foot">Entering is free. No purchase or payment of any kind is necessary to enter or win.</p>
 
   <script>
     this.mounted = async function() {
-      this.update({ title: 'Giveaways', subtitle: '', giveaways: [], loading: true, error: '', signedIn: false })
+      this.update({ title: 'Giveaways', subtitle: '', giveaways: [], events: null, loading: true, error: '', signedIn: false })
       const self = this
       const eventId = gwEventId()
-      if (!eventId) return self.update({ loading: false, error: 'This link is missing its screening. Open it from the event page.' })
+      if (!eventId) {
+        try {
+          const all = await gwFetch('/giveaways')
+          return self.update({ title: 'Win tickets to club screenings', events: all.events || [], loading: false })
+        } catch (err) {
+          return self.update({ loading: false, events: [], error: err.message })
+        }
+      }
       try {
         const data = await gwFetch('/giveaways?event=' + encodeURIComponent(eventId))
         const s = await gwSession()
@@ -248,6 +265,27 @@
       }
       self.update({ copied: true })
       setTimeout(function() { self.update({ copied: false }) }, 2000)
+    }
+  </script>
+</section>
+
+<section :is="giveaway-event" class="gw-card gw-event">
+  <p class="gw-event-when">{ [gwEventWhen(row.event.date, row.event.time), row.event.venue].filter(Boolean).join(' · ') }</p>
+  <h2>{ row.event.title }</h2>
+  <ul class="gw-event-list">
+    <li :each="g in row.giveaways" key="{ g.id }">
+      <strong>{ g.prize }</strong>
+      <span class="gw-dates">{ g.accepting ? 'Enter by ' + gwWhen(g.endsAt) + ' CT' : 'Opens ' + gwWhen(g.startsAt) + ' CT' }</span>
+    </li>
+  </ul>
+  <a class="gw-step-cta" href="/giveaways?event={ row.event.id }" :onclick="open">How to enter</a>
+
+  <script>
+    // A full load, not the SPA router: the route only watches the path, so
+    // /giveaways to /giveaways?event= would not remount this view.
+    this.open = function(e) {
+      e.preventDefault()
+      location.assign('/giveaways?event=' + encodeURIComponent(this.row.event.id))
     }
   </script>
 </section>

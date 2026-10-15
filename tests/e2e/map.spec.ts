@@ -1,9 +1,8 @@
 import { test, expect, seedKv } from './fixtures'
 
-// /map (docs/features/map.md). The tile layer itself is not asserted: nue
-// serve has no HTTP Range support, so the basemap never draws under e2e (the
-// production host does). The venue list and the privacy line are what these
-// cover; both render whether or not WebGL and the tiles cooperate.
+// /map (docs/features/map.md). The venue list renders
+// whether or not WebGL cooperates; the tile test checks the basemap's files
+// are served whole, which is what the production host can do reliably.
 
 test.describe('venue map', () => {
   test('is in the nav and lists theater venues from the event history', async ({ page }) => {
@@ -34,5 +33,17 @@ test.describe('venue map', () => {
     await page.goto('/map')
     await expect(page.locator('.jm-venue')).toHaveCount(1)
     await expect(page.locator('.jm-venue h2')).toHaveText('Duling Hall')
+  })
+
+  test('serves the basemap as static vector tiles', async ({ page }) => {
+    const style = await (await page.request.get('/tiles/style.json')).json()
+    expect(style.sources.protomaps.url).toBeUndefined()
+    expect(style.sources.protomaps.tiles).toEqual(['{origin}/tiles/jxn/{z}/{x}/{y}.pbf'])
+    // A tile over downtown Jackson, decompressed MVT (no gzip magic bytes).
+    const tile = await page.request.get('/tiles/jxn/12/1021/1659.pbf')
+    expect(tile.status()).toBe(200)
+    const body = await tile.body()
+    expect(body.length).toBeGreaterThan(1000)
+    expect(body[0] === 0x1f && body[1] === 0x8b).toBe(false)
   })
 })

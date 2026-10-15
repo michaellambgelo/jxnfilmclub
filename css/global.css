@@ -161,7 +161,15 @@ body > header {
   border-radius: 2px;
 }
 
-@media (max-width: 640px) {
+/* Six tabs plus Join and Log in fill the row below ~1060px. Tighter spacing
+   holds them on one line down to ~880px; below 900px the menu button takes
+   over, so Log in never wraps to a second line. */
+@media (max-width: 1100px) and (min-width: 901px) {
+  .mastnav { gap: .5em; }
+  .mastnav a { padding-left: .35rem; padding-right: .35rem; letter-spacing: var(--tracking-wide, .06em); }
+}
+
+@media (max-width: 900px) {
   .mastnav {
     gap: 0;
     padding-top: .25rem;

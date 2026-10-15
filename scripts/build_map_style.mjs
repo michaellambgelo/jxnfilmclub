@@ -10,7 +10,7 @@
 // the place labels. That leaves nothing to fetch beyond the tiles and glyphs,
 // and no shop or restaurant icons competing with the venues.
 //
-// Source and glyph URLs are left as placeholders: the map view fills in the
+// Tile and glyph URLs are left as placeholders: the map view fills in the
 // page origin at load time, so the same file works on localhost and in prod.
 //
 // Re-run after changing the palette or bumping @protomaps/basemaps:
@@ -111,7 +111,14 @@ const style = {
   sources: {
     protomaps: {
       type: 'vector',
-      url: 'pmtiles://{origin}/tiles/jxn.pmtiles',
+      // Static tiles from scripts/split_map_tiles.mjs. bounds and maxzoom
+      // match the extract (BBOX and --maxzoom in fetch_map_assets.sh), so
+      // MapLibre never asks for a tile that was not written, and overzooms
+      // z15 past it.
+      tiles: ['{origin}/tiles/jxn/{z}/{x}/{y}.pbf'],
+      minzoom: 0,
+      maxzoom: 15,
+      bounds: [-90.42, 32.15, -89.92, 32.60],
       attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> · <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a>',
     },
   },

@@ -38,19 +38,19 @@ Every request the page makes goes to `jxnfilm.club` (or the join Worker for `/ma
 
 | Path | What | Made by |
 |------|------|---------|
-| `tiles/jxn.pmtiles` | ~8 MB Jackson-metro extract (Ridgeland/Madison to Pearl/Flowood) of the Protomaps OpenStreetMap basemap, zoom 0–15 | `scripts/fetch_map_assets.sh` |
+| `tiles/jxn/{z}/{x}/{y}.pbf` | Jackson-metro extract (Ridgeland/Madison to Pearl/Flowood) of the Protomaps OpenStreetMap basemap, zoom 0–15: 3,146 uncompressed vector tiles, ~11 MB in all, of which a visitor loads only what is on screen | `scripts/fetch_map_assets.sh` (`pmtiles extract`, then `scripts/split_map_tiles.mjs`) |
 | `tiles/fonts/<stack>/<range>.pbf` | Noto Sans label glyphs, Latin ranges only | same |
 | `tiles/style.json` | MapLibre style: the Protomaps dark flavor repainted in Night Shift, with no sprite (POI icons, shields and one-way arrows dropped) and no red, so the pins are the only red on the page | `node scripts/build_map_style.mjs` |
 | `vendor/maplibre/` | MapLibre GL JS 6.11.2 (ESM: `maplibre-gl.mjs` + `-shared` + `-worker`, plus its CSS) | `scripts/fetch_map_assets.sh` |
-| `vendor/pmtiles/` | pmtiles 4.5.0 ESM reader + fflate 0.8.2, its one dependency, with the bare import rewritten to `./fflate.mjs` | same |
 
-The style keeps `{origin}` placeholders in its glyph and source URLs; the view substitutes `location.origin`, so one file serves localhost and production. Credit ("© OpenStreetMap contributors · Protomaps") is in the map's attribution control, which ODbL requires.
+The style keeps `{origin}` placeholders in its glyph and tile URLs; the view substitutes `location.origin`, so one file serves localhost and production. Credit ("© OpenStreetMap contributors · Protomaps") is in the map's attribution control, which ODbL requires.
 
-The tiles are read with **HTTP Range requests**. GitHub Pages behind Cloudflare serves them (206 verified on 2026-10-14). `nue serve` and `nue preview` do **not**, so locally the basemap stays blank while pins and the venue list still work. To see tiles locally, serve `.dist/` with any Range-capable static server.
+The tile source carries the extract's `bounds` and `maxzoom: 15`, so MapLibre never requests a tile that was not written and overzooms z15 beyond it. Plain files work under `nue serve` too, so the basemap draws locally and in e2e.
 
 ### Build gotchas
 
-- **The site build minifies every `.js` file and renames its globals** (Bun). The first cut used pmtiles' IIFE build, whose `pmtiles` global came out as `H1`. `.mjs` files pass through byte-for-byte, which is why every vendored script is an ES module loaded with `import()`.
+- **GitHub Pages cannot serve a PMTiles archive.** The first release shipped `tiles/jxn.pmtiles` read through the pmtiles protocol, which fetches byte ranges. In production the basemap stayed blank: Pages' CDN keeps a gzipped copy of the file and applies `Range` to the *compressed* bytes (`Content-Range: …/8075143` for an 8,134,743-byte file; `bytes=0-99` returned 90 inflated bytes), and on a cache miss it ignores `Range` and sends the whole file with a 200. `Accept-Encoding: identity` does not help. Only a full-file GET is reliable there, hence one file per tile. A HEAD with `-r` is no test either: it answered 200 while a GET answered 206. Check with a ranged **GET** and compare the bytes.
+- **The site build minifies every `.js` file and renames its globals** (Bun). An IIFE build's global comes out renamed (pmtiles' `pmtiles` became `H1` in the first cut). `.mjs` files pass through byte-for-byte, which is why MapLibre is vendored as ES modules loaded with `import()`.
 - **Nue's CSS minifier rewrites `data:` URLs** (`data:` becomes `data;`), which would break MapLibre's control icons. `postbuild` copies `vendor/maplibre/maplibre-gl.css` over the minified one.
 - **`maxBounds` must be looser than the extract.** The extract box is shorter than the view needed to fit every pin with padding; a `maxBounds` that tight forces the map to zoom in and clips Madison and Pearl. Panning stops a little past the extract instead, where the map shows plain ground.
 - MapLibre's stylesheet is lazy-loaded and **awaited** before the map is created; a map built before it lands sizes its canvas wrong.
@@ -59,7 +59,7 @@ The tiles are read with **HTTP Range requests**. GitHub Pages behind Cloudflare 
 
 Rendered **imperatively**: the template is a static skeleton and `mounted()` never calls `update()`, because MapLibre owns its container and nuedom replaces a component root on update. MapLibre (~1 MB) loads only when someone opens `/map`. One live map per page: remounting removes the previous map first, since browsers cap live WebGL contexts.
 
-- The venue list renders **before** the map, so it works without WebGL; if the map cannot be drawn the box hides and a line says so.
+- The venue list renders **before** the map, so it works without WebGL; if the map cannot be created (no WebGL, MapLibre or the style fails to load) the box hides and a line says so. Failed *tiles* do not trigger that: MapLibre reports them per tile and keeps the pins on a blank basemap.
 - Venues with something coming up sort first (soonest first) and get a filled red pin and red card border; the rest sort by how often the club has been there and get an outlined pin. Upcoming pins are added last so they draw on top where pins overlap (the Capri and Duling Hall are a block apart).
 - `cooperativeGestures` is on: two fingers to pan on a phone and Ctrl+scroll to zoom on desktop, so the page still scrolls past the map.
 - Each event links to `/events?query=<film>`.

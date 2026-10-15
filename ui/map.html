@@ -6,9 +6,9 @@
      venues on the admin-edited config:venues list, so a house screening can
      never appear here.
 
-     Everything the map draws is served from this site: the tile extract and
-     glyphs under /tiles, MapLibre and the pmtiles reader under /vendor. No
-     tile, font or CDN company ever sees a visitor.
+     Everything the map draws is served from this site: the tiles and glyphs
+     under /tiles, MapLibre under /vendor. No tile, font or CDN company ever
+     sees a visitor.
 
      The view renders imperatively on purpose. MapLibre owns its container,
      and nuedom replaces a component root on update(), which would orphan
@@ -54,14 +54,8 @@
           link.onerror = resolve
           document.head.appendChild(link)
         })
-        const mods = await Promise.all([
-          import('/vendor/maplibre/maplibre-gl.mjs'),
-          import('/vendor/pmtiles/pmtiles.mjs'),
-        ])
+        const ml = await import('/vendor/maplibre/maplibre-gl.mjs')
         await css
-        const ml = mods[0]
-        const protocol = new mods[1].Protocol()
-        ml.addProtocol('pmtiles', protocol.tile)
         return ml
       })()
       // A failed load may be a flaky network: let the next visit retry.
@@ -76,7 +70,7 @@
     const style = await res.json()
     style.glyphs = style.glyphs.split('{origin}').join(location.origin)
     const src = style.sources.protomaps
-    src.url = src.url.split('{origin}').join(location.origin)
+    src.tiles = src.tiles.map(function(t) { return t.split('{origin}').join(location.origin) })
     return style
   }
 
@@ -271,7 +265,7 @@
 <article :is="map-view" class="map-page">
   <p class="jm-eyebrow">Map</p>
   <h1>Where the club gathers</h1>
-  <p class="lede">Every theater and public venue the club has screened at, with what is coming up. Screenings at a member home are never on the map.</p>
+  <p class="lede">Every theater and public venue the club has screened at, with what is coming up.</p>
   <div class="jm-map" role="region" aria-label="Map of club venues"></div>
   <p class="jm-status" role="status">Loading the map…</p>
   <div class="jm-venues"></div>

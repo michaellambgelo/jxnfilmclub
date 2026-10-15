@@ -830,6 +830,27 @@ test.describe('admin giveaways', () => {
     await expect(page.locator('#gw-ig-winners')).toHaveValue('Jane Doe, @janedoe')
   })
 
+  test('a portal giveaway still shows its entries sections', async ({ page }) => {
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key: `event:${EVENT.id}`, value: JSON.stringify(EVENT) } })
+    const now = Date.now()
+    const res = await page.request.put(`${WORKER_ORIGIN}/admin/giveaways/e2e-portal`, {
+      headers: { Authorization: 'Bearer e2e-admin-token' },
+      data: {
+        event_id: EVENT.id, title: 'Portal ticket giveaway', prize: 'Two tickets', winners: 1, tickets_per_winner: 2,
+        status: 'open', starts_at: new Date(now - 7200_000).toISOString(), ends_at: new Date(now + 86400_000).toISOString(),
+        sources: { waitlist_signup: { weight: 1 } },
+      },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="giveaways"]').click()
+    await page.locator('button[data-action="gw-detail"][data-id="e2e-portal"]').click()
+    await expect(page.getByRole('heading', { name: 'Entries by source' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /All entries/ })).toBeVisible()
+    await expect(page.locator('#gw-entrants-add')).toHaveCount(0)
+    await expect(page.locator('button[data-action="gw-delete"]')).toBeVisible()
+  })
+
   test('deletes a giveaway only after its id is typed', async ({ page }) => {
     await seedIgGiveaway(page, 'e2e-ig-del')
     await openDetail(page, 'e2e-ig-del')

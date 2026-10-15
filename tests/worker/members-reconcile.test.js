@@ -97,7 +97,7 @@ describe('members:all reconciliation', () => {
     // is gone, so the reconcile has nothing to restore).
     await fetchWith('/member/update', 'POST', { name: 'Still Here' }, tokenB)
     expect(await publicIds()).toEqual([b.id])
-  })
+  }, 15_000)   // account delete plus three reconciles: past the 5s default on CI after PR #38
 
   it('POST /admin/scrub reconciles drift with no member activity (cron parity)', async () => {
     const a = await seedMember('idle-a@example.com', { handle: 'idlea' })

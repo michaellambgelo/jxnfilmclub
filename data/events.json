@@ -450,9 +450,10 @@
     "year": 2026,
     "date": "2026-10-22",
     "venue": "Capri Theater",
-    "poster": "https://image.tmdb.org/t/p/original/jWQwA5xuFVygMM3KHRiABzPqatf.jpg",
+    "poster": "https://image.tmdb.org/t/p/original/mP4XfTSMBcJgUS9wJLL9xOg1Knv.jpg",
     "time": "20:30",
     "rsvp": true,
+    "ticketUrl": "https://ticketing.useast.veezi.com/purchase/5127?siteToken=ec9jrhkgwvf72npmrh80fkm4jc",
     "ticketed": true
   }
 ]

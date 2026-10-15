@@ -863,6 +863,13 @@
   .lastfour-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  /* The desktop columns (110 + 220 + 130px) leave the film title under 100px
+     here and push the button past the edge below ~690px. */
+  .program-row {
+    grid-template-columns: 90px minmax(0, 1fr) 150px auto;
+    gap: 1rem;
+  }
 }
 
 @media (max-width: 640px) {

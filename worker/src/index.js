@@ -11,7 +11,7 @@ import {
   isAcceptingEntries, isExternal, letterboxdProfileExists, normalizeEmail, recordExternalWinners, REF_CODE_RE, referralStats,
   listDraws, listGiveaways, listWinners, memberSummary, parseLetterboxdHandle, purgeMember,
   runDraw, runRedraw, saveGiveaway, scrubGiveaways, setEntryExcluded, syncEntries, toCsv,
-  validGiveaway,
+  validGiveaway, deleteGiveaway, editExternalEntrants, isMissingTable, listExternalEntrants,
 } from './giveaways.js'
 import { buildVenueMap, DEFAULT_VENUES, validVenueList } from './venues.js'
 
@@ -316,7 +316,7 @@ async function route(request, env, ctx) {
       if (sub === 'enter' && request.method === 'POST') return handleGiveawayEnter(request, env, gid)
       if (sub === 'rules' && request.method === 'GET')  return handleGiveawayRules(env, gid)
     }
-    const adminGiveawayMatch = /^\/admin\/giveaways(?:\/([a-z0-9-]+)(?:\/(entries|draw|redraw|record-winners|winners|winners\.csv)|\/entries\/([0-9]+))?)?$/.exec(pathname)
+    const adminGiveawayMatch = /^\/admin\/giveaways(?:\/([a-z0-9-]+)(?:\/(entries|entrants|draw|redraw|record-winners|winners|winners\.csv)|\/entries\/([0-9]+))?)?$/.exec(pathname)
     if (adminGiveawayMatch) {
       const [, gid, action, entryId] = adminGiveawayMatch
       return handleAdminGiveaways(request, env, gid || null, entryId ? 'entry' : (action || null), entryId || null)
@@ -327,7 +327,7 @@ async function route(request, env, ctx) {
     // local D1 persists across runs, like its KV).
     if (env.E2E_MODE === 'true' && pathname === '/__test/giveaways' && request.method === 'DELETE') {
       if (!env.GIVEAWAYS_DB) return json(env, { ok: true, skipped: 'no GIVEAWAYS_DB' })
-      await env.GIVEAWAYS_DB.batch(['entries', 'winners', 'draws', 'referrals', 'referral_codes', 'participants', 'giveaways']
+      await env.GIVEAWAYS_DB.batch(['entries', 'winners', 'draws', 'referrals', 'referral_codes', 'participants', 'external_entrants', 'giveaways']
         .map(t => env.GIVEAWAYS_DB.prepare(`DELETE FROM ${t}`)))
       return json(env, { ok: true })
     }
@@ -5465,7 +5465,7 @@ async function handleGiveawayRules(env, id) {
     <p>By Instagram direct message from the club account. We will never ask for payment, a password or card details. A winner who does not reply within ${g.winner_response_days} ${g.winner_response_days === 1 ? 'day' : 'days'} forfeits the prize, and another winner is picked. Tickets are held at the venue box office under the winner's name.</p>
     ${extra}
     <h2>Your information</h2>
-    <p>For winners only, we keep the name and Instagram handle needed to hold the tickets; see the <a href="/privacy">privacy policy</a>. Winners' names are given to the venue box office for will-call.</p>` : `
+    <p>We record each entrant's Instagram handle and number of entries, and for winners the name needed to hold the tickets. These are deleted 60 days after the giveaway closes; see the <a href="/privacy">privacy policy</a>. Winners' names are given to the venue box office for will-call.</p>` : `
     <h2>Eligibility</h2>
     <p>Open to members of the Jackson Film Club. Membership is free: joining needs only a name and an email address you verify.</p>
     <h2>How to enter</h2>
@@ -5568,6 +5568,36 @@ async function handleAdminGiveaways(request, env, id, action, entryId) {
   if (!g) return json(env, { error: 'giveaway not found' }, 404)
 
   if (!action && method === 'GET') return json(env, { giveaway: g })
+  if (!action && method === 'DELETE') {
+    // A drawn giveaway takes its draw log with it, so it needs ?force=1.
+    if (g.status === 'drawn' && new URL(request.url).searchParams.get('force') !== '1') {
+      return json(env, { error: 'this giveaway has been drawn; deleting it also deletes its draw log (pass force=1)' }, 409)
+    }
+    const deleted = await deleteGiveaway(db, id).catch(err => {
+      if (isMissingTable(err)) return deleteGiveaway(db, id, { withEntrants: false })
+      throw err
+    })
+    return json(env, { ok: deleted })
+  }
+  if (action === 'entrants') {
+    // Instagram entrants, recorded by hand (migration 0002).
+    try {
+      if (method === 'GET') return json(env, { entrants: await listExternalEntrants(db, id) })
+      if (method === 'POST') {
+        const body = await request.json().catch(() => ({}))
+        const result = await editExternalEntrants(db, g, {
+          add: Array.isArray(body.add) ? body.add.map(String) : [],
+          remove: Array.isArray(body.remove) ? body.remove.map(String) : [],
+          by: adminActor(request),
+        })
+        if (result.error) return json(env, { error: result.error }, result.code || 400)
+        return json(env, { ...result, entrants: await listExternalEntrants(db, id) })
+      }
+    } catch (err) {
+      if (isMissingTable(err)) return json(env, { error: 'entrant tracking needs D1 migration 0002: npx wrangler d1 migrations apply jxnfilm-giveaways --remote' }, 503)
+      throw err
+    }
+  }
   if (action === 'entries' && method === 'GET') return json(env, await adminEntries(db, id))
   if (action === 'entry' && method === 'POST') {
     const body = await request.json().catch(() => ({}))

@@ -6,7 +6,10 @@
 //
 //   GET  /api/giveaways?env=[&event=]            list (drafts included)
 //   PUT  /api/giveaways?env=&id=                 create / update
+//   DELETE /api/giveaways?env=&id=[&force=1]     delete (force: a drawn one, with its draw log)
 //   GET  /api/giveaways/entries?env=&id=         entries + counts by source
+//   GET  /api/giveaways/entrants?env=&id=        Instagram entrants (recorded by hand)
+//   POST /api/giveaways/entrants?env=&id=        { add: [lines], remove: [handles] }
 //   POST /api/giveaways/entry?env=&id=&entry=    { excluded }
 //   POST /api/giveaways/draw?env=&id=            { excludeFlagged }
 //   POST /api/giveaways/redraw?env=&id=          { memberId, excludeFlagged }
@@ -16,6 +19,8 @@
 
 const ACTIONS = {
   'GET /api/giveaways/entries': 'entries',
+  'GET /api/giveaways/entrants': 'entrants',
+  'POST /api/giveaways/entrants': 'entrants',
   'POST /api/giveaways/draw': 'draw',
   'POST /api/giveaways/redraw': 'redraw',
   'POST /api/giveaways/record-winners': 'record-winners',
@@ -36,6 +41,10 @@ export function giveawayRoute(method, pathname, q) {
   if (pathname === '/api/giveaways' && method === 'PUT') {
     if (!id) bad('id required')
     return { path: `/admin/giveaways/${id}`, method, csv: false }
+  }
+  if (pathname === '/api/giveaways' && method === 'DELETE') {
+    if (!id) bad('id required')
+    return { path: `/admin/giveaways/${id}${q.force === '1' ? '?force=1' : ''}`, method, csv: false }
   }
   if (pathname === '/api/giveaways/entry' && method === 'POST') {
     if (!id) bad('id required')

@@ -776,3 +776,73 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#ne-issues')).toContainText('already exists')
   })
 })
+
+test.describe('admin giveaways', () => {
+  const EVENT = { id: 'e2e-ig-event', title: 'IG Giveaway Screening', date: '2099-10-22', time: '20:30', venue: 'Capri Theater' }
+
+  async function seedIgGiveaway(page: Page, id: string, status = 'open') {
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key: `event:${EVENT.id}`, value: JSON.stringify(EVENT) } })
+    const now = Date.now()
+    const res = await page.request.put(`${WORKER_ORIGIN}/admin/giveaways/${id}`, {
+      headers: { Authorization: 'Bearer e2e-admin-token' },
+      data: {
+        event_id: EVENT.id, title: 'Instagram ticket giveaway', prize: 'Two tickets', winners: 1, tickets_per_winner: 2,
+        status, starts_at: new Date(now - 7200_000).toISOString(),
+        ends_at: new Date(now + (status === 'closed' ? -60_000 : 86400_000)).toISOString(),
+        sources: { instagram: { how: 'Tag a friend in the comments' } },
+      },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+  }
+
+  async function openDetail(page: Page, id: string) {
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="giveaways"]').click()
+    await page.locator(`button[data-action="gw-detail"][data-id="${id}"]`).click()
+    await expect(page.getByRole('heading', { name: /Instagram ticket giveaway/ })).toBeVisible()
+  }
+
+  test('records Instagram entrants by paste, keeps bad lines to fix, and removes one', async ({ page }) => {
+    acceptDialogs(page)
+    await seedIgGiveaway(page, 'e2e-ig-track')
+    await openDetail(page, 'e2e-ig-track')
+    await page.locator('#gw-entrants-add').fill('@janedoe\nSam Roe, @sam.roe x2 -- tagged 2 friends\nnot a handle')
+    await page.locator('button[data-action="gw-entrants-add"]').click()
+    const rows = page.locator('table.gw-entrants tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(page.getByRole('heading', { name: /Entrants \(2 people, 3 entries\)/ })).toBeVisible()
+    await expect(rows.nth(1)).toContainText('tagged 2 friends')
+    await expect(page.locator('#gw-entrants-add')).toHaveValue('not a handle')
+
+    await page.locator('button[data-action="gw-entrant-remove"][data-handle="janedoe"]').click()
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('@sam.roe')
+  })
+
+  test('use as winner fills the winners box, asking for a name when there is none', async ({ page }) => {
+    await seedIgGiveaway(page, 'e2e-ig-win', 'closed')
+    await page.request.post(`${WORKER_ORIGIN}/admin/giveaways/e2e-ig-win/entrants`, {
+      headers: { Authorization: 'Bearer e2e-admin-token' }, data: { add: ['@janedoe'] },
+    })
+    page.on('dialog', d => d.accept('Jane Doe'))
+    await openDetail(page, 'e2e-ig-win')
+    await page.locator('button[data-action="gw-entrant-win"][data-handle="janedoe"]').click()
+    await expect(page.locator('#gw-ig-winners')).toHaveValue('Jane Doe, @janedoe')
+  })
+
+  test('deletes a giveaway only after its id is typed', async ({ page }) => {
+    await seedIgGiveaway(page, 'e2e-ig-del')
+    await openDetail(page, 'e2e-ig-del')
+
+    page.once('dialog', d => d.accept('wrong-id'))
+    await page.locator('button[data-action="gw-delete"]').click()
+    await expect(page.getByRole('heading', { name: /Instagram ticket giveaway/ })).toBeVisible()
+    expect((await page.request.get(`${WORKER_ORIGIN}/admin/giveaways/e2e-ig-del`, { headers: { Authorization: 'Bearer e2e-admin-token' } })).status()).toBe(200)
+
+    page.once('dialog', d => d.accept('e2e-ig-del'))
+    await page.locator('button[data-action="gw-delete"]').click()
+    await expect(page.locator('button[data-action="gw-detail"][data-id="e2e-ig-del"]')).toHaveCount(0)
+    expect((await page.request.get(`${WORKER_ORIGIN}/admin/giveaways/e2e-ig-del`, { headers: { Authorization: 'Bearer e2e-admin-token' } })).status()).toBe(404)
+  })
+})
+

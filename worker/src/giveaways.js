@@ -516,6 +516,97 @@ export function parseInstagramWinner(line) {
   return { name, handle: m[2].toLowerCase() }
 }
 
+// Entrant lines pasted into the admin portal: "@janedoe", "janedoe",
+// "Jane Doe, @janedoe" or "Jane Doe @janedoe", each optionally ending in
+// "x3" / "× 3" for several entries (say, one per friend tagged) and
+// " -- note". Returns null for a line that names no valid handle.
+export function parseInstagramEntrant(line) {
+  let rest = String(line || '').trim()
+  if (!rest) return null
+  let note = ''
+  const noteAt = rest.indexOf(' -- ')
+  if (noteAt >= 0) { note = rest.slice(noteAt + 4).trim(); rest = rest.slice(0, noteAt).trim() }
+  let entries = 1
+  const times = rest.match(/^(.*?)\s+[x×]\s*([0-9]{1,4})$/i)
+  if (times) { rest = times[1].trim(); entries = Number(times[2]) }
+  if (entries < 1 || entries > 1000 || note.length > 300) return null
+  const bare = rest.match(/^@?([A-Za-z0-9._]{1,30})$/)
+  if (bare) return { name: '', handle: bare[1].toLowerCase(), entries, note }
+  const named = parseInstagramWinner(rest)
+  return named ? { ...named, entries, note } : null
+}
+
+export async function listExternalEntrants(db, giveawayId) {
+  const { results } = await db.prepare(
+    'SELECT handle, name, entries, note, created_by, created_at, updated_at FROM external_entrants WHERE giveaway_id = ? ORDER BY created_at, handle')
+    .bind(giveawayId).all()
+  return results
+}
+
+// { add: [lines], remove: [handles] } -> { added, updated, removed, rejected }.
+// One bad line never sinks the batch: it comes back in `rejected` to fix.
+// Re-pasting a handle updates its row (a name added later, a new count).
+export async function editExternalEntrants(db, g, { add = [], remove = [], by, now = Date.now() }) {
+  if (!isExternal(g)) return { error: 'only Instagram giveaways track entrants here', code: 409 }
+  if (add.length + remove.length > 2000) return { error: 'at most 2000 lines at a time', code: 400 }
+  const ts = nowIso(now)
+  const rejected = []
+  const parsed = new Map()
+  for (const line of add) {
+    if (!String(line || '').trim()) continue
+    const p = parseInstagramEntrant(line)
+    if (p) parsed.set(p.handle, p)
+    else rejected.push(String(line).slice(0, 200))
+  }
+  const handles = [...parsed.keys()]
+  const existing = new Set()
+  for (let i = 0; i < handles.length; i += 50) {
+    const chunk = handles.slice(i, i + 50)
+    const { results } = await db.prepare(
+      `SELECT handle FROM external_entrants WHERE giveaway_id = ? AND handle IN (${chunk.map(() => '?').join(',')})`)
+      .bind(g.id, ...chunk).all()
+    for (const r of results) existing.add(r.handle)
+  }
+  const drop = [...new Set(remove.map(h => String(h || '').trim().replace(/^@/, '').toLowerCase()))]
+    .filter(h => IG_HANDLE_RE.test(h))
+  const stmts = [
+    ...[...parsed.values()].map(p => db.prepare(`
+      INSERT INTO external_entrants (giveaway_id, handle, name, entries, note, created_by, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+      ON CONFLICT (giveaway_id, handle) DO UPDATE SET
+        name = CASE WHEN excluded.name != '' THEN excluded.name ELSE external_entrants.name END,
+        entries = excluded.entries,
+        note = CASE WHEN excluded.note != '' THEN excluded.note ELSE external_entrants.note END,
+        updated_at = excluded.updated_at`)
+      .bind(g.id, p.handle, p.name, p.entries, p.note, by, ts)),
+    ...drop.map(h => db.prepare('DELETE FROM external_entrants WHERE giveaway_id = ? AND handle = ?').bind(g.id, h)),
+  ]
+  let removed = 0
+  if (stmts.length) {
+    const out = await db.batch(stmts)
+    removed = out.slice(parsed.size).reduce((n, r) => n + (r.meta.changes || 0), 0)
+  }
+  return {
+    added: handles.filter(h => !existing.has(h)).length,
+    updated: handles.filter(h => existing.has(h)).length,
+    removed,
+    rejected,
+  }
+}
+
+// Delete a giveaway and everything that hangs off it. Explicit and ordered,
+// not left to ON DELETE CASCADE: winners -> draws and entries -> referrals
+// reference each other without a cascade. referral_codes are per member, not
+// per giveaway, and stay.
+export async function deleteGiveaway(db, id, { withEntrants = true } = {}) {
+  const tables = ['entries', 'winners', 'draws', 'referrals', 'participants', ...(withEntrants ? ['external_entrants'] : [])]
+  const out = await db.batch([
+    ...tables.map(t => db.prepare(`DELETE FROM ${t} WHERE giveaway_id = ?`).bind(id)),
+    db.prepare('DELETE FROM giveaways WHERE id = ?').bind(id),
+  ])
+  return out[out.length - 1].meta.changes > 0
+}
+
 async function instagramMemberId(giveawayId, handle) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${giveawayId}:${handle.toLowerCase()}`))
   return 'ig-' + [...new Uint8Array(digest)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -587,6 +678,14 @@ export async function purgeMember(db, memberId) {
 // handoff), its personal data goes. The giveaway row, draw log and winner rows
 // stay — they hold opaque member ids only.
 export const RETENTION_DAYS = 60
+
+// D1 error for a table a migration has not created yet.
+export function isMissingTable(err) {
+  return /no such table/i.test(String(err && err.message || err))
+}
+function missingTableOk(err) {
+  if (!isMissingTable(err)) throw err
+}
 export async function scrubGiveaways(db, now = Date.now()) {
   const cutoff = nowIso(now - RETENTION_DAYS * 86400 * 1000)
   const { results } = await db.prepare('SELECT id FROM giveaways WHERE ends_at < ?').bind(cutoff).all()
@@ -596,6 +695,9 @@ export async function scrubGiveaways(db, now = Date.now()) {
       db.prepare('DELETE FROM participants WHERE giveaway_id = ?').bind(id),
       db.prepare('DELETE FROM referrals WHERE giveaway_id = ?').bind(id),
     ])
+    // Its own statement: before migration 0002 the table does not exist, and
+    // that must not stop the rest of the scrub.
+    await db.prepare('DELETE FROM external_entrants WHERE giveaway_id = ?').bind(id).run().catch(missingTableOk)
   }
   return results.length
 }

@@ -123,7 +123,33 @@ entries on Instagram, where the portal can't see them. The site still:
 
 Winners are stored under an opaque id (`ig-` plus a hash of the giveaway id and
 handle). The name and handle live only on the participants row, which the
-60-day scrub deletes. Nothing is stored about Instagram entrants who didn't win.
+60-day scrub deletes.
+
+#### Instagram entrants
+
+Instagram has no export and no query for "who commented", so the admin keeps
+the list by hand: on the giveaway's detail page, **Entrants** takes pasted
+lines, one person each:
+
+```
+@janedoe
+Sam Roe, @sam.roe x2 -- tagged 2 friends
+```
+
+`x3` (or `× 3`) records several entries, `-- …` a note. Pasting a handle again
+updates its row (a name added later fills in; a blank name or note never wipes
+one), and lines that don't parse come back in the box to fix rather than
+sinking the batch. Rows live in `external_entrants` (migration `0002`), keyed by
+lowercased handle, with `created_by` from the Access identity. Once the
+giveaway is `closed`, **use as winner** copies an entrant into the winners box
+(asking for a name if the row has none, since will-call needs one); recording
+winners is unchanged.
+
+The pick still happens on Instagram: the rules page promises a comment picker,
+so the portal records who entered but does not draw from this list. The 60-day
+scrub deletes these rows with the rest of the giveaway's personal data. Until
+migration `0002` is applied, the entrant routes answer 503 with the command to
+run and the rest of the page works.
 
 ### One prize per person per event
 
@@ -157,6 +183,14 @@ checking them against member names stays a manual step.
   - **CSV exports.** Full (name, email, tickets) for you. **Box office** (name,
     tickets) is what goes to The Capri: the privacy policy promises emails are
     never shared.
+  - **Entrants** (Instagram giveaways only): see "Instagram entrants" above.
+- **Delete**, at the bottom of a giveaway's detail page, after typing its id.
+  It removes the giveaway, its rules page and every row that hangs off it
+  (entries, participants, referrals, entrants, winners, draws; an explicit
+  ordered batch, since winners and entries reference draws and referrals
+  without a cascade). Members' referral codes stay. A `drawn` giveaway also
+  loses its draw log, so the Worker refuses it without `?force=1`; the portal
+  says so and sends it.
 
 ### The draw
 
@@ -183,7 +217,8 @@ npx wrangler d1 migrations apply jxnfilm-giveaways-staging --remote --env stagin
 ```
 
 A new migration later goes in `worker/migrations/000N_*.sql` and is applied the
-same way. Local runs and e2e use `--local` (Playwright applies it
+same way, **before** the Worker that uses it deploys. `0002_external_entrants`
+(Instagram entrants) is the first such. Local runs and e2e use `--local` (Playwright applies it
 automatically).
 
 No new secrets are needed. The IP hash reuses `OTP_SIGNING_KEY` under its own
@@ -211,10 +246,13 @@ is a no-op, so the rest of the Worker never depends on giveaways.
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /giveaways?event=` | public | event + its non-draft giveaways |
+| `GET /giveaways` | public | every open, unended giveaway, grouped by public event (the nav tab) |
 | `GET /giveaways/:id/me` | session | entered?, entries by source, referral link and count |
 | `POST /giveaways/:id/enter` | session | `{ acceptRules: true, commsConsent? }` |
 | `GET /giveaways/:id/rules` | public | official rules page (HTML) |
 | `GET/PUT /admin/giveaways[/:id]` | ADMIN_TOKEN | list (drafts too) / create or update |
+| `DELETE /admin/giveaways/:id[?force=1]` | ADMIN_TOKEN | delete with everything attached; `force` for a drawn one |
+| `GET/POST /admin/giveaways/:id/entrants` | ADMIN_TOKEN | Instagram entrants / `{ add: [lines], remove: [handles] }` |
 | `GET /admin/giveaways/:id/entries` | ADMIN_TOKEN | entries + counts by source |
 | `POST /admin/giveaways/:id/entries/:entryId` | ADMIN_TOKEN | `{ excluded }` |
 | `POST /admin/giveaways/:id/draw` · `/redraw` | ADMIN_TOKEN | draw / `{ memberId }` redraw; logs `X-Admin-Email` |

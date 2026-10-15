@@ -61,6 +61,7 @@ Rendered **imperatively**: the template is a static skeleton and `mounted()` nev
 
 - The venue list renders **before** the map, so it works without WebGL; if the map cannot be created (no WebGL, MapLibre or the style fails to load) the box hides and a line says so. Failed *tiles* do not trigger that: MapLibre reports them per tile and keeps the pins on a blank basemap.
 - Venues with something coming up sort first (soonest first) and get a filled red pin and red card border; the rest sort by how often the club has been there and get an outlined pin. Upcoming pins are added last so they draw on top where pins overlap (the Capri and Duling Hall are a block apart).
+- A pin's popup links **Details** to its venue card: the page scrolls the card to the middle of the screen and pulses a red outline around it for two seconds (`jmFlash`, `.jm-flash` in `css/map.css`). It's an outline, not the border, so nothing shifts; with reduced motion the scroll is instant and the outline holds without pulsing.
 - `cooperativeGestures` is on: two fingers to pan on a phone and Ctrl+scroll to zoom on desktop, so the page still scrolls past the map.
 - Each event links to `/events?query=<film>`.
 
@@ -76,4 +77,4 @@ Two default coordinates are approximate and worth a **check**: B&B Theatres Nort
 
 - `tests/worker/map.test.js`: matcher, validation, house exclusion (including for a signed-in caller), `config:venues` override and fallback.
 - `tests/admin/venues-sync.test.js`: admin/worker mirrors, coordinate parsing, the editor's list builder, the unmatched hint (and that the real history has no unmatched public venues).
-- `tests/e2e/map.spec.ts`: nav link, Capri card, no home screenings listed, config override.
+- `tests/e2e/map.spec.ts`: nav link, Capri card, popup Details highlight (skipped without WebGL), no home screenings listed, config override.

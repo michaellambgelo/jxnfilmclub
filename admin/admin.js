@@ -2742,19 +2742,27 @@ async function renderGiveawayDetail(id) {
     gwApi('GET', '/api/giveaways/winners', { id }),
   ])
   if (!g) throw new Error(`giveaway ${id} not found`)
+  // Instagram entrants live in their own table (migration 0002); a missing
+  // table shows its message here instead of failing the whole page.
+  const ig = g.sources.instagram
+    ? await gwApi('GET', '/api/giveaways/entrants', { id }).then(r => ({ list: r.entrants }), err => ({ error: err.message }))
+    : null
   const csv = (format) => `/api/giveaways/winners.csv?${qs({ env: env(), id, ...(format ? { format } : {}) })}`
   const selected = win.winners.filter(w => w.status === 'selected')
   content().innerHTML = `
     <p><button data-action="gw-back">&larr; All giveaways</button></p>
     <h2>${escapeHtml(g.title)} <span class="pill">${escapeHtml(g.status)}</span></h2>
-    <p class="muted">${escapeHtml(gwFmt(g.starts_at))} → ${escapeHtml(gwFmt(g.ends_at))} · ${data.participants} entrant(s) ·
+    <p class="muted">${escapeHtml(gwFmt(g.starts_at))} → ${escapeHtml(gwFmt(g.ends_at))} · ${ig ? (ig.list ? `${ig.list.length} tracked entrant(s)` : 'Instagram') : `${data.participants} entrant(s)`} ·
       <a href="${attr(`https://${env() === 'staging' ? 'join-staging' : 'join'}.jxnfilm.club/giveaways/${encodeURIComponent(id)}/rules`)}" target="_blank" rel="noopener">official rules</a></p>
 
+${ig ? '' : `
     <h3>Entries by source</h3>
     <table><thead><tr><th>Source</th><th>Rows</th><th>Entries</th><th>Flagged</th><th>Excluded</th></tr></thead>
     <tbody>${data.bySource.map(r => `<tr><td>${escapeHtml(r.source)}</td><td>${r.rows}</td><td>${r.entries}</td>
       <td>${r.flagged ? `<span class="pill warn">${r.flagged}</span>` : 0}</td><td>${r.excluded}</td></tr>`).join('') ||
-      '<tr><td colspan="5" class="muted">No entries yet.</td></tr>'}</tbody></table>
+      '<tr><td colspan="5" class="muted">No entries yet.</td></tr>'}</tbody></table>`}
+
+    ${ig ? gwEntrantsSection(id, g, ig, selected) : ''}
 
     <h3>${g.sources.instagram ? 'Winners (picked on Instagram)' : 'Draw'}</h3>
     ${g.sources.instagram && g.status === 'closed' ? `
@@ -2786,6 +2794,7 @@ async function renderGiveawayDetail(id) {
         <td><code>${escapeHtml(d.winners)}</code>${d.replaces_member ? ` <span class="muted">replaces ${escapeHtml(d.replaces_member)}</span>` : ''}</td>
       </tr>`).join('')}</tbody></table>` : ''}
 
+${ig ? '' : `
     <h3>All entries <span class="muted">(${data.entries.length})</span></h3>
     <table><thead><tr><th>Member</th><th>Source</th><th>Entries</th><th>Detail</th><th>When</th><th>Review</th><th></th></tr></thead>
     <tbody>${data.entries.map(e => `<tr class="${e.excluded ? 'muted' : ''}">
@@ -2794,7 +2803,37 @@ async function renderGiveawayDetail(id) {
       <td>${escapeHtml(gwFmt(e.created_at))}</td>
       <td>${e.flagged ? `<span class="pill warn" title="${attr(e.flag_reason || '')}">flagged</span> ${escapeHtml(e.flag_reason || '')}` : ''}</td>
       <td><button data-action="gw-exclude" data-id="${attr(id)}" data-entry="${e.id}" data-excluded="${e.excluded ? '0' : '1'}">${e.excluded ? 'include' : 'exclude'}</button></td>
-    </tr>`).join('')}</tbody></table>`
+    </tr>`).join('')}</tbody></table>`}
+
+    <h3>Delete</h3>
+    <p class="muted">Removes the giveaway, its rules page, and every entry${g.sources.instagram ? ', tracked entrant' : ''} and winner record.${g.status === 'drawn' ? ' It has been drawn, so its <b>draw log goes too</b>, and the draw can no longer be checked.' : ''} This cannot be undone.</p>
+    <p><button class="danger" data-action="gw-delete" data-id="${attr(id)}" data-status="${attr(g.status)}"
+      data-entries="${data.entries.length}" data-entrants="${ig && ig.list ? ig.list.length : 0}" data-winners="${win.winners.length}">Delete giveaway</button></p>`
+}
+
+// Instagram has no export, so entrants are pasted in by hand as comments come
+// in. The pick itself still happens on Instagram (the rules say a comment
+// picker); this list is the club's record of who entered.
+function gwEntrantsSection(id, g, ig, selected) {
+  if (ig.error) return `<h3>Entrants</h3><p><span class="pill warn">not available</span> ${escapeHtml(ig.error)}</p>`
+  const list = ig.list
+  const total = list.reduce((n, e) => n + e.entries, 0)
+  const winnerNames = new Set(selected.map(w => w.name || ''))
+  const canRecord = g.status === 'closed'
+  return `
+    <h3>Entrants <span class="muted">(${list.length} people, ${total} entries)</span></h3>
+    <p class="muted">One per line: <code>@handle</code>, <code>Name, @handle</code>, add <code>x3</code> for several entries (one per friend tagged), and <code>-- note</code> for anything else. Pasting a handle again updates it, and a name added later fills in.</p>
+    <p><textarea id="gw-entrants-add" rows="5" style="width:100%" placeholder="@janedoe&#10;Sam Roe, @sam.roe x2 -- tagged 2 friends"></textarea></p>
+    <p><button data-action="gw-entrants-add" data-id="${attr(id)}">Add entrants</button></p>
+    ${list.length ? `<table class="gw-entrants"><thead><tr><th>Handle</th><th>Name</th><th>Entries</th><th>Note</th><th>Added</th><th></th></tr></thead>
+    <tbody>${list.map(e => `<tr>
+      <td><a href="https://www.instagram.com/${attr(encodeURIComponent(e.handle))}/" target="_blank" rel="noopener">@${escapeHtml(e.handle)}</a></td>
+      <td>${escapeHtml(e.name) || '<span class="muted">—</span>'}</td>
+      <td>${e.entries}</td>
+      <td>${escapeHtml(e.note)}</td>
+      <td title="${attr(e.created_by)}">${escapeHtml(gwFmt(e.created_at))}</td>
+      <td>${canRecord && !winnerNames.has(`${e.name} (@${e.handle})`) ? `<button data-action="gw-entrant-win" data-handle="${attr(e.handle)}" data-name="${attr(e.name)}">use as winner</button> ` : ''}<button class="danger" data-action="gw-entrant-remove" data-id="${attr(id)}" data-handle="${attr(e.handle)}">remove</button></td>
+    </tr>`).join('')}</tbody></table>` : '<p class="empty">No entrants recorded yet.</p>'}`
 }
 
 document.addEventListener('click', async (e) => {
@@ -2830,6 +2869,46 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Record ${winners.length} Instagram winner(s) on ${env()}?\n\n${winners.join('\n')}\n\nThis is final and logged under your name.`)) return
       await gwApi('POST', '/api/giveaways/record-winners', { id: btn.dataset.id }, { winners, note: $('#gw-ig-note').value })
       toast(`Recorded ${winners.length} winner(s)`)
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-entrants-add') {
+      const box = $('#gw-entrants-add')
+      const lines = box.value.split('\n').map(l => l.trim()).filter(Boolean)
+      if (!lines.length) return toast('Paste at least one handle', 'error')
+      const out = await gwApi('POST', '/api/giveaways/entrants', { id: btn.dataset.id }, { add: lines })
+      await switchTab('giveaways')
+      // Lines that did not parse go back in the box to fix.
+      if (out.rejected.length) $('#gw-entrants-add').value = out.rejected.join('\n')
+      return toast(`${out.added} added, ${out.updated} updated` + (out.rejected.length ? `, ${out.rejected.length} not understood (left in the box)` : ''),
+        out.rejected.length ? 'error' : undefined)
+    }
+    if (a === 'gw-entrant-remove') {
+      if (!confirm(`Remove @${btn.dataset.handle} from the entrants?`)) return
+      await gwApi('POST', '/api/giveaways/entrants', { id: btn.dataset.id }, { remove: [btn.dataset.handle] })
+      toast(`Removed @${btn.dataset.handle}`)
+      return switchTab('giveaways')
+    }
+    if (a === 'gw-entrant-win') {
+      // A winner needs a name for will-call; ask when the entrant has none.
+      const name = btn.dataset.name || (prompt(`Name for @${btn.dataset.handle} (the box office holds tickets under it):`) || '').trim()
+      if (!name) return
+      const box = $('#gw-ig-winners')
+      if (!box) return toast('Set the status to closed to record winners', 'error')
+      const line = `${name}, @${btn.dataset.handle}`
+      if (!box.value.split('\n').includes(line)) box.value = (box.value.trim() ? box.value.trim() + '\n' : '') + line
+      box.scrollIntoView({ block: 'center' })
+      return toast(`Added to the winners box. Press Record when it is complete.`)
+    }
+    if (a === 'gw-delete') {
+      const d = btn.dataset
+      const drawn = d.status === 'drawn'
+      const what = `${d.entries} entr${d.entries === '1' ? 'y' : 'ies'}, ${d.entrants} tracked entrant(s), ${d.winners} winner record(s)` + (drawn ? ' and the draw log' : '')
+      const typed = prompt(`Delete giveaway ${d.id} on ${env()}?\n\nThis removes ${what}. It cannot be undone.\n\nType the giveaway id to confirm:`)
+      if (typed === null) return
+      if (typed.trim() !== d.id) return toast('The id did not match; nothing was deleted', 'error')
+      await gwApi('DELETE', '/api/giveaways', { id: d.id, ...(drawn ? { force: '1' } : {}) })
+      toast(`Deleted ${d.id}`)
+      gwView = { mode: 'list', id: null }
       return switchTab('giveaways')
     }
     if (a === 'gw-ig-replace') {

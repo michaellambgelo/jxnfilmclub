@@ -1,8 +1,8 @@
 import { SELF, env } from 'cloudflare:test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  isAcceptingEntries, normalizeEmail, parseLetterboxdHandle, parseSources, poolHash,
-  secureRandomInt, toCsv, validGiveaway, weightedDraw,
+  isAcceptingEntries, normalizeEmail, parseInstagramEntrant, parseLetterboxdHandle, parseSources, poolHash,
+  RETENTION_DAYS, scrubGiveaways, secureRandomInt, toCsv, validGiveaway, weightedDraw,
 } from '../../worker/src/giveaways.js'
 
 // Giveaways (worker/src/giveaways.js). Contract under test: entries only
@@ -968,5 +968,126 @@ describe('one prize per person per event', () => {
     const second = await (await draw('clay-second')).json()
     expect(second.poolMembers).toBe(1)
     expect(second.winners).toEqual(people.filter(p => p !== winner))
+  })
+})
+
+// --- Instagram entrants, recorded by hand ---------------------------------------
+
+const entrants = (id, body) => req(`/admin/giveaways/${id}/entrants`, {
+  method: body ? 'POST' : 'GET', token: ADMIN, body, headers: { 'X-Admin-Email': 'michael@michaellamb.dev' },
+})
+
+describe('parseInstagramEntrant', () => {
+  it('takes a bare handle, a named handle, an entry count and a note', () => {
+    expect(parseInstagramEntrant('@JaneDoe')).toEqual({ name: '', handle: 'janedoe', entries: 1, note: '' })
+    expect(parseInstagramEntrant('sam.roe_')).toEqual({ name: '', handle: 'sam.roe_', entries: 1, note: '' })
+    expect(parseInstagramEntrant('Jane Doe, @janedoe x3')).toEqual({ name: 'Jane Doe', handle: 'janedoe', entries: 3, note: '' })
+    expect(parseInstagramEntrant('@janedoe × 2 -- tagged @a and @b')).toEqual({ name: '', handle: 'janedoe', entries: 2, note: 'tagged @a and @b' })
+  })
+
+  it('rejects lines that name no valid handle', () => {
+    expect(parseInstagramEntrant('')).toBeNull()
+    expect(parseInstagramEntrant('two words')).toBeNull()
+    expect(parseInstagramEntrant('@' + 'x'.repeat(31))).toBeNull()
+    expect(parseInstagramEntrant('@janedoe x0')).toBeNull()
+  })
+})
+
+describe('instagram entrants', () => {
+  it('adds, updates on re-paste, returns bad lines, and removes', async () => {
+    await igGiveaway('clay-ig-ent')
+    let res = await entrants('clay-ig-ent', { add: ['@janedoe', 'Sam Roe, @sam.roe x2 -- tagged 2', 'not a handle at all', ''] })
+    expect(res.status).toBe(200)
+    let out = await res.json()
+    expect(out).toMatchObject({ added: 2, updated: 0, removed: 0, rejected: ['not a handle at all'] })
+    expect(out.entrants.map(e => e.handle)).toEqual(['janedoe', 'sam.roe'])
+    expect(out.entrants[0].created_by).toBe('michael@michaellamb.dev')
+
+    // A re-paste fills in a name without wiping the note or adding a row.
+    out = await (await entrants('clay-ig-ent', { add: ['Jane Doe @JANEDOE', 'Sam Roe, @sam.roe x4'] })).json()
+    expect(out).toMatchObject({ added: 0, updated: 2 })
+    const jane = out.entrants.find(e => e.handle === 'janedoe')
+    const sam = out.entrants.find(e => e.handle === 'sam.roe')
+    expect(jane.name).toBe('Jane Doe')
+    expect(sam).toMatchObject({ entries: 4, note: 'tagged 2' })
+
+    out = await (await entrants('clay-ig-ent', { remove: ['@JaneDoe'] })).json()
+    expect(out.removed).toBe(1)
+    expect((await (await entrants('clay-ig-ent')).json()).entrants.map(e => e.handle)).toEqual(['sam.roe'])
+  })
+
+  it('only applies to Instagram giveaways and needs the admin token', async () => {
+    await putGiveaway('clay-portal-ent')
+    expect((await entrants('clay-portal-ent', { add: ['@janedoe'] })).status).toBe(409)
+    await igGiveaway('clay-ig-auth')
+    expect((await req('/admin/giveaways/clay-ig-auth/entrants')).status).toBe(401)
+  })
+
+  it('is deleted by the 60-day scrub with the rest of the personal data', async () => {
+    const now = Date.now()
+    const long = (RETENTION_DAYS + 2) * 24 * HOUR
+    await igGiveaway('clay-ig-old', { status: 'closed',
+      starts_at: new Date(now - long - HOUR).toISOString(), ends_at: new Date(now - long).toISOString() })
+    await igGiveaway('clay-ig-new')
+    await env.GIVEAWAYS_DB.batch(['clay-ig-old', 'clay-ig-new'].map(id => env.GIVEAWAYS_DB.prepare(
+      "INSERT INTO external_entrants (giveaway_id, handle, created_by, created_at, updated_at) VALUES (?, 'janedoe', 't', 't', 't')").bind(id)))
+    await scrubGiveaways(env.GIVEAWAYS_DB, now)
+    const { results } = await env.GIVEAWAYS_DB.prepare('SELECT giveaway_id FROM external_entrants').all()
+    expect(results.map(r => r.giveaway_id)).toEqual(['clay-ig-new'])
+  })
+})
+
+describe('deleting a giveaway', () => {
+  const del = (id, q = '') => req(`/admin/giveaways/${id}${q}`, { method: 'DELETE', token: ADMIN })
+  const count = async (table, id) =>
+    (await env.GIVEAWAYS_DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE giveaway_id = ?`).bind(id).first()).n
+
+  it('removes the giveaway and its entries', async () => {
+    await putGiveaway('clay-del')
+    const m = await member('del1@example.com')
+    await enter('clay-del', m.token)
+    await rsvp(m.token)
+    expect(await count('entries', 'clay-del')).toBeGreaterThan(0)
+    expect((await del('clay-del')).status).toBe(200)
+    expect((await req('/admin/giveaways/clay-del', { token: ADMIN })).status).toBe(404)
+    for (const t of ['entries', 'participants']) expect(await count(t, 'clay-del')).toBe(0)
+  })
+
+  it('refuses a drawn giveaway unless forced, then takes the draw log with it', async () => {
+    await closeIt('clay-del-drawn')
+    expect((await record('clay-del-drawn', { winners: ['Jane Doe, @janedoe'] })).status).toBe(200)
+    await entrants('clay-del-drawn', { add: ['@janedoe'] })
+    const refused = await del('clay-del-drawn')
+    expect(refused.status).toBe(409)
+    expect((await refused.json()).error).toMatch(/draw log/)
+    expect((await del('clay-del-drawn', '?force=1')).status).toBe(200)
+    for (const t of ['winners', 'draws', 'participants', 'external_entrants']) expect(await count(t, 'clay-del-drawn')).toBe(0)
+  })
+
+  it('needs the admin token, and 404s an unknown id', async () => {
+    await putGiveaway('clay-del-auth')
+    expect((await req('/admin/giveaways/clay-del-auth', { method: 'DELETE' })).status).toBe(401)
+    expect((await del('no-such-giveaway')).status).toBe(404)
+  })
+})
+
+describe('before migration 0002 is applied', () => {
+  it('entrant routes say so; delete and the scrub still work', async () => {
+    await igGiveaway('clay-ig-nomig')
+    await env.GIVEAWAYS_DB.prepare('DROP TABLE external_entrants').run()
+    try {
+      const res = await entrants('clay-ig-nomig')
+      expect(res.status).toBe(503)
+      expect((await res.json()).error).toMatch(/migrations apply/)
+      await scrubGiveaways(env.GIVEAWAYS_DB, Date.now() + 400 * 24 * HOUR)
+      const del = await req('/admin/giveaways/clay-ig-nomig', { method: 'DELETE', token: ADMIN })
+      expect(del.status).toBe(200)
+    } finally {
+      await env.GIVEAWAYS_DB.prepare(`CREATE TABLE IF NOT EXISTS external_entrants (
+        giveaway_id TEXT NOT NULL REFERENCES giveaways (id) ON DELETE CASCADE, handle TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '', entries INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY (giveaway_id, handle))`).run()
+    }
   })
 })

@@ -805,6 +805,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/days-of-heaven/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/x3/jx/v5/l2/rwxTYjOZmX2rGhz7avLe1qsjNqe-0-600-0-900-crop.jpg?v=5fe1a56460",
+      "rating": "4.5",
+      "title": "Days of Heaven",
+      "watched_date": "2026-10-14",
+      "year": "1978"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/badlands/1/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/9/8/4/4/49844-badlands-0-600-0-900-crop.jpg?v=d57e83e76f",
       "rating": "4.0",
@@ -904,14 +913,6 @@
       "title": "Magnolia",
       "watched_date": "2026-10-05",
       "year": "1999"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/portishead-roseland-new-york/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/2/3/0/9/42309-portishead-roseland-new-york-0-600-0-900-crop.jpg?v=69a0815510",
-      "title": "Portishead: Roseland New York",
-      "watched_date": "2026-10-03",
-      "year": "1998"
     }
   ],
   "badmov1eenjoyer": [
@@ -1846,6 +1847,15 @@
   ],
   "jon_knowledge": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/jon_knowledge/film/the-killing/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/0/9/51809-the-killing-0-600-0-900-crop.jpg?v=e5e7dfa2a2",
+      "rating": "5.0",
+      "title": "The Killing",
+      "watched_date": "2026-10-14",
+      "year": "1956"
+    },
+    {
       "link": "https://letterboxd.com/jon_knowledge/film/re-animator/",
       "poster": "https://a.ltrbxd.com/resized/sm/upload/wd/b8/27/m3/hJnP2O0uTuh8HsR094WLTi3sQwc-0-600-0-900-crop.jpg?v=229c35a394",
       "rating": "4.0",
@@ -1936,14 +1946,6 @@
       "title": "The Maltese Falcon",
       "watched_date": "2026-09-07",
       "year": "1941"
-    },
-    {
-      "link": "https://letterboxd.com/jon_knowledge/film/king-of-new-york/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/0/4/2/47042-king-of-new-york-0-600-0-900-crop.jpg?v=ef72bff72d",
-      "rating": "4.0",
-      "title": "King of New York",
-      "watched_date": "2026-09-06",
-      "year": "1990"
     }
   ],
   "michaellamb": [

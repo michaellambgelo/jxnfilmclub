@@ -985,6 +985,80 @@ export function normalizeStringList(list) {
     .filter(Boolean)
 }
 
+// --- Map venues (config:venues; docs/features/map.md) ---
+
+// MIRRORS venueKey() in worker/src/venues.js, which decides what the public
+// map pins. Here it only powers the unmatched-names hint, but a drift would
+// make that hint lie. Guarded by tests/admin/venues-sync.test.js.
+export function venueKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/theatre/g, 'theater')
+    .replace(/^[^a-z0-9]*the\s+/, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+// Parse a pasted "lat, lng" pair, the form a map app copies to the
+// clipboard. Returns { lat, lng } or null.
+export function parseCoords(text) {
+  const m = String(text || '').trim().match(/^(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)$/)
+  if (!m) return null
+  const lat = Number(m[1]), lng = Number(m[2])
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  return { lat, lng }
+}
+
+// Editor rows ({ name, address, coords, aliases } as typed) → the stored
+// config:venues list, plus one message per problem. Blank rows are skipped.
+// Stores only what the Worker's validVenueList() accepts, so a save can never
+// silently void the whole list and drop the map back to its defaults.
+export function buildVenueList(rows) {
+  const venues = []
+  const errors = []
+  ;(Array.isArray(rows) ? rows : []).forEach((r, i) => {
+    const name = String(r?.name ?? '').trim()
+    const address = String(r?.address ?? '').trim()
+    const coordsText = String(r?.coords ?? '').trim()
+    const aliases = String(r?.aliases ?? '').split(/[\n;]/).map(s => s.trim()).filter(Boolean)
+    if (!name && !address && !coordsText && !aliases.length) return
+    const label = name || `row ${i + 1}`
+    if (!name) errors.push(`${label}: name is required`)
+    if (name.length > 200 || address.length > 200) errors.push(`${label}: name and address must be 200 characters or fewer`)
+    const coords = parseCoords(coordsText)
+    if (!coords) errors.push(`${label}: coordinates must be "lat, lng", e.g. 32.33554, -90.17678`)
+    if (aliases.length > 20 || aliases.some(a => a.length > 200)) errors.push(`${label}: at most 20 aliases of 200 characters each`)
+    if (name && coords) venues.push({ name, address, lat: coords.lat, lng: coords.lng, aliases })
+  })
+  if (!errors.length && !venues.length) errors.push('Add at least one venue, or use reset to fall back to the defaults')
+  if (venues.length > 100) errors.push('At most 100 venues')
+  return { venues, errors }
+}
+
+// Venue names used by public events that no map venue (name or alias)
+// matches, most used first. These events are missing from the map. House
+// screenings are skipped: they are never pinned, so listing them would only
+// invite someone to alias a member's home onto a public map. The curated
+// history predates the kind field, so its home screenings are recognized by
+// name instead (they all end in house, apartment or home).
+const HOME_VENUE_RE = /\b(house|apartment|home)$/i
+export function unmatchedVenueNames(events, venues) {
+  const known = new Set()
+  for (const v of venues || []) {
+    for (const label of [v.name, ...(v.aliases || [])]) known.add(venueKey(label))
+  }
+  const counts = new Map()
+  for (const e of events || []) {
+    if (!e || !e.venue) continue
+    if (e.kind === 'house' || (!e.kind && e.hostId)) continue
+    if (HOME_VENUE_RE.test(e.venue.trim())) continue
+    if (known.has(venueKey(e.venue))) continue
+    counts.set(e.venue, (counts.get(e.venue) || 0) + 1)
+  }
+  return [...counts].map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
 // Prune a copy-override form into the stored config:copy blob: keep only
 // allowed keys whose trimmed value is non-empty (empty = fall back to the
 // hardcoded site default). Returns null when nothing survives — the caller

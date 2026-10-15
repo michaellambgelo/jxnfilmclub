@@ -1,0 +1,159 @@
+/* Venue map, /map (ui/map.html). Tokens from css/tokens.css.
+ *
+ * The basemap (tiles/style.json) carries no red at all, so the pins are the
+ * only red on the page: filled for a venue with something coming up,
+ * outlined for one the club has only been to.
+ *
+ * MapLibre's own stylesheet is lazy-loaded after this one, so the overrides
+ * below are scoped under .map-page to win on specificity, not order. */
+
+.map-page .jm-eyebrow {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--brand);
+}
+
+.map-page .lede {
+  max-width: var(--column-prose);
+  color: var(--ink-2);
+  margin: 0 0 1.5rem;
+}
+
+.map-page .jm-map {
+  height: clamp(320px, 62vh, 640px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.map-page .jm-status { color: var(--ink-4); font-size: var(--fs-14); margin: 0.75rem 0; }
+.map-page .jm-status:empty { display: none; }
+
+/* ------- pins ------- */
+
+.map-page .jm-pin {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--brand);
+  background: var(--bg);
+  color: var(--ink-strong);
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  line-height: 26px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+
+.map-page .jm-pin-soon { background: var(--brand); color: var(--ink-strong); }
+.map-page .jm-pin:hover,
+.map-page .jm-pin:focus-visible { outline: 2px solid var(--ink-strong); outline-offset: 2px; }
+
+/* ------- popups and controls, repainted for the dark page ------- */
+
+.map-page .maplibregl-popup-content {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  padding: 0.75rem 1.75rem 0.75rem 0.9rem;
+  box-shadow: var(--shadow-lift);
+  font-family: var(--font-body);
+}
+
+.map-page .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--surface); }
+.map-page .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--surface); }
+.map-page .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--surface); }
+.map-page .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--surface); }
+.map-page .maplibregl-popup-close-button { color: var(--ink-3); font-size: 1.25rem; padding: 0 0.4rem; }
+
+.map-page .jm-pop p { margin: 0 0 0.25rem; }
+.map-page .jm-pop-name { font-family: var(--font-display); font-weight: 700; color: var(--ink-strong); }
+.map-page .jm-pop-addr, .map-page .jm-pop-count { font-size: var(--fs-13); color: var(--ink-3); }
+.map-page .jm-pop-next { font-size: var(--fs-13); color: var(--brand-tint-fg); }
+.map-page .jm-pop-links { display: flex; gap: 1rem; margin-top: 0.4rem; }
+
+.map-page .maplibregl-ctrl-group { background: var(--surface); border-radius: 0; }
+.map-page .maplibregl-ctrl-group button + button { border-top-color: var(--line-2); }
+.map-page .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(0.9); }
+.map-page .maplibregl-ctrl-attrib { background: rgba(16, 15, 14, 0.8); color: var(--ink-4); }
+.map-page .maplibregl-ctrl-attrib a { color: var(--ink-3); }
+.map-page .maplibregl-ctrl-attrib-button { filter: invert(0.9); }
+.map-page .maplibregl-ctrl-attrib.maplibregl-compact-show { background: var(--surface); }
+
+/* ------- venue list ------- */
+
+.map-page .jm-venues {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 var(--space-12);
+}
+
+.map-page .jm-venue {
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  scroll-margin-top: 1rem;
+}
+
+.map-page .jm-venue-soon { border-color: var(--brand-dark); }
+.map-page .jm-venue h2 { margin: 0 0 0.35rem; font-size: var(--fs-22); }
+.map-page .jm-venue-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0 0 0.5rem; font-size: var(--fs-14); }
+.map-page .jm-addr { color: var(--ink-3); flex-basis: 100%; }
+
+.map-page .jm-count {
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-4);
+  margin: 0 0 0.75rem;
+}
+
+.map-page .jm-sub {
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-3);
+  margin: 0.75rem 0 0.25rem;
+}
+
+.map-page .jm-sub-soon { color: var(--brand-tint-fg); }
+
+.map-page .jm-events { list-style: none; margin: 0; padding: 0; }
+
+.map-page .jm-event {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line-3);
+  font-size: var(--fs-15);
+}
+
+.map-page .jm-event-date { color: var(--ink-4); white-space: nowrap; font-size: var(--fs-14); }
+
+.map-page a.jm-event-film,
+.map-page .jm-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--line-2);
+}
+
+.map-page button.jm-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.map-page a.jm-event-film:hover,
+.map-page .jm-link:hover { color: var(--brand); text-decoration-color: currentColor; }

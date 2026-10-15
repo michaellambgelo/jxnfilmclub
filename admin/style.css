@@ -380,6 +380,11 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .cfg-warn { color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 0.5rem 0.8rem; font-size: 0.9rem; background: #fff0f0 }
 .cfg-row { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; align-items: center }
 .cfg-row input[type="text"] { flex: 1 }
+/* Map venues: four fields per row, so wrap; aliases take their own line. */
+.cfg-venue-row { flex-wrap: wrap; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line, #ddd) }
+.cfg-venue-row input[data-venue-field="name"] { flex: 1 1 200px }
+.cfg-venue-row input[data-venue-field="address"] { flex: 2 1 260px }
+.cfg-venue-row input[data-venue-field="aliases"] { flex: 1 1 100%; order: 10 }
 .cfg-episode {
   display: grid;
   grid-template-columns: auto minmax(180px, 2fr) 150px minmax(200px, 3fr) auto;

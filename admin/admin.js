@@ -22,7 +22,7 @@ import {
   imageBlockIssues, buildImageBlockHtml, buildImageBlockText,
   newsletterSendBlocker, newsletterSizeReport,
   countPendingVoice, countOpenFeedback, rsvpEnabled, sanitizeAdminEvent,
-  eventIdFrom, newEventIssues } from './lib.js'
+  eventIdFrom, newEventIssues, buildVenueList, unmatchedVenueNames } from './lib.js'
 import { renderContentGen } from './contentgen.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -1176,6 +1176,24 @@ const DEFAULT_THEATERS = [
   'B&B Theaters at Northpark in Ridgeland',
 ]
 
+// Mirrors DEFAULT_VENUES in worker/src/venues.js: what /map pins when
+// config:venues is absent, and this editor's starting point / reset target.
+// Guarded by tests/admin/venues-sync.test.js.
+const DEFAULT_VENUES = [
+  { name: 'The Capri Theatre', address: '3023 N State St, Jackson, MS 39216', lat: 32.33554, lng: -90.17678, aliases: [] },
+  { name: 'Duling Hall', address: '622 Duling Ave, Jackson, MS 39216', lat: 32.33620, lng: -90.17523, aliases: [] },
+  { name: 'Fertile Ground Beer Co.', address: '800 Manship St, Jackson, MS 39202', lat: 32.31417, lng: -90.17575, aliases: [] },
+  { name: 'Urban Foxes', address: '826 North St, Jackson, MS 39202', lat: 32.30873, lng: -90.17681, aliases: [] },
+  { name: 'Patton House & Gallery', address: '512 N State St, Jackson, MS 39201', lat: 32.30367, lng: -90.17947, aliases: [] },
+  { name: 'Two Mississippi Museums', address: '222 North St, Jackson, MS 39201', lat: 32.30058, lng: -90.17948, aliases: [] },
+  { name: 'Mississippi Museum of Art', address: '380 S Lamar St, Jackson, MS 39201', lat: 32.29631, lng: -90.18562, aliases: [] },
+  { name: 'Malco Grandview & IMAX', address: '221 Grandview Blvd, Madison, MS 39110', lat: 32.46329, lng: -90.13812, aliases: ['Malco Grandview & IMAX in Madison'] },
+  { name: 'Malco Renaissance Cinema Grill', address: '1000 Highland Colony Pkwy, Ridgeland, MS 39157', lat: 32.43659, lng: -90.14663, aliases: ['Malco Renaissance', 'Malco Renaissance in Ridgeland'] },
+  { name: 'B&B Theatres Northpark 14', address: '250 Ring Rd, Ridgeland, MS 39157', lat: 32.40278, lng: -90.12921, aliases: ['B&B Theaters at Northpark in Ridgeland'] },
+  { name: 'Legacy Theaters Parkway', address: '1075 Parkway Blvd, Flowood, MS 39232', lat: 32.33733, lng: -90.09068, aliases: ['Legacy Parkway Theaters'] },
+  { name: 'Cinemark Pearl and XD', address: '411 Riverwind Dr, Pearl, MS 39208', lat: 32.26810, lng: -90.14061, aliases: ['Cinemark Pearl', 'Cinemark XD in Pearl'] },
+]
+
 // config:copy fields — placeholders are the current hardcoded site copy
 // (ui/views.html), shown so the operator sees exactly what an override
 // replaces. Empty input = fall back to that default.
@@ -1206,6 +1224,10 @@ const EPISODES_JSON_URL = 'https://jxnfilm.club/data/episodes.json'
 // of truth); mutated in place by the add/remove/move actions between saves.
 let cfgTheaters = []
 let cfgTheatersKv = false
+// Map venue editor rows, as typed: { name, address, coords, aliases }.
+let cfgVenues = []
+let cfgVenuesKv = false
+let cfgUnmatched = []
 let cfgPodcast = { episodes: [] }
 let cfgPodcastKv = false
 let cfgPodcastSeedFailed = false
@@ -1222,6 +1244,14 @@ async function renderConfig() {
   cfgTheaters = cfgTheatersKv
     ? normalizeStringList(tryParse(values['config:theaters']))
     : [...DEFAULT_THEATERS]
+
+  cfgVenuesKv = has('config:venues')
+  const storedVenues = cfgVenuesKv ? tryParse(values['config:venues']) : null
+  const venueList = Array.isArray(storedVenues) ? storedVenues : DEFAULT_VENUES
+  cfgVenues = venueList.map(venueToRow)
+  // events:all is the public projection, so no host address reaches this tab.
+  const eventsAgg = await loadKv('events:all', 'ATTENDANCE_KV').catch(() => null)
+  cfgUnmatched = unmatchedVenueNames(tryParse(eventsAgg?.values?.['events:all']) || [], venueList)
 
   cfgPodcastKv = has('config:podcast')
   cfgPodcastSeedFailed = false
@@ -1285,6 +1315,27 @@ async function renderConfig() {
         <button class="primary" data-action="cfg-theaters-save">save list</button>
         <button class="danger" data-action="cfg-theaters-reset">reset to defaults</button>
       </div>
+    </section>
+
+    <section class="cfg-section" id="cfg-venues">
+      <h3>Map venues ${cfgBadge(cfgVenuesKv)}</h3>
+      <p class="section-hint"><code>config:venues</code> — the pins on the public <a href="https://jxnfilm.club/map" target="_blank" rel="noopener">/map</a>.
+        Separate from the theater list above: a venue here is shown on the map but is <b>not</b> offered to
+        members hosting a meetup. An event appears at a venue when its venue text matches the name or an alias
+        (case, punctuation, a leading “The”, &amp;/and and theatre/theater are ignored). House screenings are
+        never pinned. Coordinates are “lat, lng”, as copied from a map app; “check” opens them on OpenStreetMap.
+        Separate aliases with semicolons. Reset deletes the key so the Worker falls back to its built-in list.</p>
+      <div id="cfg-venues-list">${renderVenueRows()}</div>
+      <div class="toolbar">
+        <button data-action="cfg-venue-add">+ add venue</button>
+        <button class="primary" data-action="cfg-venues-save">save venues</button>
+        <button class="danger" data-action="cfg-venues-reset">reset to defaults</button>
+      </div>
+      ${cfgUnmatched.length
+        ? `<p class="section-hint"><b>Not on the map</b> — public events whose venue matches no entry here
+            (add the venue, or add the name as an alias):
+            ${cfgUnmatched.map(u => `<code>${escapeHtml(u.name)}</code> (${u.count})`).join(', ')}</p>`
+        : '<p class="section-hint">Every public event matches a map venue.</p>'}
     </section>
 
     <section class="cfg-section" id="cfg-podcast">
@@ -1377,6 +1428,45 @@ function renderTheaterRows() {
       <button data-action="cfg-theater-down" data-idx="${i}" title="move down" ${i === cfgTheaters.length - 1 ? 'disabled' : ''}>↓</button>
       <button class="danger" data-action="cfg-theater-rm" data-idx="${i}">remove</button>
     </div>`).join('')
+}
+
+function venueToRow(v) {
+  const has = typeof v?.lat === 'number' && typeof v?.lng === 'number'
+  return {
+    name: v?.name || '',
+    address: v?.address || '',
+    coords: has ? `${v.lat}, ${v.lng}` : '',
+    aliases: Array.isArray(v?.aliases) ? v.aliases.join('; ') : '',
+  }
+}
+
+function renderVenueRows() {
+  if (!cfgVenues.length) return '<p class="empty">No venues — add one below.</p>'
+  return cfgVenues.map((r, i) => {
+    const c = r.coords.split(',').map(s => s.trim())
+    const check = c.length === 2 && c[0] && c[1]
+      ? `<a href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(c[0])}&mlon=${encodeURIComponent(c[1])}#map=18/${encodeURIComponent(c[0])}/${encodeURIComponent(c[1])}" target="_blank" rel="noopener">check</a>`
+      : '<span class="muted">check</span>'
+    return `
+    <div class="cfg-row cfg-venue-row" data-idx="${i}">
+      <input type="text" data-venue-field="name" value="${attr(r.name)}" placeholder="Venue name">
+      <input type="text" data-venue-field="address" value="${attr(r.address)}" placeholder="Street address">
+      <input type="text" data-venue-field="coords" value="${attr(r.coords)}" placeholder="32.33554, -90.17678" style="max-width:220px">
+      ${check}
+      <input type="text" data-venue-field="aliases" value="${attr(r.aliases)}" placeholder="Other spellings; separated by semicolons">
+      <button data-action="cfg-venue-up" data-idx="${i}" title="move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button data-action="cfg-venue-down" data-idx="${i}" title="move down" ${i === cfgVenues.length - 1 ? 'disabled' : ''}>↓</button>
+      <button class="danger" data-action="cfg-venue-rm" data-idx="${i}">remove</button>
+    </div>`
+  }).join('')
+}
+
+function readVenueInputs() {
+  cfgVenues = [...document.querySelectorAll('#cfg-venues-list .cfg-venue-row')].map(row => {
+    const r = {}
+    row.querySelectorAll('[data-venue-field]').forEach(inp => { r[inp.dataset.venueField] = inp.value })
+    return r
+  })
 }
 
 function renderEpisodeRows() {
@@ -2400,6 +2490,37 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Delete config:theaters on ${env()}?\n\nThe Worker and site fall back to the hardcoded theater list.`)) return
       await delKv('config:theaters').catch(() => {})
       toast('config:theaters deleted — defaults are back in effect')
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-venue-add') {
+      readVenueInputs()
+      cfgVenues.push({ name: '', address: '', coords: '', aliases: '' })
+      $('#cfg-venues-list').innerHTML = renderVenueRows()
+      const rows = document.querySelectorAll('#cfg-venues-list input[data-venue-field="name"]')
+      rows[rows.length - 1]?.focus()
+    }
+    else if (a === 'cfg-venue-rm') {
+      readVenueInputs()
+      cfgVenues.splice(Number(btn.dataset.idx), 1)
+      $('#cfg-venues-list').innerHTML = renderVenueRows()
+    }
+    else if (a === 'cfg-venue-up' || a === 'cfg-venue-down') {
+      readVenueInputs()
+      cfgVenues = moveItem(cfgVenues, Number(btn.dataset.idx), a === 'cfg-venue-up' ? -1 : 1)
+      $('#cfg-venues-list').innerHTML = renderVenueRows()
+    }
+    else if (a === 'cfg-venues-save') {
+      readVenueInputs()
+      const { venues, errors } = buildVenueList(cfgVenues)
+      if (errors.length) { toast(errors.join(' · '), true); return }
+      await putKv('config:venues', JSON.stringify(venues))
+      toast(`Saved ${venues.length} venue(s) to config:venues (${env()})`)
+      await switchTab(currentTab)
+    }
+    else if (a === 'cfg-venues-reset') {
+      if (!confirm(`Delete config:venues on ${env()}?\n\nThe map falls back to the built-in venue list.`)) return
+      await delKv('config:venues').catch(() => {})
+      toast('config:venues deleted — defaults are back in effect')
       await switchTab(currentTab)
     }
     else if (a === 'cfg-ep-add') {

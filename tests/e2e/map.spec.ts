@@ -20,6 +20,20 @@ test.describe('venue map', () => {
     await expect(capri.getByRole('link', { name: 'Directions' })).toHaveAttribute('href', /google\.com\/maps\/dir/)
   })
 
+  test('Details in a pin popup scrolls to the venue card and pulses it', async ({ page }) => {
+    await page.goto('/map')
+    const pin = page.locator('.jm-pin[aria-label^="The Capri Theatre"]')
+    test.skip(!(await pin.waitFor({ timeout: 10_000 }).then(() => true, () => false)), 'no WebGL in this browser')
+    await pin.click()
+    await page.locator('.maplibregl-popup').getByRole('link', { name: 'Details' }).click()
+    const card = page.locator('.jm-venue.jm-flash')
+    await expect(card).toHaveCount(1)
+    await expect(card).toHaveId('venue-the-capri-theatre')
+    await expect(card).toBeInViewport()
+    // The pulse clears itself so a later click can run it again.
+    await expect(card).toHaveCount(0, { timeout: 4_000 })
+  })
+
   test('never lists a home screening', async ({ page }) => {
     await page.goto('/map')
     await expect(page.locator('.jm-venue').first()).toBeVisible()

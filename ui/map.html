@@ -161,6 +161,18 @@
     return card
   }
 
+  // Scroll a venue card into view and pulse its red outline so the eye
+  // lands on it. Restarting the class lets a second click pulse again.
+  function jmFlash(card) {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    card.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
+    card.classList.remove('jm-flash')
+    void card.offsetWidth
+    card.classList.add('jm-flash')
+    clearTimeout(card.jmFlashTimer)
+    card.jmFlashTimer = setTimeout(function() { card.classList.remove('jm-flash') }, 2000)
+  }
+
   function jmPopup(v) {
     const box = jmEl('div', 'jm-pop')
     box.appendChild(jmEl('p', 'jm-pop-name', v.name))
@@ -176,7 +188,7 @@
     details.addEventListener('click', function(ev) {
       ev.preventDefault()
       const card = document.getElementById('venue-' + v.id)
-      if (card) card.scrollIntoView()
+      if (card) jmFlash(card)
     })
     links.appendChild(details)
     const dir = jmEl('a', 'jm-link', 'Directions')

@@ -102,6 +102,24 @@
 }
 
 .map-page .jm-venue-soon { border-color: var(--brand-dark); }
+
+/* "Details" in a map popup scrolls to the card and pulses it (jmFlash). An
+   outline, not the border, so the card never shifts. */
+.map-page .jm-venue.jm-flash {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+  animation: jm-flash 2s ease-out both;
+}
+@keyframes jm-flash {
+  0%, 15%  { outline-color: var(--brand); box-shadow: 0 0 0 0 rgba(215, 50, 31, 0.55); }
+  45%      { outline-color: var(--brand); box-shadow: 0 0 0 12px rgba(215, 50, 31, 0); }
+  60%      { outline-color: var(--brand); box-shadow: 0 0 0 0 rgba(215, 50, 31, 0.45); }
+  85%      { box-shadow: 0 0 0 10px rgba(215, 50, 31, 0); }
+  100%     { outline-color: transparent; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-page .jm-venue.jm-flash { animation: none; }
+}
 .map-page .jm-venue h2 { margin: 0 0 0.35rem; font-size: var(--fs-22); }
 .map-page .jm-venue-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0 0 0.5rem; font-size: var(--fs-14); }
 .map-page .jm-addr { color: var(--ink-3); flex-basis: 100%; }

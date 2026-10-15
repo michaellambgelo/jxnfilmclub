@@ -1,5 +1,15 @@
 [
   {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/padak/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/9/2/8/102928-padak-0-600-0-900-crop.jpg?v=d7874fbe8b",
+    "rating": "4.0",
+    "review": "Sometimes I ask myself why I'm \"the film person\" in my circle of friends, but it dawned on me that I've tried three separate times this week to get them to watch this with me and had no one take me up on the offer",
+    "title": "Padak",
+    "watched_date": "2026-10-15",
+    "year": "2012"
+  },
+  {
     "handle": "jon_knowledge",
     "liked": true,
     "link": "https://letterboxd.com/jon_knowledge/film/the-killing/",
@@ -9,6 +19,16 @@
     "title": "The Killing",
     "watched_date": "2026-10-14",
     "year": "1956"
+  },
+  {
+    "handle": "badmov1eenjoyer",
+    "link": "https://letterboxd.com/badmov1eenjoyer/film/the-usual-suspects/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/4/9/5/51495-the-usual-suspects-0-600-0-900-crop.jpg?v=c02dce5b81",
+    "rating": "4.0",
+    "review": "nailed the whole twist within 20 minutes but main critique is not enough BDT.",
+    "title": "The Usual Suspects",
+    "watched_date": "2026-10-14",
+    "year": "1995"
   },
   {
     "handle": "bearleebooks",
@@ -50,16 +70,6 @@
     "title": "Attack of the Killer Tomatoes!",
     "watched_date": "2026-10-13",
     "year": "1978"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/the-grudge/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/6/3/8/50638-the-grudge-0-600-0-900-crop.jpg?v=e6e6a40884",
-    "rating": "3.0",
-    "review": "Ghosts creepy as fuck but the rest kinda flopped for me tbh. Maybe the original is better (as is usually the case with these early 2000s westernized versions)",
-    "title": "The Grudge",
-    "watched_date": "2026-10-13",
-    "year": "2004"
   },
   {
     "handle": "michaellamb",
@@ -266,17 +276,6 @@
     "title": "Hearts of Fire",
     "watched_date": "2026-10-04",
     "year": "1987"
-  },
-  {
-    "handle": "badmov1eenjoyer",
-    "liked": true,
-    "link": "https://letterboxd.com/badmov1eenjoyer/film/primetime-2026/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/2/0/1/9/1262019-primetime-2026-0-600-0-900-crop.jpg?v=41640d6988",
-    "rating": "4.0",
-    "review": "something something that thing PTA said about newer directors not knowing how to write / handle a script, only knowing how to make it look good. Merritt Weaver and Skylar Gisondo were excellent. In another world, Pattinson as the Joker would have been generational.",
-    "title": "Primetime",
-    "watched_date": "2026-09-30",
-    "year": "2026"
   },
   {
     "handle": "draketerry",

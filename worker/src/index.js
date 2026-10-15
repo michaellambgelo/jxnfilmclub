@@ -5326,11 +5326,13 @@ function publicGiveaway(g, now = Date.now()) {
 }
 
 // GET /giveaways?event=ID — public. Never lists drafts.
+// GET /giveaways (no event) — the nav tab: every open giveaway that has not
+// ended, grouped under its public event, soonest event first.
 async function handleGiveawaysList(request, env) {
   const db = giveawayDb(env)
   if (!db) return json(env, GIVEAWAYS_OFF, 503)
   const eventId = new URL(request.url).searchParams.get('event')
-  if (!eventId) return json(env, { error: 'event is required' }, 400)
+  if (!eventId) return handleGiveawaysAll(env, db)
   const event = await readEvent(env, eventId)
   if (!event || isMembersOnly(event)) return json(env, { error: 'event not found' }, 404)
   const giveaways = await listGiveaways(db, { eventId })
@@ -5338,6 +5340,24 @@ async function handleGiveawaysList(request, env) {
     event: publicEventProjection(event),
     giveaways: giveaways.map(g => publicGiveaway(g)),
   })
+}
+
+async function handleGiveawaysAll(env, db) {
+  const now = Date.now()
+  const open = (await listGiveaways(db)).filter(g => g.status === 'open' && now < Date.parse(g.ends_at))
+  const byEvent = new Map()
+  for (const g of open) {
+    if (!byEvent.has(g.event_id)) byEvent.set(g.event_id, [])
+    byEvent.get(g.event_id).push(publicGiveaway(g, now))
+  }
+  const events = []
+  for (const [id, giveaways] of byEvent) {
+    const event = await readEvent(env, id)
+    if (!event || isMembersOnly(event)) continue
+    events.push({ event: publicEventProjection(event), giveaways })
+  }
+  events.sort((a, b) => `${a.event.date || ''} ${a.event.time || ''}`.localeCompare(`${b.event.date || ''} ${b.event.time || ''}`))
+  return json(env, { events })
 }
 
 async function loadPublicGiveaway(env, id) {

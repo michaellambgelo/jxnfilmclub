@@ -552,6 +552,28 @@ describe('draw', () => {
   })
 })
 
+describe('all open giveaways (the nav tab)', () => {
+  it('lists open, unended giveaways under their public event, and nothing else', async () => {
+    await putGiveaway('gw-open')
+    await putGiveaway('gw-draft', { status: 'draft' })
+    await putGiveaway('gw-closed', { status: 'closed' })
+    await putGiveaway('gw-ended', { starts_at: new Date(Date.now() - 48 * HOUR).toISOString(), ends_at: new Date(Date.now() - HOUR).toISOString() })
+    const res = await req('/giveaways')
+    expect(res.status).toBe(200)
+    const { events } = await res.json()
+    expect(events).toHaveLength(1)
+    expect(events[0].event.title).toBe('CLAYFACE Preview Screening')
+    expect(events[0].giveaways.map(g => g.id)).toEqual(['gw-open'])
+  })
+
+  it('never lists a giveaway on a members-only house screening', async () => {
+    await seedEvent({ kind: 'house', hostId: 'id-host' })
+    await putGiveaway('gw-house')
+    const { events } = await (await req('/giveaways')).json()
+    expect(events).toEqual([])
+  })
+})
+
 describe('rules page', () => {
   it('states no purchase necessary, eligibility, dates, method and contact', async () => {
     await putGiveaway('clay-rules', { winner_response_days: 4 })

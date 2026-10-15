@@ -1,6 +1,6 @@
 # Venue Map
 
-A public page at `/map` that pins every theater and public venue the club has screened at, with each venue's upcoming and past screenings. It's in the main nav between Events and Watched.
+A public page at `/map` that pins every theater and public venue the club has screened at, with each venue's upcoming and past screenings. It's in the main nav between Events and Speak.
 
 ## What gets a pin
 

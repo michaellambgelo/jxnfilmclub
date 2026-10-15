@@ -200,6 +200,15 @@
   ],
   "Crockett1848": [
     {
+      "liked": true,
+      "link": "https://letterboxd.com/crockett1848/film/12-angry-men/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/7/0/0/51700-12-angry-men-0-600-0-900-crop.jpg?v=b8aaf291a9",
+      "rating": "5.0",
+      "title": "12 Angry Men",
+      "watched_date": "2026-10-15",
+      "year": "1957"
+    },
+    {
       "link": "https://letterboxd.com/crockett1848/film/the-blair-witch-project/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/1/5/9/50159-the-blair-witch-project-0-600-0-900-crop.jpg?v=94ea56e238",
       "rating": "4.0",
@@ -288,14 +297,6 @@
       "title": "Picnic at Hanging Rock",
       "watched_date": "2026-08-30",
       "year": "1975"
-    },
-    {
-      "link": "https://letterboxd.com/crockett1848/film/the-odyssey/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/1/0/9/6/41096-the-odyssey-0-600-0-900-crop.jpg?v=b2a55713ac",
-      "rating": "3.5",
-      "title": "The Odyssey",
-      "watched_date": "2026-08-22",
-      "year": "1997"
     }
   ],
   "Gigi": [],

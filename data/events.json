@@ -455,5 +455,18 @@
     "rsvp": true,
     "ticketUrl": "https://ticketing.useast.veezi.com/purchase/5127?siteToken=ec9jrhkgwvf72npmrh80fkm4jc",
     "ticketed": true
+  },
+  {
+    "id": "2026-12-17-dune-part-three",
+    "title": "DUNE Part 3 Premiere Screening",
+    "film": "Dune: Part Three",
+    "date": "2026-12-17",
+    "venue": "Malco Grandview & IMAX",
+    "poster": "https://image.tmdb.org/t/p/original/x0SPqzh1IwOoPfdhJUy2aC9e6L4.jpg",
+    "kind": "meetup",
+    "time": "15:05",
+    "rsvp": true,
+    "ticketUrl": "https://tickets.malco.com/seat-select?showtimeId=01a01556-2c28-727c-a7bb-e0ad21459b7a",
+    "ticketed": true
   }
 ]

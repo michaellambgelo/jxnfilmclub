@@ -1,4 +1,5 @@
-import { defineWorkersProject } from '@cloudflare/vitest-pool-workers/config'
+import { cloudflareTest } from '@cloudflare/vitest-plugin'
+import { defineConfig } from 'vitest/config'
 import fs from 'node:fs'
 
 // Mirrors admin/worker/wrangler.toml module rules: .html/.css AND admin.js +
@@ -30,34 +31,34 @@ const moduleRulesPlugin = {
   },
 }
 
-export default defineWorkersProject({
-  plugins: [moduleRulesPlugin],
+export default defineConfig({
+  plugins: [
+    cloudflareTest({
+      main: '../../admin/worker/src/index.js',
+      miniflare: {
+        compatibilityDate: '2026-04-14',
+        compatibilityFlags: ['nodejs_compat'],
+        kvNamespaces: [
+          'MEMBERS_KV',
+          'ATTENDANCE_KV',
+          'MEMBERS_KV_STAGING',
+          'ATTENDANCE_KV_STAGING',
+        ],
+        r2Buckets: ['VOICE', 'VOICE_STAGING'],
+        bindings: {
+          ACCESS_TEAM_DOMAIN: 'testteam.cloudflareaccess.com',
+          ACCESS_AUD: 'test-aud-tag',
+          ADMIN_TOKEN: 'test-admin-token',
+          ADMIN_TOKEN_STAGING: 'test-admin-token-staging',
+        },
+      },
+    }),
+    moduleRulesPlugin,
+  ],
   test: {
     name: 'admin-worker',
     include: ['**/*.test.js'],
     exclude: ['**/node_modules/**', '**/.dist/**', '**/dist/**'],
-    poolOptions: {
-      workers: {
-        singleWorker: true,
-        main: '../../admin/worker/src/index.js',
-        miniflare: {
-          compatibilityDate: '2026-04-14',
-          compatibilityFlags: ['nodejs_compat'],
-          kvNamespaces: [
-            'MEMBERS_KV',
-            'ATTENDANCE_KV',
-            'MEMBERS_KV_STAGING',
-            'ATTENDANCE_KV_STAGING',
-          ],
-          r2Buckets: ['VOICE', 'VOICE_STAGING'],
-          bindings: {
-            ACCESS_TEAM_DOMAIN: 'testteam.cloudflareaccess.com',
-            ACCESS_AUD: 'test-aud-tag',
-            ADMIN_TOKEN: 'test-admin-token',
-            ADMIN_TOKEN_STAGING: 'test-admin-token-staging',
-          },
-        },
-      },
-    },
+    setupFiles: ['./reset-storage.js'],
   },
 })

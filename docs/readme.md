@@ -177,7 +177,7 @@ runs the jobs without the flag archaeology.
 ## Testing
 
 - **Unit + Workers** (`tests/model/`, `tests/worker/`): Vitest with
-  `@cloudflare/vitest-pool-workers` for realistic KV + `fetch` mocking.
+  `@cloudflare/vitest-plugin` for realistic KV + `fetch` mocking.
 - **E2E** (`tests/e2e/`): Playwright boots `nue`, `wrangler dev`, and a
   scriptable Letterboxd HTTP stub; covers SPA views, the cross-origin
   signup handoff, OTP + verify flows, Letterboxd-panel states on `/edit`,

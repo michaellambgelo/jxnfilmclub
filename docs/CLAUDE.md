@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Styling**: Vanilla CSS (`css/`)
 - **Backend**: Cloudflare Worker (`worker/`), deploys to `join.jxnfilm.club` + `join-staging.jxnfilm.club`
 - **Email provider**: Resend (3k/mo free tier)
-- **Tests**: Vitest + `@cloudflare/vitest-pool-workers` + Playwright
+- **Tests**: Vitest + `@cloudflare/vitest-plugin` + Playwright
 
 ## Commands
 
@@ -32,7 +32,7 @@ cd worker && npx wrangler deploy --env staging
 cd admin/worker && npx wrangler deploy
 
 # Tests
-npm test              # Vitest workspace: model + worker + admin-worker + admin (4 projects)
+npm test              # Vitest projects: model + worker + admin-worker + admin (4 projects)
 npm run test:e2e      # Playwright: SPA + signup + signin + LB + admin dashboard flows
 npm run test:e2e:ui   # Playwright interactive UI mode
 
@@ -132,7 +132,7 @@ Nue's dhtml compiler has sharp edges worth remembering:
 ## Testing
 
 ### Unit + Workers (Vitest)
-Four workspace projects: `tests/model/` (node), `tests/worker/` + `tests/admin-worker/` (`@cloudflare/vitest-pool-workers` — `SELF.fetch` / `worker.fetch`, direct KV binding access), and `tests/admin/` (node, for `admin/lib.js`). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests; the proxy tests in `tests/admin-worker/admin-worker.test.js` are the template for new admin-worker routes.
+Four Vitest projects (listed under `test.projects` in the root `vitest.config.ts`): `tests/model/` (node), `tests/worker/` + `tests/admin-worker/` (`@cloudflare/vitest-plugin` — `SELF.fetch` / `worker.fetch`, direct KV binding access), and `tests/admin/` (node, for `admin/lib.js`). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests; the proxy tests in `tests/admin-worker/admin-worker.test.js` are the template for new admin-worker routes. Both Workers projects wipe every binding before each test via a `beforeEach(reset)` setup file (`tests/worker/apply-migrations.js`, which also re-applies the D1 migrations, and `tests/admin-worker/reset-storage.js`) — the Vitest 4 pool no longer isolates storage per test on its own, so each test starts from empty KV/R2/D1.
 
 ### E2E (Playwright)
 
@@ -162,7 +162,7 @@ Two projects. `chromium` runs the whole suite (it is the only engine whose fake-
 
 ## Gotchas
 
-- **Do not add TS/JS config files at the repo root without excluding them from `site.yaml`.** Nue's SPA bundler will pick them up and emit a broken `<script src="//<name>.js">` tag into the HTML `<head>` (the leading `//` is protocol-relative — DNS fails and the Nue runtime can wedge, leaving CSS unapplied). `playwright.config.ts`, `vitest.config.ts`, `vitest.workspace.ts` are already excluded; add any new root configs to the `exclude:` list.
+- **Do not add TS/JS config files at the repo root without excluding them from `site.yaml`.** Nue's SPA bundler will pick them up and emit a broken `<script src="//<name>.js">` tag into the HTML `<head>` (the leading `//` is protocol-relative — DNS fails and the Nue runtime can wedge, leaving CSS unapplied). `playwright.config.ts` and `vitest.config.ts` are already excluded; add any new root configs to the `exclude:` list.
 - **`nue serve` HMR can get into a bad state** after certain edits. If the local page looks unstyled or half-rendered, run `npx nue build && npx nue preview` for a clean review against the production build.
 - **Worker secrets in wrangler dev**: production secrets (`OTP_SIGNING_KEY`, `RESEND_API_KEY`, `GITHUB_TOKEN`) aren't read locally. Pass them via `--var` (see `playwright.config.ts`) or a `worker/.dev.vars` file.
 - **GitHub Pages returns HTTP 404 for every path that isn't a real file.** `postbuild` copies `index.html` to `404.html` so the SPA still renders, but the response status stays 404 and the browser logs a console error for `signin:1 / verify:1 / edit:1` on cold loads. Harmless — the SPA takes over after the HTML lands. The copy lives in `postbuild`, not the deploy workflow, so that `nue preview` serves the same document production does; when it was made only in CI, a local preview of a fresh build was still serving the **previous** build's SPA routes, which is subtle enough to invalidate a browser test without anyone noticing.

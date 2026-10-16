@@ -56,7 +56,7 @@ See [CLAUDE.md](CLAUDE.md) for layout + architecture,
 
 ## Architecture
 
-Two origins, one shared domain:
+Three origins, one shared domain:
 
 - **`jxnfilm.club`** (GitHub Pages) — the SPA. Hosts every page the user
   actually interacts with: `/` (members), `/events`, `/signin`,
@@ -65,6 +65,10 @@ Two origins, one shared domain:
   serves a small signup-form HTML entry point at its root. Every
   verification, session, and Letterboxd check hits the Worker as an
   API call; no session UI lives here.
+- **`admin.jxnfilm.club`** (Cloudflare Worker, behind Cloudflare Access)
+  — the operator-only admin dashboard. Serves its own UI and API from
+  the same origin and never sees a member session token. See
+  [admin/README.md](../admin/README.md).
 
 ## Features
 

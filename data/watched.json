@@ -1220,6 +1220,24 @@
   "calissippi": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/calissippi/film/east-of-eden-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/1/8/1/6/7/1618167-east-of-eden-2026-0-600-0-900-crop.jpg?v=cd89248c1d",
+      "rating": "4.0",
+      "title": "East of Eden",
+      "watched_date": "2026-10-11",
+      "year": "2026"
+    },
+    {
+      "liked": true,
+      "link": "https://letterboxd.com/calissippi/film/carrie-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/1/8/1/6/8/1618168-carrie-2026-0-600-0-900-crop.jpg?v=bef2e5cffd",
+      "rating": "4.5",
+      "title": "Carrie",
+      "watched_date": "2026-10-13",
+      "year": "2026"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/calissippi/film/h-is-for-hawk/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/2/6/1/6/1/1126161-h-is-for-hawk-0-600-0-900-crop.jpg?v=78d2238ed4",
       "rating": "3.5",
@@ -1302,23 +1320,6 @@
       "title": "Come with Me",
       "watched_date": "2026-09-06",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/calissippi/film/mayday-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/2/5/2/0/3/1025203-mayday-2026-0-600-0-900-crop.jpg?v=d05a68f0b6",
-      "rating": "4.5",
-      "title": "Mayday",
-      "watched_date": "2026-09-04",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/flying-padre/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/9/3/2/4/19324-flying-padre-0-600-0-900-crop.jpg?v=7df44537d1",
-      "rating": "3.0",
-      "title": "Flying Padre",
-      "watched_date": "2026-09-03",
-      "year": "1951"
     }
   ],
   "dacoats": [

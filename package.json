@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "nue serve",
     "build": "nue build",
-    "postbuild": "rm -rf .dist/admin .dist/tests .dist/tui .dist/worker .dist/scripts .dist/playwright-report .dist/test-results .dist/node_modules .dist/playwright.config.js .dist/vitest.config.js .dist/vitest.workspace.js .dist/package-lock.json .dist/bun.lock && node scripts/fix_importmap.mjs && cp vendor/maplibre/maplibre-gl.css .dist/vendor/maplibre/ && cp .dist/index.html .dist/404.html",
+    "postbuild": "rm -rf .dist/admin .dist/tests .dist/tui .dist/worker .dist/scripts .dist/playwright-report .dist/test-results .dist/node_modules .dist/playwright.config.js .dist/vitest.config.js .dist/package-lock.json .dist/bun.lock && node scripts/fix_importmap.mjs && cp vendor/maplibre/maplibre-gl.css .dist/vendor/maplibre/ && cp .dist/index.html .dist/404.html",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -17,11 +17,11 @@
     "admin": "node admin/server.mjs"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "@cloudflare/vitest-plugin": "^1.4.4",
     "@playwright/test": "^1.59.1",
     "@protomaps/basemaps": "5.7.2",
     "nuekit": "2.0.0-beta.2",
-    "vitest": "^2.1.0",
+    "vitest": "^4.1.12",
     "wrangler": "^4.114.0"
   }
 }

@@ -137,7 +137,7 @@ npm test              # Vitest, incl. tests/worker/
 npm run test:e2e      # Playwright boots this Worker with E2E_MODE
 ```
 
-`tests/worker/` uses `@cloudflare/vitest-pool-workers` with `SELF.fetch`,
+`tests/worker/` uses `@cloudflare/vitest-plugin` with `SELF.fetch`,
 direct KV binding access, and mocked `fetch()` for Resend / GitHub.
 Suites: `signup`, `otp`, `member-update`, `member-delete`, `letterboxd`
 (unlink only), `attendance`, `security`.

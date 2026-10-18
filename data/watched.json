@@ -1120,6 +1120,14 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/slash-back/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/3/9/1/7/3/839173-slash-back-0-600-0-900-crop.jpg?v=167d77024a",
+      "rating": "3.5",
+      "title": "Slash/Back",
+      "watched_date": "2026-10-18",
+      "year": "2022"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/the-gorgon/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/3/3/4/7/5/33475-the-gorgon-0-600-0-900-crop.jpg?v=b3fde28418",
       "rating": "4.0",
@@ -1206,17 +1214,17 @@
       "title": "Hellbent",
       "watched_date": "2026-10-11",
       "year": "2004"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/rl-stines-pumpkinhead-2/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/1/8/3/0/4/1518304-rl-stines-pumpkinhead-2-0-600-0-900-crop.jpg?v=ded795d27e",
-      "rating": "2.5",
-      "title": "R.L. Stine's Pumpkinhead 2",
-      "watched_date": "2026-10-11",
-      "year": "2026"
     }
   ],
   "calissippi": [
+    {
+      "link": "https://letterboxd.com/calissippi/film/leviticus-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/4/3/7/6/2/2/1437622-leviticus-2026-0-600-0-900-crop.jpg?v=87cb79b6d2",
+      "rating": "3.5",
+      "title": "Leviticus",
+      "watched_date": "2026-10-17",
+      "year": "2026"
+    },
     {
       "link": "https://letterboxd.com/calissippi/film/below-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/3/5/2/3/3/1635233-below-2026-0-600-0-900-crop.jpg?v=8e97695b9f",
@@ -1310,14 +1318,6 @@
       "title": "Yojimbo",
       "watched_date": "2026-09-13",
       "year": "1961"
-    },
-    {
-      "link": "https://letterboxd.com/calissippi/film/the-fix-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/2/2/8/9/1112289-the-fix-2026-0-600-0-900-crop.jpg?v=0a5144d883",
-      "rating": "3.0",
-      "title": "The Fix",
-      "watched_date": "2026-09-11",
-      "year": "2026"
     }
   ],
   "dacoats": [

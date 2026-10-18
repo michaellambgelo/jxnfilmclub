@@ -905,6 +905,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/thief/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/2/2/4/45224-thief-0-600-0-900-crop.jpg?v=775424c4c3",
+      "rating": "5.0",
+      "title": "Thief",
+      "watched_date": "2026-10-18",
+      "year": "1981"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/dr-strangelove-or-how-i-learned-to-stop-worrying-and-love-the-bomb/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/2/1/8/51218-dr-strangelove-or-how-i-learned-to-stop-worrying-and-love--0-600-0-900-crop.jpg?v=c814dfbae0",
       "rating": "4.0",
@@ -1003,15 +1012,6 @@
       "title": "Digger",
       "watched_date": "2026-10-06",
       "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/temple-grandin/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/2/9/6/7/0/29670-temple-grandin-0-600-0-900-crop.jpg?v=4d647b80c1",
-      "rating": "4.0",
-      "title": "Temple Grandin",
-      "watched_date": "2026-10-06",
-      "year": "2010"
     }
   ],
   "badmov1eenjoyer": [

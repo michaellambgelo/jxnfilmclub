@@ -1119,6 +1119,22 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/a-useful-ghost/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/2/4/0/5/1252405-a-useful-ghost-0-600-0-900-crop.jpg?v=9c746acbf8",
+      "rating": "4.0",
+      "title": "A Useful Ghost",
+      "watched_date": "2026-10-19",
+      "year": "2025"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/uncanny-annie/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/0/7/0/4/560704-uncanny-annie-0-600-0-900-crop.jpg?v=d2aea2e01d",
+      "rating": "2.5",
+      "title": "Uncanny Annie",
+      "watched_date": "2026-10-19",
+      "year": "2019"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/bearleebooks/film/rounding/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/7/2/0/1/8/5/720185-rounding-0-600-0-900-crop.jpg?v=e4a28548ed",
@@ -1199,22 +1215,6 @@
       "title": "Under Wraps",
       "watched_date": "2026-10-13",
       "year": "1997"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/fresh-meat-2026/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/3/8/1/3/1603813-fresh-meat-2026-0-600-0-900-crop.jpg?v=b092a85d5e",
-      "rating": "3.5",
-      "title": "Fresh Meat",
-      "watched_date": "2026-10-12",
-      "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/pinocchio-unstrung/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/1/5/5/6/9/1115569-pinocchio-unstrung-0-600-0-900-crop.jpg?v=3165dff75f",
-      "rating": "4.0",
-      "title": "Pinocchio: Unstrung",
-      "watched_date": "2026-10-12",
-      "year": "2026"
     }
   ],
   "calissippi": [
@@ -2051,6 +2051,16 @@
   "michaellamb": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/michaellamb/film/the-northman/2/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/5/8/5/2/565852-the-northman-0-600-0-900-crop.jpg?v=8e3d277969",
+      "rating": "4.0",
+      "rewatch": true,
+      "title": "The Northman",
+      "watched_date": "2026-10-19",
+      "year": "2022"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/michaellamb/film/wecrashed/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/8/4/6/8/7/4/846874-wecrashed-0-600-0-900-crop.jpg?v=5b7305ebef",
       "rating": "3.5",
@@ -2148,15 +2158,6 @@
       "rating": "3.5",
       "title": "The Social Reckoning",
       "watched_date": "2026-10-11",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/michaellamb/film/other-mommy/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/4/4/8/0/1284480-other-mommy-0-600-0-900-crop.jpg?v=297427826f",
-      "rating": "3.0",
-      "title": "Other Mommy",
-      "watched_date": "2026-10-09",
       "year": "2026"
     }
   ],

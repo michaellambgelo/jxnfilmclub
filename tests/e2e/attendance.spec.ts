@@ -31,6 +31,8 @@ test.describe('event attendance', () => {
 
     await card.getByRole('button', { name: 'I was there' }).click()
     await expect(card.locator('.attendee')).toHaveText(['First Name'])
+    // A past event counts attendance, not intent.
+    await expect(card.locator('.attendance-count')).toHaveText('1 attended')
     // Button state is derived from the member id, not the name.
     await expect(card.getByRole('button', { name: 'Remove me' })).toBeVisible()
 

@@ -1113,16 +1113,21 @@
       <div :if="!ticketsPending()" class="rsvp-meter">
         { guestCount() + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
-      <p :if="isMeetup()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
+      <!-- A meetup can also be venue-ticketed. Each flag owns a hint and a
+           status line, so the pair would stack three overlapping messages;
+           the combined case gets one of each instead. -->
+      <p :if="isMeetup() && !isTicketed()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
+      <p :if="isMeetup() && isTicketed() && !ticketsPending()" class="rsvp-hint">Self-organized — buy your ticket from { event.venue || 'the venue' }; the club just shows up together.</p>
       <p :if="ticketsPending() && !listed()" class="rsvp-hint">Tickets are not on sale yet. Add your name and we will email you the box office link when they go live.</p>
-      <p :if="isTicketed() && !ticketsPending() && !listed()" class="rsvp-hint">Admission is sold by { event.venue || 'the venue' } — an RSVP here is a headcount, not a ticket.</p>
+      <p :if="isTicketed() && !isMeetup() && !ticketsPending() && !listed()" class="rsvp-hint">Admission is sold by { event.venue || 'the venue' } — an RSVP here is a headcount, not a ticket.</p>
       <p :if="!session" class="rsvp-hint"><a href="/signin">Log in</a> to RSVP.</p>
       <p :if="session && !isFuture()" class="rsvp-hint">RSVPs closed (past date).</p>
       <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
       <div :if="session && isFuture() && rsvpState() && !isHost">
         <p :if="rsvpState().status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
-        <p :if="rsvpState().status === 'confirmed' && isMeetup()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
-        <p :if="rsvpState().status === 'confirmed' && isTicketed()" class="rsvp-status">You're on the list. Your spot is not held — buy your ticket from { event.venue || 'the venue' }.</p>
+        <p :if="rsvpState().status === 'confirmed' && isMeetup() && !isTicketed()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
+        <p :if="rsvpState().status === 'confirmed' && isMeetup() && isTicketed()" class="rsvp-status">You're in. Get your ticket from { event.venue || 'the venue' } and meet us there.</p>
+        <p :if="rsvpState().status === 'confirmed' && isTicketed() && !isMeetup()" class="rsvp-status">You're on the list. Your spot is not held — buy your ticket from { event.venue || 'the venue' }.</p>
         <p :if="rsvpState().status === 'confirmed' && !isHouse() && !isMeetup() && !isTicketed()" class="rsvp-status">You're in. Check your email for the details.</p>
         <p :if="rsvpState().status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. The address will be emailed if a spot opens.</p>
         <p :if="rsvpState().status === 'waitlisted' && ticketsPending()" class="rsvp-status">You're on the list. We will email you the box office link when tickets go on sale.</p>
@@ -1150,7 +1155,7 @@
            target=_blank anchor through autolink. -->
       <a :if="ticketUrl() && !rsvpOn()" href="{ event.ticketUrl }" target="_blank" rel="noopener"
         class="attend-btn event-ticket-btn">Get tickets</a>
-      <div :if="!rsvpOn()" class="attendance-count">{ (attendees || []).length } attended</div>
+      <div :if="!rsvpOn()" class="attendance-count">{ (attendees || []).length } { isFuture() ? 'going' : 'attended' }</div>
       <div :if="(attendees || []).length" class="attendance-list">
         <span :each="a in attendees" key="{ a.id || a.name }" class="attendee">
           <a :if="handleFor(a)" href="https://letterboxd.com/{ handleFor(a) }/"

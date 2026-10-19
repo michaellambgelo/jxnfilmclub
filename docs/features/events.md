@@ -8,7 +8,7 @@ A card offers exactly one bottom affordance, chosen by `rsvpEnabled(event)`:
 
 | Mode | When | Affordance |
 |------|------|-----------|
-| **Attendance** | `rsvpEnabled()` is false | "I was there" ("I will be there" until the date has passed) / "Remove me" |
+| **Attendance** | `rsvpEnabled()` is false | "I was there" ("I will be there" until the date has passed) / "Remove me"; count reads "N going" until then, "N attended" after |
 | **RSVP** | `rsvpEnabled()` is true | RSVP meter, RSVP / Join waitlist / Cancel |
 | **Tickets** | `ticketUrl` is set | "Get tickets" link out, plus the attendance toggle |
 
@@ -99,6 +99,7 @@ bundles and giveaways. **The club controls neither admission nor the door.**
 |---|---|---|
 | `ticketed`, no `ticketUrl` | *Tickets are not on sale yet…* → **Count me in** | the **waitlist** — a pre-sale queue |
 | `ticketed` + `ticketUrl` | *Admission is sold by {venue} — a headcount, not a ticket* → **RSVP and get tickets** | confirmed |
+| `ticketed` + `ticketUrl` + `kind: meetup` | one merged hint, *Self-organized — buy your ticket from {venue}…*, and one status, *You're in. Get your ticket from {venue} and meet us there.* — never the meetup and ticketed lines stacked | confirmed |
 
 **Why `ticketed` is its own field.** It cannot be inferred from a missing
 `ticketUrl`, because an ordinary club event has no ticket URL either —

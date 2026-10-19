@@ -51,6 +51,8 @@ test.describe('club events', () => {
     // event that has not happened yet.
     await expect(card.locator('.event-rsvp')).toHaveCount(0)
     await expect(card.getByRole('button', { name: 'I will be there' })).toBeVisible()
+    // ...and the count is worded the same way: nobody has attended yet.
+    await expect(card.locator('.attendance-count')).toHaveText('0 going')
   })
 
   // A ticket link with no RSVP: pure funnel to the box office, no headcount.
@@ -229,5 +231,25 @@ test.describe('club events', () => {
 
     const res = await page.request.get(`${WORKER_ORIGIN}/events/e2e-on/attendance`)
     expect(JSON.stringify(await res.json())).toContain('On Sale')
+  })
+
+  // A meetup the venue tickets: each flag owns a hint and a status line, and
+  // stacking both read as three contradictory messages on one card.
+  test('a ticketed meetup shows one hint and one status, not both sets', async ({ page }) => {
+    await signInAs(page, 'tix-meetup@example.com', { name: 'Meetup Tix' })
+    await seedEvents(page, [{
+      id: 'e2e-meetup-tix', title: 'DUNE Premiere Meetup', film: 'Dune',
+      kind: 'meetup', date: FUTURE, venue: 'Malco Grandview', rsvp: true,
+      ticketed: true, ticketUrl: 'https://malco.example.com/dune',
+    }])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'DUNE Premiere Meetup' })
+    await expect(card.locator('.rsvp-hint')).toHaveText(
+      'Self-organized — buy your ticket from Malco Grandview; the club just shows up together.')
+
+    await card.getByRole('button', { name: 'RSVP and get tickets' }).click()
+    await expect(card.locator('.rsvp-status')).toHaveText(
+      'You\'re in. Get your ticket from Malco Grandview and meet us there.')
+    await expect(card.locator('.rsvp-hint')).toHaveCount(1)
   })
 })

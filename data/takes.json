@@ -1,5 +1,16 @@
 [
   {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/rounding/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/7/2/0/1/8/5/720185-rounding-0-600-0-900-crop.jpg?v=e4a28548ed",
+    "rating": "4.0",
+    "review": "idk what the rest of y'all are on but i loved this",
+    "title": "Rounding",
+    "watched_date": "2026-10-19",
+    "year": "2022"
+  },
+  {
     "handle": "Moviemont",
     "liked": true,
     "link": "https://letterboxd.com/moviemont/film/the-last-waltz/",
@@ -26,6 +37,17 @@
     "rating": "4.0",
     "review": "This absolutely ruled and was also unreasonably hot, as the horror gods intended",
     "title": "Teenage Sex and Death at Camp Miasma",
+    "watched_date": "2026-10-18",
+    "year": "2026"
+  },
+  {
+    "handle": "bearleebooks",
+    "liked": true,
+    "link": "https://letterboxd.com/bearleebooks/film/whalefall/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/9/8/3/4/1139834-whalefall-0-600-0-900-crop.jpg?v=e0ec86ea62",
+    "rating": "5.0",
+    "review": "Austin Abrams whimpering compilation 106 minutes",
+    "title": "Whalefall",
     "watched_date": "2026-10-18",
     "year": "2026"
   },
@@ -60,16 +82,6 @@
     "title": "WeCrashed",
     "watched_date": "2026-10-17",
     "year": "2022"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/the-gorgon/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/3/3/4/7/5/33475-the-gorgon-0-600-0-900-crop.jpg?v=b3fde28418",
-    "rating": "4.0",
-    "review": "Minus a star for how much men talk instead of turn to stone",
-    "title": "The Gorgon",
-    "watched_date": "2026-10-17",
-    "year": "1964"
   },
   {
     "handle": "michaellamb",
@@ -112,16 +124,6 @@
     "title": "Verity",
     "watched_date": "2026-10-16",
     "year": "2026"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/the-blob-1988/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/0/0/2/47002-the-blob-0-600-0-900-crop.jpg?v=02a0472038",
-    "rating": "4.0",
-    "review": "Movies like this make me realize just how much I miss when everyone didn't have veneers",
-    "title": "The Blob",
-    "watched_date": "2026-10-16",
-    "year": "1988"
   },
   {
     "handle": "heath_walt",

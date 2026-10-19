@@ -1159,7 +1159,7 @@
         </span>
       </div>
       <button :if="!rsvpOn() && canToggle() && !attended()" type="button" class="attend-btn"
-        :disabled="busy" :onclick="toggle('POST')">{ busy ? 'Saving' : 'I was there' }</button>
+        :disabled="busy" :onclick="toggle('POST')">{ busy ? 'Saving' : (isFuture() ? 'I will be there' : 'I was there') }</button>
       <button :if="!rsvpOn() && canToggle() && attended()" type="button" class="attend-btn attend-btn-remove"
         :disabled="busy" :onclick="toggle('DELETE')">{ busy ? 'Removing' : 'Remove me' }</button>
     </div>

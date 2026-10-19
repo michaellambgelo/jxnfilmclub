@@ -1,6 +1,6 @@
 # Event Attendance
 
-Authenticated members can self-report attendance at events. The button on each event row toggles between "I was there" and "Remove me" based on the signed-in member's current state. `ATTENDANCE_KV` is the single live source of truth; a scheduled workflow snapshots KV into the archival `data/attendance.json` ledger every 6 hours, and the ledger seeds KV exactly once when a new namespace is brought up.
+Authenticated members can self-report attendance at events. The button on each event row toggles between "I was there" and "Remove me" based on the signed-in member's current state. Until the event date has passed (Central time, so the day itself still counts as upcoming), the add button reads "I will be there" instead — same endpoint, same record. `ATTENDANCE_KV` is the single live source of truth; a scheduled workflow snapshots KV into the archival `data/attendance.json` ledger every 6 hours, and the ledger seeds KV exactly once when a new namespace is brought up.
 
 Attendance is keyed on the **member id**. See [Identity](#identity) — that is what makes a rename land everywhere at once.
 

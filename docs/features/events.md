@@ -8,7 +8,7 @@ A card offers exactly one bottom affordance, chosen by `rsvpEnabled(event)`:
 
 | Mode | When | Affordance |
 |------|------|-----------|
-| **Attendance** | `rsvpEnabled()` is false | "I was there" / "Remove me" |
+| **Attendance** | `rsvpEnabled()` is false | "I was there" ("I will be there" until the date has passed) / "Remove me" |
 | **RSVP** | `rsvpEnabled()` is true | RSVP meter, RSVP / Join waitlist / Cancel |
 | **Tickets** | `ticketUrl` is set | "Get tickets" link out, plus the attendance toggle |
 
@@ -189,7 +189,7 @@ flowchart TD
     C --> J{Signed in?}
     J -->|No| K[View only - no buttons]
     J -->|Yes| L{Already attended?}
-    L -->|No| M["I was there" button]
+    L -->|No| M["I was there" button<br/>"I will be there" if upcoming]
     L -->|Yes| N[Name in list + "Remove me" button]
     M -->|Click| O[POST Worker /events/:id/attend<br/>KV updated]
     N -->|Click Remove me| Q[DELETE Worker /events/:id/attend<br/>KV updated]

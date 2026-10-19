@@ -47,9 +47,10 @@ test.describe('club events', () => {
     await expect(card.locator('.event-venue')).toHaveText('Banner Hall')
 
     // RSVP is off by default for a row with no rsvp field, so the post-hoc
-    // attendance toggle is what a signed-in member gets.
+    // attendance toggle is what a signed-in member gets — worded for an
+    // event that has not happened yet.
     await expect(card.locator('.event-rsvp')).toHaveCount(0)
-    await expect(card.getByRole('button', { name: 'I was there' })).toBeVisible()
+    await expect(card.getByRole('button', { name: 'I will be there' })).toBeVisible()
   })
 
   // A ticket link with no RSVP: pure funnel to the box office, no headcount.

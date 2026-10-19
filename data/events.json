@@ -457,6 +457,19 @@
     "ticketed": true
   },
   {
+    "id": "2026-10-24-you-can-see-everything",
+    "title": "YOU CAN SEE EVERYTHING Weekend Screening",
+    "film": "You Can See Everything",
+    "year": 2026,
+    "date": "2026-10-24",
+    "poster": "https://image.tmdb.org/t/p/w500/Ap8QwmKfSjYbWC4XIP8w9pdn72O.jpg",
+    "kind": "meetup",
+    "time": "13:25",
+    "rsvp": false,
+    "ticketUrl": "https://www.cinemark.com/TicketSeatMap/?TheaterId=274&ShowtimeId=615983&CinemarkMovieId=113084&Showtime=2026-10-24T13:25:00",
+    "ticketed": true
+  },
+  {
     "id": "2026-12-17-dune-part-three",
     "title": "DUNE Part 3 Premiere Screening",
     "film": "Dune: Part Three",

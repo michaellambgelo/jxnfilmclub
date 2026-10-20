@@ -99,7 +99,7 @@ bundles and giveaways. **The club controls neither admission nor the door.**
 |---|---|---|
 | `ticketed`, no `ticketUrl` | *Tickets are not on sale yet…* → **Count me in** | the **waitlist** — a pre-sale queue |
 | `ticketed` + `ticketUrl` | *Admission is sold by {venue} — a headcount, not a ticket* → **RSVP and get tickets** | confirmed |
-| `ticketed` + `ticketUrl` + `kind: meetup` | one merged hint, *Self-organized — buy your ticket from {venue}…*, and one status, *You're in. Get your ticket from {venue} and meet us there.* — never the meetup and ticketed lines stacked | confirmed |
+| `ticketed` + `ticketUrl` + `kind: meetup` | one merged hint, *Self-organized — buy your ticket from {venue}…*, and one status, *You're in. Get your ticket from {venue} and meet us there.* — never the meetup and ticketed lines stacked. The confirmation email merges the same way (`MEETUP_TICKETED` in the Worker) | confirmed |
 
 **Why `ticketed` is its own field.** It cannot be inferred from a missing
 `ticketUrl`, because an ordinary club event has no ticket URL either —

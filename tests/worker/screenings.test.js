@@ -1371,6 +1371,23 @@ describe('club events — ticket links', () => {
     expect(body).toContain('https://tickets.example.com/xyz')
   })
 
+  // A meetup the venue tickets used to mail both the headcount line and the
+  // self-organized line — the same "buy your own ticket" warning twice.
+  it('a ticketed meetup mails one merged line, not both', async () => {
+    await seedClubEvent({ kind: 'meetup', rsvp: true, ticketed: true, ticketUrl: 'https://tickets.example.com/dune', time: '15:05' })
+    const { token } = await getTokenFor('tix-meetup@example.com')
+    const sent = captureEmails()
+
+    expect((await req('/events/club-1/rsvp', { method: 'POST', token })).status).toBe(200)
+    const body = sent.map(e => e.text || '').join('\n')
+    expect(body).toContain('This meetup is self-organized and admission is sold by the venue')
+    expect(body.match(/headcount, not a ticket/g)).toHaveLength(1)
+    expect(body).not.toContain('the club just shows up together')
+    expect(body).toContain('https://tickets.example.com/dune')
+    // Showtime reads as an event detail, ahead of the box office block.
+    expect(body.indexOf('Showtime: 3:05 pm')).toBeLessThan(body.indexOf('Buy yours here:'))
+  })
+
   it('still leaves RSVPs off when a ticketed event never asked for them', async () => {
     // rsvp unset + no host → the legacy fallback, unchanged by any of this.
     await seedClubEvent({ rsvp: undefined, ticketed: true, ticketUrl: 'https://tickets.example.com/xyz' })

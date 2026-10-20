@@ -3294,6 +3294,12 @@ function fmtTime(hhmm) {
 const MEETUP_SELF_ORGANIZED =
   'This meetup is self-organized — buy your own ticket and get yourself there; the club just shows up together.'
 
+// A meetup the venue tickets. The meetup line and the ticketed line each say
+// "buy your own ticket" in their own words, so the pair reads as the same
+// warning twice; this one sentence carries both. Mirrors the event card.
+const MEETUP_TICKETED =
+  'This meetup is self-organized and admission is sold by the venue, so this RSVP is a headcount, not a ticket — buy your own and the club will see you there.'
+
 // Who is running this, and what do we call it. A member-hosted screening is
 // run by its host; a club event is run by the club. A social event is not a
 // screening — mailing someone about "the screening Drinks at Banner Hall"
@@ -3336,15 +3342,19 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   // venue and no address, house has an address) while covering club events,
   // which have a venue and no kind at all.
   lines.push(...eventWhereLines({ ...event, address }))
+  // Showtime sits with the where-lines, ahead of any ticket block, so it is
+  // never read as a detail of the box office link.
+  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  const meetup = event.kind === 'meetup'
   // The club does not control admission on a venue-ticketed event, so the mail
   // must not read as though an RSVP is a ticket.
   if (event.ticketed) {
     lines.push('')
-    lines.push('This is a headcount, not a ticket — admission is sold by the venue.')
+    lines.push(meetup ? MEETUP_TICKETED : 'This is a headcount, not a ticket — admission is sold by the venue.')
     if (event.ticketUrl) lines.push('Buy yours here:', event.ticketUrl)
+  } else if (meetup) {
+    lines.push('', MEETUP_SELF_ORGANIZED)
   }
-  if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   if (notes) {
     lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', notes)
   }

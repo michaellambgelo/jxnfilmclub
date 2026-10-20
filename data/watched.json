@@ -1119,6 +1119,22 @@
   ],
   "bearleebooks": [
     {
+      "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-the-ghost-dimension/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/0/7/8/8/110788-paranormal-activity-the-ghost-dimension-0-600-0-900-crop.jpg?v=ecd1f77c35",
+      "rating": "2.0",
+      "title": "Paranormal Activity: The Ghost Dimension",
+      "watched_date": "2026-10-19",
+      "year": "2015"
+    },
+    {
+      "link": "https://letterboxd.com/bearleebooks/film/the-adventures-of-ichabod-and-mr-toad/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/8/6/9/43869-the-adventures-of-ichabod-and-mr-toad-0-600-0-900-crop.jpg?v=a11bc8240f",
+      "rating": "2.5",
+      "title": "The Adventures of Ichabod and Mr. Toad",
+      "watched_date": "2026-10-19",
+      "year": "1949"
+    },
+    {
       "link": "https://letterboxd.com/bearleebooks/film/a-useful-ghost/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/2/4/0/5/1252405-a-useful-ghost-0-600-0-900-crop.jpg?v=9c746acbf8",
       "rating": "4.0",
@@ -1199,22 +1215,6 @@
       "title": "Attack of the Killer Tomatoes!",
       "watched_date": "2026-10-13",
       "year": "1978"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/the-grudge/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/5/0/6/3/8/50638-the-grudge-0-600-0-900-crop.jpg?v=e6e6a40884",
-      "rating": "3.0",
-      "title": "The Grudge",
-      "watched_date": "2026-10-13",
-      "year": "2004"
-    },
-    {
-      "link": "https://letterboxd.com/bearleebooks/film/under-wraps/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/6/2/6/6/2/62662-under-wraps-0-600-0-900-crop.jpg?v=cee70cd7df",
-      "rating": "3.5",
-      "title": "Under Wraps",
-      "watched_date": "2026-10-13",
-      "year": "1997"
     }
   ],
   "calissippi": [

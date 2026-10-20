@@ -12,6 +12,26 @@
   },
   {
     "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/paranormal-activity-the-ghost-dimension/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/0/7/8/8/110788-paranormal-activity-the-ghost-dimension-0-600-0-900-crop.jpg?v=ecd1f77c35",
+    "rating": "2.0",
+    "review": "Aaaaaand we lost it. I had such high hopes after enjoying The Marked Ones. Some of the sequences did work for me but it's. Just. So. Bad.",
+    "title": "Paranormal Activity: The Ghost Dimension",
+    "watched_date": "2026-10-19",
+    "year": "2015"
+  },
+  {
+    "handle": "bearleebooks",
+    "link": "https://letterboxd.com/bearleebooks/film/the-adventures-of-ichabod-and-mr-toad/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/8/6/9/43869-the-adventures-of-ichabod-and-mr-toad-0-600-0-900-crop.jpg?v=a11bc8240f",
+    "rating": "2.5",
+    "review": "idk i wasn't vibing",
+    "title": "The Adventures of Ichabod and Mr. Toad",
+    "watched_date": "2026-10-19",
+    "year": "1949"
+  },
+  {
+    "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/a-useful-ghost/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/5/2/4/0/5/1252405-a-useful-ghost-0-600-0-900-crop.jpg?v=9c746acbf8",
     "rating": "4.0",
@@ -19,27 +39,6 @@
     "title": "A Useful Ghost",
     "watched_date": "2026-10-19",
     "year": "2025"
-  },
-  {
-    "handle": "bearleebooks",
-    "link": "https://letterboxd.com/bearleebooks/film/uncanny-annie/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/0/7/0/4/560704-uncanny-annie-0-600-0-900-crop.jpg?v=d2aea2e01d",
-    "rating": "2.5",
-    "review": "Not as good as Jumanji , but better than the Jumanji sequels",
-    "title": "Uncanny Annie",
-    "watched_date": "2026-10-19",
-    "year": "2019"
-  },
-  {
-    "handle": "bearleebooks",
-    "liked": true,
-    "link": "https://letterboxd.com/bearleebooks/film/rounding/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/7/2/0/1/8/5/720185-rounding-0-600-0-900-crop.jpg?v=e4a28548ed",
-    "rating": "4.0",
-    "review": "idk what the rest of y'all are on but i loved this",
-    "title": "Rounding",
-    "watched_date": "2026-10-19",
-    "year": "2022"
   },
   {
     "handle": "Moviemont",

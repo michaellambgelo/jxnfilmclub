@@ -263,6 +263,9 @@ async function route(request, env, ctx) {
     }
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env)
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
+    // Aggregate-only Prometheus scrape target for node0's Alloy. GET already
+    // skips the Origin gate above, so a plain curl works; no CORS needed.
+    if (request.method === 'GET' && pathname === '/metrics') return handleMetricsGet(env)
     if ((request.method === 'GET' || request.method === 'HEAD') && pathname.startsWith('/av/')) {
       return handleAvatarImageGet(request, env, pathname.slice('/av/'.length))
     }
@@ -2706,22 +2709,30 @@ async function buildWatched(env, prevRec) {
   const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
   const prev = (prevRec && prevRec.map) || {}
   const out = {}
+  const stats = newFetchStats()
   let fetchedAny = false
   await Promise.all(handles.map(async handle => {
+    let outcome = null
     try {
       const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`, {
         headers: { 'User-Agent': 'jxnfilmclub-join' },
         cf: { cacheTtl: WATCHED_CACHE_TTL, cacheEverything: true },
       })
-      if (!res.ok) throw new Error(`status ${res.status}`)
+      if (!res.ok) {
+        outcome = fetchOutcomeForStatus(res.status)
+        throw new Error(`status ${res.status}`)
+      }
       fetchedAny = true
       const films = parseLetterboxdRss(await res.text())
+      outcome = 'ok'
       if (films.length) out[handle] = films
       // A 200 with an empty feed is genuinely empty — the entry drops.
     } catch {
       // Feed unreachable (outage / challenge): carry the last good entry.
-      if (prev[handle]) out[handle] = prev[handle]
+      outcome = outcome || 'network_error'
+      if (prev[handle]) { out[handle] = prev[handle]; stats.carried++ }
     }
+    stats[outcome]++
   }))
 
   // `out` is built strictly from CURRENT membership handles, so unlinked or
@@ -2729,9 +2740,13 @@ async function buildWatched(env, prevRec) {
   // fetch counts as a fresh build; a TOTAL miss re-stores the carried map
   // with a missAt stamp so retries back off without ever discarding the last
   // good data. No KV expiration — the record must outlive any outage.
+  // `stats` + `builtAt` describe THIS build attempt (success or total miss)
+  // for GET /metrics; they ride in the same put, so observability costs no
+  // extra KV write.
+  const builtAt = Date.now()
   const rec = (!handles.length || fetchedAny)
-    ? { map: out, fetchedAt: Date.now() }
-    : { map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: Date.now() }
+    ? { map: out, fetchedAt: builtAt, builtAt, stats }
+    : { map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: builtAt, builtAt, stats }
   await env.MEMBERS_KV.put('watched:cache', JSON.stringify(rec))
   return rec.map
 }
@@ -2859,32 +2874,42 @@ async function buildAvatars(env, members, prevRec) {
   const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
   const prev = (prevRec && prevRec.map) || {}
   const out = {}
+  const stats = newFetchStats()
   let fetchedAny = false
   await Promise.all(handles.map(async handle => {
+    let outcome = null
     try {
       const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/films/`, {
         headers: { 'User-Agent': 'jxnfilmclub-join' },
         cf: { cacheTtl: 86400, cacheEverything: true },
       })
-      if (!res.ok) throw new Error(`status ${res.status}`)
+      if (!res.ok) {
+        outcome = fetchOutcomeForStatus(res.status)
+        throw new Error(`status ${res.status}`)
+      }
       fetchedAny = true
       const url = parseProfileAvatar(await res.text())
+      outcome = 'ok'
       if (url) out[handle] = url
       // A 200 without a custom upload: the member uses the Letterboxd
       // default — the entry drops and the letter avatar covers them.
     } catch {
       // Profile unreachable (outage / challenge): carry the last good URL.
-      if (prev[handle]) out[handle] = prev[handle]
+      outcome = outcome || 'network_error'
+      if (prev[handle]) { out[handle] = prev[handle]; stats.carried++ }
     }
+    stats[outcome]++
   }))
 
   // Same contract as buildWatched: `out` is built strictly from CURRENT
   // membership handles, any successful fetch counts as a fresh build, and a
   // TOTAL miss re-stores the carried map with a missAt stamp. No KV
-  // expiration — the record must outlive any outage.
+  // expiration — the record must outlive any outage. `stats` + `builtAt`
+  // feed GET /metrics, same as watched:cache.
+  const builtAt = Date.now()
   const rec = (!handles.length || fetchedAny)
-    ? { sig: avatarsSig(members), map: out, fetchedAt: Date.now() }
-    : { sig: avatarsSig(members), map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: Date.now() }
+    ? { sig: avatarsSig(members), map: out, fetchedAt: builtAt, builtAt, stats }
+    : { sig: avatarsSig(members), map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: builtAt, builtAt, stats }
   await env.MEMBERS_KV.put('avatars:cache', JSON.stringify(rec))
   return rec.map
 }
@@ -2899,6 +2924,182 @@ function parseProfileAvatar(html) {
   const m = /https:\/\/a\.ltrbxd\.com\/resized\/avatar\/upload\/[^"'\s]*avtr-[^"'\s]*/.exec(String(html))
   if (!m) return ''
   return m[0].replace(/avtr-0-[0-9]+-0-[0-9]+-crop/, 'avtr-0-80-0-80-crop')
+}
+
+// --- Prometheus metrics (Letterboxd scrape health + club activity) ---
+//
+// GET /metrics — public, Prometheus text exposition format 0.0.4. Grafana
+// Alloy on node0 scrapes it every 5 minutes; the Worker never pushes and
+// holds no monitoring credentials. Everything here is an AGGREGATE read out
+// of KV records that already exist (watched:cache, avatars:cache,
+// members:all) — the route never fetches Letterboxd and never triggers a
+// cache rebuild, so a scraper hammering it can't fan out to anyone's feed.
+// That is also why it needs no E2E_MODE branch: the other Letterboxd routes
+// stub out the BUILD in e2e, and this route has no build to stub.
+//
+// Privacy is enforced by the label set, not by care at the call site: every
+// label is a closed enumeration (cache, outcome, window, rating), so no
+// handle, name, email or film title can ever reach a series. The policy's
+// Third parties list names Grafana Labs for exactly this — keep the two in
+// sync if a metric with a new kind of label is ever added.
+//
+// The activity metrics inherit the watched cache's ROLLING window: each
+// member contributes at most WATCHED_FEED_DEPTH diary entries, so a member
+// who logs more than 50 films in 30 days is undercounted in the 30d series.
+// At the club's current pace (~21/month for the busiest member) the 30d
+// window is complete; the 7d one always is.
+
+// Per-build fetch outcome counters, stored on each cache record as `stats`.
+// `carried` overlaps the failure outcomes — it counts the failed handles
+// whose last good entry was carried forward, not a fifth kind of fetch.
+const FETCH_OUTCOMES = ['ok', 'forbidden', 'http_error', 'network_error', 'carried']
+
+function newFetchStats() {
+  return { ok: 0, forbidden: 0, http_error: 0, network_error: 0, carried: 0 }
+}
+
+// 403 is split out because it is what Letterboxd's Cloudflare bot challenge
+// ("Just a moment...") answers with — the failure mode that took out the
+// profile root page in Aug 2026 — as opposed to an ordinary upstream error.
+function fetchOutcomeForStatus(status) {
+  return status === 403 ? 'forbidden' : 'http_error'
+}
+
+const METRICS_WINDOWS = [['7d', 7], ['30d', 30]]
+const METRICS_RATINGS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0']
+
+// Letterboxd's memberRating is already a one-decimal half-star string
+// ("4.0", "3.5"); normalizing through Number keeps a stray "4" or "4.50" in
+// the same bucket and drops anything off the half-star scale, which keeps
+// the `rating` label a closed set of ten.
+function normalizeRating(r) {
+  const n = Number(r)
+  if (!Number.isFinite(n)) return null
+  const s = n.toFixed(1)
+  return METRICS_RATINGS.includes(s) ? s : null
+}
+
+// Film identity across members. Each member's diary link embeds their handle
+// (letterboxd.com/{handle}/film/{slug}/, plus a /{n}/ suffix on repeat
+// logs), so the slug is the shared key; title|year is the fallback for a
+// link that doesn't match. Used only to COUNT shared films — never emitted.
+function filmKey(film) {
+  const m = /\/film\/([^/]+)\//.exec(String(film.link || ''))
+  return m ? `slug:${m[1]}` : `title:${film.title || ''}|${film.year || ''}`
+}
+
+// YYYY-MM-DD of the UTC day `daysBack` days before `now`. Calendar dates
+// stay strings end to end (watched_date is a plain diary date with no
+// zone), so window membership is a lexicographic compare, never a Date
+// parse of watched_date.
+function utcDateDaysBack(now, daysBack) {
+  return new Date(now - daysBack * 86400_000).toISOString().slice(0, 10)
+}
+
+// Club activity over one window. A "7d" window is the UTC dates today-6
+// through today inclusive (seven calendar days); "30d" is today-29..today.
+// Entries without a watched_date (plain log entries) are excluded.
+function clubActivity(map, now, days) {
+  const cutoff = utcDateDaysBack(now, days - 1)
+  const out = { entries: 0, active: 0, liked: 0, rewatch: 0, shared: 0, ratingSum: 0, rated: {} }
+  for (const r of METRICS_RATINGS) out.rated[r] = 0
+  const watchers = new Map() // filmKey -> Set of handles
+  for (const [handle, films] of Object.entries(map || {})) {
+    let any = false
+    for (const f of Array.isArray(films) ? films : []) {
+      if (!f || typeof f.watched_date !== 'string' || f.watched_date < cutoff) continue
+      any = true
+      out.entries++
+      if (f.liked) out.liked++
+      if (f.rewatch) out.rewatch++
+      const rating = f.rating !== undefined ? normalizeRating(f.rating) : null
+      if (rating) { out.rated[rating]++; out.ratingSum += Number(rating) }
+      const key = filmKey(f)
+      if (!watchers.has(key)) watchers.set(key, new Set())
+      watchers.get(key).add(handle)
+    }
+    if (any) out.active++
+  }
+  for (const set of watchers.values()) if (set.size >= 2) out.shared++
+  return out
+}
+
+// Minimal exposition builder: one HELP/TYPE header per metric, then all of
+// that metric's samples contiguously, as the format requires. Label values
+// here come only from the closed sets above, so they need no escaping.
+function promMetric(lines, name, help, samples) {
+  lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`)
+  for (const [labels, value] of samples) {
+    const l = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',')
+    lines.push(`${name}${l ? `{${l}}` : ''} ${value}`)
+  }
+}
+
+async function handleMetricsGet(env) {
+  const now = Date.now()
+  const caches = [
+    ['watched', readWatchedRecord(await env.MEMBERS_KV.get('watched:cache'))],
+    ['avatars', readAvatarsRecord(await env.MEMBERS_KV.get('avatars:cache'))],
+  ]
+  // Raw members:all, not readMembersAll(): a scrape must never be able to
+  // trigger the members bootstrap (an origin fetch) — same reasoning as
+  // memberNamesById.
+  const membersRaw = await env.MEMBERS_KV.get('members:all')
+  const members = membersRaw ? safeParseArray(membersRaw) : []
+
+  const lines = []
+  const per = fn => caches.map(([cache, rec]) => [{ cache }, fn(rec || {})])
+  promMetric(lines, 'jxnfc_letterboxd_cache_fetched_timestamp_seconds',
+    'Unix time of the last Letterboxd cache build with at least one successful fetch (0 if never).',
+    per(rec => (rec.fetchedAt || 0) / 1000))
+  promMetric(lines, 'jxnfc_letterboxd_cache_built_timestamp_seconds',
+    'Unix time of the last Letterboxd cache build attempt, success or total miss (0 if not recorded).',
+    per(rec => (rec.builtAt || 0) / 1000))
+  promMetric(lines, 'jxnfc_letterboxd_cache_miss_active',
+    '1 while the cache is in total-miss backoff (last build fetched nothing), else 0.',
+    per(rec => (rec.missAt && rec.missAt > (rec.fetchedAt || 0)) ? 1 : 0))
+  const fetchSamples = []
+  for (const [cache, rec] of caches) {
+    if (!rec || !rec.stats) continue
+    for (const outcome of FETCH_OUTCOMES) fetchSamples.push([{ cache, outcome }, Number(rec.stats[outcome]) || 0])
+  }
+  promMetric(lines, 'jxnfc_letterboxd_last_build_fetches',
+    'Per-handle fetch outcomes in the last cache build; carried counts failures that kept their last good entry.',
+    fetchSamples)
+  promMetric(lines, 'jxnfc_letterboxd_cache_handles',
+    'Handles with an entry in the cache map.',
+    per(rec => Object.keys(rec.map || {}).length))
+  promMetric(lines, 'jxnfc_members_total', 'Club members.', [[{}, members.length]])
+  promMetric(lines, 'jxnfc_members_linked', 'Members with a linked Letterboxd profile.',
+    [[{}, members.filter(m => m && m.handle).length]])
+
+  const watchedMap = (caches[0][1] && caches[0][1].map) || {}
+  const activity = METRICS_WINDOWS.map(([window, days]) => [window, clubActivity(watchedMap, now, days)])
+  const perWindow = fn => activity.map(([window, a]) => [{ window }, fn(a)])
+  promMetric(lines, 'jxnfc_club_diary_entries',
+    'Dated diary entries in the window (7d = UTC today-6..today, 30d = today-29..today), from the rolling 50-per-member feed cache.',
+    perWindow(a => a.entries))
+  promMetric(lines, 'jxnfc_club_active_members', 'Members with at least one diary entry in the window.',
+    perWindow(a => a.active))
+  promMetric(lines, 'jxnfc_club_liked_entries', 'Diary entries in the window marked liked.',
+    perWindow(a => a.liked))
+  promMetric(lines, 'jxnfc_club_rewatch_entries', 'Diary entries in the window marked as rewatches.',
+    perWindow(a => a.rewatch))
+  promMetric(lines, 'jxnfc_club_shared_films', 'Distinct films logged by two or more members in the window.',
+    perWindow(a => a.shared))
+  const ratedSamples = []
+  for (const [window, a] of activity) {
+    for (const rating of METRICS_RATINGS) ratedSamples.push([{ window, rating }, a.rated[rating]])
+  }
+  promMetric(lines, 'jxnfc_club_rated_entries', 'Rated diary entries in the window, by half-star rating.',
+    ratedSamples)
+  promMetric(lines, 'jxnfc_club_rating_sum',
+    'Sum of star ratings in the window; divide by sum(jxnfc_club_rated_entries) for the average.',
+    perWindow(a => a.ratingSum))
+
+  return new Response(lines.join('\n') + '\n', {
+    headers: { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'public, max-age=60' },
+  })
 }
 
 // --- Custom profile photos ---

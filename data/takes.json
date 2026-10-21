@@ -1,5 +1,26 @@
 [
   {
+    "handle": "michaellamb",
+    "link": "https://letterboxd.com/michaellamb/film/v-h-s-mixtape/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/0/8/3/1/7/1608317-v-h-s-mixtape-0-600-0-900-crop.jpg?v=682ecbb351",
+    "rating": "1.5",
+    "review": "whatever. i hope next year is better.",
+    "title": "V/H/S/Mixtape",
+    "watched_date": "2026-10-20",
+    "year": "2026"
+  },
+  {
+    "handle": "michaellamb",
+    "liked": true,
+    "link": "https://letterboxd.com/michaellamb/film/v-h-s-halloween/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/6/0/0/8/7/1260087-v-h-s-halloween-0-600-0-900-crop.jpg?v=8bd6255f16",
+    "rating": "2.0",
+    "review": "overall entertaining. some really funny bits at the end. i really dug the \"As Above, So Below\" segment. this begins my annual ritual of subscribing to Shudder for exactly one month",
+    "title": "V/H/S/Halloween",
+    "watched_date": "2026-10-20",
+    "year": "2025"
+  },
+  {
     "handle": "bearleebooks",
     "link": "https://letterboxd.com/bearleebooks/film/the-crow-2024/",
     "poster": "https://a.ltrbxd.com/resized/film-poster/8/6/1/2/9/2/861292-the-crow-0-600-0-900-crop.jpg?v=68e75e4c7c",
@@ -19,17 +40,6 @@
     "title": "Nosferatu",
     "watched_date": "2026-10-19",
     "year": "2024"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/the-northman/2/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/6/5/8/5/2/565852-the-northman-0-600-0-900-crop.jpg?v=8e3d277969",
-    "rating": "4.0",
-    "review": "broke in my 4K UHD. gorgeous image. fantastic story.",
-    "title": "The Northman",
-    "watched_date": "2026-10-19",
-    "year": "2022"
   },
   {
     "handle": "bearleebooks",
@@ -103,17 +113,6 @@
     "title": "Thief",
     "watched_date": "2026-10-18",
     "year": "1981"
-  },
-  {
-    "handle": "michaellamb",
-    "liked": true,
-    "link": "https://letterboxd.com/michaellamb/film/wecrashed/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/8/4/6/8/7/4/846874-wecrashed-0-600-0-900-crop.jpg?v=5b7305ebef",
-    "rating": "3.5",
-    "review": "i enjoyed it but would have liked it to be maybe be one or two episodes shorter. i got really tired of watching Jared Leto and i'm not sorry. honestly, i only watched this because my market doesn't have You Can See Everything yet and i've already watched The Dropout and everything else Nathan\u2026",
-    "title": "WeCrashed",
-    "watched_date": "2026-10-17",
-    "year": "2022"
   },
   {
     "handle": "calissippi",

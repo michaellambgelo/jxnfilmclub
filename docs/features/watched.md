@@ -79,6 +79,30 @@ is deliberately not cached so an outage never gets pinned for a full TTL.
 Takes source. Consumers: home "The Last Four", the `/watched` view, and the
 host panel's diary quick-picks.
 
+## Metrics (`GET /metrics`)
+
+A public, aggregate-only Prometheus scrape target (text format 0.0.4,
+`Cache-Control: public, max-age=60`) that Grafana Alloy on node0 scrapes every
+5 minutes. It reads only the existing KV records (`watched:cache`,
+`avatars:cache`, raw `members:all`) and never fetches Letterboxd or triggers a
+rebuild. Every label is a closed set — `cache` (watched/avatars), `outcome`
+(ok/forbidden/http_error/network_error/carried), `window` (7d/30d) and
+`rating` (the ten half-star values) — so no handle, name, email or film title
+can reach a series. Both cache builds store `builtAt` and per-handle fetch
+`stats` on the record they already write, so a burst of 403s (Letterboxd's
+Cloudflare challenge) shows up as `jxnfc_letterboxd_last_build_fetches`
+rather than only as a stale `fetchedAt`.
+
+Series: `jxnfc_letterboxd_cache_{fetched,built}_timestamp_seconds`,
+`jxnfc_letterboxd_cache_miss_active`, `jxnfc_letterboxd_last_build_fetches`,
+`jxnfc_letterboxd_cache_handles`, `jxnfc_members_{total,linked}`, and the club
+activity gauges `jxnfc_club_{diary_entries,active_members,liked_entries,rewatch_entries,shared_films,rated_entries,rating_sum}`.
+Windows compare `watched_date` strings against UTC dates: 7d is today-6
+through today, 30d is today-29 through today. They inherit the cache's
+rolling 50-per-member depth, so a member logging more than 50 films in 30
+days would be undercounted. The privacy policy names Grafana Labs for these
+counts — keep the two in sync.
+
 ## Avatars (`GET /avatars`)
 
 A sibling endpoint with the same architecture: Letterboxd has no API and RSS

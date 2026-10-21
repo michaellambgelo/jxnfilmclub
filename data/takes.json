@@ -31,6 +31,17 @@
     "year": "2024"
   },
   {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/full-metal-jacket/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/l0/l4/6c/7v/29veIwD38rVL2qY74emXQw4y25H-0-600-0-900-crop.jpg?v=6e44829670",
+    "rating": "5.0",
+    "review": "Who knew a guy named Stanley could make movies this good",
+    "title": "Full Metal Jacket",
+    "watched_date": "2026-10-20",
+    "year": "1987"
+  },
+  {
     "handle": "michaellamb",
     "liked": true,
     "link": "https://letterboxd.com/michaellamb/film/nosferatu-2024/3/",
@@ -154,17 +165,6 @@
     "title": "12 Angry Men",
     "watched_date": "2026-10-15",
     "year": "1957"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/dr-strangelove-or-how-i-learned-to-stop-worrying-and-love-the-bomb/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/2/1/8/51218-dr-strangelove-or-how-i-learned-to-stop-worrying-and-love--0-600-0-900-crop.jpg?v=c814dfbae0",
-    "rating": "4.0",
-    "review": "I need to read more about the time it was made I think to better understand",
-    "title": "Dr. Strangelove or: How I Learned to Stop Worrying and Love the Bomb",
-    "watched_date": "2026-10-15",
-    "year": "1964"
   },
   {
     "handle": "jon_knowledge",

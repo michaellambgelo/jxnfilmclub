@@ -904,6 +904,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/full-metal-jacket/",
+      "poster": "https://a.ltrbxd.com/resized/sm/upload/l0/l4/6c/7v/29veIwD38rVL2qY74emXQw4y25H-0-600-0-900-crop.jpg?v=6e44829670",
+      "rating": "5.0",
+      "title": "Full Metal Jacket",
+      "watched_date": "2026-10-20",
+      "year": "1987"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/a-clockwork-orange/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/8/6/7/51867-a-clockwork-orange-0-600-0-900-crop.jpg?v=d6d5407b50",
       "rating": "4.5",
@@ -1004,14 +1013,6 @@
       "title": "Pan's Labyrinth",
       "watched_date": "2026-10-09",
       "year": "2006"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/coco-2017/",
-      "poster": "https://a.ltrbxd.com/resized/sm/upload/3p/mh/wq/v9/6Ryitt95xrO8KXuqRGm1fUuNwqF-0-600-0-900-crop.jpg?v=2a90bd6512",
-      "title": "Coco",
-      "watched_date": "2026-10-07",
-      "year": "2017"
     }
   ],
   "badmov1eenjoyer": [

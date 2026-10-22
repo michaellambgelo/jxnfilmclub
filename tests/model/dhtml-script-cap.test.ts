@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 
 const CAP = 10_000
 const ROOT = join(__dirname, '..', '..')
-const FILES = ['ui/views.html', 'ui/auth.html', 'ui/widgets.html', 'ui/feedback.html']
+const FILES = ['ui/views.html', 'ui/auth.html', 'ui/widgets.html', 'ui/feedback.html', 'ui/masthead.html']
 
 function components(file: string) {
   const src = readFileSync(join(ROOT, file), 'utf8')

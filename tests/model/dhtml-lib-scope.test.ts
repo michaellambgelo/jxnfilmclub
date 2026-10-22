@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 //
 // So: every lib-scope declaration must be a name no template binds.
 
-const FILES = ['ui/views.html', 'ui/auth.html', 'ui/widgets.html', 'ui/feedback.html']
+const FILES = ['ui/views.html', 'ui/auth.html', 'ui/widgets.html', 'ui/feedback.html', 'ui/masthead.html']
 
 function libScript(file: string): string {
   const src = readFileSync(file, 'utf8')

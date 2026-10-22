@@ -1,0 +1,140 @@
+
+<!doctype dhtml lib>
+
+<!-- Root-level chrome: the masthead nav and the privacy-update toast.
+
+     These used to live in index.html as root state (menuOpen, signedIn,
+     policyToast), so every hamburger tap and every toast show/dismiss ran a
+     ROOT update(). nuedom re-renders the root template on update and domdiffs
+     it against the live DOM: the mounted view keeps its <article> element but
+     loses its attributes and every child, and nothing remounts it. Each piece
+     is its own component now, so its update() diffs only its own subtree and
+     the root never updates once a view is on screen. Keep it that way: any
+     state the root template reads, and any :on handler on it (nuedom calls
+     update() after every handler), brings the bug back. Guarded by
+     tests/model/root-static.test.ts. -->
+
+<script>
+  import { state } from 'state'
+
+  function resolveWorkerOrigin() {
+    if (globalThis.JXNFC_WORKER_ORIGIN) return globalThis.JXNFC_WORKER_ORIGIN
+    const override = new URLSearchParams(location.search).get('api')
+    if (override === 'local') return 'http://localhost:8787'
+    if (override === 'prod')  return 'https://join.jxnfilm.club'
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787'
+    return 'https://join.jxnfilm.club'
+  }
+  const MAST_ORIGIN = resolveWorkerOrigin()
+
+  function isSignedIn() {
+    try {
+      const raw = localStorage.jxnfc_session
+      if (!raw) return false
+      const s = JSON.parse(raw)
+      // A remembered device counts as signed in even after the 1-hour token
+      // lapses — the views silently refresh it on demand. If the refresh
+      // token turns out to be revoked, /edit bounces to /signin as usual.
+      return !!(s?.token && s.exp > Date.now()) || !!(s && s.refresh)
+    } catch { return false }
+  }
+
+  // One-time privacy policy updated toast. The worker serves the policy
+  // revision date (parsed from the page itself); we compare it to a
+  // per-browser ack in localStorage. First visit stores silently — a brand
+  // new visitor has no earlier policy to be notified about. A later revision
+  // returns true exactly once, then the fresh stamp suppresses it until the
+  // next bump. Failures (offline, endpoint missing) resolve false: the toast
+  // is a courtesy, never a blocker.
+  async function checkPrivacyVersion() {
+    try {
+      const res = await fetch(MAST_ORIGIN + '/privacy/version')
+      if (!res.ok) return false
+      const { updated } = await res.json()
+      if (!updated) return false
+      const seen = localStorage.jxnfc_privacy_ack
+      localStorage.jxnfc_privacy_ack = updated
+      return !!seen && seen !== updated
+    } catch { return false }
+  }
+</script>
+
+
+<!-- Masthead nav. Owns menuOpen + signedIn. -->
+<nav :is="mast-nav" class="mastnav wrap { menuOpen ? 'open' : '' }">
+  <a href="/" class="logo" :onclick="closeMenu">
+    <span class="logo-word">JXN Film Club</span>
+    <span class="logo-stamp">Est. JXN MS</span>
+  </a>
+  <button type="button" class="nav-toggle"
+    :onclick="toggleMenu"
+    aria-label="Menu">
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+  </button>
+  <!-- closeMenu on the wrapper: tapping the page you are already on is not a
+       route change (index.html swallows that click), so the route listener
+       below never fires and only this closes the menu. -->
+  <div class="mastnav-links" :onclick="closeMenu">
+    <a href="/members">Members</a>
+    <a href="/watched">Watched</a>
+    <a href="/events">Events</a>
+    <a href="/map">Map</a>
+    <a href="/speak">Speak</a>
+    <a href="/giveaways">Giveaways</a>
+    <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
+  </div>
+  <!-- Log in lives OUTSIDE .mastnav-links so the hamburger never hides it:
+       it was a dim link behind a collapsed menu, which made logging back
+       in harder to find than joining for the first time. Join stays in
+       the menu, so the masthead keeps exactly one solid red action. -->
+  <div class="mastnav-auth">
+    <a :if="!signedIn" href="/signin" class="nav-login">Log in</a>
+    <a :if="signedIn" href="/edit" class="nav-login">Account</a>
+  </div>
+
+  <script>
+    this.menuOpen = false
+    this.signedIn = isSignedIn()
+
+    // Every route change closes the menu and re-reads the session, the job
+    // the root route handler used to do with its own update().
+    state.on('type', () => {
+      this.update({ signedIn: isSignedIn(), menuOpen: false })
+    })
+
+    this.toggleMenu = function() {
+      this.update({ menuOpen: !this.menuOpen })
+    }
+
+    this.closeMenu = function() {
+      if (this.menuOpen) this.update({ menuOpen: false })
+    }
+  </script>
+</nav>
+
+
+<!-- Privacy-update toast. Owns its fetch, the dismiss button and the
+     12s auto-hide. -->
+<div :is="policy-toast" class="policy-toast" :hidden="!toastShown" role="status">
+  <a href="{ policyUrl }">Our privacy policy was updated</a>
+  <button type="button" class="policy-toast-close" aria-label="Dismiss" :onclick="dismiss">×</button>
+
+  <script>
+    this.toastShown = false
+    this.policyUrl = MAST_ORIGIN + '/privacy'
+
+    this.dismiss = function() {
+      this.update({ toastShown: false })
+    }
+
+    this.mounted = function() {
+      checkPrivacyVersion().then(show => {
+        if (!show) return
+        this.update({ toastShown: true })
+        setTimeout(() => this.update({ toastShown: false }), 12000)
+      })
+    }
+  </script>
+</div>

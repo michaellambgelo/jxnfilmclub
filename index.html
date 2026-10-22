@@ -81,37 +81,6 @@
     a.href = u.href
   }, true)
 
-  // One-time "privacy policy updated" toast. The worker serves the policy's
-  // revision date (parsed from the page itself); we compare it to a
-  // per-browser ack in localStorage. First visit stores silently — a brand
-  // new visitor has no earlier policy to be notified about. A later revision
-  // returns true exactly once, then the fresh stamp suppresses it until the
-  // next bump. Failures (offline, endpoint missing) resolve false: the toast
-  // is a courtesy, never a blocker.
-  async function checkPrivacyVersion() {
-    try {
-      const res = await fetch(WORKER_ORIGIN + '/privacy/version')
-      if (!res.ok) return false
-      const { updated } = await res.json()
-      if (!updated) return false
-      const seen = localStorage.jxnfc_privacy_ack
-      localStorage.jxnfc_privacy_ack = updated
-      return !!seen && seen !== updated
-    } catch { return false }
-  }
-
-  function isSignedIn() {
-    try {
-      const raw = localStorage.jxnfc_session
-      if (!raw) return false
-      const s = JSON.parse(raw)
-      // A remembered device counts as signed in even after the 1-hour token
-      // lapses — the views silently refresh it on demand. If the refresh
-      // token turns out to be revoked, /edit bounces to /signin as usual.
-      return !!(s?.token && s.exp > Date.now()) || !!(s && s.refresh)
-    } catch { return false }
-  }
-
   // Where to land after a login. Deliberately NOT a ?next= query param:
   // nuestate reads and emits only the keys registered in state.setup, so an
   // unregistered param never survives an SPA navigation — and a REGISTERED one
@@ -166,36 +135,9 @@
 <body>
 
   <header>
-    <nav class="mastnav wrap { menuOpen ? 'open' : '' }">
-      <a href="/" class="logo">
-        <span class="logo-word">JXN Film Club</span>
-        <span class="logo-stamp">Est. JXN MS</span>
-      </a>
-      <button type="button" class="nav-toggle"
-        :onclick="toggleMenu"
-        aria-label="Menu">
-        <span class="nav-toggle-bar"></span>
-        <span class="nav-toggle-bar"></span>
-        <span class="nav-toggle-bar"></span>
-      </button>
-      <div class="mastnav-links">
-        <a href="/members">Members</a>
-        <a href="/watched">Watched</a>
-        <a href="/events">Events</a>
-        <a href="/map">Map</a>
-        <a href="/speak">Speak</a>
-        <a href="/giveaways">Giveaways</a>
-        <a :if="!signedIn" href="https://join.jxnfilm.club/" class="auth-link">Join</a>
-      </div>
-      <!-- Log in lives OUTSIDE .mastnav-links so the hamburger never hides it:
-           it was a dim link behind a collapsed menu, which made logging back
-           in harder to find than joining for the first time. Join stays in
-           the menu, so the masthead keeps exactly one solid red action. -->
-      <div class="mastnav-auth">
-        <a :if="!signedIn" href="/signin" class="nav-login">Log in</a>
-        <a :if="signedIn" href="/edit" class="nav-login">Account</a>
-      </div>
-    </nav>
+    <!-- The nav and the policy toast below are components (ui/masthead.html)
+         so their updates never touch this root template. See that file. -->
+    <mast-nav/>
   </header>
 
   <main class="wrap">
@@ -215,14 +157,13 @@
 
   <feedback-widget/>
 
-  <div class="policy-toast" :hidden="!policyToast" role="status">
-    <a href="{ policyUrl }">Our privacy policy was updated</a>
-    <button type="button" class="policy-toast-close" aria-label="Dismiss" :onclick="dismissPolicyToast">×</button>
-  </div>
+  <policy-toast/>
 
   <script>
+    // No update() here, nor anywhere on this root: a root update re-renders
+    // the template and wipes the mounted view out of its <article>. The nav
+    // closes its own menu and re-reads the session on this same event.
     state.on('type', ({ type }) => {
-      this.update({ signedIn: isSignedIn(), menuOpen: false })
       const view =
         type === 'members' ? 'members-view' :
         type === 'events'  ? 'events-view' :
@@ -239,22 +180,8 @@
       this.mount(view, 'article')
     })
 
-    toggleMenu() {
-      this.update({ menuOpen: !this.menuOpen })
-    }
-
-    dismissPolicyToast() {
-      this.update({ policyToast: false })
-    }
-
     mounted() {
-      this.update({ signedIn: isSignedIn(), menuOpen: false, policyToast: false, policyUrl: WORKER_ORIGIN + '/privacy' })
       state.init()
-      checkPrivacyVersion().then(show => {
-        if (!show) return
-        this.update({ policyToast: true })
-        setTimeout(() => this.update({ policyToast: false }), 12000)
-      })
     }
   </script>
 

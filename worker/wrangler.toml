@@ -53,17 +53,13 @@ migrations_dir = "migrations"
 
 # Film stats (worker/src/films.js, docs/features/film-stats.md). Its own
 # database and migrations_dir so the schema never shares a numbering sequence
-# with GIVEAWAYS_DB. The id below is a PLACEHOLDER: before deploying, create
-# the database once per env and paste the real ids here and in the staging
-# block, then apply migrations:
-#   npx wrangler d1 create jxnfilm-films
+# with GIVEAWAYS_DB. Created 2026-10-23. A new migration must be applied
+# before the Worker that needs it deploys:
 #   npx wrangler d1 migrations apply jxnfilm-films --remote
-# Until then FILMS_DB is unusable; /films/* answers 503 only when the binding
-# is absent, so do not deploy with the placeholder.
 [[d1_databases]]
 binding = "FILMS_DB"
 database_name = "jxnfilm-films"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "14977ca0-2b64-49a3-aab9-009701ddb742"
 migrations_dir = "migrations-films"
 
 [vars]
@@ -126,13 +122,12 @@ database_name = "jxnfilm-giveaways-staging"
 database_id = "4e6068d0-eb01-4795-b344-7ce65a2b51eb"
 migrations_dir = "migrations"
 
-# Placeholder id, as above:
-#   npx wrangler d1 create jxnfilm-films-staging
+# Staging film stats, as above:
 #   npx wrangler d1 migrations apply jxnfilm-films-staging --env staging --remote
 [[env.staging.d1_databases]]
 binding = "FILMS_DB"
 database_name = "jxnfilm-films-staging"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "ab3077be-af06-4c97-b169-d1a89bea5a52"
 migrations_dir = "migrations-films"
 
 [env.staging.vars]

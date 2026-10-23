@@ -1,10 +1,9 @@
 # Film Stats
 
-> **Status: implemented, not deployed.** Decisions below came from a design
-> interview on 2026-10-23 and are built as described, with the deviations
-> noted inline. `FILMS_DB` still has placeholder database ids in
-> `worker/wrangler.toml`; see [Deploying](#deploying). The open questions at
-> the end shipped with the defaults listed there.
+> **Status: live since 2026-10-23.** Decisions below came from a design
+> interview that day and are built as described, with the deviations noted
+> inline. The open questions at the end shipped with the defaults listed
+> there.
 
 A club-owned, accumulating record of who in the club logged which film, so
 the site can say "14 members have logged this" with authority instead of
@@ -260,16 +259,19 @@ Each is still open for a later decision; this is what the code does today.
 
 ## Deploying
 
-1. `cd worker && npx wrangler d1 create jxnfilm-films` and
-   `npx wrangler d1 create jxnfilm-films-staging`.
-2. Paste both `database_id`s over the `00000000-…` placeholders in
-   `worker/wrangler.toml` (prod and `env.staging` blocks).
-3. `npx wrangler d1 migrations apply jxnfilm-films --remote` and
-   `npx wrangler d1 migrations apply jxnfilm-films-staging --env staging --remote`.
-4. Deploy the Worker, then the site.
+`jxnfilm-films` (prod) and `jxnfilm-films-staging` were created on
+2026-10-23; their ids are in `worker/wrangler.toml`. CI deploys the Worker
+but never runs D1 migrations, so a new file in `worker/migrations-films/`
+must be applied by hand **before** the push that needs it:
 
-Do not deploy with the placeholder ids. Local e2e runs apply the FILMS_DB
-migrations themselves (`playwright.config.ts` webServer).
+```
+cd worker
+npx wrangler d1 migrations apply jxnfilm-films --remote
+npx wrangler d1 migrations apply jxnfilm-films-staging --env staging --remote
+```
+
+Local e2e runs apply the FILMS_DB migrations themselves
+(`playwright.config.ts` webServer).
 
 ## Key files
 
@@ -278,7 +280,7 @@ migrations themselves (`playwright.config.ts` webServer).
 | `worker/migrations-films/0001_films.sql` | Schema: `films`, `logs`, `log_versions`, `departures` |
 | `worker/src/films.js` | `ingestMany`/`ingestLogs`, `linkScreenings`, `anonymizeFilmLogs`, `relinkFilmLogs`, `purgeFilmLogs`, `filmStats`, `filmDetail` |
 | `worker/src/index.js` | Ingest + link in `buildWatched`; daily cron `refreshFilmLogs`; `/films/*` routes; unlink/delete/handle-change cascades; link on attend |
-| `worker/wrangler.toml` | `FILMS_DB` binding (prod + staging; placeholder ids) |
+| `worker/wrangler.toml` | `FILMS_DB` binding (prod + staging) |
 | `model/index.ts` | `getFilmStats`, `getFilm`, strip byline and film-page shaping |
 | `ui/views.html`, `css/watched.css`, `css/film.css` | Direction A strip; `/film?slug=` view |
 | `index.html` | `slug` query key; `/film?slug=` sign-in return |

@@ -1015,6 +1015,14 @@
   ],
   "badmov1eenjoyer": [
     {
+      "link": "https://letterboxd.com/badmov1eenjoyer/film/clayface/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/1/2/8/4/6/3/6/1284636-clayface-0-600-0-900-crop.jpg?v=eb305849d5",
+      "rating": "3.5",
+      "title": "Clayface",
+      "watched_date": "2026-10-23",
+      "year": "2026"
+    },
+    {
       "link": "https://letterboxd.com/badmov1eenjoyer/film/verity-2026/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/6/7/1/5/1/1167151-verity-2026-0-600-0-900-crop.jpg?v=3169444893",
       "rating": "1.5",
@@ -1105,15 +1113,6 @@
       "rating": "3.0",
       "title": "Supergirl",
       "watched_date": "2026-09-13",
-      "year": "2026"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/badmov1eenjoyer/film/coyote-vs-acme/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/1/0/8/9/0/8/8/1089088-coyote-vs-acme-0-600-0-900-crop.jpg?v=735eb10cc7",
-      "rating": "4.0",
-      "title": "Coyote vs. Acme",
-      "watched_date": "2026-09-01",
       "year": "2026"
     }
   ],

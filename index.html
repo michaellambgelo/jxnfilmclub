@@ -8,7 +8,9 @@
   import { state } from 'state'
 
   // Shared with the same-route link guard below.
-  const QUERY_KEYS = ['query', 'sort', 'venue', 'email', 'event', 'filter']
+  // slug is the film page key: the route is /:type, and nuestate drops any
+  // second path segment from the URL it writes, so /film?slug=SLUG it is.
+  const QUERY_KEYS = ['query', 'sort', 'venue', 'email', 'event', 'filter', 'slug']
 
   state.setup({
     route: '/:type',
@@ -35,6 +37,9 @@
     if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return
     // Cross-origin (Join), another page, or an in-page anchor: not ours.
     if (a.origin !== location.origin || a.pathname !== location.pathname || a.hash) return
+    // One film page to another shares the /film path but is a real
+    // navigation, not a click through to where you already are.
+    if (a.pathname === '/film' && a.search !== location.search) return
     e.preventDefault()
     // Clicking through to where you already are should still read as a
     // navigation, so go back to the top — what the browser itself does for
@@ -91,12 +96,21 @@
   // Validated against a literal allowlist on BOTH write and read. Not a
   // regex: '//evil.example' and a backslash variant both look same-origin,
   // and backslashes in this codebase are their own hazard. Seven routes is
-  // a short enough list to simply enumerate.
+  // a short enough list to simply enumerate. The one route that needs its
+  // query is a film page, kept only in the exact shape /film?slug=<slug>.
   const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback', '/giveaways']
+  // (No backslashes: a string prefix plus a plain character class.)
+  const FILM_NEXT = '/film?slug='
+  const filmNextOk = (p) => p.startsWith(FILM_NEXT) && /^[a-z0-9-]+$/.test(p.slice(FILM_NEXT.length))
+  const nextOk = (path) => NEXT_OK.includes(path) || (typeof path === 'string' && filmNextOk(path))
 
+  // `path` is a pathname, optionally with its query (pathname + search). Only
+  // /film keeps the query; every other route is reduced to its pathname.
   globalThis.jxnfcStashNext = (path) => {
     try {
-      if (NEXT_OK.includes(path)) sessionStorage.jxnfc_next = path
+      const u = new URL(String(path || ''), location.origin)
+      const next = u.pathname === '/film' ? FILM_NEXT + (u.searchParams.get('slug') || '') : u.pathname
+      if (u.origin === location.origin && nextOk(next)) sessionStorage.jxnfc_next = next
       else delete sessionStorage.jxnfc_next
     } catch { /* private mode, blocked storage: the landing just defaults */ }
   }
@@ -105,7 +119,7 @@
     try {
       const path = sessionStorage.jxnfc_next
       delete sessionStorage.jxnfc_next
-      return NEXT_OK.includes(path) ? path : ''
+      return nextOk(path) ? path : ''
     } catch { return '' }
   }
 
@@ -124,7 +138,7 @@
     const url = new URL(a.href, location.href)
     const external = url.origin !== location.origin
     if (!external && !e.defaultPrevented && url.pathname === '/signin' && location.pathname !== '/signin') {
-      globalThis.jxnfcStashNext(location.pathname)
+      globalThis.jxnfcStashNext(location.pathname + location.search)
     }
     if (external || a.target === '_blank') {
       e.stopImmediatePropagation()
@@ -168,6 +182,7 @@
         type === 'members' ? 'members-view' :
         type === 'events'  ? 'events-view' :
         type === 'watched' ? 'watched-view' :
+        type === 'film'    ? 'film-view' :        // one film, /film?slug=SLUG; see docs/features/film-stats.md
         type === 'map'     ? 'map-view' :         // venue map; tiles and MapLibre are self-hosted, see docs/features/map.md
         type === 'signin'  ? 'sign-in-view' :
         type === 'verify'  ? 'verify-view' :

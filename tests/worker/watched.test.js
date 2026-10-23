@@ -1,17 +1,30 @@
-import { SELF, env } from 'cloudflare:test'
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import worker from '../../worker/src/index.js'
 
 function mockFetch(handler) {
   globalThis.fetch = vi.fn(handler)
 }
 
-function req(path) {
-  return SELF.fetch(`https://join.jxnfilm.club${path}`)
+// Through the worker with an execution context, awaited: a rebuild hands the
+// film-stats ingest (and its screening link) to ctx.waitUntil, and that work
+// must finish before the next test's storage reset, or it dies mid-flight.
+async function req(path) {
+  const ctx = createExecutionContext()
+  const res = await worker.fetch(new Request(`https://join.jxnfilm.club${path}`), env, ctx)
+  await waitOnExecutionContext(ctx)
+  return res
 }
 
 async function seedMembers(members) {
   await env.MEMBERS_KV.put('members:bootstrapped', '1')
   await env.MEMBERS_KV.put('members:all', JSON.stringify(members))
+  // A rebuild that ingests new film logs links them to screenings, which
+  // reads the event and attendance aggregates. Mark both bootstrapped (as in
+  // production) so that read never fetches the repo baseline and every
+  // fetch these tests count is a Letterboxd one.
+  await env.ATTENDANCE_KV.put('events:bootstrapped', '1')
+  await env.ATTENDANCE_KV.put('attendance:bootstrapped', '1')
 }
 
 function rssItem({ guid, title, link, film, year, date, poster, rating, liked, rewatch }) {
@@ -227,10 +240,15 @@ describe('GET /watched — depth projection', () => {
     date: `2026-07-${String(28 - (i % 28)).padStart(2, '0')}`,
   })))
 
-  const watched = (query = '', token) => SELF.fetch(
-    `https://join.jxnfilm.club/watched${query}`,
-    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
-  )
+  const watched = async (query = '', token) => {
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(new Request(
+      `https://join.jxnfilm.club/watched${query}`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+    ), env, ctx)
+    await waitOnExecutionContext(ctx)
+    return res
+  }
 
   beforeEach(async () => {
     await seedMembers([{ id: 'a', name: 'A', handle: 'qa' }])

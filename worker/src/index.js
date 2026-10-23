@@ -14,6 +14,10 @@ import {
   validGiveaway, deleteGiveaway, editExternalEntrants, isMissingTable, listExternalEntrants,
 } from './giveaways.js'
 import { buildVenueMap, DEFAULT_VENUES, validVenueList } from './venues.js'
+import {
+  anonymizeFilmLogs, centralDayCutoff, FILM_SLUG_RE, filmDetail, filmStats, ingestMany, linkScreenings,
+  MAX_STATS_SLUGS, purgeFilmLogs, relinkFilmLogs,
+} from './films.js'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -135,6 +139,9 @@ export default {
     ctx.waitUntil(renudgePendingTranscripts(env))
     // Giveaway personal data expires RETENTION_DAYS after each giveaway ends.
     if (env.GIVEAWAYS_DB) ctx.waitUntil(scrubGiveaways(env.GIVEAWAYS_DB))
+    // Film stats: a rebuild so a quiet day with no /watched traffic is still
+    // captured, then screening links for recently self-reported attendance.
+    if (env.FILMS_DB && env.E2E_MODE !== 'true') ctx.waitUntil(refreshFilmLogs(env))
   },
 }
 
@@ -261,7 +268,12 @@ async function route(request, env, ctx) {
     if ((request.method === 'GET' || request.method === 'HEAD') && pathname.startsWith('/nl/img/')) {
       return handleNewsletterImageGet(request, env, pathname.slice('/nl/img/'.length))
     }
-    if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env)
+    if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env, ctx)
+    // Film stats (FILMS_DB). Counts are public; names need a session.
+    if (request.method === 'GET' && pathname === '/films/stats') return handleFilmStats(request, env)
+    if (request.method === 'GET' && pathname.startsWith('/films/')) {
+      return handleFilmDetail(request, env, pathname.slice('/films/'.length))
+    }
     if (request.method === 'GET' && pathname === '/avatars') return handleAvatarsGet(env)
     // Aggregate-only Prometheus scrape target for node0's Alloy. GET already
     // skips the Origin gate above, so a plain curl works; no CORS needed.
@@ -615,6 +627,11 @@ async function evictHandleFromCaches(env, handle) {
 }
 
 async function unlinkCascade(env, member) {
+  // Film logs go anonymous first, before any KV mutation: if this throws, the
+  // request 500s with the link intact and the member can retry, rather than
+  // ending up unlinked with their diary still attributed.
+  if (env.FILMS_DB) await anonymizeFilmLogs(env.FILMS_DB, member.id)
+
   // Capture the aggregate row's handle before patching — a drifted state can
   // leave a handle in members:all (and a stray email: index) after the
   // canonical row already lost it.
@@ -751,6 +768,17 @@ async function handleMemberUpdate(request, env) {
   }
   if (!Object.keys(updates).length) return json(env, { error: 'no updates' }, 400)
 
+  // Film logs follow the handle, before any KV write (a D1 failure 500s with
+  // nothing changed, like unlinkCascade). Switching straight from one handle
+  // to another drops the old handle's logs outright: they may be a typo'd or
+  // someone else's diary, and must not stay attributed under the new handle.
+  // Any link clears a departure tombstone and its former-member logs, so a
+  // relink starts fresh without counting the member twice.
+  if (env.FILMS_DB && updates.handle && updates.handle !== member.handle) {
+    if (member.handle) await purgeFilmLogs(env.FILMS_DB, member.id)
+    await relinkFilmLogs(env.FILMS_DB, member.id)
+  }
+
   // If the handle is changing, swap the reverse indices in lockstep with the
   // member row so a stale email:{old} or handle:{email} can't outlive the
   // member's actual handle.
@@ -848,6 +876,11 @@ async function handleMemberDelete(request, env) {
   // purgeRsvps: a failure here must block the deletion, not be swallowed.
   await purgeVoiceClips(env, member)
   if (env.GIVEAWAYS_DB) await purgeMember(env.GIVEAWAYS_DB, member.id)
+  // Film logs keep their counts and ratings under an opaque former-member
+  // key; name, handle and review text go. Unguarded like the purges above.
+  // `forget`: the tombstone keeps blocking ingest of this id but no longer
+  // maps it to the former key.
+  if (env.FILMS_DB) await anonymizeFilmLogs(env.FILMS_DB, member.id, { forget: true })
 
   // The profile photo goes with the account. Unguarded for the same reason:
   // claiming success while the photo stays public would break the promise.
@@ -2224,8 +2257,22 @@ async function handleAttend(request, env, eventId) {
   if (attendeeIndex(attendees, member.id, member.name) === -1) {
     attendees.push(attendEntry(member.id, member.name))
     await writeAttendees(env, eventId, attendees)
+    // Attendance is often marked well after the screening, past the cron's
+    // 14-day re-check: link this member's log of it now. Best effort.
+    if (env.FILMS_DB) await linkAttendedScreening(env, eventId, member.id)
   }
   return json(env, { ok: true, attendees: resolveAttendees(attendees, await memberNamesById(env)) })
+}
+
+async function linkAttendedScreening(env, eventId, memberId) {
+  try {
+    const event = (await readEventsAll(env)).find(e => e && e.id === eventId)
+    if (event && event.date) {
+      await linkScreenings(env.FILMS_DB, [event], { [eventId]: [{ id: memberId }] }, { since: event.date })
+    }
+  } catch (err) {
+    console.error('film screening link failed:', err && err.stack || err)
+  }
 }
 
 // DELETE /events/:id/attend — authenticated. KV-only, same reasoning as attend.
@@ -2390,7 +2437,9 @@ function publicEventProjection(event) {
   // between the RSVP block, the ticket link and the attendance toggle without
   // them. Note the filter below keeps `rsvp: false` (false !== ''), which it
   // must — an explicit false is how an admin turns RSVPs back off.
-  for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri',
+  // `letterboxd` (a Letterboxd film slug) pins film-stats screening matching
+  // to an exact film; the daily link pass reads events through this projection.
+  for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri', 'letterboxd',
                    'hostId', 'hostName', 'capacity', 'kind', 'time', 'rsvp', 'ticketUrl',
                    'ticketed']) {
     if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
@@ -2673,7 +2722,7 @@ function watchedResponse(env, data) {
 // one upstream fan-out instead of each hitting every member's RSS feed.
 let watchedInflight = null
 
-async function handleWatchedGet(request, env) {
+async function handleWatchedGet(request, env, ctx) {
   if (env.E2E_MODE === 'true') return watchedResponse(env, {})
 
   // Full depth is admin-only — not because the films are secret (they're
@@ -2699,19 +2748,24 @@ async function handleWatchedGet(request, env) {
     if (fresh || backoff) return watchedResponse(env, projectWatched(rec.map, depth))
   }
   if (!watchedInflight) {
-    watchedInflight = buildWatched(env, rec).finally(() => { watchedInflight = null })
+    watchedInflight = buildWatched(env, rec, ctx).finally(() => { watchedInflight = null })
   }
   return watchedResponse(env, projectWatched(await watchedInflight, depth))
 }
 
-async function buildWatched(env, prevRec) {
+// With `ctx`, film-stats ingest of the freshly parsed feeds rides
+// ctx.waitUntil so the /watched response doesn't wait on D1; without one (the
+// cron) it is awaited, so screening links can run over the new rows.
+async function buildWatched(env, prevRec, ctx) {
   const members = await readMembersAll(env)
-  const handles = members.map(m => m && m.handle).filter(Boolean).slice(0, 40)
+  const linked = members.filter(m => m && m.handle).slice(0, 40)
+  const handles = linked.map(m => m.handle)
   const prev = (prevRec && prevRec.map) || {}
   const out = {}
   const stats = newFetchStats()
+  const ingest = []
   let fetchedAny = false
-  await Promise.all(handles.map(async handle => {
+  await Promise.all(linked.map(async ({ id, handle }) => {
     let outcome = null
     try {
       const res = await fetch(`https://letterboxd.com/${encodeURIComponent(handle)}/rss/`, {
@@ -2723,8 +2777,13 @@ async function buildWatched(env, prevRec) {
         throw new Error(`status ${res.status}`)
       }
       fetchedAny = true
-      const films = parseLetterboxdRss(await res.text())
+      const parsed = parseLetterboxdRss(await res.text())
       outcome = 'ok'
+      // Only freshly parsed feeds are ingested — never carried-forward data.
+      if (id && parsed.length) ingest.push({ member: { id, handle }, films: parsed })
+      // Review text and the TMDB id feed film stats only; the cached (and
+      // served) film shape stays as it was.
+      const films = parsed.map(({ review, tmdb_id, ...film }) => film)
       if (films.length) out[handle] = films
       // A 200 with an empty feed is genuinely empty — the entry drops.
     } catch {
@@ -2748,11 +2807,85 @@ async function buildWatched(env, prevRec) {
     ? { map: out, fetchedAt: builtAt, builtAt, stats }
     : { map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: builtAt, builtAt, stats }
   await env.MEMBERS_KV.put('watched:cache', JSON.stringify(rec))
+
+  // One combined ingest for every member's feed (films.js chunks it). A failure is
+  // logged, never surfaced: /watched must not break on a film-stats outage.
+  // Logs that ingest inserted or re-dated are linked to screenings straight
+  // away, however old (a launch backfill, a late Letterboxd link); the cron's
+  // 14-day pass is only the catch-up for attendance recorded after the log.
+  if (env.FILMS_DB && ingest.length) {
+    const p = ingestMany(env.FILMS_DB, ingest)
+      .then(({ earliest }) => earliest && linkFilmScreenings(env, earliest))
+      .catch(err => console.error('film ingest failed:', err && err.stack || err))
+    if (ctx) ctx.waitUntil(p)
+    else await p
+  }
   return rec.map
 }
 
+// Daily cron half of film stats: rebuild /watched (which ingests), then link
+// any log from the last 14 days that isn't tied to a screening yet —
+// attendance is often self-reported days after the fact.
+const FILM_LINK_LOOKBACK_DAYS = 14
+
+async function linkFilmScreenings(env, since) {
+  const [events, attendance] = await Promise.all([readEventsAll(env), readAttendanceAll(env)])
+  return linkScreenings(env.FILMS_DB, events, attendance, { since })
+}
+
+async function refreshFilmLogs(env) {
+  await buildWatched(env, readWatchedRecord(await env.MEMBERS_KV.get('watched:cache')))
+  await linkFilmScreenings(env, centralDayCutoff(FILM_LINK_LOOKBACK_DAYS))
+}
+
+// --- Film stats (FILMS_DB; worker/src/films.js) ---
+//
+// GET /films/stats?slugs=a,b,c — per-slug { members, logs, thisWeek }; a
+// valid session adds `you`. GET /films/:slug — one film's counts, average,
+// spread and screenings; a valid session adds the watcher list and `you`.
+// An invalid or expired bearer is simply a public caller. Responses with a
+// session are private; public ones get the same short max-age as /watched.
+
+function filmsResponse(env, data, authed, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': authed ? 'private, no-store' : 'public, max-age=60',
+      'Vary': 'Authorization',
+      ...cors(env),
+    },
+  })
+}
+
+async function handleFilmStats(request, env) {
+  if (!env.FILMS_DB) return json(env, { error: 'unavailable' }, 503)
+  const raw = new URL(request.url).searchParams.get('slugs') || ''
+  const slugs = [...new Set(raw.split(',').map(s => s.trim()).filter(Boolean))]
+  if (slugs.length > MAX_STATS_SLUGS) return json(env, { error: `at most ${MAX_STATS_SLUGS} slugs` }, 400)
+  const claims = await authorize(request, env)
+  const stats = await filmStats(env.FILMS_DB, slugs, claims ? claims.id : null)
+  return filmsResponse(env, { stats }, !!claims)
+}
+
+async function handleFilmDetail(request, env, slug) {
+  if (!env.FILMS_DB) return json(env, { error: 'unavailable' }, 503)
+  if (!FILM_SLUG_RE.test(slug)) return json(env, { error: 'not found' }, 404)
+  const claims = await authorize(request, env)
+  let viewer = null
+  if (claims) {
+    const membersById = {}
+    for (const m of await readMembersAll(env)) if (m && m.id) membersById[m.id] = m
+    viewer = { id: claims.id, membersById }
+  }
+  const detail = await filmDetail(env.FILMS_DB, slug, { viewer })
+  if (!detail) return json(env, { error: 'not found' }, 404)
+  return filmsResponse(env, detail, !!claims)
+}
+
 // Minimal RSS extraction matching scripts/refresh_letterboxd.py: recent
-// non-list items -> { title, year?, link, watched_date?, rating?, liked?, rewatch?, poster? }.
+// non-list items -> { title, year?, link, watched_date?, rating?, liked?, rewatch?, poster?,
+// tmdb_id?, review? } (the last two for film stats only; never cached or served).
 //
 // Depth is WATCHED_FEED_DEPTH, not 4: the /watched member sections show the
 // last four, but the weekly club strip clusters over everything in its
@@ -2788,6 +2921,11 @@ function parseLetterboxdRss(xml) {
     if (rssTag(item, 'letterboxd:rewatch') === 'Yes') film.rewatch = true
     const poster = /<img\s[^>]*src="([^"]+)"/.exec(item)
     if (poster) film.poster = poster[1]
+    // Film stats only — buildWatched strips both before caching.
+    const tmdb = rssTag(item, 'tmdb:movieId')
+    if (tmdb) film.tmdb_id = tmdb
+    const review = extractRssReview(item)
+    if (review) film.review = review
     films.push(film)
     if (films.length >= WATCHED_FEED_DEPTH) break
   }
@@ -2797,6 +2935,38 @@ function parseLetterboxdRss(xml) {
 function rssTag(xml, name) {
   const m = new RegExp(`<${name}(?:\\s[^>]*)?>([^<]*)</${name}>`).exec(xml)
   return m ? m[1].trim() : ''
+}
+
+// Port of extract_review in scripts/refresh_letterboxd.py: the plain-text
+// review in an item's description, or null when it isn't one. Spoiler-flagged
+// reviews are dropped whole, and a plain diary entry (Letterboxd's
+// auto-generated 'Watched on ...' line) is not a review. The scraper's
+// quote-stripping and 300-char truncate are take-card presentation and are
+// not ported; films.js caps stored length instead. The description is CDATA
+// holding HTML, which rssTag's no-markup pattern can't read.
+const SPOILER_RE = /This review may contain spoilers/i
+
+function extractRssReview(item) {
+  const m = /<description>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/description>/.exec(item)
+  const desc = m ? m[1] : ''
+  if (!desc || SPOILER_RE.test(desc)) return null
+  const text = unescapeHtml(desc.replace(/<img\s[^>]*>/gi, '').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ').trim()
+  if (!text || text.startsWith('Watched on ')) return null
+  return text
+}
+
+// unescapeXml's entities plus numeric character references (the feed carries
+// &#039;) and &nbsp;, in ONE pass like Python's html.unescape, so an escaped
+// ampersand never gets decoded twice.
+const HTML_ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&', nbsp: ' ' }
+
+function unescapeHtml(s) {
+  return s.replace(/&(#[0-9]+|#x[0-9a-f]+|[a-z]+);/gi, (all, e) => {
+    if (e[0] !== '#') return HTML_ENTITIES[e.toLowerCase()] ?? all
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1))
+    try { return String.fromCodePoint(n) } catch { return all }
+  })
 }
 
 function unescapeXml(s) {

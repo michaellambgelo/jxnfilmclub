@@ -89,9 +89,12 @@ export default defineConfig({
       // clash should fail loudly instead of polluting another environment. This
       // is what previously leaked e2e fixtures into production KV.
       command: [
-        // Giveaway tables live in D1; apply migrations to the local staging
-        // database first (idempotent — already-applied migrations are skipped).
+        // Giveaway and film-stats tables live in D1; apply migrations to the
+        // local staging databases first (idempotent — already-applied
+        // migrations are skipped). Without FILMS_DB's tables every unlink and
+        // account deletion 500s (anonymizeFilmLogs runs unguarded).
         'cd worker && npx wrangler d1 migrations apply GIVEAWAYS_DB --local --env staging &&',
+        'npx wrangler d1 migrations apply FILMS_DB --local --env staging &&',
         'npx wrangler dev --local --env staging',
         `--port ${WORKER_PORT}`,
         `--var SITE_ORIGIN:http://localhost:${SITE_PORT}`,

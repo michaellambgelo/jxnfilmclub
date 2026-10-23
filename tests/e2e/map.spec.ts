@@ -1,4 +1,4 @@
-import { test, expect, seedKv, WORKER_ORIGIN } from './fixtures'
+import { test, expect, seedKv } from './fixtures'
 
 // /map (docs/features/map.md). The venue list renders
 // whether or not WebGL cooperates; the tile test checks the basemap's files
@@ -21,39 +21,47 @@ test.describe('venue map', () => {
   })
 
   test('Details in a pin popup scrolls to the venue card and pulses it', async ({ page }) => {
-    // The Capri and Duling Hall pins overlap a block apart in Fondren, and
-    // ui/map.html draws venues with an upcoming event last, i.e. on top. This
-    // test used to lean on the 6-hourly events snapshot happening to hold a
-    // future Capri screening; the day after that screening passed, Duling Hall
-    // covered the pin and the click was intercepted. Pin the precondition
-    // explicitly: the real baseline (the auto fixture just reseeded it from
-    // data/events.json) plus one far-future Capri screening.
-    const baseline = await (await page.request.get('/data/events.json')).json()
-    const seeded = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
-      data: {
-        ns: 'ATTENDANCE_KV', key: 'events:all',
-        value: JSON.stringify([...baseline, {
-          id: 'e2e-map-capri-upcoming', title: 'E2E Capri Screening', film: 'Stalker', year: 1979,
-          date: '2099-07-04', venue: 'The Capri Theater',
-        }]),
-      },
-    })
-    expect(seeded.ok()).toBe(true)
-
+    // The Capri and Duling Hall sit a block apart in Fondren, close enough
+    // that at the default zoom they share one group pin (ui/map.html,
+    // jmGroupVenues). Its popup lists both venues in full; Details on the
+    // Capri entry must still reach the Capri card. Grouping does not depend
+    // on which venue has an upcoming event, so no date seeding is needed.
     await page.goto('/map')
-    const pin = page.locator('.jm-pin[aria-label^="The Capri Theatre"]')
-    test.skip(!(await pin.waitFor({ timeout: 10_000 }).then(() => true, () => false)), 'no WebGL in this browser')
-    // Upcoming, so drawn on top of its neighbour: if the seed ever stops
-    // landing, fail here with the reason rather than as an intercepted click.
-    await expect(pin).toHaveClass(/jm-pin-soon/)
-    await pin.click()
-    await page.locator('.maplibregl-popup').getByRole('link', { name: 'Details' }).click()
+    const group = page.locator('.jm-pin-group[aria-label*="The Capri Theatre"]')
+    test.skip(!(await group.waitFor({ timeout: 10_000 }).then(() => true, () => false)), 'no WebGL in this browser')
+    await expect(group).toHaveAttribute('aria-label', /^2 venues close together: .*Duling Hall/)
+    // Neither venue keeps a pin of its own to be covered by the other.
+    await expect(page.locator('.jm-pin:not(.jm-pin-group)[aria-label^="The Capri Theatre"]')).toHaveCount(0)
+    await expect(page.locator('.jm-pin:not(.jm-pin-group)[aria-label^="Duling Hall"]')).toHaveCount(0)
+
+    await group.click()
+    const popup = page.locator('.maplibregl-popup')
+    await expect(popup.locator('.jm-pop-head')).toHaveText('2 venues close together')
+    const capri = popup.locator('.jm-pop:not(.jm-pop-group)').filter({ has: page.locator('.jm-pop-name', { hasText: 'The Capri Theatre' }) })
+    await capri.getByRole('link', { name: 'Details' }).click()
     const card = page.locator('.jm-venue.jm-flash')
     await expect(card).toHaveCount(1)
     await expect(card).toHaveId('venue-the-capri-theatre')
     await expect(card).toBeInViewport()
     // The pulse clears itself so a later click can run it again.
     await expect(card).toHaveCount(0, { timeout: 4_000 })
+  })
+
+  test('zooming in separates the grouped venues into their own pins', async ({ page }) => {
+    await page.goto('/map')
+    const group = page.locator('.jm-pin-group[aria-label*="The Capri Theatre"]')
+    test.skip(!(await group.waitFor({ timeout: 10_000 }).then(() => true, () => false)), 'no WebGL in this browser')
+    await group.click()
+    await page.locator('.maplibregl-popup').getByRole('button', { name: 'Zoom in to separate' }).click()
+
+    const capri = page.locator('.jm-pin:not(.jm-pin-group)[aria-label^="The Capri Theatre"]')
+    const duling = page.locator('.jm-pin:not(.jm-pin-group)[aria-label^="Duling Hall"]')
+    await expect(capri).toBeVisible()
+    await expect(duling).toBeVisible()
+    await expect(page.locator('.jm-pin-group')).toHaveCount(0)
+    // Each pin now takes its own click: the Capri popup is the Capri's alone.
+    await capri.click()
+    await expect(page.locator('.maplibregl-popup .jm-pop-name')).toHaveText('The Capri Theatre')
   })
 
   test('never lists a home screening', async ({ page }) => {

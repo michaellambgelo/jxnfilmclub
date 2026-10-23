@@ -77,6 +77,43 @@
 .map-page .jm-pop-next { font-size: var(--fs-13); color: var(--brand-tint-fg); }
 .map-page .jm-pop-links { display: flex; gap: 1rem; margin-top: 0.4rem; }
 
+/* Several venues on one pin: a second ring offset behind the dot reads as
+   a stack, so the count is plainly more than one place. */
+.map-page .jm-pin-group {
+  box-shadow: 5px -5px 0 -2px var(--bg), 5px -5px 0 0 var(--brand), var(--shadow-card);
+}
+
+.map-page .jm-pop-head {
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink-3);
+}
+
+/* MapLibre keeps a popup's anchor inside the map but not its far edge, so a
+   long group list scrolls rather than running off the bottom of the map. */
+.map-page .jm-pop-group {
+  max-height: min(240px, 40vh);
+  overflow-y: auto;
+}
+
+.map-page .jm-pop-group .jm-pop {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.map-page .jm-pop-zoom {
+  border: 0;
+  background: none;
+  padding: 0.5rem 0 0;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--brand-tint-fg);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .map-page .maplibregl-ctrl-group { background: var(--surface); border-radius: 0; }
 .map-page .maplibregl-ctrl-group button + button { border-top-color: var(--line-2); }
 .map-page .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(0.9); }

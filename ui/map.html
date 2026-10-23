@@ -173,10 +173,12 @@
     card.jmFlashTimer = setTimeout(function() { card.classList.remove('jm-flash') }, 2000)
   }
 
-  function jmPopup(v) {
+  // compact leaves out the street address, for a group popup that has to
+  // fit several venues inside the map.
+  function jmPopup(v, compact) {
     const box = jmEl('div', 'jm-pop')
     box.appendChild(jmEl('p', 'jm-pop-name', v.name))
-    if (v.address) box.appendChild(jmEl('p', 'jm-pop-addr', v.address))
+    if (v.address && !compact) box.appendChild(jmEl('p', 'jm-pop-addr', v.address))
     const next = v.upcoming[0]
     const line = next
       ? 'Next: ' + (next.film || next.title || 'Screening') + ', ' + jmDay(next.date)
@@ -198,6 +200,84 @@
     links.appendChild(dir)
     box.appendChild(links)
     return box
+  }
+
+  // A pin is 30px across; closer than this and two pins overlap enough that
+  // one swallows the other's clicks.
+  const JM_GROUP_PX = 34
+
+  // Single-linkage groups of venues whose pins sit within JM_GROUP_PX of each
+  // other on screen. project maps a venue to its pixel point. Order within a
+  // group follows the input, so upcoming venues (drawn last) list last.
+  function jmGroupVenues(venues, project) {
+    const pts = venues.map(project)
+    const parent = venues.map(function(v, i) { return i })
+    function root(i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i }
+    for (let i = 0; i < venues.length; i++) {
+      for (let j = i + 1; j < venues.length; j++) {
+        const dx = pts[i].x - pts[j].x
+        const dy = pts[i].y - pts[j].y
+        if (dx * dx + dy * dy < JM_GROUP_PX * JM_GROUP_PX) parent[root(i)] = root(j)
+      }
+    }
+    const byRoot = {}
+    const sets = []
+    venues.forEach(function(v, i) {
+      const r = root(i)
+      if (!byRoot[r]) { byRoot[r] = []; sets.push(byRoot[r]) }
+      byRoot[r].push(v)
+    })
+    return sets
+  }
+
+  // MapLibre anchors a popup on its pin but does not move the map to show
+  // all of it, so a popup opening near an edge can run out of the map. Pan
+  // just far enough to bring the whole popup inside, with a small margin.
+  function jmKeepInView(map, popup) {
+    popup.on('open', function() {
+      requestAnimationFrame(function() {
+        const el = popup.getElement()
+        if (!el) return
+        const box = el.getBoundingClientRect()
+        const frame = map.getContainer().getBoundingClientRect()
+        const pad = 12
+        let dx = 0
+        let dy = 0
+        if (box.bottom > frame.bottom - pad) dy = box.bottom - frame.bottom + pad
+        if (box.top - dy < frame.top + pad) dy = box.top - frame.top - pad
+        if (box.right > frame.right - pad) dx = box.right - frame.right + pad
+        if (box.left - dx < frame.left + pad) dx = box.left - frame.left - pad
+        if (dx || dy) map.panBy([dx, dy], { duration: 250 })
+      })
+    })
+    return popup
+  }
+
+  // One pin for several venues: the combined screening count on a stacked
+  // dot, a popup listing each venue in full, and a way to zoom them apart.
+  function jmGroupPin(ml, map, set) {
+    const total = set.reduce(function(n, v) { return n + v.events.length }, 0)
+    const soon = set.some(function(v) { return v.upcoming.length })
+    const dot = jmEl('button', 'jm-pin jm-pin-group' + (soon ? ' jm-pin-soon' : ''), String(total))
+    dot.type = 'button'
+    dot.setAttribute('aria-label', set.length + ' venues close together: ' +
+      set.map(function(v) { return v.name }).join(', ') + '. ' + total + ' screenings')
+
+    const box = jmEl('div', 'jm-pop jm-pop-group')
+    box.appendChild(jmEl('p', 'jm-pop-head', set.length + ' venues close together'))
+    set.forEach(function(v) { box.appendChild(jmPopup(v, true)) })
+    const zoom = jmEl('button', 'jm-link jm-pop-zoom', 'Zoom in to separate')
+    zoom.type = 'button'
+    const bounds = new ml.LngLatBounds()
+    set.forEach(function(v) { bounds.extend([v.lng, v.lat]) })
+    zoom.addEventListener('click', function() {
+      map.fitBounds(bounds, { padding: 96, maxZoom: 17 })
+    })
+    box.appendChild(zoom)
+
+    const center = bounds.getCenter()
+    const popup = jmKeepInView(map, new ml.Popup({ offset: 16, closeButton: true, maxWidth: '280px' }).setDOMContent(box))
+    return new ml.Marker({ element: dot }).setLngLat(center).setPopup(popup).addTo(map)
   }
 
   async function jmStart(root) {
@@ -223,12 +303,19 @@
     }
 
     const pins = {}
+    // Venue id to the group pin standing in for it, when one does.
+    let jmGroupOf = {}
     function showOnMap(v) {
       holder.scrollIntoView()
       const pin = pins[v.id]
       if (!jmMap || !pin) return
       jmMap.flyTo({ center: [v.lng, v.lat], zoom: Math.max(jmMap.getZoom(), 14) })
-      if (!pin.getPopup().isOpen()) pin.togglePopup()
+      // Regrouping runs on zoomend, so wait for the flight to land before
+      // deciding which pin owns the popup.
+      jmMap.once('moveend', function() {
+        const owner = jmGroupOf[v.id] || pin
+        if (!owner.getPopup().isOpen()) owner.togglePopup()
+      })
     }
 
     // The list renders before the map so it works even if WebGL does not.
@@ -263,9 +350,31 @@
         const dot = jmEl('button', 'jm-pin' + (v.upcoming.length ? ' jm-pin-soon' : ''), String(v.events.length))
         dot.type = 'button'
         dot.setAttribute('aria-label', v.name + ', ' + v.events.length + (v.events.length === 1 ? ' screening' : ' screenings'))
-        const popup = new ml.Popup({ offset: 16, closeButton: true, maxWidth: '260px' }).setDOMContent(jmPopup(v))
+        const popup = jmKeepInView(map, new ml.Popup({ offset: 16, closeButton: true, maxWidth: '260px' }).setDOMContent(jmPopup(v)))
         pins[v.id] = new ml.Marker({ element: dot }).setLngLat([v.lng, v.lat]).setPopup(popup).addTo(map)
       })
+
+      // Venues whose pins would overlap at the current zoom share one group
+      // pin instead, so neither hides the other. Regrouped on every zoomend.
+      let groupPins = []
+      function regroup() {
+        groupPins.forEach(function(g) { g.remove() })
+        groupPins = []
+        jmGroupOf = {}
+        const sets = jmGroupVenues(order, function(v) { return map.project([v.lng, v.lat]) })
+        sets.forEach(function(set) {
+          if (set.length === 1) {
+            if (!pins[set[0].id].getElement().isConnected) pins[set[0].id].addTo(map)
+            return
+          }
+          set.forEach(function(v) { pins[v.id].remove() })
+          const g = jmGroupPin(ml, map, set)
+          set.forEach(function(v) { jmGroupOf[v.id] = g })
+          groupPins.push(g)
+        })
+      }
+      regroup()
+      map.on('zoomend', regroup)
     } catch (err) {
       console.warn('map unavailable:', err)
       holder.hidden = true

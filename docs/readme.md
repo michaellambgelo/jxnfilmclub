@@ -56,7 +56,7 @@ See [CLAUDE.md](CLAUDE.md) for layout + architecture,
 
 ## Architecture
 
-Two origins, one shared domain:
+Three origins, one shared domain:
 
 - **`jxnfilm.club`** (GitHub Pages) — the SPA. Hosts every page the user
   actually interacts with: `/` (members), `/events`, `/signin`,
@@ -65,6 +65,10 @@ Two origins, one shared domain:
   serves a small signup-form HTML entry point at its root. Every
   verification, session, and Letterboxd check hits the Worker as an
   API call; no session UI lives here.
+- **`admin.jxnfilm.club`** (Cloudflare Worker, behind Cloudflare Access)
+  — the operator-only admin dashboard. Serves its own UI and API from
+  the same origin and never sees a member session token. See
+  [admin/README.md](../admin/README.md).
 
 ## Features
 
@@ -173,7 +177,7 @@ runs the jobs without the flag archaeology.
 ## Testing
 
 - **Unit + Workers** (`tests/model/`, `tests/worker/`): Vitest with
-  `@cloudflare/vitest-pool-workers` for realistic KV + `fetch` mocking.
+  `@cloudflare/vitest-plugin` for realistic KV + `fetch` mocking.
 - **E2E** (`tests/e2e/`): Playwright boots `nue`, `wrangler dev`, and a
   scriptable Letterboxd HTTP stub; covers SPA views, the cross-origin
   signup handoff, OTP + verify flows, Letterboxd-panel states on `/edit`,

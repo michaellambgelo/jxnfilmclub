@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Styling**: Vanilla CSS (`css/`)
 - **Backend**: Cloudflare Worker (`worker/`), deploys to `join.jxnfilm.club` + `join-staging.jxnfilm.club`
 - **Email provider**: Resend (3k/mo free tier)
-- **Tests**: Vitest + `@cloudflare/vitest-pool-workers` + Playwright
+- **Tests**: Vitest + `@cloudflare/vitest-plugin` + Playwright
 
 ## Commands
 
@@ -32,7 +32,7 @@ cd worker && npx wrangler deploy --env staging
 cd admin/worker && npx wrangler deploy
 
 # Tests
-npm test              # Vitest workspace: model + worker + admin-worker + admin (4 projects)
+npm test              # Vitest projects: model + worker + admin-worker + admin (4 projects)
 npm run test:e2e      # Playwright: SPA + signup + signin + LB + admin dashboard flows
 npm run test:e2e:ui   # Playwright interactive UI mode
 
@@ -56,7 +56,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `tiles/` + `vendor/` | Self-hosted map assets: static vector tiles `tiles/jxn/{z}/{x}/{y}.pbf` (**not** a `.pmtiles` archive: GitHub Pages breaks Range requests), label glyphs, `style.json` (`scripts/fetch_map_assets.sh`, `scripts/split_map_tiles.mjs`, `scripts/build_map_style.mjs`), MapLibre as **`.mjs`** (the build minifies `.js` and renames globals) |
 | `css/` | Vanilla CSS — `global`, `form`, `auth`, `widgets`, `table`, `readme` |
 | `model/index.ts` | `getMembers` / `getEvents` — read `data/*.json`, paginate, sort, search |
-| `data/` | Source-of-truth JSON: `members.json` (id-keyed), `events.json`, and (cron-generated) `watched.json`, `attendance.json` (entries are `{ id, name }` keyed on member id — see `docs/features/attendance.md` § Identity) |
+| `data/` | Source-of-truth JSON: `members.json` (id-keyed), `events.json`, and (cron-generated) `watched.json`, `takes.json` (up to 3 recent member reviews each, for the home page's Hot Takes — `getTakes()` in `model/index.ts`), `attendance.json` (entries are `{ id, name }` keyed on member id — see `docs/features/attendance.md` § Identity) |
 | `worker/` | Cloudflare Worker at `join.jxnfilm.club` — all auth + signup + LB + member endpoints, plus `GET /` signup form. Daily cron (`17 8 * * *`, both envs) runs `scrubPastEvents()` — the privacy policy's 30-day retention promise (strips address/notes off any past event that has a host or takes RSVPs, deletes their `rsvp:*` records) — and `reconcileMembersAll()` so aggregate drift self-heals; manual trigger for both is `POST /admin/scrub` behind `ADMIN_TOKEN`. Account deletion purges the member from all `rsvp:*` records (`purgeRsvps`). Hosts/admins can add non-member guests to a screening's RSVP list (`POST/DELETE /events/:id/rsvp/guest`); guest entries carry a synthetic `guest:xxxxxxxx` memberId — see `docs/features/hosting.md` § Guest RSVPs. |
 | `worker/src/` | `index.js`, `signup.html`, `privacy.html` (the canonical privacy policy, served at `/privacy`; keep it in sync with actual data practices). `%SITE_ORIGIN%` and `%BRAND_CSS%` are replaced at response time by `render()`. `brand.css` is the Worker's shared "Night Shift" brand layer — token names/values mirrored verbatim from `css/tokens.css`, enforced by `tests/model/brand-sync.test.ts` (which also byte-compares `favicon.ico` against `img/favicon.ico`; the Worker serves it at `GET /favicon.ico`). JS-built pages (unsubscribe, RSVP cancel, browser 404) share the `page()` shell in `index.js`. |
 | `fonts/` | Self-hosted variable woff2 fonts (Playfair/Oswald/Newsreader + Fira Code) — `@font-face` in `css/tokens.css`; worker pages load them cross-origin from `jxnfilm.club/fonts/`. **No Google Fonts anywhere** — the privacy policy promises no third-party font requests. |
@@ -67,7 +67,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `tui/` | Python + Textual TUI (`uv run jxnfilm-tui`) over the voice pipeline: browse `voice:*` rounds with per-clip days-until-deletion + which formats are already rendered, browse the KV keyspace read-only, and run the audiogram / compile / archive jobs with live streamed output — at either grain (one highlighted clip, or the whole round). Pure orchestration — it shells to `make_audiogram.mjs`, `compile_voices.mjs` and `wrangler` and reimplements none of them. **Read-only against KV and R2**; moderation stays in `admin/`. Excluded from the Nue build (`site.yaml` + `postbuild`). `tui/tests/test_settings.py` guards the constants it copies from JS (buckets, the 60-day TTL, the format list, the CLI flag names). See `tui/README.md`. |
 | `.github/workflows/` | `add-member` + `update-member` (repo_dispatch, id-keyed); `refresh-letterboxd` (cron); `test` (reusable) + `deploy-site` + `deploy-worker` (gated on test) |
 | `tests/model/` | Vitest model tests (node env) + `brand-sync.test.ts` + `dhtml-script-cap.test.ts` (guards every component `<script>` against Nue's 10k silent-truncation cliff) + `dhtml-lib-scope.test.ts` (guards lib-script declaration names against shadowing template fields) |
-| `tests/worker/` | Vitest + Workers pool — 20 endpoint/behavior suites: signup, otp, letterboxd (self-service + admin unlink), member-update, member-avatar, member-delete, members-events, members-reconcile, newsletter, scrub, screenings, attendance, watched, avatars, metrics, security, session-refresh, tmdb, pages, voice, feedback, map |
+| `tests/worker/` | Vitest + Workers pool — 26 endpoint/behavior suites: signup, otp, letterboxd (self-service + admin unlink), member-update, member-avatar, member-delete, members-events, members-reconcile, newsletter, newsletter-image, scrub, screenings, attendance, watched, avatars, metrics, security, session-refresh, tmdb, pages, voice, feedback, map, config, admin-events, giveaways (D1 schema applied per file by `apply-migrations.js`) |
 | `tests/admin-worker/` | Vitest + Workers pool for the admin Worker: Access-JWT gate, `/api/kv`, join-worker proxies (newsletter, member unlink, watched), routing fallthrough |
 | `tests/admin/` | Plain-node Vitest for the admin SPA's pure helpers (`admin/lib.js`) |
 | `tests/scripts/` | Plain-node Vitest for the scripts CLIs' pure helpers (`scripts/lib/audiogram.mjs`) incl. the ffmpeg-color ↔ `tokens.css` brand guard — no ffmpeg/Chromium needed |
@@ -134,7 +134,7 @@ Nue's dhtml compiler has sharp edges worth remembering:
 ## Testing
 
 ### Unit + Workers (Vitest)
-Four workspace projects: `tests/model/` (node), `tests/worker/` + `tests/admin-worker/` (`@cloudflare/vitest-pool-workers` — `SELF.fetch` / `worker.fetch`, direct KV binding access), and `tests/admin/` (node, for `admin/lib.js`). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests; the proxy tests in `tests/admin-worker/admin-worker.test.js` are the template for new admin-worker routes.
+Four Vitest projects (listed under `test.projects` in the root `vitest.config.ts`): `tests/model/` (node), `tests/worker/` + `tests/admin-worker/` (`@cloudflare/vitest-plugin` — `SELF.fetch` / `worker.fetch`, direct KV binding access), and `tests/admin/` (node, for `admin/lib.js`). Patterns in `tests/worker/signup.test.js` and `letterboxd.test.js` are the template for new endpoint tests; the proxy tests in `tests/admin-worker/admin-worker.test.js` are the template for new admin-worker routes. Both Workers projects wipe every binding before each test via a `beforeEach(reset)` setup file (`tests/worker/apply-migrations.js`, which also re-applies the D1 migrations, and `tests/admin-worker/reset-storage.js`) — the Vitest 4 pool no longer isolates storage per test on its own, so each test starts from empty KV/R2/D1.
 
 ### E2E (Playwright)
 
@@ -164,7 +164,7 @@ Two projects. `chromium` runs the whole suite (it is the only engine whose fake-
 
 ## Gotchas
 
-- **Do not add TS/JS config files at the repo root without excluding them from `site.yaml`.** Nue's SPA bundler will pick them up and emit a broken `<script src="//<name>.js">` tag into the HTML `<head>` (the leading `//` is protocol-relative — DNS fails and the Nue runtime can wedge, leaving CSS unapplied). `playwright.config.ts`, `vitest.config.ts`, `vitest.workspace.ts` are already excluded; add any new root configs to the `exclude:` list.
+- **Do not add TS/JS config files at the repo root without excluding them from `site.yaml`.** Nue's SPA bundler will pick them up and emit a broken `<script src="//<name>.js">` tag into the HTML `<head>` (the leading `//` is protocol-relative — DNS fails and the Nue runtime can wedge, leaving CSS unapplied). `playwright.config.ts` and `vitest.config.ts` are already excluded; add any new root configs to the `exclude:` list.
 - **`nue serve` HMR can get into a bad state** after certain edits. If the local page looks unstyled or half-rendered, run `npx nue build && npx nue preview` for a clean review against the production build.
 - **Worker secrets in wrangler dev**: production secrets (`OTP_SIGNING_KEY`, `RESEND_API_KEY`, `GITHUB_TOKEN`) aren't read locally. Pass them via `--var` (see `playwright.config.ts`) or a `worker/.dev.vars` file.
 - **GitHub Pages returns HTTP 404 for every path that isn't a real file.** `postbuild` copies `index.html` to `404.html` so the SPA still renders, but the response status stays 404 and the browser logs a console error for `signin:1 / verify:1 / edit:1` on cold loads. Harmless — the SPA takes over after the HTML lands. The copy lives in `postbuild`, not the deploy workflow, so that `nue preview` serves the same document production does; when it was made only in CI, a local preview of a fresh build was still serving the **previous** build's SPA routes, which is subtle enough to invalidate a browser test without anyone noticing.

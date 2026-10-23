@@ -9,9 +9,18 @@ Top to bottom:
 1. **"This week in the club" strip** — a club-wide view of the last 7 days
    (Central time): every dated diary entry in the window, most recent first,
    deduped on title|year so a film watched by several members becomes one
-   card with a combined byline ("Watched by Alex, Sam"). Watcher names are
-   buttons that scroll to that member's section. The section hides itself
-   via CSS (`:not(:has(.ws-card))`) when the week is empty.
+   card. Each card adds the all-time club count from
+   [Film Stats](film-stats.md) (`GET /films/stats`, fetched with a 3s budget
+   that covers the session refresh too): "**You** + 8 others have logged it ·
+   3 this week" with a "You too" stamp when the signed-in viewer logged it,
+   otherwise "9 members have logged it · 3 this week". This week's watcher
+   names follow, the viewer first; past six they collapse behind a "+N more"
+   button that opens the card in place and moves focus to the first revealed
+   name. Names are buttons that scroll to that member's section. The title
+   links to the film page (`/film?slug=<slug>`). If the stats call fails or
+   the film is not ingested yet, the card falls back to the old byline
+   ("Watched by Alex, Sam") with no count and no link. The section hides
+   itself via CSS (`:not(:has(.ws-card))`) when the week is empty.
 2. **Filter pills** — `Liked` / `Rated 4+` / `This week`, AND-combined,
    persisted as comma-joined tokens in `?filter=` (e.g.
    `/watched?filter=liked,week`). Filters prune films inside each member
@@ -158,7 +167,7 @@ carries no times); the 7-day cutoff is computed in America/Chicago.
 | File | Role |
 |------|------|
 | `ui/views.html` | `watched-view` + `watched-member` components |
-| `model/index.ts` | `buildWatchedPage` / `filterFilms` / `centralDayCutoff` / `getTakes` |
+| `model/index.ts` | `buildWatchedPage` / `filterFilms` / `centralDayCutoff` / `getTakes`; strip count line via `getFilmStats` / `filmCountLine` |
 | `css/watched.css` | Page styles incl. strip (`.ws-*`), filters, badges |
 | `scripts/refresh_letterboxd.py` | RSS fetch + poster extraction |
 | `.github/workflows/refresh-letterboxd.yml` | Cron every 6 hours |

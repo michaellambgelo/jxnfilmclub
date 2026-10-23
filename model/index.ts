@@ -473,3 +473,282 @@ export function attendanceTally(
   }
   return tally
 }
+
+// --- Film stats (docs/features/film-stats.md) ---
+//
+// A Letterboxd diary entry link is letterboxd.com/{handle}/film/{slug}/, with
+// a trailing {n}/ rewatch counter on repeat logs of the same film. The slug is
+// the club's film identity. Anything else (a list, a review permalink, a
+// boxd.it short link) is not a diary entry and yields null.
+//
+// MIRRORED in worker/src/films.js (ENTRY_URL_RE), which keys the FILMS_DB
+// rows on it — keep the two rules identical, byte for byte.
+const FILM_LINK_RE = /^https:\/\/letterboxd\.com\/[^/]+\/film\/([a-z0-9-]+)\/(?:[0-9]+\/)?$/
+
+export function filmSlug(link: any): string | null {
+  if (typeof link !== 'string') return null
+  const m = FILM_LINK_RE.exec(link)
+  return m ? m[1] : null
+}
+
+// The signed-in viewer for authed reads. jxnfcEnsureSession (ui/auth.html)
+// silently renews a lapsed token from a remembered device, so prefer it; the
+// raw localStorage token covers pages where it is not installed.
+// Its null is a verdict (lapsed, no device token), so it is trusted rather than
+// second-guessed with the stored, expired token.
+async function filmSessionToken(): Promise<string | null> {
+  const g = globalThis as any
+  if (typeof g.jxnfcEnsureSession === 'function') {
+    try {
+      const s = await g.jxnfcEnsureSession()
+      return s && s.token ? s.token : null
+    } catch { return null }
+  }
+  if (!is_browser) return null
+  try {
+    const raw = localStorage.jxnfc_session
+    const s = raw ? JSON.parse(raw) : null
+    return s && s.token && s.exp > Date.now() ? s.token : null
+  } catch { return null }
+}
+
+const FILM_STATS_MAX = 40
+// Short: the /watched strip waits on this before its single paint.
+const FILM_FETCH_TIMEOUT_MS = 3000
+
+function filmTimeout(ms: number = FILM_FETCH_TIMEOUT_MS): AbortSignal | undefined {
+  const A = (globalThis as any).AbortSignal
+  return A && typeof A.timeout === 'function' ? A.timeout(Math.max(ms, 1)) : undefined
+}
+
+// The session lookup and the fetch share ONE time budget. jxnfcEnsureSession
+// may POST /session/refresh (no timeout of its own) for a lapsed token, and
+// that must not hold the /watched paint past the budget: when it runs out the
+// read goes ahead anonymously (counts without `you`).
+async function filmAuthedInit(): Promise<any> {
+  const start = Date.now()
+  let timer: any
+  const token = await Promise.race([
+    filmSessionToken(),
+    new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), FILM_FETCH_TIMEOUT_MS) }),
+  ])
+  clearTimeout(timer)
+  const init: any = { signal: filmTimeout(FILM_FETCH_TIMEOUT_MS - (Date.now() - start)) }
+  if (token) init.headers = { Authorization: `Bearer ${token}` }
+  return init
+}
+
+// Per-slug { members, logs, thisWeek, you? } for up to 40 slugs. Returns {}
+// on ANY failure — the strip then falls back to its weekly-only byline, so a
+// missing or broken FILMS_DB never costs the page more than the count line.
+export async function getFilmStats(slugs: any[]): Promise<Record<string, any>> {
+  const origin = resolveWorkerOrigin()
+  if (!origin) return {}
+  const uniq: string[] = []
+  for (const s of slugs || []) {
+    if (typeof s === 'string' && s && uniq.indexOf(s) < 0) uniq.push(s)
+  }
+  if (!uniq.length) return {}
+  try {
+    const init = await filmAuthedInit()
+    const qs = uniq.slice(0, FILM_STATS_MAX).map(encodeURIComponent).join(',')
+    const res = await fetch(`${origin}/films/stats?slugs=${qs}`, init)
+    if (!res.ok) return {}
+    const data = await res.json()
+    const stats = data && data.stats
+    return stats && typeof stats === 'object' && !Array.isArray(stats) ? stats : {}
+  } catch { return {} }
+}
+
+// One film page. The status is discriminated so the view can tell a film the
+// club has never logged (404) from the database being down (503) from the
+// network failing (0).
+export async function getFilm(slug: string): Promise<{ status: number; data?: any }> {
+  const origin = resolveWorkerOrigin()
+  if (!origin || !slug) return { status: 0 }
+  try {
+    const init = await filmAuthedInit()
+    const res = await fetch(`${origin}/films/${encodeURIComponent(slug)}`, init)
+    if (res.status === 404 || res.status === 503) return { status: res.status }
+    if (!res.ok) return { status: 0 }
+    const data = await res.json()
+    if (!data || typeof data !== 'object' || !data.film) return { status: 0 }
+    return { status: 200, data }
+  } catch { return { status: 0 } }
+}
+
+// Who is looking, for viewer-first ordering. The handle is all the strip
+// needs and does not require a live token, so this reads storage directly.
+export function filmViewer(): { id?: string; handle?: string } | null {
+  if (!is_browser) return null
+  try {
+    const raw = localStorage.jxnfc_session
+    const s = raw ? JSON.parse(raw) : null
+    if (!s || !(s.token || s.refresh)) return null
+    return { id: s.id || undefined, handle: s.handle || undefined }
+  } catch { return null }
+}
+
+// The direction A count line, shared by the strip and the film page.
+// you: the viewer has a log of it. members: distinct loggers, all time.
+export function filmCountLine(members: number, thisWeek: number, you: boolean) {
+  const m = Math.max(0, Number(members) || 0)
+  const w = Math.max(0, Number(thisWeek) || 0)
+  const week = w > 0 ? ' · ' + w + ' this week' : ''
+  if (you) {
+    const others = Math.max(0, m - 1)
+    if (!others) return { lead: '', tail: 'Only you have logged it' + week, line: 'Only you have logged it' + week, others }
+    const tail = ' + ' + others + (others === 1 ? ' other' : ' others') + ' have logged it' + week
+    return { lead: 'You', tail, line: 'You' + tail, others }
+  }
+  const tail = m + (m === 1 ? ' member has' : ' members have') + ' logged it' + week
+  return { lead: '', tail, line: tail, others: m }
+}
+
+export const STRIP_NAMES_SHOWN = 6
+
+// Shape one weekly-strip card for direction A, You + the club. card is a
+// buildWatchedPage strip card, stats its GET /films/stats entry (absent when
+// the endpoint is down or the film is not ingested yet), viewer the session.
+//
+// The names are this week's watchers from the strip, which are already public
+// from RSS; the viewer leads as You. All-time names stay on the film page.
+// Each name carries its own trailing separator so the template has no logic
+// and a wrapped line never starts with a comma.
+export function shapeStripCard(card: any, stats: any, viewer: any) {
+  const vh = viewer && viewer.handle ? String(viewer.handle).toLowerCase() : ''
+  const watchers: any[] = (card && Array.isArray(card.watchers)) ? card.watchers : []
+  const mine = vh ? watchers.filter((w: any) => w && String(w.handle || '').toLowerCase() === vh) : []
+  const rest = watchers.filter((w: any) => mine.indexOf(w) < 0)
+  const ordered = mine.slice(0, 1).concat(rest)
+  const names = ordered.map((w: any, i: number) => ({
+    name: w.name,
+    handle: w.handle,
+    label: i === 0 && mine.length ? 'You' : w.name,
+    you: i === 0 && mine.length > 0,
+    sep: i < ordered.length - 1 ? ',' : '',
+    extra: i >= STRIP_NAMES_SHOWN,
+    // The last name before the fold keeps its comma only once expanded.
+    cut: i === STRIP_NAMES_SHOWN - 1 && ordered.length > STRIP_NAMES_SHOWN,
+  }))
+  const overflow = Math.max(0, ordered.length - STRIP_NAMES_SHOWN)
+  const slug = filmSlug(card && card.link)
+
+  const has = !!(stats && typeof stats === 'object' && Number(stats.members) > 0)
+  if (!has) {
+    // Endpoint down or film not ingested: today's weekly-only byline.
+    return { slug, fallback: true, you: false, members: 0, countLead: '', countTail: '', countLine: '', othersCount: 0, names, overflow }
+  }
+  // The weekly names come from the same RSS ingest reads, so a viewer named
+  // here has logged it even if ingest has not caught up yet; never let the
+  // count read lower than the names on the card.
+  const you = stats.you === true || mine.length > 0
+  const members = Math.max(Number(stats.members) || 0, watchers.length)
+  const thisWeek = Math.max(Number(stats.thisWeek) || 0, watchers.length)
+  const c = filmCountLine(members, thisWeek, you)
+  return { slug, fallback: false, you, members, countLead: c.lead, countTail: c.tail, countLine: c.line, othersCount: c.others, names, overflow }
+}
+
+// The whole strip: each card shaped, and the most-shared film (by all-time
+// members, at least two) promoted to the front as the hero. No stats, no hero.
+export function shapeStrip(strip: any[], statsMap: Record<string, any>, viewer: any) {
+  const map = statsMap || {}
+  const cards = (strip || []).map((c: any) => {
+    const slug = filmSlug(c && c.link)
+    const shaped = shapeStripCard(c, slug ? map[slug] : null, viewer)
+    return { ...c, ...shaped, hero: false }
+  })
+  let best = -1
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i]
+    if (c.fallback || c.members < 2) continue
+    if (best < 0 || c.members > cards[best].members) best = i
+  }
+  if (best >= 0) {
+    const hero = { ...cards[best], hero: true }
+    cards.splice(best, 1)
+    cards.unshift(hero)
+  }
+  return cards
+}
+
+export function ratingStars(rating: any): string {
+  return starsFor(rating)
+}
+
+const FILM_HIST_KEYS = ['0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', '4.5', '5']
+
+function filmDate(d: any): string {
+  const s = String(d || '')
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s)) return ''
+  return new Date(s + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// Shape a GET /films/:slug body for the film page: count line, rating
+// summary, histogram bars as a percentage of the tallest, and the members-only
+// watcher rows with stars and formatted dates. events (optional, id-keyed)
+// labels each club screening; ids it cannot resolve still render.
+export function shapeFilmPage(data: any, events: Record<string, any> = {}) {
+  const d = data || {}
+  const film = d.film || {}
+  const signedIn = Array.isArray(d.watchers)
+  const c = filmCountLine(d.members, d.thisWeek, d.you === true)
+  const hist = d.histogram && typeof d.histogram === 'object' ? d.histogram : {}
+  const counts = FILM_HIST_KEYS.map(k => Math.max(0, Number(hist[k]) || 0))
+  const top = Math.max(0, ...counts)
+  const votes = counts.reduce((a, b) => a + b, 0)
+  const bars = FILM_HIST_KEYS.map((k, i) => ({
+    key: k,
+    n: counts[i],
+    pct: top ? Math.round((counts[i] / top) * 100) : 0,
+    // Tenths of the tallest, for a height class: the dhtml compiler drops
+    // inline style attributes, so bars cannot carry a percentage.
+    step: counts[i] ? Math.max(1, Math.round((counts[i] / top) * 10)) : 0,
+    label: starsFor(k),
+  }))
+  const avg = typeof d.avg === 'number' && isFinite(d.avg) ? d.avg : null
+  const liked = Math.max(0, Number(d.liked) || 0)
+  const screenings = (Array.isArray(d.screenings) ? d.screenings : []).map((id: any) => {
+    const e = events && events[id]
+    const label = e ? [e.title || e.film || 'Club screening', filmDate(e.date), e.venue].filter(Boolean).join(' · ') : 'Club screening'
+    // events-view filters on ?query= across title and film, the closest
+    // thing the SPA has to a per-event link.
+    return { id: String(id), label, query: e ? encodeURIComponent(e.film || e.title || '') : '' }
+  })
+  const watchers = (signedIn ? d.watchers : []).map((w: any) => {
+    const dates = (Array.isArray(w && w.dates) ? w.dates : []).map(filmDate).filter(Boolean)
+    return {
+      name: (w && w.name) || 'A member',
+      handle: (w && w.handle) || '',
+      stars: w && w.rating != null ? starsFor(w.rating) : '',
+      liked: !!(w && w.liked),
+      dates: dates.join(', '),
+      review: (w && typeof w.review === 'string') ? w.review : '',
+    }
+  })
+  return {
+    slug: film.slug || '',
+    title: film.title || '',
+    year: film.year || '',
+    poster: film.poster || '',
+    members: Math.max(0, Number(d.members) || 0),
+    logs: Math.max(0, Number(d.logs) || 0),
+    you: d.you === true,
+    countLead: c.lead,
+    countTail: c.tail,
+    countLine: c.line,
+    avg: avg,
+    avgLabel: avg == null ? '' : avg.toFixed(2),
+    avgStars: avg == null ? '' : starsFor(Math.round(avg * 2) / 2),
+    liked,
+    likedLabel: liked ? liked + (liked === 1 ? ' heart' : ' hearts') : '',
+    votes,
+    bars,
+    histLabel: 'Rating spread across ' + votes + (votes === 1 ? ' member' : ' members'),
+    screenings,
+    signedIn,
+    watchers,
+    // Former members count toward members but are never listed.
+    unnamed: signedIn ? Math.max(0, (Number(d.members) || 0) - watchers.length) : 0,
+  }
+}

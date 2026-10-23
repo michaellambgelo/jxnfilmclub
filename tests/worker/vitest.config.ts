@@ -40,6 +40,8 @@ const moduleRulesPlugin = {
 // Giveaway schema, re-applied to a freshly reset D1 before every test by
 // apply-migrations.js.
 const migrations = await readD1Migrations(path.join(__dirname, '../../worker/migrations'))
+// Film stats schema (FILMS_DB), a separate database with its own sequence.
+const filmsMigrations = await readD1Migrations(path.join(__dirname, '../../worker/migrations-films'))
 
 export default defineConfig({
   plugins: [
@@ -50,7 +52,7 @@ export default defineConfig({
         compatibilityFlags: ['nodejs_compat'],
         kvNamespaces: ['MEMBERS_KV', 'ATTENDANCE_KV'],
         r2Buckets: ['VOICE', 'NEWS'],
-        d1Databases: ['GIVEAWAYS_DB'],
+        d1Databases: ['GIVEAWAYS_DB', 'FILMS_DB'],
         bindings: {
           SITE_ORIGIN: 'https://jxnfilm.club',
           GITHUB_OWNER: 'testowner',
@@ -60,6 +62,7 @@ export default defineConfig({
           OTP_SIGNING_KEY: 'test-key',
           ADMIN_TOKEN: 'test-admin-token',
           TEST_MIGRATIONS: migrations,
+          TEST_FILMS_MIGRATIONS: filmsMigrations,
           TRANSCRIBE_TOKEN: 'test-transcribe-token',
           TRANSCRIBE_HOOK_URL: 'https://transcribe.test/hook',
           ENVIRONMENT: 'production',

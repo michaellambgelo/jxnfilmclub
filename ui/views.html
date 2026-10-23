@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, avatarsById, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, avatarsById, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled, getFilmStats, getFilm, filmSlug, filmViewer, shapeStrip, shapeFilmPage } from 'app'
 
   // Shared by every component in this lib file. Lib-script scope is NOT subject
   // to the 10k component-script truncation cap (Nue pushes the head script raw;
@@ -743,14 +743,22 @@
   <section class="watched-strip">
     <h2 class="ws-title">This week in the club</h2>
     <div class="ws-grid">
-      <div :each="c in strip" key="{ c.key }" class="ws-card">
+      <!-- Direction A, You + the club (docs/features/film-stats.md). The count
+           line comes from GET /films/stats; without it a card falls back to
+           the weekly Watched by byline. Each name carries its own trailing
+           comma inside a no-wrap box, so a wrapped line never starts with
+           one. Names past the sixth hide until the +N more button (bound by
+           delegation below) opens the card. -->
+      <div :each="c in strip" key="{ c.key }" class="ws-card { c.hero ? '-hero' : '' } { c.you ? '-you' : '' }">
         <a class="ws-film" href="{ c.link }" target="_blank" rel="noopener">
           <img :if="c.poster" src="{ c.poster }" alt="{ c.title }" class="ws-poster">
           <div :if="!c.poster" class="ws-poster ws-poster-placeholder"><span>{ c.title }</span></div>
         </a>
         <div class="ws-info">
-          <h3 class="ws-name">{ c.title } <span :if="c.year" class="ws-year">{ c.year }</span></h3>
-          <p class="ws-byline">Watched by <button :each="w in c.watchers" key="{ w.handle }" type="button" class="ws-watcher" data-handle="{ w.handle }">{ w.name }</button></p>
+          <span :if="c.you" class="ws-stamp">You too</span>
+          <h3 class="ws-name"><a :if="!c.fallback && c.slug" href="/film?slug={ c.slug }" class="ws-film-link">{ c.title }</a><span :if="c.fallback || !c.slug">{ c.title }</span><span :if="c.year" class="ws-year">{ c.year }</span></h3>
+          <p :if="!c.fallback" class="ws-count"><b :if="c.countLead">{ c.countLead }</b>{ c.countTail }</p>
+          <p class="ws-byline"><span :if="c.fallback" class="ws-by">Watched by</span><span :each="w in c.names" key="{ w.handle }" class="ws-who { w.extra ? '-extra' : '' } { w.you ? '-you' : '' }"><button type="button" class="ws-watcher" data-handle="{ w.handle }">{ w.label }</button><span class="ws-sep { w.cut ? '-cut' : '' }">{ w.sep }</span></span><button :if="c.overflow" type="button" class="ws-more">+{ c.overflow } more</button></p>
           <p class="ws-when"><timeago :ts="c.watched_date"/></p>
         </div>
       </div>
@@ -823,6 +831,20 @@
       if (!watcherScrollBound) {
         watcherScrollBound = true
         document.addEventListener('click', function(e) {
+          // The +N more toggle opens its card in place. A class on the card
+          // rather than an update, which a delegated listener cannot reach.
+          const more = e.target.closest('.ws-more')
+          if (more) {
+            const card = more.closest('.ws-card')
+            if (card) {
+              card.classList.add('-all')
+              // The button hides once the card opens; hand focus to the
+              // first name it revealed so a keyboard user keeps their place.
+              const first = card.querySelector('.ws-who.-extra .ws-watcher')
+              if (first) first.focus()
+            }
+            return
+          }
           const btn = e.target.closest('.ws-watcher')
           if (!btn) return
           const el = document.getElementById('member-' + btn.dataset.handle)
@@ -839,11 +861,16 @@
       ])
       const page = buildWatchedPage(results[0].items || [], results[1], results[3])
       allSections = page.sections
+      // Club-wide counts for the strip. Awaited rather than painted in a
+      // second update so the keyed member sections mount exactly once; the
+      // call is edge-cached, time-boxed, and resolves empty on any failure,
+      // which shapeStrip turns back into the weekly-only byline.
+      const stripStats = await getFilmStats(page.strip.map(function(c) { return filmSlug(c.link) }))
       // One update only: keyed children mount once with final props, and the
       // deep-link scroll below lands after the sections exist.
       this.update({
         sections: this.applied(page.sections),
-        strip: page.strip,
+        strip: shapeStrip(page.strip, stripStats, filmViewer()),
         handleless: page.handleless,
         avatars: avatarsById(results[0].items || [], results[2]),
       })
@@ -899,6 +926,121 @@
     }
   </script>
 </section>
+
+
+<!-- One film, /film?slug=SLUG (docs/features/film-stats.md). The router is
+     /:type, which cannot carry a second path segment through an SPA click, so
+     the slug rides in a registered query key; a cold hit on /film/SLUG is
+     accepted too and rewritten. Counts, average and spread are public; the
+     watcher list is members-only and comes back only with a bearer token. -->
+<article :is="film-view" class="film-page">
+  <p :if="phase === 'loading'" class="fp-status">Loading…</p>
+
+  <div :if="phase === 'missing'" class="fp-status">
+    <h1>Not logged yet</h1>
+    <p>No club member has logged this film since we started counting. <a href="/watched">See what the club is watching</a>.</p>
+  </div>
+
+  <div :if="phase === 'down'" class="fp-status">
+    <h1>Film stats are resting</h1>
+    <p>We could not load this film right now. Try again in a little while, or <a href="/watched">see what the club is watching</a>.</p>
+  </div>
+
+  <div :if="phase === 'ok'" class="fp">
+    <header class="fp-head">
+      <img :if="f.poster" src="{ f.poster }" alt="{ f.title }" class="fp-poster">
+      <div :if="!f.poster" class="fp-poster fp-poster-placeholder"><span>{ f.title }</span></div>
+      <div class="fp-meta">
+        <p class="fp-eyebrow">Logged by the club</p>
+        <h1 class="fp-title">{ f.title }<span :if="f.year" class="fp-year">{ f.year }</span></h1>
+        <p class="fp-count"><b :if="f.countLead">{ f.countLead }</b>{ f.countTail }</p>
+        <p class="fp-logs">{ f.logs === 1 ? '1 log' : f.logs + ' logs' }, rewatches included</p>
+        <span :if="f.you" class="ws-stamp">You too</span>
+        <a class="fp-lb" href="https://letterboxd.com/film/{ f.slug }/" target="_blank" rel="noopener">On Letterboxd</a>
+      </div>
+    </header>
+
+    <section class="fp-panel">
+      <h2 class="fp-h">Ratings</h2>
+      <p :if="f.avgLabel" class="fp-avg"><span class="fp-avg-num">{ f.avgLabel }</span><span class="fp-avg-stars">{ f.avgStars }</span></p>
+      <p :if="!f.avgLabel" class="fp-muted">No ratings yet.</p>
+      <p :if="f.likedLabel" class="fp-liked"><b class="lb-like">♥</b>{ f.likedLabel }</p>
+      <div :if="f.votes" class="fp-hist" role="img" aria-label="{ f.histLabel }">
+        <div :each="b in f.bars" key="{ b.key }" class="fp-bar" title="{ b.label }: { b.n }"><span class="fp-bar-fill -h{ b.step }"></span></div>
+      </div>
+      <div :if="f.votes" class="fp-hist-axis"><span>½</span><span>★★★★★</span></div>
+      <p class="fp-note">One vote per member: their latest rating.</p>
+    </section>
+
+    <section :if="f.screenings.length" class="fp-panel">
+      <h2 class="fp-h">Club screenings</h2>
+      <ul class="fp-screenings">
+        <li :each="s in f.screenings" key="{ s.id }"><a :if="s.query" href="/events?query={ s.query }">{ s.label }</a><span :if="!s.query">{ s.label }</span></li>
+      </ul>
+    </section>
+
+    <section class="fp-panel">
+      <h2 class="fp-h">Who logged it</h2>
+      <p :if="!f.signedIn" class="fp-muted"><a href="/signin">Sign in</a> to see who.</p>
+      <ul :if="f.signedIn" class="fp-watchers">
+        <li :each="w in f.watchers" key="{ w.handle || w.name }" class="fp-watcher">
+          <p class="fp-w-head"><span class="fp-w-name">{ w.name }</span><span :if="w.stars || w.liked" class="lb-verdict">{ w.stars }<b :if="w.liked" class="lb-like">♥</b></span></p>
+          <p :if="w.dates" class="fp-w-dates">{ w.dates }</p>
+          <p :if="w.review" class="fp-w-review">{ w.review }</p>
+        </li>
+      </ul>
+      <p :if="f.signedIn && f.unnamed" class="fp-muted">{ f.unnamed === 1 ? '1 former member is' : f.unnamed + ' former members are' } counted but not named.</p>
+    </section>
+  </div>
+
+  <script>
+    // Module scope, not this: nuedom hands handlers a fresh context after
+    // each update, so a sequence guard on this would never see later loads.
+    let filmSeq = 0
+
+    // Back and forward between two film pages change only the slug.
+    state.on('slug', () => { if (state.type === 'film') this.load() })
+
+    this.slugNow = function() {
+      const fromState = state.slug == null ? '' : String(state.slug)
+      if (fromState) return fromState
+      const parts = location.pathname.split('/')
+      if (parts[1] !== 'film' || !parts[2]) return ''
+      let fromPath = ''
+      try { fromPath = decodeURIComponent(parts[2]) } catch (err) { return '' }
+      history.replaceState(true, 0, '/film?slug=' + encodeURIComponent(fromPath))
+      return fromPath
+    }
+
+    this.load = async function() {
+      const seq = ++filmSeq
+      const slug = this.slugNow()
+      if (!slug) { this.update({ phase: 'missing' }); return }
+      this.update({ phase: 'loading' })
+      const got = await getFilm(slug)
+      if (seq !== filmSeq) return
+      if (got.status === 404) { this.update({ phase: 'missing' }); return }
+      if (got.status !== 200) { this.update({ phase: 'down' }); return }
+      // Screening ids get a title and date from the events list. House
+      // screenings are absent for anonymous callers and render unlinked.
+      let byId = {}
+      if (got.data.screenings && got.data.screenings.length) {
+        try {
+          const evs = await getEvents({ limit: 1000 })
+          for (const e of evs.items || []) byId[e.id] = e
+        } catch (err) { byId = {} }
+        if (seq !== filmSeq) return
+      }
+      const f = shapeFilmPage(got.data, byId)
+      this.update({ phase: 'ok', f: f })
+    }
+
+    this.mounted = function() {
+      this.update({ phase: 'loading', f: null })
+      this.load()
+    }
+  </script>
+</article>
 
 
 <!-- Events list -->
@@ -1929,7 +2071,7 @@
     // before the SPA takes over, so a full load lands on a 404 document.
     // Stash where we are, then let the router do a real pushState.
     this.toSignin = function() {
-      if (globalThis.jxnfcStashNext) globalThis.jxnfcStashNext(location.pathname)
+      if (globalThis.jxnfcStashNext) globalThis.jxnfcStashNext(location.pathname + location.search)
       state.type = 'signin'
     }
 

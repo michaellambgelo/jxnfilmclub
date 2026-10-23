@@ -1,0 +1,261 @@
+
+/* ------- one film, /film?slug= (docs/features/film-stats.md) ------- */
+
+.fp-status {
+  text-align: center;
+  color: var(--ink-4);
+  padding: 3rem 0;
+}
+
+.fp-status h1 {
+  font-family: var(--font-display);
+  color: var(--ink-strong);
+  margin: 0 0 0.5rem;
+}
+
+.fp-status a,
+.fp-panel a,
+.fp-lb {
+  color: var(--brand);
+}
+
+.fp-head {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.fp-poster {
+  flex: 0 0 160px;
+  width: 160px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.fp-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1em;
+  font-size: 83%;
+  color: var(--ink-5);
+}
+
+.fp-meta {
+  min-width: 0;
+}
+
+.fp-eyebrow,
+.fp-h {
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin: 0 0 0.75rem;
+}
+
+.fp-title {
+  font-family: var(--font-display);
+  color: var(--ink-strong);
+  margin: 0 0 0.5rem;
+  overflow-wrap: break-word;
+}
+
+.fp-year {
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--ink-5);
+  margin-left: 0.4em; /* the compiler collapses the template whitespace */
+}
+
+.fp-count {
+  color: var(--ink-2);
+  margin: 0 0 0.25rem;
+}
+
+.fp-count b {
+  color: var(--ink-strong);
+}
+
+.fp-logs {
+  font-size: 83%;
+  color: var(--ink-4);
+  margin: 0 0 0.75rem;
+}
+
+.fp-meta .ws-stamp {
+  margin-right: 0.75rem;
+}
+
+.fp-lb {
+  font-size: 83%;
+}
+
+.fp-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 1.25em 1.5em;
+  margin-bottom: 1.25rem;
+}
+
+.fp-muted,
+.fp-note {
+  font-size: 83%;
+  color: var(--ink-4);
+  margin: 0.5rem 0 0;
+}
+
+.fp-note {
+  color: var(--ink-4);
+}
+
+.fp-avg {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.fp-avg-num {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--ink-strong);
+}
+
+.fp-avg-stars {
+  color: var(--brand);
+}
+
+.fp-liked {
+  font-size: 83%;
+  color: var(--ink-3);
+  margin: 0.25rem 0 0;
+}
+
+.fp-liked .lb-like {
+  margin-right: 0.35em;
+}
+
+/* Ten half-star buckets, bars scaled to the tallest. */
+.fp-hist {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  align-items: end;
+  height: 72px;
+  max-width: 320px;
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.fp-bar {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.fp-bar-fill {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  background: var(--brand);
+  border-radius: 0;
+}
+
+/* Height classes, set from the bar step (tenths of the tallest bar). */
+.fp-bar-fill.-h0 { height: 0%; }
+.fp-bar-fill.-h1 { height: 10%; }
+.fp-bar-fill.-h2 { height: 20%; }
+.fp-bar-fill.-h3 { height: 30%; }
+.fp-bar-fill.-h4 { height: 40%; }
+.fp-bar-fill.-h5 { height: 50%; }
+.fp-bar-fill.-h6 { height: 60%; }
+.fp-bar-fill.-h7 { height: 70%; }
+.fp-bar-fill.-h8 { height: 80%; }
+.fp-bar-fill.-h9 { height: 90%; }
+.fp-bar-fill.-h10 { height: 100%; }
+
+.fp-hist-axis {
+  display: flex;
+  justify-content: space-between;
+  max-width: 320px;
+  font-size: 0.7rem;
+  color: var(--ink-4);
+  margin-top: 0.25rem;
+}
+
+.fp-screenings,
+.fp-watchers {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fp-screenings li {
+  padding: 0.35em 0;
+  border-bottom: 1px solid var(--line-3);
+}
+
+.fp-watcher {
+  padding: 0.75em 0;
+  border-bottom: 1px solid var(--line-3);
+}
+
+.fp-watcher:last-child,
+.fp-screenings li:last-child {
+  border-bottom: 0;
+}
+
+.fp-w-head {
+  margin: 0;
+  color: var(--ink);
+}
+
+.fp-w-name {
+  font-weight: 600;
+}
+
+.fp-w-head .lb-verdict {
+  margin-left: 0.5em;
+}
+
+.fp-w-dates {
+  font-size: 75%;
+  color: var(--ink-4);
+  margin: 0.15em 0 0;
+}
+
+.fp-w-review {
+  font-size: 83%;
+  font-style: italic;
+  color: var(--ink-3);
+  margin: 0.4em 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .fp-head {
+    gap: 1rem;
+  }
+
+  .fp-poster {
+    flex-basis: 96px;
+    width: 96px;
+  }
+
+  .fp-panel {
+    padding: 1em 1.1em;
+  }
+
+  .fp-title {
+    font-size: 1.6rem;
+  }
+}

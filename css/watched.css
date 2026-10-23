@@ -191,18 +191,128 @@
   background: none;
   padding: 0;
   font: inherit;
-  color: var(--brand);
+  /* Paper, not red: six red names read as one undifferentiated run. Only
+     the viewer keeps the signal color (.ws-who.-you below); the faint
+     underline keeps the rest looking clickable. */
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 0.2em;
   cursor: pointer;
 }
 
 .ws-watcher:hover {
+  color: var(--ink-strong);
+  text-decoration-color: var(--brand);
+}
+
+/* Direction A, You + the club. Each name is a no-wrap box holding its own
+   trailing comma, so a wrapped line can never start with one; inline boxes
+   still wrap between each other without template whitespace. */
+.ws-who {
+  display: inline-flex; /* flex drops the template whitespace before the comma */
+  white-space: nowrap;
+  margin-right: 0.3em;
+}
+
+.ws-who.-you .ws-watcher {
+  font-weight: 600;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.ws-sep {
+  color: var(--ink-4);
+}
+
+/* Names past the fold, and the comma leading into them, wait for +N more. */
+.ws-card:not(.-all) .ws-who.-extra,
+.ws-card:not(.-all) .ws-sep.-cut {
+  display: none;
+}
+
+.ws-card.-all .ws-more {
+  display: none;
+}
+
+.ws-by {
+  margin-right: 0.3em; /* the compiler collapses the template whitespace */
+}
+
+.ws-more {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-more:hover {
+  color: var(--ink);
   text-decoration: underline;
 }
 
-/* Comma-separate the watcher buttons without JS-joined markup. */
-.ws-watcher + .ws-watcher::before {
-  content: ', ';
-  color: var(--ink-4);
+.ws-count {
+  font-size: 75%;
+  color: var(--ink-2);
+  margin: 0.25em 0 0;
+}
+
+.ws-count b {
+  color: var(--ink-strong);
+}
+
+.ws-film-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ws-film-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* A rubber stamp on cards the viewer logged. */
+.ws-stamp {
+  display: inline-block;
+  font-family: var(--font-label);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand-tint-fg);
+  background: var(--brand-tint);
+  border: 1px solid var(--brand);
+  border-radius: 0;
+  padding: 0.1em 0.5em;
+  margin-bottom: 0.35em;
+}
+
+/* The most-shared film of the week leads the strip at double width. */
+.ws-card.-hero {
+  grid-column: span 2;
+  border-left: 2px solid var(--brand);
+  padding-left: 0.75rem;
+}
+
+.ws-card.-hero .ws-film {
+  flex-basis: 96px;
+}
+
+.ws-card.-hero .ws-poster {
+  width: 96px;
+  border-radius: 0;
+}
+
+.ws-card.-hero .ws-name {
+  font-family: var(--font-display);
+  font-size: var(--fs-18);
+  color: var(--ink-strong);
+}
+
+.ws-card.-hero .ws-count {
+  font-size: 83%;
 }
 
 .ws-when {
@@ -317,5 +427,12 @@
 
   .ws-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* One column: the hero cannot span two. */
+@media (max-width: 640px) {
+  .ws-card.-hero {
+    grid-column: auto;
   }
 }

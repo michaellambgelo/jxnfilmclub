@@ -35,7 +35,7 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 2026-10-15</p>
+  <p class="updated">Last updated: 2026-10-23</p>
 
   <p>
     Jackson Film Club ("we") operates
@@ -56,6 +56,15 @@
       activity for the Watched page: we mirror up to the most recent 50 diary
       entries your public feed still serves, and nothing older than that feed
       already carries.</li>
+    <li><b>Your club film log</b> — while your Letterboxd account is linked,
+      we also keep a running copy of the diary entries we read from your
+      public feed: the film, the date you watched it, your rating, whether you
+      liked it, and your review text, for entries dated on or after the
+      club's first screening (November 10, 2020). This is what lets the site
+      say how many members have logged a film. If you change a rating or a
+      review on Letterboxd, we keep the earlier version alongside the new
+      one; an entry you delete on Letterboxd stays, because the feed gives
+      us no way to tell.</li>
     <li><b>Profile photo</b> — optional. If you upload one, it replaces your
       Letterboxd avatar or initial wherever the site shows your avatar, and
       it is <b>public</b>. Your browser crops it square and shrinks it before
@@ -133,6 +142,14 @@
     attended — on the site and in the
     repository's public <code>data/*.json</code> files. Attendance records
     your member id and display name, never your email.
+  </p>
+  <p>
+    Your club film log is stored privately in a Cloudflare D1 database and
+    never committed to the repository. Anyone can see the <b>totals</b> it
+    produces for a film — how many members logged it, the average rating and
+    the spread of ratings. <b>Who</b> logged it, with each person's rating,
+    dates and review, is shown only to signed-in members, on that film's
+    page.
   </p>
 
   <h2>How we use your email</h2>
@@ -224,11 +241,22 @@
       address, and never your personal unsubscribe link. The link is a long
       random string and is not listed anywhere, but anyone holding it can read
       that newsletter, and it stays up indefinitely.</li>
-    <li><b>Your Letterboxd activity is a mirror, not an archive.</b> We cache
+    <li><b>The Watched page is a mirror, not an archive.</b> We cache
       what your public feed currently serves, refreshed continuously; when an
       entry falls out of that feed it falls out of ours. Unlinking your
       Letterboxd handle, or deleting your membership, drops your entries
       immediately.</li>
+    <li><b>Your club film log stays until you unlink Letterboxd or delete
+      your membership.</b> At that moment your name, handle and every
+      version of your review text are deleted. Your ratings, likes and watch
+      dates stay, filed under a random "former member" label, so a film's
+      totals don't change when someone leaves. If you only unlink, we keep a
+      private note tying that label to your account, never shown to anyone,
+      so that linking Letterboxd again deletes those old entries and your log
+      starts fresh, rather than counting you twice. Deleting your membership
+      deletes that note, and the label is then not linked to you anywhere.
+      Switching to a different Letterboxd handle without unlinking first
+      deletes the log read from the old handle outright.</li>
     <li><b>Your profile photo stays until you replace or remove it</b>, an
       organizer removes it, or you delete your membership — each of those
       deletes the stored image. A copy can linger in browser and network
@@ -255,7 +283,8 @@
     <li><b>Delete your membership yourself, instantly</b> — the danger zone on
       your <a href="%SITE_ORIGIN%/edit">account page</a> removes your
       email, profile, profile photo, and upcoming RSVPs on the spot. Any feedback you sent
-      keeps its text but loses your name and email in the same moment.
+      keeps its text but loses your name and email in the same moment, and
+      your club film log loses your name, handle and reviews (above).
       Optionally, you can also anonymize your name in past attendance
       lists — with one exception, next.</li>
     <li><b>Screenings you hosted keep your name.</b> For a theater meetup the

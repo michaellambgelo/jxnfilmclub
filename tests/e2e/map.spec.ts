@@ -1,4 +1,4 @@
-import { test, expect, seedKv } from './fixtures'
+import { test, expect, seedKv, WORKER_ORIGIN } from './fixtures'
 
 // /map (docs/features/map.md). The venue list renders
 // whether or not WebGL cooperates; the tile test checks the basemap's files
@@ -21,9 +21,31 @@ test.describe('venue map', () => {
   })
 
   test('Details in a pin popup scrolls to the venue card and pulses it', async ({ page }) => {
+    // The Capri and Duling Hall pins overlap a block apart in Fondren, and
+    // ui/map.html draws venues with an upcoming event last, i.e. on top. This
+    // test used to lean on the 6-hourly events snapshot happening to hold a
+    // future Capri screening; the day after that screening passed, Duling Hall
+    // covered the pin and the click was intercepted. Pin the precondition
+    // explicitly: the real baseline (the auto fixture just reseeded it from
+    // data/events.json) plus one far-future Capri screening.
+    const baseline = await (await page.request.get('/data/events.json')).json()
+    const seeded = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: {
+        ns: 'ATTENDANCE_KV', key: 'events:all',
+        value: JSON.stringify([...baseline, {
+          id: 'e2e-map-capri-upcoming', title: 'E2E Capri Screening', film: 'Stalker', year: 1979,
+          date: '2099-07-04', venue: 'The Capri Theater',
+        }]),
+      },
+    })
+    expect(seeded.ok()).toBe(true)
+
     await page.goto('/map')
     const pin = page.locator('.jm-pin[aria-label^="The Capri Theatre"]')
     test.skip(!(await pin.waitFor({ timeout: 10_000 }).then(() => true, () => false)), 'no WebGL in this browser')
+    // Upcoming, so drawn on top of its neighbour: if the seed ever stops
+    // landing, fail here with the reason rather than as an intercepted click.
+    await expect(pin).toHaveClass(/jm-pin-soon/)
     await pin.click()
     await page.locator('.maplibregl-popup').getByRole('link', { name: 'Details' }).click()
     const card = page.locator('.jm-venue.jm-flash')

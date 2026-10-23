@@ -980,6 +980,12 @@
     }
 
     let evReloadSig = null
+    // True while mounted() is still resolving the session. The router emits
+    // query/sort/venue during that await, and a listener reload that ran then
+    // claimed evReloadSig with no session: no /rsvp/me, and mounted's own
+    // reload deduped away, so a lapsed-token card had no button or hint.
+    let evMounting = false
+    let evSession = null
 
     state.on('query sort venue', () => this.reload())
 
@@ -994,6 +1000,7 @@
       //
       // Module scope, not `this`: nuedom hands a handler a fresh context after
       // every update, so an instance field would not survive between calls.
+      if (evMounting) return
       const evSig = [state.query || '', state.sort || '', state.venue || ''].join('|')
       if (evSig === evReloadSig) return
       evReloadSig = evSig
@@ -1018,13 +1025,14 @@
       // One request per RSVP-taking upcoming event: there is no per-member
       // RSVP index in KV, and the club runs one or two at a time — the same
       // trade account-stats makes.
-      const rsvps = await loadMyRsvps(items, this.session)
+      const rsvps = await loadMyRsvps(items, evSession)
       this.update({ items, total, attendance, attendanceError: error, rsvps })
     }
 
     async mounted() {
       // A fresh mount must always load, even onto the same query it left.
       evReloadSig = null
+      evMounting = true
       let session = getSession()
       // (see loadMyRsvps below for why the RSVP state is fetched up here)
       // Remembered device with a lapsed token: trade the device token for a
@@ -1051,12 +1059,13 @@
       // rsvps starts as an object so the card prop can be written without a
       // brace: { } inside an attribute value is template syntax, and a
       // `|| {}` guard there compiles to a syntax error in the bundle.
+      evSession = session
       this.update({ session: session, attendance: {}, rsvps: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
       const [all, { items: members }, lbAvatars] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
         getAvatars().catch(() => ({})),
-      ])
+      ]).catch(function(err) { evMounting = false; throw err })
       const avatars = avatarsById(members, lbAvatars)
       const venues = [...new Set(all.items.map(e => e.venue).filter(Boolean))].sort()
       // Keyed by member id, not display name: an attendee row carries the id,
@@ -1068,6 +1077,7 @@
       // Avatars ride the same update as venues/handles — a later update would
       // detach every event-card sibling and reset scroll (see the card note).
       this.update({ venues, handlesById, avatars })
+      evMounting = false
       await this.reload()
     }
   </script>

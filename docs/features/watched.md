@@ -12,7 +12,8 @@ Top to bottom:
    card. Each card adds the all-time club count from
    [Film Stats](film-stats.md) (`GET /films/stats`, fetched with a 3s budget
    that covers the session refresh too): "**You** + 8 others have logged it ·
-   3 this week" with a "You too" stamp when the signed-in viewer logged it,
+   3 this week" with a "You too" stamp when the signed-in viewer logged it
+   and someone else logged it this week,
    otherwise "9 members have logged it · 3 this week". The line is left off
    when only one member has logged the film, and the week part when it
    equals the all-time count. This week's watcher

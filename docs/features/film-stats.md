@@ -176,7 +176,9 @@ After clustering, the view fetches `GET /films/stats` for the strip's slugs
 and renders direction A:
 
 - Signed in, you logged it: "**You** + 8 others have logged it · 3 this week",
-  you first, a "You too" stamp.
+  you first, a "You too" stamp. The stamp needs another member among this
+  week's watchers: a card where you are the only one is your own diary entry,
+  not a match. On the film page it needs at least one other logger.
 - Signed in, you didn't: "9 members have logged it · 3 this week".
 - Signed out: the same count line. This week's names still show, because the
   weekly strip already shows them publicly from RSS. All-time names stay

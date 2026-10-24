@@ -31,6 +31,7 @@ function watchedMap() {
   for (const h of DIGGER) add(h, entry(h, 'digger-2026', 'Digger'))
   for (const h of ODYSSEY) add(h, entry(h, 'the-odyssey-2026', 'The Odyssey'))
   add('heath_walt', entry('heath_walt', 'obsession-2025', 'Obsession'))
+  add('michaellamb', entry('michaellamb', 'nosferatu-2024', 'Nosferatu'))
   return map
 }
 
@@ -124,6 +125,7 @@ test.describe('watched strip: You + the club', () => {
     await mockStats(page, {
       'digger-2026': { members: 9, logs: 11, thisWeek: 5, you: true },
       'the-odyssey-2026': { members: 14, logs: 15, thisWeek: 8, you: false },
+      'nosferatu-2024': { members: 1, logs: 1, thisWeek: 1, you: true },
     })
     await page.goto('/watched')
 
@@ -134,6 +136,11 @@ test.describe('watched strip: You + the club', () => {
     await expect(digger.locator('.ws-watcher').first()).toHaveText('You')
     // Not on The Odyssey: plain count, no stamp.
     await expect(card(page, 'The Odyssey').locator('.ws-stamp')).toHaveCount(0)
+    // Not when the viewer is the only one this week: that is just their diary.
+    const solo = card(page, 'Nosferatu')
+    await expect(solo.locator('.ws-watcher')).toHaveText('You')
+    await expect(solo.locator('.ws-stamp')).toHaveCount(0)
+    await expect(solo).not.toHaveClass(/-you/)
   })
 
   test('a watcher name still scrolls to that member section', async ({ page }) => {

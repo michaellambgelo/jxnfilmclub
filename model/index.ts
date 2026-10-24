@@ -643,7 +643,7 @@ export function shapeStripCard(card: any, stats: any, viewer: any) {
   const has = !!(stats && typeof stats === 'object' && Number(stats.members) > 0)
   if (!has) {
     // Endpoint down or film not ingested: today's weekly-only byline.
-    return { slug, fallback: true, you: false, members: 0, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: 0, names, overflow }
+    return { slug, fallback: true, you: false, stamp: false, members: 0, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: 0, names, overflow }
   }
   // The weekly names come from the same RSS ingest reads, so a viewer named
   // here has logged it even if ingest has not caught up yet; never let the
@@ -651,13 +651,16 @@ export function shapeStripCard(card: any, stats: any, viewer: any) {
   const you = stats.you === true || mine.length > 0
   const members = Math.max(Number(stats.members) || 0, watchers.length)
   const thisWeek = Math.max(Number(stats.thisWeek) || 0, watchers.length)
+  // You too: the viewer has logged it and someone else logged it this week.
+  // A card whose only watcher is the viewer is just their own diary entry.
+  const stamp = you && rest.length > 0
   // A film one member logged has no count line: the one name on the card
   // already says it.
   if (members < 2) {
-    return { slug, fallback: false, you, members, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: you ? 0 : members, names, overflow }
+    return { slug, fallback: false, you, stamp, members, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: you ? 0 : members, names, overflow }
   }
   const c = filmCountLine(members, thisWeek, you)
-  return { slug, fallback: false, you, members, countLead: c.lead, countTail: c.tail, countWeek: c.week, countLine: c.line, othersCount: c.others, names, overflow }
+  return { slug, fallback: false, you, stamp, members, countLead: c.lead, countTail: c.tail, countWeek: c.week, countLine: c.line, othersCount: c.others, names, overflow }
 }
 
 // The whole strip: each card shaped, and the most-shared film (by all-time
@@ -745,6 +748,8 @@ export function shapeFilmPage(data: any, events: Record<string, any> = {}) {
     members: Math.max(0, Number(d.members) || 0),
     logs: Math.max(0, Number(d.logs) || 0),
     you: d.you === true,
+    // You too only when someone besides the viewer has logged it.
+    stamp: d.you === true && Number(d.members) > 1,
     countLead: c.lead,
     countTail: c.tail,
     countWeek: c.week,

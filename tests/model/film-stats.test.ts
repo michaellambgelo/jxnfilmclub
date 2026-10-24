@@ -74,6 +74,7 @@ describe('shapeStripCard', () => {
     expect(s.names.map(n => n.label)).toEqual(['You', 'Alex'])
     expect(s.names.map(n => n.sep)).toEqual([',', ''])
     expect(s.names[0].you).toBe(true)
+    expect(s.stamp).toBe(true)
     expect(s.slug).toBe('clayface')
   })
 
@@ -85,6 +86,8 @@ describe('shapeStripCard', () => {
     expect(s.countWeek).toBe('')
     expect(s.othersCount).toBe(0)
     expect(s.names.map(n => n.label)).toEqual(['You'])
+    // Only the viewer this week: their own diary entry, not You too.
+    expect(s.stamp).toBe(false)
   })
 
   it('signed in, not logged: M members have logged it', () => {
@@ -116,6 +119,8 @@ describe('shapeStripCard', () => {
     const s = shapeStripCard(c, { members: 5, logs: 6, thisWeek: 1, you: true }, { handle: 'sam' })
     expect(s.names.map(n => n.label)).toEqual(['Alex'])
     expect(s.countLine).toBe('You + 4 others have logged it · 1 this week')
+    // Logged it some other week while Alex logged it this week: You too.
+    expect(s.stamp).toBe(true)
   })
 
   it('no stats: falls back to the weekly byline', () => {
@@ -202,6 +207,8 @@ describe('shapeFilmPage', () => {
       watchers: [{ name: 'Alex', handle: 'alex', rating: 4.5, liked: true, dates: ['2026-10-22', '2026-01-03'], review: 'Great.' }],
     })
     expect(f.countLine).toBe('You + 3 others have logged it · 2 this week')
+    expect(f.stamp).toBe(true)
+    expect(shapeFilmPage({ ...body, members: 1, thisWeek: 1, you: true }).stamp).toBe(false)
     expect(f.signedIn).toBe(true)
     expect(f.watchers[0]).toEqual({ name: 'Alex', handle: 'alex', stars: '★★★★½', liked: true, dates: 'Oct 22, 2026, Jan 3, 2026', review: 'Great.' })
     expect(f.unnamed).toBe(3)

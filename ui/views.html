@@ -749,13 +749,13 @@
            comma inside a no-wrap box, so a wrapped line never starts with
            one. Names past the sixth hide until the +N more button (bound by
            delegation below) opens the card. -->
-      <div :each="c in strip" key="{ c.key }" class="ws-card { c.hero ? '-hero' : '' } { c.you ? '-you' : '' }">
+      <div :each="c in strip" key="{ c.key }" class="ws-card { c.hero ? '-hero' : '' } { c.stamp ? '-you' : '' }">
         <a class="ws-film" href="{ c.link }" target="_blank" rel="noopener">
           <img :if="c.poster" src="{ c.poster }" alt="{ c.title }" class="ws-poster">
           <div :if="!c.poster" class="ws-poster ws-poster-placeholder"><span>{ c.title }</span></div>
         </a>
         <div class="ws-info">
-          <span :if="c.you" class="ws-stamp">You too</span>
+          <span :if="c.stamp" class="ws-stamp">You too</span>
           <h3 class="ws-name"><a :if="!c.fallback && c.slug" href="/film?slug={ c.slug }" class="ws-film-link">{ c.title }</a><span :if="c.fallback || !c.slug">{ c.title }</span><span :if="c.year" class="ws-year">{ c.year }</span></h3>
           <p :if="c.countLine" class="ws-count"><b :if="c.countLead">{ c.countLead }</b>{ c.countTail }<span :if="c.countWeek" class="ws-week">{ c.countWeek }</span></p>
           <p class="ws-byline"><span :if="c.fallback" class="ws-by">Watched by</span><span :each="w in c.names" key="{ w.handle }" class="ws-who { w.extra ? '-extra' : '' } { w.you ? '-you' : '' }"><button type="button" class="ws-watcher" data-handle="{ w.handle }">{ w.label }</button><span class="ws-sep { w.cut ? '-cut' : '' }">{ w.sep }</span></span><button :if="c.overflow" type="button" class="ws-more">+{ c.overflow } more</button></p>
@@ -955,7 +955,7 @@
         <h1 class="fp-title">{ f.title }<span :if="f.year" class="fp-year">{ f.year }</span></h1>
         <p class="fp-count"><b :if="f.countLead">{ f.countLead }</b>{ f.countTail }<span :if="f.countWeek" class="ws-week">{ f.countWeek }</span></p>
         <p class="fp-logs">{ f.logs === 1 ? '1 log' : f.logs + ' logs' }, rewatches included</p>
-        <span :if="f.you" class="ws-stamp">You too</span>
+        <span :if="f.stamp" class="ws-stamp">You too</span>
         <a class="fp-lb" href="https://letterboxd.com/film/{ f.slug }/" target="_blank" rel="noopener">On Letterboxd</a>
       </div>
     </header>

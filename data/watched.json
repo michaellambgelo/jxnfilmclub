@@ -903,6 +903,15 @@
   "VesperEvensong": [
     {
       "liked": true,
+      "link": "https://letterboxd.com/vesperevensong/film/the-prestige/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/1/4/7/51147-the-prestige-0-600-0-900-crop.jpg?v=ad7e891177",
+      "rating": "4.5",
+      "title": "The Prestige",
+      "watched_date": "2026-10-23",
+      "year": "2006"
+    },
+    {
+      "liked": true,
       "link": "https://letterboxd.com/vesperevensong/film/toy-story-5/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/9/7/7/1/8/6/977186-toy-story-5-0-600-0-900-crop.jpg?v=d0ac6a7d01",
       "rating": "3.5",
@@ -1001,16 +1010,6 @@
       "title": "Badlands",
       "watched_date": "2026-10-13",
       "year": "1973"
-    },
-    {
-      "liked": true,
-      "link": "https://letterboxd.com/vesperevensong/film/napoleon-dynamite/2/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/7/8/6/7/47867-napoleon-dynamite-0-600-0-900-crop.jpg?v=dc5d6552f9",
-      "rating": "5.0",
-      "rewatch": true,
-      "title": "Napoleon Dynamite",
-      "watched_date": "2026-10-12",
-      "year": "2004"
     }
   ],
   "badmov1eenjoyer": [
@@ -1846,6 +1845,14 @@
   ],
   "jl7345": [
     {
+      "link": "https://letterboxd.com/jl7345/film/something-wicked-this-way-comes/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/3/6/4/9/7/36497-something-wicked-this-way-comes-0-600-0-900-crop.jpg?v=d91800d38e",
+      "rating": "3.5",
+      "title": "Something Wicked This Way Comes",
+      "watched_date": "2026-10-23",
+      "year": "1983"
+    },
+    {
       "link": "https://letterboxd.com/jl7345/film/funny-games/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/4/1/8/46418-funny-games-0-600-0-900-crop.jpg?v=00900d829d",
       "rating": "4.0",
@@ -1936,14 +1943,6 @@
       "title": "Disclosure Day",
       "watched_date": "2026-06-12",
       "year": "2026"
-    },
-    {
-      "link": "https://letterboxd.com/jl7345/film/nights-of-cabiria/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/3/9/6/3/8/39638-nights-of-cabiria-0-600-0-900-crop.jpg?v=e4cbc9fcb0",
-      "rating": "5.0",
-      "title": "Nights of Cabiria",
-      "watched_date": "2026-05-25",
-      "year": "1957"
     }
   ],
   "jon_knowledge": [

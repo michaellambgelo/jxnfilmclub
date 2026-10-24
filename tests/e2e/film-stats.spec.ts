@@ -77,6 +77,28 @@ test.describe('watched strip: You + the club', () => {
     await expect(card(page, 'Digger')).not.toHaveClass(/-you/)
   })
 
+  test('count line only says what the card does not: one member, all this week', async ({ page }) => {
+    await mockWatched(page)
+    await mockStats(page, {
+      'digger-2026': { members: 5, logs: 5, thisWeek: 5 },
+      'the-odyssey-2026': { members: 14, logs: 15, thisWeek: 8 },
+      'obsession-2025': { members: 1, logs: 1, thisWeek: 1 },
+    })
+    await page.goto('/watched')
+
+    // One member: the name under the title already says it.
+    const obsession = card(page, 'Obsession')
+    await expect(obsession.locator('.ws-who')).toHaveCount(1)
+    await expect(obsession.locator('.ws-count')).toHaveCount(0)
+    // Everyone logged it this week: no week part to repeat the count.
+    await expect(card(page, 'Digger').locator('.ws-count')).toHaveText('5 members have logged it')
+    await expect(card(page, 'Digger').locator('.ws-week')).toHaveCount(0)
+    // Otherwise the week part is its own no-wrap piece.
+    const week = card(page, 'The Odyssey').locator('.ws-week')
+    await expect(week).toHaveText('· 8 this week')
+    expect(await week.evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap')
+  })
+
   test('more than six watchers fold behind +N more, which opens in place', async ({ page }) => {
     await mockWatched(page)
     await mockStats(page, { 'the-odyssey-2026': { members: 14, logs: 15, thisWeek: 8 } })

@@ -36,12 +36,18 @@ describe('filmSlug', () => {
 
 describe('filmCountLine', () => {
   it('leads with You when the viewer logged it', () => {
-    expect(filmCountLine(9, 3, true)).toEqual({ lead: 'You', tail: ' + 8 others have logged it · 3 this week', line: 'You + 8 others have logged it · 3 this week', others: 8 })
+    expect(filmCountLine(9, 3, true)).toEqual({ lead: 'You', tail: ' + 8 others have logged it ', week: '· 3 this week', line: 'You + 8 others have logged it · 3 this week', others: 8 })
     expect(filmCountLine(2, 0, true).line).toBe('You + 1 other have logged it')
   })
 
   it('says only you when nobody else has', () => {
-    expect(filmCountLine(1, 1, true)).toEqual({ lead: '', tail: 'Only you have logged it · 1 this week', line: 'Only you have logged it · 1 this week', others: 0 })
+    expect(filmCountLine(1, 1, true)).toEqual({ lead: '', tail: 'Only you have logged it', week: '', line: 'Only you have logged it', others: 0 })
+  })
+
+  it('drops the week part when every logger is from this week', () => {
+    expect(filmCountLine(7, 7, true).line).toBe('You + 6 others have logged it')
+    expect(filmCountLine(3, 3, false)).toEqual({ lead: '', tail: '3 members have logged it', week: '', line: '3 members have logged it', others: 3 })
+    expect(filmCountLine(3, 1, false).week).toBe('· 1 this week')
   })
 
   it('counts members otherwise, singular for one', () => {
@@ -71,10 +77,14 @@ describe('shapeStripCard', () => {
     expect(s.slug).toBe('clayface')
   })
 
-  it('viewer alone: Only you have logged it, no week suffix at zero', () => {
-    const s = shapeStripCard(card([]), { members: 1, logs: 1, thisWeek: 0, you: true }, { handle: 'sam' })
-    expect(s.countLine).toBe('Only you have logged it')
+  it('viewer alone: no count line, the You name says it', () => {
+    const s = shapeStripCard(card([{ name: 'Sam', handle: 'sam' }]), { members: 1, logs: 1, thisWeek: 1, you: true }, { handle: 'sam' })
+    expect(s.fallback).toBe(false)
+    expect(s.you).toBe(true)
+    expect(s.countLine).toBe('')
+    expect(s.countWeek).toBe('')
     expect(s.othersCount).toBe(0)
+    expect(s.names.map(n => n.label)).toEqual(['You'])
   })
 
   it('signed in, not logged: M members have logged it', () => {
@@ -86,10 +96,11 @@ describe('shapeStripCard', () => {
     expect(s.names.map(n => n.label)).toEqual(['Alex'])
   })
 
-  it('signed out: the same count line, singular member', () => {
+  it('one member: no count line, the one name says it', () => {
     const c = card([{ name: 'Alex', handle: 'alex' }])
     const s = shapeStripCard(c, { members: 1, logs: 1, thisWeek: 1 }, null)
-    expect(s.countLine).toBe('1 member has logged it · 1 this week')
+    expect(s.fallback).toBe(false)
+    expect(s.countLine).toBe('')
     expect(s.names[0].label).toBe('Alex')
   })
 
@@ -97,7 +108,7 @@ describe('shapeStripCard', () => {
     const c = card([{ name: 'Alex', handle: 'alex' }, { name: 'Sam', handle: 'Sam' }])
     const s = shapeStripCard(c, { members: 1, logs: 1, thisWeek: 1, you: false }, { handle: 'sam' })
     expect(s.you).toBe(true)
-    expect(s.countLine).toBe('You + 1 other have logged it · 2 this week')
+    expect(s.countLine).toBe('You + 1 other have logged it')
   })
 
   it('does not inject the viewer when they are not among this week', () => {

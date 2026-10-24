@@ -264,6 +264,12 @@
   color: var(--ink-strong);
 }
 
+/* "· 3 this week" wraps as one piece, never as "3 this" / "week". Also
+   used by the film page count (.fp-count). */
+.ws-week {
+  white-space: nowrap;
+}
+
 .ws-film-link {
   color: inherit;
   text-decoration: none;

@@ -181,6 +181,12 @@ and renders direction A:
 - Signed out: the same count line. This week's names still show, because the
   weekly strip already shows them publicly from RSS. All-time names stay
   members-only.
+- The count line only says what the card doesn't already. A film just one
+  member logged has no count line, because the one name under it says it.
+  "· K this week" is dropped when K equals the all-time count ("You + 6
+  others have logged it", not "· 7 this week"). The film page follows the
+  second rule but keeps "Only you have logged it", since it lists no names
+  beside the count. "· K this week" never wraps mid-phrase (`.ws-week`).
 - Names beyond the first six collapse to a "+N more" button. Separators are
   markup inside each name's no-wrap span, never CSS `::before`, so a wrapped
   line can't start with a comma.

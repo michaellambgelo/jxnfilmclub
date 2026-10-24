@@ -13,7 +13,9 @@ Top to bottom:
    [Film Stats](film-stats.md) (`GET /films/stats`, fetched with a 3s budget
    that covers the session refresh too): "**You** + 8 others have logged it ·
    3 this week" with a "You too" stamp when the signed-in viewer logged it,
-   otherwise "9 members have logged it · 3 this week". This week's watcher
+   otherwise "9 members have logged it · 3 this week". The line is left off
+   when only one member has logged the film, and the week part when it
+   equals the all-time count. This week's watcher
    names follow, the viewer first; past six they collapse behind a "+N more"
    button that opens the card in place and moves focus to the first revealed
    name. Names are buttons that scroll to that member's section. The title

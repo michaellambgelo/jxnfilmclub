@@ -591,18 +591,24 @@ export function filmViewer(): { id?: string; handle?: string } | null {
 
 // The direction A count line, shared by the strip and the film page.
 // you: the viewer has a log of it. members: distinct loggers, all time.
+//
+// The week part only shows when it says something the all-time count does
+// not (some, but not all, of the loggers are from this week). It comes back
+// on its own, starting at the middle dot, so the template can keep it from
+// wrapping; tail ends with the space that is the break before it.
 export function filmCountLine(members: number, thisWeek: number, you: boolean) {
   const m = Math.max(0, Number(members) || 0)
   const w = Math.max(0, Number(thisWeek) || 0)
-  const week = w > 0 ? ' · ' + w + ' this week' : ''
+  const week = w > 0 && w < m ? '· ' + w + ' this week' : ''
+  const gap = week ? ' ' : ''
   if (you) {
     const others = Math.max(0, m - 1)
-    if (!others) return { lead: '', tail: 'Only you have logged it' + week, line: 'Only you have logged it' + week, others }
-    const tail = ' + ' + others + (others === 1 ? ' other' : ' others') + ' have logged it' + week
-    return { lead: 'You', tail, line: 'You' + tail, others }
+    if (!others) return { lead: '', tail: 'Only you have logged it' + gap, week, line: 'Only you have logged it' + gap + week, others }
+    const tail = ' + ' + others + (others === 1 ? ' other' : ' others') + ' have logged it' + gap
+    return { lead: 'You', tail, week, line: 'You' + tail + week, others }
   }
-  const tail = m + (m === 1 ? ' member has' : ' members have') + ' logged it' + week
-  return { lead: '', tail, line: tail, others: m }
+  const tail = m + (m === 1 ? ' member has' : ' members have') + ' logged it' + gap
+  return { lead: '', tail, week, line: tail + week, others: m }
 }
 
 export const STRIP_NAMES_SHOWN = 6
@@ -637,7 +643,7 @@ export function shapeStripCard(card: any, stats: any, viewer: any) {
   const has = !!(stats && typeof stats === 'object' && Number(stats.members) > 0)
   if (!has) {
     // Endpoint down or film not ingested: today's weekly-only byline.
-    return { slug, fallback: true, you: false, members: 0, countLead: '', countTail: '', countLine: '', othersCount: 0, names, overflow }
+    return { slug, fallback: true, you: false, members: 0, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: 0, names, overflow }
   }
   // The weekly names come from the same RSS ingest reads, so a viewer named
   // here has logged it even if ingest has not caught up yet; never let the
@@ -645,8 +651,13 @@ export function shapeStripCard(card: any, stats: any, viewer: any) {
   const you = stats.you === true || mine.length > 0
   const members = Math.max(Number(stats.members) || 0, watchers.length)
   const thisWeek = Math.max(Number(stats.thisWeek) || 0, watchers.length)
+  // A film one member logged has no count line: the one name on the card
+  // already says it.
+  if (members < 2) {
+    return { slug, fallback: false, you, members, countLead: '', countTail: '', countWeek: '', countLine: '', othersCount: you ? 0 : members, names, overflow }
+  }
   const c = filmCountLine(members, thisWeek, you)
-  return { slug, fallback: false, you, members, countLead: c.lead, countTail: c.tail, countLine: c.line, othersCount: c.others, names, overflow }
+  return { slug, fallback: false, you, members, countLead: c.lead, countTail: c.tail, countWeek: c.week, countLine: c.line, othersCount: c.others, names, overflow }
 }
 
 // The whole strip: each card shaped, and the most-shared film (by all-time
@@ -736,6 +747,7 @@ export function shapeFilmPage(data: any, events: Record<string, any> = {}) {
     you: d.you === true,
     countLead: c.lead,
     countTail: c.tail,
+    countWeek: c.week,
     countLine: c.line,
     avg: avg,
     avgLabel: avg == null ? '' : avg.toFixed(2),

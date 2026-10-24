@@ -188,7 +188,9 @@ and renders direction A:
   "· K this week" is dropped when K equals the all-time count ("You + 6
   others have logged it", not "· 7 this week"). The film page follows the
   second rule but keeps "Only you have logged it", since it lists no names
-  beside the count. "· K this week" never wraps mid-phrase (`.ws-week`).
+  beside the count. "K this week" never wraps mid-phrase (`.ws-week`), and
+  the middle dot before it is held to "logged it" by a no-break space, so a
+  wrap leaves the dot ending the first line, never leading the second.
 - Names beyond the first six collapse to a "+N more" button. Separators are
   markup inside each name's no-wrap span, never CSS `::before`, so a wrapped
   line can't start with a comma.

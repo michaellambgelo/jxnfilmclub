@@ -34,9 +34,11 @@ describe('filmSlug', () => {
   })
 })
 
+const NBSP = String.fromCharCode(160)
+
 describe('filmCountLine', () => {
   it('leads with You when the viewer logged it', () => {
-    expect(filmCountLine(9, 3, true)).toEqual({ lead: 'You', tail: ' + 8 others have logged it ', week: '· 3 this week', line: 'You + 8 others have logged it · 3 this week', others: 8 })
+    expect(filmCountLine(9, 3, true)).toEqual({ lead: 'You', tail: ' + 8 others have logged it' + NBSP + '· ', week: '3 this week', line: 'You + 8 others have logged it · 3 this week', others: 8 })
     expect(filmCountLine(2, 0, true).line).toBe('You + 1 other have logged it')
   })
 
@@ -47,7 +49,9 @@ describe('filmCountLine', () => {
   it('drops the week part when every logger is from this week', () => {
     expect(filmCountLine(7, 7, true).line).toBe('You + 6 others have logged it')
     expect(filmCountLine(3, 3, false)).toEqual({ lead: '', tail: '3 members have logged it', week: '', line: '3 members have logged it', others: 3 })
-    expect(filmCountLine(3, 1, false).week).toBe('· 1 this week')
+    expect(filmCountLine(3, 1, false).week).toBe('1 this week')
+    // The dot stays on the first line: bound to the last word, break after it.
+    expect(filmCountLine(3, 1, false).tail).toBe('3 members have logged it' + NBSP + '· ')
   })
 
   it('counts members otherwise, singular for one', () => {

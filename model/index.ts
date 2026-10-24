@@ -594,21 +594,24 @@ export function filmViewer(): { id?: string; handle?: string } | null {
 //
 // The week part only shows when it says something the all-time count does
 // not (some, but not all, of the loggers are from this week). It comes back
-// on its own, starting at the middle dot, so the template can keep it from
-// wrapping; tail ends with the space that is the break before it.
+// on its own so the template can keep it from wrapping. tail ends with the
+// middle dot, held to the last word by a no-break space, so a wrap leaves the
+// dot at the end of the first line rather than leading the second. line is
+// the plain-space form, for tests and labels.
 export function filmCountLine(members: number, thisWeek: number, you: boolean) {
   const m = Math.max(0, Number(members) || 0)
   const w = Math.max(0, Number(thisWeek) || 0)
-  const week = w > 0 && w < m ? '· ' + w + ' this week' : ''
-  const gap = week ? ' ' : ''
+  const week = w > 0 && w < m ? w + ' this week' : ''
+  const gap = week ? String.fromCharCode(160) + '· ' : ''
+  const plain = (t: string) => t.split(String.fromCharCode(160)).join(' ')
   if (you) {
     const others = Math.max(0, m - 1)
-    if (!others) return { lead: '', tail: 'Only you have logged it' + gap, week, line: 'Only you have logged it' + gap + week, others }
+    if (!others) return { lead: '', tail: 'Only you have logged it' + gap, week, line: plain('Only you have logged it' + gap + week), others }
     const tail = ' + ' + others + (others === 1 ? ' other' : ' others') + ' have logged it' + gap
-    return { lead: 'You', tail, week, line: 'You' + tail + week, others }
+    return { lead: 'You', tail, week, line: plain('You' + tail + week), others }
   }
   const tail = m + (m === 1 ? ' member has' : ' members have') + ' logged it' + gap
-  return { lead: '', tail, week, line: tail + week, others: m }
+  return { lead: '', tail, week, line: plain(tail + week), others: m }
 }
 
 export const STRIP_NAMES_SHOWN = 6

@@ -264,7 +264,8 @@
   color: var(--ink-strong);
 }
 
-/* "· 3 this week" wraps as one piece, never as "3 this" / "week". Also
+/* "3 this week" wraps as one piece, never as "3 this" / "week"; the dot
+   before it stays at the end of the line above (see filmCountLine). Also
    used by the film page count (.fp-count). */
 .ws-week {
   white-space: nowrap;

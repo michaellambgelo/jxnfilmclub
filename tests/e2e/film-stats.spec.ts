@@ -96,7 +96,9 @@ test.describe('watched strip: You + the club', () => {
     await expect(card(page, 'Digger').locator('.ws-week')).toHaveCount(0)
     // Otherwise the week part is its own no-wrap piece.
     const week = card(page, 'The Odyssey').locator('.ws-week')
-    await expect(week).toHaveText('· 8 this week')
+    await expect(week).toHaveText('8 this week')
+    // The middle dot ends the first line on a wrap; it never leads the second.
+    expect(await card(page, 'The Odyssey').locator('.ws-count').evaluate(el => el.textContent!.includes('logged it' + String.fromCharCode(160) + '· 8 this week'))).toBe(true)
     expect(await week.evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap')
   })
 

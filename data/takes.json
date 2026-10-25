@@ -22,6 +22,17 @@
     "year": "2026"
   },
   {
+    "handle": "jdavidlewis",
+    "liked": true,
+    "link": "https://letterboxd.com/jdavidlewis/film/you-can-see-everything/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/6/2/9/4/4/3/1629443-you-can-see-everything-0-600-0-900-crop.jpg?v=84f6724d74",
+    "rating": "5.0",
+    "review": "Woah. I spent an hour in the parking lot discussing this movie after its 3-hr runtime.",
+    "title": "You Can See Everything",
+    "watched_date": "2026-10-24",
+    "year": "2026"
+  },
+  {
     "handle": "calissippi",
     "liked": true,
     "link": "https://letterboxd.com/calissippi/film/you-can-see-everything/",
@@ -31,6 +42,38 @@
     "title": "You Can See Everything",
     "watched_date": "2026-10-24",
     "year": "2026"
+  },
+  {
+    "handle": "badmov1eenjoyer",
+    "liked": true,
+    "link": "https://letterboxd.com/badmov1eenjoyer/film/stavros-halkias-uncle-stav/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/1/5/2/7/6/1/4/1527614-stavros-halkias-uncle-stav-0-600-0-900-crop.jpg?v=e8e334f00d",
+    "review": "my role model",
+    "title": "Stavros Halkias: Uncle Stav",
+    "watched_date": "2026-10-24",
+    "year": "2026"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/picnic-at-hanging-rock/1/",
+    "poster": "https://a.ltrbxd.com/resized/sm/upload/3k/2b/j9/o8/R1C3mLnyC7LbWoH3mhT3ZZZobv-0-600-0-900-crop.jpg?v=facefec0d5",
+    "rating": "4.0",
+    "review": "Lowkey wasn\u2019t even paying attention the first time I watched this also did it on YouTube and it was probably the worst quality you can get before it\u2019s just a screen of blobs",
+    "title": "Picnic at Hanging Rock",
+    "watched_date": "2026-10-24",
+    "year": "1975"
+  },
+  {
+    "handle": "VesperEvensong",
+    "liked": true,
+    "link": "https://letterboxd.com/vesperevensong/film/the-squid-and-the-whale/1/",
+    "poster": "https://a.ltrbxd.com/resized/film-poster/4/5/9/7/1/45971-the-squid-and-the-whale-0-600-0-900-crop.jpg?v=7bfd459740",
+    "rating": "5.0",
+    "review": "Sabrea agrees on the 5 stars",
+    "title": "The Squid and the Whale",
+    "watched_date": "2026-10-24",
+    "year": "2005"
   },
   {
     "handle": "jon_knowledge",
@@ -137,17 +180,6 @@
     "year": "2024"
   },
   {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/full-metal-jacket/",
-    "poster": "https://a.ltrbxd.com/resized/sm/upload/l0/l4/6c/7v/29veIwD38rVL2qY74emXQw4y25H-0-600-0-900-crop.jpg?v=6e44829670",
-    "rating": "5.0",
-    "review": "Who knew a guy named Stanley could make movies this good",
-    "title": "Full Metal Jacket",
-    "watched_date": "2026-10-20",
-    "year": "1987"
-  },
-  {
     "handle": "bearleebooks",
     "liked": true,
     "link": "https://letterboxd.com/bearleebooks/film/under-the-shadow/",
@@ -167,17 +199,6 @@
     "title": "Paranormal Activity: The Ghost Dimension",
     "watched_date": "2026-10-19",
     "year": "2015"
-  },
-  {
-    "handle": "VesperEvensong",
-    "liked": true,
-    "link": "https://letterboxd.com/vesperevensong/film/digger-2026/1/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/1/1/3/2/6/8/8/1132688-digger-2026-0-600-0-900-crop.jpg?v=81ec883a95",
-    "rating": "5.0",
-    "review": "Still peak",
-    "title": "Digger",
-    "watched_date": "2026-10-19",
-    "year": "2026"
   },
   {
     "handle": "Moviemont",
@@ -249,16 +270,6 @@
     "title": "12 Angry Men",
     "watched_date": "2026-10-15",
     "year": "1957"
-  },
-  {
-    "handle": "badmov1eenjoyer",
-    "link": "https://letterboxd.com/badmov1eenjoyer/film/the-usual-suspects/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/5/1/4/9/5/51495-the-usual-suspects-0-600-0-900-crop.jpg?v=c02dce5b81",
-    "rating": "4.0",
-    "review": "nailed the whole twist within 20 minutes but main critique is not enough BDT.",
-    "title": "The Usual Suspects",
-    "watched_date": "2026-10-14",
-    "year": "1995"
   },
   {
     "handle": "isawthatontv",
@@ -493,16 +504,6 @@
     "title": "A Complete Unknown",
     "watched_date": "2026-07-19",
     "year": "2024"
-  },
-  {
-    "handle": "jdavidlewis",
-    "link": "https://letterboxd.com/jdavidlewis/film/toy-story-5/",
-    "poster": "https://a.ltrbxd.com/resized/film-poster/9/7/7/1/8/6/977186-toy-story-5-0-600-0-900-crop.jpg?v=d0ac6a7d01",
-    "rating": "5.0",
-    "review": "Cried a bunch of times",
-    "title": "Toy Story 5",
-    "watched_date": "2026-06-21",
-    "year": "2026"
   },
   {
     "handle": "jl7345",

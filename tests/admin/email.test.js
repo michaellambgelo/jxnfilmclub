@@ -16,12 +16,21 @@ const event = {
 }
 
 describe('emailShellHtml', () => {
-  // The newsletter compose default was hand-written before the shell existed.
-  // Extracting the shell must not have changed a byte of what admins see.
-  it('rebuilds the admin newsletter template byte-for-byte', () => {
-    const m = ADMIN_JS.match(/const NEWSLETTER_TEMPLATE_HTML = emailShellHtml\(`([\s\S]*?)`\)\n/)
-    expect(m).toBeTruthy()
-    expect(emailShellHtml(m[1])).toBe(NEWSLETTER_FIXTURE)
+  // The fixture is the newsletter compose default as it was hand-written
+  // before the shell existed. Fed that template's own body row, the shell
+  // must reproduce it exactly — so the frame and header band every newsletter
+  // already sent with are what the transactional mail now wears. The body row
+  // comes from the fixture, not admin.js, so editing the placeholder copy
+  // there is not a shell regression.
+  it('reproduces the hand-written newsletter frame byte-for-byte', () => {
+    const lines = NEWSLETTER_FIXTURE.split('\n')
+    const bodyRow = lines.slice(9, -3).join('\n')  // 3 frame + 6 header lines in, 3 closing out
+    expect(bodyRow.startsWith('      <tr>')).toBe(true)
+    expect(emailShellHtml(bodyRow)).toBe(NEWSLETTER_FIXTURE)
+  })
+
+  it('is what the admin newsletter default is built from', () => {
+    expect(ADMIN_JS).toMatch(/const NEWSLETTER_TEMPLATE_HTML = emailShellHtml\(`/)
   })
 
   it('places `after` below the card, inside the page background', () => {

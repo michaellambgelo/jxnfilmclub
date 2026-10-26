@@ -71,6 +71,9 @@ GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"
 SITE_ORIGIN = "https://jxnfilm.club"
+# This Worker's own origin, for links a cron-sent mail carries (the reminder's
+# cancel link) — a scheduled run has no request URL to take it from.
+JOIN_ORIGIN = "https://join.jxnfilm.club"
 NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
 # OPTIONAL: a physical postal address for the newsletter footer (the strict
 # CAN-SPAM line). Deliberately unset — never put a home address here; if the
@@ -80,13 +83,15 @@ NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
 #   GITHUB_TOKEN      - fine-grained PAT, Contents: Write on jxnfilmclub
 #   RESEND_API_KEY    - Resend.com API key (free tier: 3k/mo)
 #   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
-#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send + /admin/scrub + /admin/member/unlink + GET /admin/tmdb/search
+#   ADMIN_TOKEN       - bearer secret guarding the /admin/* routes (newsletter send, scrub, reminders, email preview, member unlink, tmdb search, …)
 
 # Daily privacy scrub (scrubPastEvents): 30 days after a screening, delete its
 # rsvp:{id} record (attendee emails) and strip address/notes off event:{id}.
 # 08:17 UTC = 02:17/03:17 Central, off-peak.
+# Hourly at :07: 48-hour event reminders (sendEventReminders). The string must
+# match REMINDER_CRON in src/index.js — that is how scheduled() tells them apart.
 [triggers]
-crons = ["17 8 * * *"]
+crons = ["17 8 * * *", "7 * * * *"]
 
 # --- Staging env (deploys from `staging` branch) ---
 
@@ -137,12 +142,13 @@ GITHUB_OWNER = "michaellambgelo"
 GITHUB_REPO = "jxnfilmclub"
 GITHUB_BRANCH = "main"                  # source branch for seeding KV from data/attendance.json
 SITE_ORIGIN = "https://jxnfilm.club"
+JOIN_ORIGIN = "https://join-staging.jxnfilm.club"
 NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
 # NEWSLETTER_POSTAL_ADDRESS deliberately unset (see the production note).
 
 # Envs don't inherit [triggers] — staging declares its own cron.
 [env.staging.triggers]
-crons = ["17 8 * * *"]
+crons = ["17 8 * * *", "7 * * * *"]
 
 # Staging secrets are set separately:
 #   npx wrangler secret put GITHUB_TOKEN     --env staging

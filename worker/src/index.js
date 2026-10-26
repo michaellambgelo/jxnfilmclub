@@ -63,6 +63,9 @@ const VOICE_MSG_THROTTLE = 60
 const VOICE_SUBJECT_MAX = 80
 const VOICE_NOTE_MAX = 500
 
+// Must match the hourly entry in wrangler.toml [triggers] (both envs).
+const REMINDER_CRON = '7 * * * *'
+
 // Screening dates are calendar days in the club's home timezone (Jackson, MS).
 // Gating "today" off UTC instead would roll over 5-6 hours early each evening
 // Central time, blocking same-day event creation and cancelling/scrubbing
@@ -137,6 +140,11 @@ export default {
   // canonical member: rows so any race-dropped aggregate entry self-heals
   // within a day even with no member activity.
   async scheduled(controller, env, ctx) {
+    // Hourly: 48-hour event reminders. Everything below is the daily tick.
+    if (controller.cron === REMINDER_CRON) {
+      ctx.waitUntil(sendEventReminders(env, { now: controller.scheduledTime }))
+      return
+    }
     ctx.waitUntil(scrubPastEvents(env))
     ctx.waitUntil(reconcileMembersAll(env))
     // Re-send the transcription hook for any clip still without a draft, so a
@@ -238,6 +246,7 @@ async function route(request, env, ctx) {
     if (request.method === 'POST' && pathname === '/admin/newsletter/image') return handleNewsletterImageUpload(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
+    if (request.method === 'POST' && pathname === '/admin/reminders')       return handleAdminReminders(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/avatar/flag')   return handleAdminAvatarFlag(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/avatar/unflag') return handleAdminAvatarUnflag(request, env)
@@ -3770,8 +3779,8 @@ function rsvpEmailHtml(env, subject, event, address, notes, cancelUrl, opts = {}
   return transactionalEmailHtml({
     subject,
     preheader: `${fmtScreeningWhen(event)}${event.venue ? ` — ${event.venue}` : ''}`,
-    eyebrow: 'Confirmed',
-    heading: `You're in for ${event.title}`,
+    eyebrow: opts.eyebrow || 'Confirmed',
+    heading: opts.heading || `You're in for ${event.title}`,
     blocks,
     why: opts.why || `You're receiving this because you RSVP'd to ${event.title}.`,
     siteOrigin: siteOrigin(env),
@@ -3994,6 +4003,48 @@ async function sendScreeningCancelledEmail(env, member, event) {
     siteOrigin: siteOrigin(env),
   })
   await sendEmail(env, member.email, subject, text, html)
+}
+
+// Two days out (see sendEventReminders): the confirmation again, re-sent so
+// nobody has to dig for the address, the showtime, or the cancel link. A
+// confirmed seat is what earns it — the house address rides along exactly as
+// it does in the confirmation, and never to the waitlist.
+async function sendEventReminderEmail(env, entry, event, origin) {
+  if (!entry.email) return // name-only guests have nothing to send to
+  const token = await signRsvpCancelToken(env, event.id, entry.memberId)
+  const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
+  const subject = `Reminder: ${event.title} on ${fmtScreeningWhen(event)}`
+  const guest = isGuestId(entry.memberId)
+  const adder = event.hostId ? (event.hostName || 'A club member') : 'Jackson Film Club'
+  const opts = {
+    intro: `A reminder: you're on the list for ${event.title} on ${fmtScreeningWhen(event)}.`,
+    ...(guest ? {
+      cancelLines: ["Can't make it? One click removes you from the list:"],
+    } : {
+      cancelLines: [
+        "Plans changed? Use the one-click link below to cancel — it opens a spot",
+        'for the next person on the waitlist:',
+      ],
+    }),
+  }
+  const address = event.address || ''
+  const notes = event.notes || ''
+  const body = rsvpEmailBody(event, address, notes, cancelUrl, opts)
+  const html = rsvpEmailHtml(env, subject, event, address, notes, cancelUrl, {
+    ...opts,
+    // The card right below carries the date, written out; the text part has
+    // no card, so only it restates the date in the intro.
+    intro: `You're on the list for ${event.title}. Here are the details again.`,
+    eyebrow: 'Reminder',
+    heading: `See you at ${event.title}`,
+    ...(guest ? {
+      cancelLabel: 'Remove me from the list',
+      why: `You're receiving this because ${adder} added this address to the guest list for ${event.title}.`,
+    } : {
+      why: `You're receiving this because you RSVP'd to ${event.title}.`,
+    }),
+  })
+  await sendEmail(env, entry.email, subject, body, html)
 }
 
 // --- Screening route handlers ---
@@ -4974,6 +5025,117 @@ async function handleAdminScrub(request, env) {
   return json(env, { ok: true, ...scrub, reconciledMembers: reconciled.length })
 }
 
+// --- Event reminders ---
+//
+// Every confirmed RSVP (members and emailed guests, never the waitlist) gets
+// one reminder 48 hours before the event starts, on any event that takes
+// RSVPs — house, meetup, or club. An event with no showtime has no start to
+// count back from, so its reminder goes at 09:00 Central two days before.
+//
+// Driven by the hourly cron, not a timer per event: each tick sends whatever
+// is due, so a missed tick (or a deploy) costs an hour, never a reminder. The
+// window stays open REMINDER_WINDOW_MS past the due time for those retries;
+// after that the event is close enough that a reminder is noise.
+//
+// reminded:{eventId}:{date} holds the member ids already reminded. Keying on
+// the date means a rescheduled event reminds again for its new date; the TTL
+// clears it well before the 30-day scrub would have to. It holds ids only —
+// no emails — so it adds nothing the privacy policy has to account for.
+//
+// Someone whose RSVP landed after the due time is skipped: their confirmation
+// arrived inside the two days, which is the reminder.
+
+const REMINDER_LEAD_MS = 48 * 3600_000
+const REMINDER_WINDOW_MS = 24 * 3600_000
+const REMINDED_TTL_S = 14 * 86400
+
+const centralDate = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date(ms))
+
+// Calendar day ± n, as a YYYY-MM-DD string (no timezone involved).
+function addDays(date, n) {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+// The UTC instant of a wall-clock time in Jackson. The offset is read at the
+// guess and then again at the corrected instant, so a time either side of a
+// DST change lands on the offset in force at that moment.
+function centralInstant(date, hhmm) {
+  const [y, m, d] = date.split('-').map(Number)
+  const [h, mi] = hhmm.split(':').map(Number)
+  const wall = Date.UTC(y, m - 1, d, h, mi)
+  const offsetAt = (ms) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago', hourCycle: 'h23',
+      year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric',
+    }).formatToParts(new Date(ms)).map(x => [x.type, x.value]))
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - ms
+  }
+  const guess = wall - offsetAt(wall)
+  return wall - offsetAt(guess)
+}
+
+// When this event's reminder is due (ms), or null if it can't have one.
+function reminderDueAt(event) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(event?.date || '')) return null
+  if (/^\d{1,2}:\d{2}$/.test(event.time || '')) return centralInstant(event.date, event.time) - REMINDER_LEAD_MS
+  return centralInstant(addDays(event.date, -2), '09:00')
+}
+
+function joinOrigin(env) {
+  return env.JOIN_ORIGIN || 'https://join.jxnfilm.club'
+}
+
+async function sendEventReminders(env, { now = Date.now(), dryRun = false } = {}) {
+  const today = centralDate(now)
+  const horizon = addDays(today, 3)
+  const origin = joinOrigin(env)
+  const due = []
+  let sent = 0
+  for (const proj of await readEventsAll(env)) {
+    // events:all narrows the scan to the next few days before any row read.
+    if (!proj?.date || proj.date < today || proj.date > horizon || !rsvpEnabled(proj)) continue
+    const event = await readEvent(env, proj.id)
+    if (!event || !rsvpEnabled(event)) continue
+    const dueAt = reminderDueAt(event)
+    if (dueAt === null || now < dueAt || now >= dueAt + REMINDER_WINDOW_MS) continue
+
+    const key = `reminded:${event.id}:${event.date}`
+    const done = new Set(safeParseArray(await env.ATTENDANCE_KV.get(key) || '[]'))
+    const rsvp = await readRsvp(env, event.id)
+    const pending = rsvp.confirmed.filter(r =>
+      r.email && !done.has(r.memberId) && !(typeof r.at === 'number' && r.at >= dueAt))
+    due.push({ id: event.id, title: event.title, recipients: pending.length })
+    if (dryRun || !pending.length) continue
+
+    for (const r of pending) {
+      try {
+        await sendEventReminderEmail(env, r, event, origin)
+        done.add(r.memberId)
+        sent++
+      } catch (e) {
+        // Left out of `done`, so the next hourly tick retries this one.
+        console.error('reminder email failed:', e?.message || e)
+      }
+    }
+    // One write per event, not per send: KV allows one write a second to a key.
+    await env.ATTENDANCE_KV.put(key, JSON.stringify([...done]), { expirationTtl: REMINDED_TTL_S })
+  }
+  console.log(`sendEventReminders: events=${due.length} sent=${sent}${dryRun ? ' (dry run)' : ''}`)
+  return { events: due, sent }
+}
+
+// POST /admin/reminders (ADMIN_TOKEN) { dryRun? } — run the hourly sweep now.
+// dryRun lists what is due without mailing anyone or marking it sent.
+async function handleAdminReminders(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const { dryRun } = await request.json().catch(() => ({}))
+  return json(env, { ok: true, ...await sendEventReminders(env, { dryRun: !!dryRun }) })
+}
+
 // Account-deletion sweep: remove the member's {memberId, name, email, at}
 // entries from every rsvp:{eventId} record. Like anonymizeAttendance there's
 // no per-member index, so this walks the whole prefix — cheap at club scale,
@@ -5290,6 +5452,7 @@ const EMAIL_PREVIEW_TYPES = [
   ['update', 'Event updated'],
   ['waitlist-update', 'Event updated (waitlist)'],
   ['cancelled', 'Event cancelled'],
+  ['reminder', 'Reminder (48 hours before)'],
   ['signup', 'Signup code'],
   ['login', 'Login code'],
 ]
@@ -5323,6 +5486,7 @@ async function handleEmailPreview(request, env) {
     'update': (e) => sendScreeningUpdateEmail(e, member, event, changes, origin),
     'waitlist-update': (e) => sendWaitlistUpdateEmail(e, member, event, changes, 1),
     'cancelled': (e) => sendScreeningCancelledEmail(e, member, event),
+    'reminder': (e) => sendEventReminderEmail(e, { memberId: member.id, email: to }, event, origin),
     'signup': (e) => sendSignupEmail(e, to, '123456'),
     'login': (e) => sendLoginEmail(e, to, '123456'),
   }

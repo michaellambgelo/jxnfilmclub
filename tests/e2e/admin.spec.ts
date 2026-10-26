@@ -134,7 +134,7 @@ test.describe('admin dashboard', () => {
     await seedKv(page, '__last_email__', '')
     await page.goto(`${ADMIN_ORIGIN}/`)
     await page.locator('#tabs button[data-tab="emails"]').click()
-    await expect(page.locator('.email-card')).toHaveCount(9)
+    await expect(page.locator('.email-card')).toHaveCount(10)
     await expect(page.locator('.email-card', { hasText: 'RSVP confirmation' })).toContainText("You're in for")
     expect(await getKv(page, '__last_email__')).toBe('')
 

@@ -35,7 +35,7 @@ describe('POST /admin/email/preview', () => {
     const { event, emails } = await res.json()
     expect(event.id).toBe('preview-sample')
     expect(emails.map(e => e.type)).toEqual([
-      'rsvp', 'guest', 'tickets-pending', 'tickets-on-sale', 'update', 'waitlist-update', 'cancelled', 'signup', 'login',
+      'rsvp', 'guest', 'tickets-pending', 'tickets-on-sale', 'update', 'waitlist-update', 'cancelled', 'reminder', 'signup', 'login',
     ])
     for (const e of emails) {
       expect(e.subject, e.type).toBeTruthy()

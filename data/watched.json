@@ -452,6 +452,14 @@
   ],
   "Moviemont": [
     {
+      "link": "https://letterboxd.com/moviemont/film/the-invite-2026/",
+      "poster": "https://a.ltrbxd.com/resized/film-poster/8/5/4/8/3/1/854831-the-invite-2026-0-600-0-900-crop.jpg?v=ee72905e48",
+      "rating": "4.0",
+      "title": "The Invite",
+      "watched_date": "2026-10-25",
+      "year": "2026"
+    },
+    {
       "liked": true,
       "link": "https://letterboxd.com/moviemont/film/the-last-waltz/",
       "poster": "https://a.ltrbxd.com/resized/film-poster/4/3/4/4/9/43449-the-last-waltz-0-600-0-900-crop.jpg?v=e137475542",
@@ -539,14 +547,6 @@
       "title": "Party Girl",
       "watched_date": "2026-03-01",
       "year": "1995"
-    },
-    {
-      "link": "https://letterboxd.com/moviemont/film/tron-ares/",
-      "poster": "https://a.ltrbxd.com/resized/film-poster/4/6/2/9/0/3/462903-tron-ares-0-600-0-900-crop.jpg?v=a7c7de2bbc",
-      "rating": "3.0",
-      "title": "TRON: Ares",
-      "watched_date": "2026-01-07",
-      "year": "2025"
     }
   ],
   "Oscar_G": [

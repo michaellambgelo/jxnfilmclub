@@ -14,6 +14,12 @@ import {
   validGiveaway, deleteGiveaway, editExternalEntrants, isMissingTable, listExternalEntrants,
 } from './giveaways.js'
 import { buildVenueMap, DEFAULT_VENUES, validVenueList } from './venues.js'
+// Shared with the admin newsletter composer so every club email wears one
+// brand. Pure string builders; the admin portal serves the same file.
+import {
+  buttonsHtml, changesHtml, codeBlockHtml, eventCardHtml, noticeHtml, notesHtml,
+  paragraphHtml, transactionalEmailHtml,
+} from '../../admin/email.js'
 import {
   anonymizeFilmLogs, centralDayCutoff, FILM_SLUG_RE, filmDetail, filmStats, ingestMany, linkScreenings,
   MAX_STATS_SLUGS, purgeFilmLogs, relinkFilmLogs,
@@ -228,6 +234,7 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'    && pathname === '/voice/audio')   return handleVoiceAudio(request, env)
 
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
+    if (request.method === 'POST' && pathname === '/admin/email/preview')   return handleEmailPreview(request, env)
     if (request.method === 'POST' && pathname === '/admin/newsletter/image') return handleNewsletterImageUpload(request, env)
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
@@ -3736,12 +3743,50 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   return lines.join('\n')
 }
 
+// HTML twin of rsvpEmailBody: the same facts, in the same order, through the
+// shared shell. The text part stays the source of truth for wording — when one
+// changes, change the other.
+function rsvpEmailHtml(env, subject, event, address, notes, cancelUrl, opts = {}) {
+  const meetup = event.kind === 'meetup'
+  const blocks = []
+  if (opts.intro) blocks.push(paragraphHtml(opts.intro))
+  blocks.push(eventCardHtml(event, { address }))
+  if (event.ticketed) {
+    blocks.push(noticeHtml(meetup ? MEETUP_TICKETED : 'This is a headcount, not a ticket — admission is sold by the venue.'))
+  } else if (meetup) {
+    blocks.push(noticeHtml(MEETUP_SELF_ORGANIZED))
+  }
+  if (notes) blocks.push(notesHtml(event.hostId ? 'Notes from the host' : 'Notes', notes))
+  // The text lines are hard-wrapped for plain-text clients and end in a colon
+  // that introduces the bare URL; here they are one sentence over a button.
+  blocks.push(paragraphHtml((opts.cancelLines || [
+    "Can't make it? Use the one-click link below to cancel — it opens a spot",
+    'for the next person on the waitlist:',
+  ]).join(' ').replace(/:$/, '.'), { muted: true }))
+  blocks.push(buttonsHtml([
+    ...(event.ticketed ? [{ href: event.ticketUrl, label: 'Buy tickets' }] : []),
+    { href: cancelUrl, label: opts.cancelLabel || 'Cancel my RSVP', secondary: true },
+  ]))
+  return transactionalEmailHtml({
+    subject,
+    preheader: `${fmtScreeningWhen(event)}${event.venue ? ` — ${event.venue}` : ''}`,
+    eyebrow: 'Confirmed',
+    heading: `You're in for ${event.title}`,
+    blocks,
+    why: opts.why || `You're receiving this because you RSVP'd to ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+}
+
 async function sendRsvpEmail(env, member, event, origin) {
   if (!member.email) return // name-only guests have nothing to send to
   const token = await signRsvpCancelToken(env, event.id, member.id)
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
-  await sendEmail(env, member.email, subject, rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl))
+  const address = event.address || ''
+  const notes = event.notes || ''
+  await sendEmail(env, member.email, subject, rsvpEmailBody(event, address, notes, cancelUrl),
+    rsvpEmailHtml(env, subject, event, address, notes, cancelUrl))
 }
 
 // Guest variant: same details, but the intro names who added them and the
@@ -3752,15 +3797,22 @@ async function sendGuestRsvpEmail(env, guest, event, origin) {
   const token = await signRsvpCancelToken(env, event.id, guest.memberId)
   const cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
   const subject = `You're in for ${event.title} on ${fmtScreeningWhen(event)}`
-  const body = rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl, {
-    intro: `${event.hostId ? (event.hostName || 'A club member') : 'Jackson Film Club'} added you to the guest list for ${event.title} on ${fmtScreeningWhen(event)}.`,
+  const adder = event.hostId ? (event.hostName || 'A club member') : 'Jackson Film Club'
+  const opts = {
+    intro: `${adder} added you to the guest list for ${event.title} on ${fmtScreeningWhen(event)}.`,
     cancelLines: [
       "Didn't expect this, or can't make it? One click removes you from the",
       'list — and we keep no other record of your email past 30 days after',
       'the screening:',
     ],
+  }
+  const body = rsvpEmailBody(event, event.address || '', event.notes || '', cancelUrl, opts)
+  const html = rsvpEmailHtml(env, subject, event, event.address || '', event.notes || '', cancelUrl, {
+    ...opts,
+    cancelLabel: 'Remove me from the list',
+    why: `You're receiving this because ${adder} added this address to the guest list for ${event.title}.`,
   })
-  await sendEmail(env, guest.email, subject, body)
+  await sendEmail(env, guest.email, subject, body, html)
 }
 
 // Acknowledges an RSVP placed before tickets went on sale. Deliberately not
@@ -3780,7 +3832,22 @@ async function sendTicketsPendingEmail(env, member, event) {
     `Date: ${fmtScreeningWhen(event)}`,
   ]
   if (event.venue) lines.push(`Venue: ${event.venue}`)
-  await sendEmail(env, member.email, `On the list: ${event.title}`, lines.join('\n'))
+  const subject = `On the list: ${event.title}`
+  // No address and no showtime, as in the text: the card shows what the text
+  // part's "Current details" shows, nothing more.
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: 'Tickets are not on sale yet — we will email you the link.',
+    eyebrow: 'On the list',
+    heading: `We have you down for ${event.title}`,
+    blocks: [
+      paragraphHtml('Tickets are not on sale yet. Admission is sold by the venue, not the club, so this is a headcount rather than a reservation: we will email you the box office link the moment tickets go live.'),
+      eventCardHtml({ ...event, time: '' }),
+    ],
+    why: `You're receiving this because you RSVP'd to ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
 // The box office link has landed. Everyone who queued while tickets were
@@ -3799,7 +3866,21 @@ async function sendTicketsOnSaleEmail(env, member, event) {
   ]
   if (event.venue) lines.push(`Venue: ${event.venue}`)
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-  await sendEmail(env, member.email, `Tickets on sale: ${event.title}`, lines.join('\n'))
+  const subject = `Tickets on sale: ${event.title}`
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: 'The box office link is live — your spot is not held.',
+    eyebrow: 'Tickets on sale',
+    heading: `Tickets for ${event.title} are on sale now`,
+    blocks: [
+      paragraphHtml('Admission is sold by the venue, so your spot is not held — buy yours here:'),
+      buttonsHtml([{ href: event.ticketUrl, label: 'Buy tickets' }]),
+      eventCardHtml(event),
+    ],
+    why: `You're receiving this because you RSVP'd to ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
 async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
@@ -3825,7 +3906,25 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   if (event.notes) lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', event.notes)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
-  await sendEmail(env, member.email, subject, lines.join('\n'))
+  // Address as the text part has it (eventWhereLines reads event.address):
+  // this recipient holds a seat.
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: changes.length ? `What changed: ${changes.map(c => c.field).join(', ')}` : 'Current details inside.',
+    eyebrow: 'Updated',
+    heading: `${event.title} has been updated`,
+    blocks: [
+      paragraphHtml(`Heads up — ${eventRunner(event)} updated ${eventNoun(event)} "${event.title}".`),
+      changesHtml(changes),
+      eventCardHtml(event, { address: event.address || '' }),
+      event.kind === 'meetup' ? noticeHtml(MEETUP_SELF_ORGANIZED) : '',
+      event.notes ? notesHtml(event.hostId ? 'Notes from the host' : 'Notes', event.notes) : '',
+      buttonsHtml([{ href: cancelUrl, label: "Can't make it anymore? Cancel", secondary: true }]),
+    ],
+    why: `You're receiving this because you're on the list for ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
 // Waitlisted members get the same change notice, minus the cancel link (they
@@ -3851,7 +3950,24 @@ async function sendWaitlistUpdateEmail(env, member, event, changes, position) {
   if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
   lines.push('', 'No action needed — we will email you if a spot opens up.')
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
-  await sendEmail(env, member.email, subject, lines.join('\n'))
+  // No address, no notes — same as the text part, for the same reason.
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: `You are #${position} on the waitlist.`,
+    eyebrow: 'Updated',
+    heading: `${event.title} has been updated`,
+    blocks: [
+      paragraphHtml(`Heads up — ${eventRunner(event)} updated ${eventNoun(event)} "${event.title}".`),
+      paragraphHtml(`You are #${position} on the waitlist, so this affects you if a spot opens.`),
+      changesHtml(changes),
+      eventCardHtml(event),
+      event.kind === 'meetup' ? noticeHtml(MEETUP_SELF_ORGANIZED) : '',
+      paragraphHtml('No action needed — we will email you if a spot opens up.', { muted: true }),
+    ],
+    why: `You're receiving this because you're on the waitlist for ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
 async function sendScreeningCancelledEmail(env, member, event) {
@@ -3863,7 +3979,21 @@ async function sendScreeningCancelledEmail(env, member, event) {
     '',
     'No action needed on your end. Watch the events page for future screenings.',
   ].join('\n')
-  await sendEmail(env, member.email, subject, text)
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: 'No action needed on your end.',
+    // No eyebrow: the card carries the Cancelled label, once is enough.
+    heading: `${event.title} is cancelled`,
+    blocks: [
+      paragraphHtml(`Sorry — ${eventRunner(event)} cancelled ${eventNoun(event)} "${event.title}" that was scheduled for ${fmtScreeningWhen(event)}.`),
+      eventCardHtml(event, { cancelled: true }),
+      paragraphHtml('No action needed on your end. Watch the events page for future screenings.'),
+      buttonsHtml([{ href: `${siteOrigin(env)}/events`, label: 'See upcoming events' }]),
+    ],
+    why: `You're receiving this because you were on the list for ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, member.email, subject, text, html)
 }
 
 // --- Screening route handlers ---
@@ -5058,7 +5188,22 @@ async function sendSignupEmail(env, to, code) {
     `Enter this 6-digit code on ${env.SITE_ORIGIN || 'https://jxnfilm.club'}/verify`,
     'to confirm your Jackson Film Club membership. This code expires in 10 minutes.',
   ].join('\n')
-  await sendEmail(env, to, subject, text)
+  const verifyUrl = `${siteOrigin(env)}/verify`
+  // The code is never in the subject or the preheader: both show on a locked
+  // phone's notification.
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: 'Your code expires in 10 minutes.',
+    heading: 'Confirm your membership',
+    blocks: [
+      paragraphHtml('Enter this 6-digit code on the verify page to confirm your Jackson Film Club membership.'),
+      codeBlockHtml(code, 'Expires in 10 minutes'),
+      buttonsHtml([{ href: verifyUrl, label: 'Open the verify page' }]),
+    ],
+    why: 'You\'re receiving this because this address was used to join Jackson Film Club.',
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, to, subject, text, html)
 }
 
 async function sendLoginEmail(env, to, code) {
@@ -5068,12 +5213,33 @@ async function sendLoginEmail(env, to, code) {
     'This code expires in 10 minutes.',
     "If you didn't request it, ignore this email.",
   ].join('\n')
-  await sendEmail(env, to, 'Your Jackson Film Club login code', text)
+  const subject = 'Your Jackson Film Club login code'
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: 'Your code expires in 10 minutes.',
+    heading: 'Your login code',
+    blocks: [
+      codeBlockHtml(code, 'Expires in 10 minutes'),
+      paragraphHtml("If you didn't request it, ignore this email.", { muted: true }),
+    ],
+    why: "You're receiving this because someone asked to sign in to Jackson Film Club with this address.",
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, to, subject, text, html)
 }
 
-async function sendEmail(env, to, subject, text) {
+// `html` is optional and always accompanies `text`, never replaces it: the
+// text part is what plain-text clients and screen readers fall back on, and
+// what the tests and the e2e stash pin wording against.
+async function sendEmail(env, to, subject, text, html) {
+  // The admin preview gallery runs the real senders against an env carrying
+  // this array, so what it shows is exactly what would be mailed.
+  if (env.__emailCapture) {
+    env.__emailCapture.push({ to, subject, text, html })
+    return
+  }
   if (env.E2E_MODE === 'true') {
-    await env.MEMBERS_KV.put('__last_email__', JSON.stringify({ to, subject, text }))
+    await env.MEMBERS_KV.put('__last_email__', JSON.stringify({ to, subject, text, html }))
     return
   }
   const res = await fetch('https://api.resend.com/emails', {
@@ -5087,9 +5253,95 @@ async function sendEmail(env, to, subject, text) {
       to: [to],
       subject,
       text,
+      ...(html ? { html } : {}),
     }),
   })
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`)
+}
+
+// --- Admin email preview gallery ---
+//
+// POST /admin/email/preview (ADMIN_TOKEN) { eventId?, type?, testTo? }
+// Renders every transactional email for one event — a real event:{id} row,
+// or a built-in sample — by running the real senders with delivery captured.
+// With `type` + `testTo`, mails that one rendering to testTo instead, subject
+// prefixed "[Test]".
+//
+// A real event's private address renders here: the caller is the admin, who
+// can already read it in the Events tab. The preview recipient is a member id
+// that is on no list, so a test mail's cancel link cancels nothing.
+
+const EMAIL_PREVIEW_SAMPLE = {
+  id: 'preview-sample', title: 'Crash at the Capri', film: 'Crash', year: 1996,
+  date: '2099-01-15', time: '19:30', venue: 'The Capri Theatre',
+  address: '123 Main St, Jackson, MS 39201', notes: 'Buzzer 5.\nPark on the street, not in the lot.',
+  hostId: 'preview-host', hostName: 'A club member',
+  // Not ticketed (a house screening never is), but carrying a link so the
+  // tickets-on-sale preview has its button.
+  ticketUrl: 'https://jxnfilm.club/events', poster: '',
+  letterboxd_uri: 'https://letterboxd.com/film/crash/',
+}
+
+const EMAIL_PREVIEW_TYPES = [
+  ['rsvp', 'RSVP confirmation'],
+  ['guest', 'Guest added'],
+  ['tickets-pending', 'Tickets not on sale yet'],
+  ['tickets-on-sale', 'Tickets on sale'],
+  ['update', 'Event updated'],
+  ['waitlist-update', 'Event updated (waitlist)'],
+  ['cancelled', 'Event cancelled'],
+  ['signup', 'Signup code'],
+  ['login', 'Login code'],
+]
+
+async function handleEmailPreview(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  const { eventId, type, testTo } = await request.json().catch(() => ({}))
+  if (testTo !== undefined && !isValidEmail(testTo)) return json(env, { error: 'testTo must be an email address' }, 400)
+  if (testTo !== undefined && !EMAIL_PREVIEW_TYPES.some(([t]) => t === type)) {
+    return json(env, { error: 'type required for a test send' }, 400)
+  }
+  let event = EMAIL_PREVIEW_SAMPLE
+  if (eventId) {
+    event = await readEvent(env, eventId)
+    if (!event) return json(env, { error: 'event not found' }, 404)
+  }
+
+  const origin = new URL(request.url).origin
+  const to = 'preview@example.com'
+  const member = { id: 'preview:not-a-member', email: to, name: 'Preview' }
+  // A plausible diff for the update mails: the date moved a week.
+  const changes = [{ field: 'date', from: '(a week earlier)', to: event.date || '' }]
+  const senders = {
+    'rsvp': (e) => sendRsvpEmail(e, member, event, origin),
+    'guest': (e) => sendGuestRsvpEmail(e, { memberId: member.id, email: to }, event, origin),
+    'tickets-pending': (e) => sendTicketsPendingEmail(e, member, event),
+    'tickets-on-sale': (e) => sendTicketsOnSaleEmail(e, member, event),
+    'update': (e) => sendScreeningUpdateEmail(e, member, event, changes, origin),
+    'waitlist-update': (e) => sendWaitlistUpdateEmail(e, member, event, changes, 1),
+    'cancelled': (e) => sendScreeningCancelledEmail(e, member, event),
+    'signup': (e) => sendSignupEmail(e, to, '123456'),
+    'login': (e) => sendLoginEmail(e, to, '123456'),
+  }
+
+  const emails = []
+  for (const [t, label] of EMAIL_PREVIEW_TYPES) {
+    if (testTo !== undefined && t !== type) continue
+    const capture = []
+    await senders[t]({ ...env, __emailCapture: capture })
+    const [mail] = capture
+    if (mail) emails.push({ type: t, label, subject: mail.subject, text: mail.text, html: mail.html })
+  }
+
+  if (testTo !== undefined) {
+    const [mail] = emails
+    await sendEmail(env, testTo, `[Test] ${mail.subject}`, mail.text, mail.html)
+    return json(env, { ok: true, sent: mail.type })
+  }
+  return json(env, { event: { id: event.id, title: event.title }, emails })
 }
 
 // --- Newsletter (opt-in announcements) ---

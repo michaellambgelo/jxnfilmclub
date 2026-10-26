@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Model layer**: TypeScript (`model/index.ts`)
 - **Styling**: Vanilla CSS (`css/`)
 - **Backend**: Cloudflare Worker (`worker/`), deploys to `join.jxnfilm.club` + `join-staging.jxnfilm.club`
-- **Email provider**: Resend (3k/mo free tier)
+- **Email provider**: Resend (3k/mo free tier). Every transactional send (`sendEmail()` in the Worker) is multipart: the text part is the source of truth for wording and what tests pin; the HTML part is built from `admin/email.js`, the shared shell the newsletter compose default also uses. Event cards map-link the venue, or the house address for a confirmed RSVP, to Google Maps (disclosed in the privacy policy). Preview + test-send in the admin **Emails** tab
 - **Tests**: Vitest + `@cloudflare/vitest-plugin` + Playwright
 
 ## Commands

@@ -269,6 +269,14 @@ describe('POST /events/:id/rsvp + waitlist', () => {
     expect(sent[0].text).toContain('123 Main St')
     expect(sent[0].text).toContain('Buzzer 5')        // host notes included
     expect(sent[0].text).toContain('/rsvp/cancel?token=')
+    // The branded HTML part carries the same facts: the address, map-linked
+    // (disclosed in the privacy policy), the notes, and the cancel button.
+    expect(sent[0].html).toContain('https://jxnfilm.club/img/logo.png')
+    expect(sent[0].html).toContain('123 Main St')
+    expect(sent[0].html).toContain('https://www.google.com/maps/search/?api=1&amp;query=123%20Main%20St')
+    expect(sent[0].html).toContain('Buzzer 5')
+    expect(sent[0].html).toContain('/rsvp/cancel?token=')
+    expect(sent[0].html).toContain('https://join.jxnfilm.club/privacy')
 
     // Second member RSVPs → waitlisted, no email yet.
     sent = captureEmails()
@@ -425,6 +433,9 @@ describe('DELETE /events/:id — host cancels screening', () => {
     expect(res.status).toBe(200)
     expect(sent).toHaveLength(1)
     expect(sent[0].subject).toMatch(/Cancelled:/)
+    expect(sent[0].html).toContain('Test Screening is cancelled')
+    // The cancellation goes to the whole list, so it never repeats the address.
+    expect(sent[0].html).not.toContain('123 Main St')
 
     // KV is torn down.
     expect(await env.ATTENDANCE_KV.get(`event:${created.id}`)).toBeNull()
@@ -808,6 +819,9 @@ describe('POST/DELETE /events/:id/rsvp/guest — manual guest RSVPs', () => {
     expect(sent[0].text).toContain('Buzzer 5')
     expect(sent[0].text).toContain('/rsvp/cancel?token=')
     expect(sent[0].text).toContain('30 days')
+    expect(sent[0].html).toContain('30 days')
+    expect(sent[0].html).toContain('Remove me from the list')
+    expect(sent[0].html).toContain(`${host.name} added this address to the guest list`)
 
     const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
     expect(rsvp.confirmed).toHaveLength(1)
@@ -1448,5 +1462,27 @@ describe('club events — social events have no film and no host', () => {
     const body = sent.map(e => e.text || '').join('\n')
     expect(body).toContain('Jackson Film Club added you')
     expect(body).not.toContain('A club member added you')
+  })
+})
+
+describe('HTML email part', () => {
+  it('escapes host-entered text rather than rendering it as markup', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    const { token: rTok } = await getTokenFor('rsvper@example.com')
+    captureEmails()
+    const created = await (await createScreening(hostTok, {
+      title: 'Crash <b>night</b> & more', notes: '<img src=x onerror=alert(1)>\nside door',
+    })).json()
+
+    const sent = captureEmails()
+    await req(`/events/${created.id}/rsvp`, { method: 'POST', token: rTok })
+    expect(sent).toHaveLength(1)
+    const { html, text } = sent[0]
+    expect(html).not.toContain('<b>night</b>')
+    expect(html).toContain('Crash &lt;b&gt;night&lt;/b&gt; &amp; more')
+    expect(html).not.toContain('<img src=x')
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;<br>side door')
+    // Text part is untouched by any of this.
+    expect(text).toContain('Crash <b>night</b> & more')
   })
 })

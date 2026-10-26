@@ -153,6 +153,11 @@ describe('PUT /admin/events/:id — the postponement workflow', () => {
 
     const waitMail = sent.find(e => e.to === 'm2@example.com')
     expect(waitMail.text).toContain('#1 on the waitlist')
+
+    // HTML part: old value struck, new value bold.
+    expect(confirmedMail.html).toContain('<s style="color:#6b675f">2099-08-01</s>')
+    expect(confirmedMail.html).toContain('<strong style="color:#100f0e">2099-09-01</strong>')
+    expect(waitMail.html).toContain('#1 on the waitlist')
   })
 
   it('never mails the private address to a waitlisted member', async () => {
@@ -166,8 +171,13 @@ describe('PUT /admin/events/:id — the postponement workflow', () => {
     await put('p3', { title: 'House', date: '2099-09-01', kind: 'house', capacity: 1, address: '9 Private Rd', venue: 'A house', rsvp: true }, true)
     const waitMail = sent.find(e => e.to === 'm2@example.com')
     expect(waitMail.text).not.toContain('9 Private Rd')
+    // Not in the HTML part either — neither as text nor inside a map link.
+    expect(waitMail.html).not.toContain('9 Private Rd')
+    expect(waitMail.html).not.toContain('Private%20Rd')
     // ...while the confirmed member, who holds a seat, still gets it.
-    expect(sent.find(e => e.to === 'm1@example.com').text).toContain('9 Private Rd')
+    const confirmedMail = sent.find(e => e.to === 'm1@example.com')
+    expect(confirmedMail.text).toContain('9 Private Rd')
+    expect(confirmedMail.html).toContain('9 Private Rd')
   })
 
   it('sends a details re-send with no change section when nothing changed', async () => {

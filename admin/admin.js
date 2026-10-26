@@ -24,6 +24,7 @@ import {
   countPendingVoice, countOpenFeedback, rsvpEnabled, sanitizeAdminEvent,
   eventIdFrom, newEventIssues, buildVenueList, unmatchedVenueNames } from './lib.js'
 import { renderContentGen } from './contentgen.js'
+import { emailShellHtml } from './email.js'
 
 const $ = (sel) => document.querySelector(sel)
 const env = () => $('#env').value
@@ -156,6 +157,7 @@ async function refreshBadges() {
 const TABS = {
   members: renderMembers,
   newsletter: renderNewsletter,
+  emails: renderEmails,
   auth: renderAuth,
   events: renderEvents,
   feedback: renderFeedback,
@@ -260,17 +262,9 @@ function memberPhotoCell(m) {
 // Default compose template — email-safe (single table, inline styles, no
 // external CSS) so it renders in Gmail/Outlook/Apple Mail as-is. The Worker
 // appends the unsubscribe + postal footer automatically; don't add one here.
-// Palette mirrors css/tokens.css: ink #100f0e, paper #f0ebe0, brand #d7321f.
-const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ea;padding:24px 0">
-  <tr><td align="center">
-    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff">
-      <tr>
-        <td align="center" style="background:#100f0e;padding:28px 24px">
-          <img src="https://jxnfilm.club/img/logo.png" width="96" height="96" alt="Jackson Film Club" style="display:block;border:0">
-          <p style="margin:14px 0 0;font-family:Georgia,'Times New Roman',serif;font-size:22px;letter-spacing:1px;color:#f0ebe0">Jackson Film Club</p>
-        </td>
-      </tr>
-      <tr>
+// The frame and header band come from email.js, the same shell every
+// transactional email uses; only the placeholder body row lives here.
+const NEWSLETTER_TEMPLATE_HTML = emailShellHtml(`      <tr>
         <td style="padding:32px 32px 24px;font-family:Georgia,'Times New Roman',serif;color:#1c1a17">
           <h1 style="margin:0 0 16px;font-size:26px;line-height:1.25;color:#100f0e">This month at the club</h1>
           <p style="margin:0 0 16px;font-size:16px;line-height:1.6">Hi everyone — here's what's coming up. Replace this copy with the announcement: the film, the date, the venue, and anything folks should bring.</p>
@@ -278,10 +272,7 @@ const NEWSLETTER_TEMPLATE_HTML = `<table role="presentation" width="100%" cellpa
           <p style="margin:0 0 24px;font-size:16px;line-height:1.6">RSVP and details are on the events page.</p>
           <p style="margin:0"><a href="https://jxnfilm.club/events" style="display:inline-block;background:#d7321f;color:#ffffff;text-decoration:none;font-size:16px;padding:12px 24px;border-radius:4px">See upcoming events</a></p>
         </td>
-      </tr>
-    </table>
-  </td></tr>
-</table>`
+      </tr>`)
 
 const NEWSLETTER_SUBJECT_PLACEHOLDER = 'This month at Jackson Film Club'
 
@@ -297,6 +288,79 @@ let nlPosterResults = []
 // reversible if we snapshot it ourselves.
 let nlUndoStack = []       // [{ html, text, label }] — newest last
 let nlInsertClean = false  // the last body change was an insert, untouched since
+
+// --- Emails tab: the transactional mail gallery ---
+//
+// Every email the join Worker sends on its own — RSVP confirmations, updates,
+// cancellations, ticket notices, login and signup codes — rendered by the
+// Worker's real senders (POST /admin/email/preview), against a built-in
+// sample event or a real one. Nothing is mailed unless Send test is pressed.
+// A real house screening's address shows here, as it does in the Events tab.
+
+let emailPreviewEvent = ''  // '' = the Worker's sample event
+
+async function renderEmails() {
+  const perEvent = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'event:' })}`)
+  const events = perEvent.keys.map(k => tryParse(perEvent.values[k.name])).filter(Boolean)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+  // A pick from the other environment would 404 after an env switch.
+  if (emailPreviewEvent && !events.some(e => e.id === emailPreviewEvent)) emailPreviewEvent = ''
+  const data = await api('POST', `/api/email/preview?${qs({ env: env() })}`,
+    JSON.stringify(emailPreviewEvent ? { eventId: emailPreviewEvent } : {}))
+
+  content().innerHTML = `
+    <div class="email-gallery-bar">
+      <label>Event
+        <select id="em-event">
+          <option value="">Sample event</option>
+          ${events.map(e => `<option value="${attr(e.id)}"${e.id === emailPreviewEvent ? ' selected' : ''}>${escapeHtml(`${e.date || '—'} · ${e.title || e.id}`)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Send tests to
+        <input id="em-test-to" type="email" placeholder="you@example.com" value="${attr(localStorage.jxnfc_email_test_to || '')}">
+      </label>
+    </div>
+    <p class="section-hint">Rendered by the join Worker's real senders on <b>${escapeHtml(env())}</b>.
+      Nothing is mailed unless you press Send test, which sends that one email with a [Test] subject.</p>
+    <div class="email-gallery">${data.emails.map(e => `
+      <section class="email-card">
+        <header>
+          <h3>${escapeHtml(e.label)}</h3>
+          <button data-em-send="${attr(e.type)}" data-em-label="${attr(e.label)}">Send test</button>
+        </header>
+        <p class="muted email-subject">${escapeHtml(e.subject)}</p>
+        <iframe sandbox data-em-frame="${attr(e.type)}" title="${attr(e.label)} preview"></iframe>
+        <details><summary>Plain-text part</summary><pre>${escapeHtml(e.text)}</pre></details>
+      </section>`).join('')}
+    </div>`
+
+  // srcdoc as a property, not an attribute in the template: no second round
+  // of escaping for a whole HTML document. The sandbox has no allow-* tokens,
+  // so links in the preview are inert.
+  for (const e of data.emails) content().querySelector(`[data-em-frame="${e.type}"]`).srcdoc = e.html
+
+  $('#em-event').addEventListener('change', (ev) => {
+    emailPreviewEvent = ev.target.value
+    withBusy(renderEmails)
+  })
+  content().querySelectorAll('[data-em-send]').forEach(btn => btn.addEventListener('click', async () => {
+    const to = $('#em-test-to').value.trim()
+    if (!to) return toast('Enter an address to send tests to', true)
+    localStorage.jxnfc_email_test_to = to
+    btn.disabled = true
+    try {
+      await api('POST', `/api/email/preview?${qs({ env: env() })}`, JSON.stringify({
+        ...(emailPreviewEvent ? { eventId: emailPreviewEvent } : {}),
+        type: btn.dataset.emSend, testTo: to,
+      }))
+      toast(`Sent "${btn.dataset.emLabel}" test to ${to}`)
+    } catch (err) {
+      toast(err.message || String(err), true)
+    } finally {
+      btn.disabled = false
+    }
+  }))
+}
 
 async function renderNewsletter() {
   // content().innerHTML is rebuilt below, so any snapshot from a previous

@@ -42,6 +42,11 @@ describe('POST /otp/request (returning members only)', () => {
     expect(body.text).toContain(code)
     // Sign-in email must NOT include Letterboxd tag copy — that's signup-only.
     expect(body.text).not.toMatch(/jxnfc-verify-/)
+    // Branded HTML part carries the code; the subject — which a locked phone
+    // shows — never does.
+    expect(body.html).toContain(`>${code}<`)
+    expect(body.html).toContain('https://jxnfilm.club/img/logo.png')
+    expect(body.subject).not.toContain(code)
   })
 
   it('silently 200s for an unknown email (no enumeration)', async () => {

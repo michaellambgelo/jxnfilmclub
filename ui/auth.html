@@ -76,12 +76,22 @@
   // session if its token is still live, silently refreshes when the device
   // was remembered, else null. Exposed on globalThis so views compiled from
   // other lib files (events RSVP, host form) share the exact same logic.
+  //
+  // One refresh at a time: on a page load with a lapsed token every mounted
+  // view asks at once (masthead, feedback, the page view, the film stats
+  // fetch), and each used to POST /session/refresh of its own. Callers that
+  // arrive while one is in flight share its result.
+  let refreshing = null
+
   async function ensureSession() {
     const s = getSession()
     if (!s) return null
     if (s.token && s.exp > Date.now()) return s
-    if (s.refresh) return refreshSession(s)
-    return null
+    if (!s.refresh) return null
+    if (!refreshing) {
+      refreshing = refreshSession(s).finally(function() { refreshing = null })
+    }
+    return refreshing
   }
 
   globalThis.jxnfcEnsureSession = ensureSession

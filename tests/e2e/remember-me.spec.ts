@@ -56,6 +56,26 @@ test.describe('remember my login on this device', () => {
     expect(s.refresh).toBeTruthy()
   })
 
+  test('a lapsed token is refreshed once per page load, not once per view', async ({ page }) => {
+    await signInRemembered(page)
+    await expireToken(page)
+
+    // Every mounted view asks for a session at once on load (masthead,
+    // feedback, the page view); they used to send one refresh each.
+    const refreshes: string[] = []
+    page.on('request', req => {
+      if (req.method() === 'POST' && req.url() === `${WORKER_ORIGIN}/session/refresh`) refreshes.push(req.url())
+    })
+    for (const path of ['/events', '/watched']) {
+      await expireToken(page)
+      refreshes.length = 0
+      await page.goto(path)
+      await expect.poll(async () => (await readSession(page)).exp).toBeGreaterThan(Date.now())
+      await page.waitForLoadState('networkidle')
+      expect(refreshes, path).toHaveLength(1)
+    }
+  })
+
   test('without the checkbox, a lapsed token still bounces to /signin', async ({ page }) => {
     await seedKv(page, `member:${EMAIL}`, JSON.stringify({
       id: 'id-' + EMAIL, email: EMAIL, name: 'Plain Member', pronouns: null, handle: null, joined: '2026-04-15',

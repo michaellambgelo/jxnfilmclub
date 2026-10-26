@@ -83,7 +83,7 @@ NEWSLETTER_FROM = "Jackson Film Club <noreply@join.jxnfilm.club>"
 #   GITHUB_TOKEN      - fine-grained PAT, Contents: Write on jxnfilmclub
 #   RESEND_API_KEY    - Resend.com API key (free tier: 3k/mo)
 #   OTP_SIGNING_KEY   - random string used to HMAC-sign session tokens
-#   ADMIN_TOKEN       - bearer secret guarding POST /admin/newsletter/send + /admin/scrub + /admin/member/unlink + GET /admin/tmdb/search
+#   ADMIN_TOKEN       - bearer secret guarding the /admin/* routes (newsletter send, scrub, reminders, email preview, member unlink, tmdb search, …)
 
 # Daily privacy scrub (scrubPastEvents): 30 days after a screening, delete its
 # rsvp:{id} record (attendee emails) and strip address/notes off event:{id}.

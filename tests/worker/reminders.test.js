@@ -182,7 +182,7 @@ describe('POST /admin/reminders', () => {
     // Due an hour ago, by the real clock.
     const soon = new Date(Date.now() + 47 * HOUR)
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(soon)
-    const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit' }).format(soon)
+    const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(soon)
     await seed([{ ...JULY, date, time }], { 'ev-july': { confirmed: [{ ...alice, at: Date.now() - 24 * HOUR }], waitlist: [] } })
     const sent = captureResend()
 

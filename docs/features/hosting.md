@@ -32,10 +32,38 @@ The public/private boundary is `publicEventProjection()` (`worker/src/index.js`)
 parking/entry details there). The canonical full row lives at `event:{id}` in
 `ATTENDANCE_KV`; the public aggregate `events:all`, `GET /events`, and the
 `data/events.json` snapshot only ever carry projections. A house host's address
-and notes leave the Worker exclusively inside RSVP/update emails to confirmed
-RSVPs (plus the host-only `GET /events/:id/host` view and the local admin
+and notes leave the Worker exclusively inside RSVP/update/reminder emails to
+confirmed RSVPs (plus the host-only `GET /events/:id/host` view and the local admin
 dashboard, which read the canonical row). Meetups store no address at all: the
 validator ignores one on create, and PATCH deletes any stale one.
+
+## Reminders: 48 hours before
+
+`sendEventReminders()` in `worker/src/index.js` runs on the hourly cron
+(`7 * * * *`, both envs; `scheduled()` tells it from the daily tick by
+`controller.cron === REMINDER_CRON`, so the two strings must match). Every
+confirmed RSVP with an email — members and emailed guests, never the
+waitlist — on any event that takes RSVPs (house, meetup, or club) gets one
+`sendEventReminderEmail`: the confirmation again, with the address for a house
+screening, the notes, and the cancel link (framed as removal for a guest).
+
+- **Due time**: the start in America/Chicago minus 48 hours
+  (`centralInstant`, DST-safe). No showtime → 09:00 Central two days before.
+- **Window**: sends any tick from the due time until 24 hours after it, so a
+  missed tick or a deploy costs an hour, not the reminder.
+- **Once per date**: `reminded:{eventId}:{date}` in `ATTENDANCE_KV` holds the
+  member ids already sent (ids only, 14-day TTL). Keyed on the date, so a
+  rescheduled event reminds again. A failed send stays out of the set and is
+  retried next tick.
+- **Late RSVPs** (`at` after the due time) are skipped: their confirmation
+  landed inside the two days.
+- Cancel links need this Worker's origin and a cron has no request, so it
+  comes from the `JOIN_ORIGIN` var (per env in `wrangler.toml`).
+- `POST /admin/reminders` (`ADMIN_TOKEN`, body `{ dryRun? }`) runs the sweep
+  now; a dry run lists what is due without sending or marking anything.
+  Preview + test-send: admin **Emails** tab, "Reminder (48 hours before)".
+
+Tests: `tests/worker/reminders.test.js`.
 
 ## Retention: the 30-day post-event scrub
 
@@ -88,7 +116,8 @@ Semantics:
   standard details (address for house screenings, notes, showtime) with an
   intro naming who added them and the cancel link framed as an opt-out. The
   cancel token flow (`/rsvp/cancel?token=`) works for guests unchanged.
-  Name-only guests are never emailed: all three screening senders early-return
+  The 48-hour reminder goes to emailed guests too, with the same opt-out.
+  Name-only guests are never emailed: all the screening senders early-return
   on a missing email, which also covers update/cancellation loops and waitlist
   promotions.
 - **Capacity**: same rules as self-serve RSVP — confirm if space, else

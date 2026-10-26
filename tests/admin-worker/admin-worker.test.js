@@ -105,7 +105,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/email.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -156,6 +156,13 @@ describe('access gate', () => {
     expect(cgen.status).toBe(200)
     expect(cgen.headers.get('Content-Type')).toContain('javascript')
     expect(await cgen.text()).toContain('renderContentGen')
+
+    // admin.js imports email.js; a missing route 404s the import and takes
+    // the whole SPA down with it, not just the newsletter tab.
+    const email = await call('/email.js', { token: await signToken() })
+    expect(email.status).toBe(200)
+    expect(email.headers.get('Content-Type')).toContain('javascript')
+    expect(await email.text()).toContain('emailShellHtml')
   })
 
   it('whoami reflects the verified JWT email', async () => {
@@ -286,6 +293,20 @@ describe('/api/newsletter/send', () => {
     })
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain('ADMIN_TOKEN')
+  })
+})
+
+describe('/api/email/preview', () => {
+  it('proxies to the join Worker preview route with the env token, body verbatim', async () => {
+    const { service, calls } = stubService({ emails: [] })
+    const res = await call('/api/email/preview?env=staging', {
+      method: 'POST', body: JSON.stringify({ eventId: 'e1' }),
+      token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/email/preview')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token-staging')
+    expect(calls[0].init.body).toBe('{"eventId":"e1"}')
   })
 })
 

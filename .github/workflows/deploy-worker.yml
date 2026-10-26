@@ -5,6 +5,8 @@ on:
     branches: [main, staging]
     paths:
       - 'worker/**'
+      # The Worker bundles the shared email shell from the admin tree.
+      - 'admin/email.js'
       - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
     inputs:

@@ -18,6 +18,7 @@ import indexHtml from '../../index.html'
 import adminJs from '../../admin.js'
 import libJs from '../../lib.js'
 import contentgenJs from '../../contentgen.js'
+import emailJs from '../../email.js'
 import styleCss from '../../style.css'
 import { giveawayRoute } from '../../giveaway-routes.mjs'
 
@@ -364,6 +365,7 @@ const STATIC = {
   '/admin.js': [adminJs, 'application/javascript; charset=utf-8'],
   '/lib.js': [libJs, 'application/javascript; charset=utf-8'],
   '/contentgen.js': [contentgenJs, 'application/javascript; charset=utf-8'],
+  '/email.js': [emailJs, 'application/javascript; charset=utf-8'],
   '/style.css': [styleCss, 'text/css; charset=utf-8'],
 }
 
@@ -448,6 +450,12 @@ async function handle(request, env, access) {
   // POST /api/newsletter/send?env=  body = JSON { subject, html?, text?, testTo? }
   if (method === 'POST' && url.pathname === '/api/newsletter/send') {
     return proxyJoinAdmin(request, env, q, '/admin/newsletter/send')
+  }
+  // POST /api/email/preview?env=  body = JSON { eventId?, type?, testTo? } —
+  // the Emails tab: every transactional email rendered by the join Worker's
+  // real senders, or one of them test-sent.
+  if (method === 'POST' && url.pathname === '/api/email/preview') {
+    return proxyJoinAdmin(request, env, q, '/admin/email/preview')
   }
   // POST /api/newsletter/image?env=  body = JSON { contentType, b64 }
   // JSON rather than raw bytes precisely so proxyJoinAdmin carries it verbatim

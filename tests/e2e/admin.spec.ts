@@ -128,6 +128,25 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  // The Emails tab renders the join Worker's real transactional senders and
+  // can mail one of them as a test. It must never mail anything on render.
+  test('Emails tab previews every transactional email and test-sends one', async ({ page }) => {
+    await seedKv(page, '__last_email__', '')
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="emails"]').click()
+    await expect(page.locator('.email-card')).toHaveCount(9)
+    await expect(page.locator('.email-card', { hasText: 'RSVP confirmation' })).toContainText("You're in for")
+    expect(await getKv(page, '__last_email__')).toBe('')
+
+    await page.locator('#em-test-to').fill('preview@e2e.test')
+    await page.locator('button[data-em-send="cancelled"]').click()
+    await expect(page.locator('#toast')).toContainText('Sent "Event cancelled" test to preview@e2e.test')
+    const mail = JSON.parse((await getKv(page, '__last_email__'))!)
+    expect(mail.to).toBe('preview@e2e.test')
+    expect(mail.subject).toMatch(/^\[Test\] Cancelled:/)
+    expect(mail.html).toContain('is cancelled')
+  })
+
   // The Worker writes a public /n/:id copy of every broadcast and links it from
   // that email's footer, but an admin who wants to share one had to go find the
   // email. Sent history carries the link itself. Rows predating the archive

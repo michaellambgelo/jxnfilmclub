@@ -17,11 +17,11 @@
     "admin": "node admin/server.mjs"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.4",
+    "@cloudflare/vitest-plugin": "^1.4.9",
     "@playwright/test": "^1.59.1",
     "@protomaps/basemaps": "5.7.2",
     "nuekit": "2.0.0-beta.2",
     "vitest": "^4.1.12",
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.154.0"
   }
 }

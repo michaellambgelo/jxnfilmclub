@@ -18,7 +18,6 @@ docs_for_file() {
     ui/feedback.html)              echo "feedback" ;;
     ui/widgets.html)               echo "members-directory" ;;
     model/index.ts)                echo "events members-directory watched" ;;
-    scripts/refresh_letterboxd.py) echo "watched home" ;;
     scripts/refresh_spotify.py)    echo "home" ;;
     admin/admin.js|admin/server.mjs|admin/index.html) echo "admin/README.md" ;;
     admin/worker/*)                echo "admin/README.md deployment" ;;
@@ -28,7 +27,6 @@ docs_for_file() {
     .github/workflows/add-member*) echo "signup" ;;
     .github/workflows/update-member*) echo "member-profile" ;;
     .github/workflows/snapshot-attendance*) echo "attendance" ;;
-    .github/workflows/refresh-letterboxd*) echo "watched home" ;;
     .github/workflows/refresh-spotify*) echo "home" ;;
     index.html)                    echo "navigation" ;;
     *)                             echo "" ;;

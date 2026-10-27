@@ -87,6 +87,23 @@ describe('POST /member/delete', () => {
     // Handle becomes claimable again immediately after delete.
   })
 
+  // The privacy policy: deleting your membership drops your Watched entries
+  // and Hot Takes immediately — not at the next 15-minute rebuild.
+  it('evicts the member from the watched/takes cache at once, leaving everyone else', async () => {
+    const { token } = await getTokenFor('gone@example.com', { handle: 'gonehandle' })
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({
+      map: { gonehandle: [{ title: 'A' }], stays: [{ title: 'B' }] },
+      takes: [{ handle: 'gonehandle', review: 'mine' }, { handle: 'stays', review: 'theirs' }],
+      fetchedAt: Date.now(),
+    }))
+    mockFetch(async () => new Response('', { status: 204 }))
+    expect((await fetchWith('/member/delete', 'POST', {}, token)).status).toBe(200)
+
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(Object.keys(rec.map)).toEqual(['stays'])
+    expect(rec.takes).toEqual([{ handle: 'stays', review: 'theirs' }])
+  })
+
   it('revokes the current jti so a copied token is dead even within the 1h JWT exp', async () => {
     const { token } = await getTokenFor('revoke-on-delete@example.com')
     const { jti } = decodeClaims(token)

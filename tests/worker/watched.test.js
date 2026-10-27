@@ -300,3 +300,60 @@ describe('GET /watched — depth projection', () => {
     expect(full.qa).toHaveLength(FEED_DEPTH)
   })
 })
+
+// Hot Takes, served live out of the same cache (replaces data/takes.json).
+describe('GET /takes', () => {
+  const reviewItem = (n, date, review) => `<item>
+    <title>Film ${n}</title><link>https://letterboxd.com/qa/film/film-${n}/</link>
+    <guid isPermaLink="false">letterboxd-review-${n}</guid>
+    <letterboxd:filmTitle>Film ${n}</letterboxd:filmTitle><letterboxd:watchedDate>${date}</letterboxd:watchedDate>
+    <letterboxd:memberRating>4.0</letterboxd:memberRating>
+    <description><![CDATA[<p><img src="https://a.ltrbxd.com/${n}.jpg"/></p><p>${review}</p>]]></description>
+  </item>`
+
+  it('serves up to three recent public reviews per member, newest first, skipping spoilers and plain logs', async () => {
+    await seedMembers([{ id: 'm1', name: 'Q', handle: 'qa' }, { id: 'm2', name: 'R', handle: 'rb' }])
+    const long = 'word '.repeat(80).trim()
+    mockFetch(async (url) => {
+      if (String(url).includes('/qa/')) {
+        return new Response(rssFeed([
+          reviewItem(1, '2026-07-20', '“Quoted take.”'),
+          reviewItem(2, '2026-07-19', 'This review may contain spoilers. Secret.'),
+          reviewItem(3, '2026-07-18', 'Watched on Friday July 18, 2026.'),
+          reviewItem(4, '2026-07-17', long),
+          reviewItem(5, '2026-07-16', 'Third take.'),
+          reviewItem(6, '2026-07-15', 'Fourth take, over the cap.'),
+        ]))
+      }
+      return new Response(rssFeed([reviewItem(9, '2026-07-21', 'Newest of all.')]))
+    })
+    const takes = await (await req('/takes')).json()
+    expect(takes.map(t => [t.handle, t.title])).toEqual([
+      ['rb', 'Film 9'], ['qa', 'Film 1'], ['qa', 'Film 4'], ['qa', 'Film 5'],
+    ])
+    const first = takes.find(t => t.title === 'Film 1')
+    expect(first).toMatchObject({ review: 'Quoted take.', rating: '4.0', poster: 'https://a.ltrbxd.com/1.jpg', watched_date: '2026-07-20' })
+    const cut = takes.find(t => t.title === 'Film 4').review
+    expect(cut.endsWith('…')).toBe(true)
+    expect(cut.length).toBeLessThanOrEqual(301)
+  })
+
+  it('shares the /watched cache: one feed fetch serves both', async () => {
+    await seedMembers([{ id: 'm1', name: 'Q', handle: 'qa' }])
+    let n = 0
+    mockFetch(async () => { n++; return new Response(QA_FEED) })
+    await req('/watched')
+    await req('/takes')
+    expect(n).toBe(1)
+  })
+
+  it('drops a member who left the club at the next rebuild', async () => {
+    await seedMembers([{ id: 'm2', name: 'R', handle: 'rb' }])
+    await env.MEMBERS_KV.put('watched:cache', JSON.stringify({
+      map: {}, takes: [{ handle: 'gone', review: 'x' }], fetchedAt: 0,
+    }))
+    mockFetch(async () => new Response(rssFeed([reviewItem(9, '2026-07-21', 'Still here.')])))
+    const takes = await (await req('/takes')).json()
+    expect(takes.map(t => t.handle)).toEqual(['rb'])
+  })
+})

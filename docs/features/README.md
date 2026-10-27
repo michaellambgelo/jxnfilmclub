@@ -41,7 +41,6 @@ flowchart TB
         AddMember[add-member]
         UpdateMember[update-member]
         SnapshotAttend[snapshot-attendance<br/>every 6h]
-        RefreshLB[refresh-letterboxd<br/>every 6h]
         RefreshSpotify[refresh-spotify<br/>weekly]
         Deploy[deploy-site]
     end

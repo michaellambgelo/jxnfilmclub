@@ -286,6 +286,7 @@ async function route(request, env, ctx) {
       return handleNewsletterImageGet(request, env, pathname.slice('/nl/img/'.length))
     }
     if (request.method === 'GET' && pathname === '/watched') return handleWatchedGet(request, env, ctx)
+    if (request.method === 'GET' && pathname === '/takes')   return handleTakesGet(request, env, ctx)
     // Film stats (FILMS_DB). Counts are public; names need a session.
     if (request.method === 'GET' && pathname === '/films/stats') return handleFilmStats(request, env)
     if (request.method === 'GET' && pathname.startsWith('/films/')) {
@@ -633,8 +634,11 @@ async function evictHandleFromCaches(env, handle) {
     try {
       const rec = JSON.parse(raw)
       const map = rec && typeof rec.map === 'object' && rec.map ? rec.map : rec
-      if (map && typeof map === 'object' && handle in map) {
-        delete map[handle]
+      const takes = rec && Array.isArray(rec.takes) ? rec.takes : null
+      const inTakes = takes && takes.some(t => t && t.handle === handle)
+      if ((map && typeof map === 'object' && handle in map) || inTakes) {
+        if (map && typeof map === 'object') delete map[handle]
+        if (inTakes) rec.takes = takes.filter(t => !t || t.handle !== handle)
         await env.MEMBERS_KV.put(key, JSON.stringify(rec))
       }
     } catch {
@@ -914,6 +918,8 @@ async function handleMemberDelete(request, env) {
   if (member.handle) {
     await env.MEMBERS_KV.delete(`email:${member.handle}`)
     await env.MEMBERS_KV.delete(`handle:${claims.email}`)
+    // Their diary and Hot Takes stop serving now, not at the next rebuild.
+    await evictHandleFromCaches(env, member.handle)
   }
   await env.MEMBERS_KV.delete(`lb_token:${claims.email}`)
   // Feedback keeps its text as anonymous feedback; only the identity goes.
@@ -2689,8 +2695,10 @@ async function fetchEventsBaseline(env) {
 // the last good data keeps serving through any Letterboxd outage, however
 // long. A rebuild can only replace an entry it successfully refetched; a
 // TOTAL miss just stamps missAt so retries back off. Per-feed fetches are
-// also edge-cached. data/watched.json (6h cron) remains the SPA's offline
-// fallback and the Hot Takes source.
+// also edge-cached. This cache is the only copy: the data/watched.json and
+// data/takes.json snapshots the 6h scraper committed to the public repo are
+// retired. (The club film log in FILMS_DB is the one deliberate archive of
+// feed entries, and the privacy policy says so separately.)
 
 const WATCHED_CACHE_TTL = 900 // seconds; freshness window (checked in code, not a KV TTL)
 const WATCHED_MISS_TTL = 120  // total-miss backoff before retrying upstream
@@ -2757,17 +2765,66 @@ async function handleWatchedGet(request, env, ctx) {
     depth = Infinity
   }
 
+  return watchedResponse(env, projectWatched((await currentWatchedRecord(env, ctx)).map, depth))
+}
+
+// The cached record while fresh (or backing off a total miss), else a rebuild.
+async function currentWatchedRecord(env, ctx) {
   const rec = readWatchedRecord(await env.MEMBERS_KV.get('watched:cache'))
   const now = Date.now()
   if (rec) {
     const fresh = now - (rec.fetchedAt || 0) < WATCHED_CACHE_TTL * 1000
     const backoff = rec.missAt && now - rec.missAt < WATCHED_MISS_TTL * 1000
-    if (fresh || backoff) return watchedResponse(env, projectWatched(rec.map, depth))
+    if (fresh || backoff) return rec
   }
   if (!watchedInflight) {
     watchedInflight = buildWatched(env, rec, ctx).finally(() => { watchedInflight = null })
   }
-  return watchedResponse(env, projectWatched(await watchedInflight, depth))
+  return await watchedInflight
+}
+
+// GET /takes — Hot Takes: up to TAKES_PER_MEMBER recent public reviews per
+// linked member, newest first, out of the same feed fetch and cache as
+// /watched. Like the Watched map it is a mirror: rebuilt from what each feed
+// serves now, never accumulated, and an unlink or account deletion evicts the
+// member at once (evictHandleFromCaches). Replaces the data/takes.json file
+// the 6-hour scraper used to commit to the public repo.
+async function handleTakesGet(request, env, ctx) {
+  if (env.E2E_MODE === 'true') return watchedResponse(env, [])
+  const rec = await currentWatchedRecord(env, ctx)
+  return watchedResponse(env, Array.isArray(rec.takes) ? rec.takes : [])
+}
+
+// Take-card shape, ported from the retired scripts/refresh_letterboxd.py:
+// review text already spoiler- and diary-filtered by extractRssReview, with
+// decorative quotes stripped (the card adds its own) and a word-boundary cut.
+const TAKES_PER_MEMBER = 3
+const TAKE_MAX = 300
+
+function takeText(review) {
+  let text = review.replace(/^["“”]+|["“”]+$/g, '').trim()
+  if (text.length > TAKE_MAX) {
+    const cut = text.slice(0, TAKE_MAX)
+    const space = cut.lastIndexOf(' ')
+    text = (space > 0 ? cut.slice(0, space) : cut).replace(/[.,;:—-]+$/, '') + '…'
+  }
+  return text
+}
+
+function takesFromFeed(handle, parsed) {
+  const out = []
+  for (const f of parsed) {
+    if (!f.review) continue
+    const text = takeText(f.review)
+    if (!text) continue
+    const take = { handle, title: f.title, year: f.year, link: f.link, review: text, watched_date: f.watched_date }
+    if (f.rating) take.rating = f.rating
+    if (f.liked) take.liked = true
+    if (f.poster) take.poster = f.poster
+    out.push(take)
+    if (out.length >= TAKES_PER_MEMBER) break
+  }
+  return out
 }
 
 // With `ctx`, film-stats ingest of the freshly parsed feeds rides
@@ -2778,7 +2835,9 @@ async function buildWatched(env, prevRec, ctx) {
   const linked = members.filter(m => m && m.handle).slice(0, 40)
   const handles = linked.map(m => m.handle)
   const prev = (prevRec && prevRec.map) || {}
+  const prevTakes = (prevRec && Array.isArray(prevRec.takes)) ? prevRec.takes : []
   const out = {}
+  const takes = []
   const stats = newFetchStats()
   const ingest = []
   let fetchedAny = false
@@ -2802,11 +2861,13 @@ async function buildWatched(env, prevRec, ctx) {
       // served) film shape stays as it was.
       const films = parsed.map(({ review, tmdb_id, ...film }) => film)
       if (films.length) out[handle] = films
+      takes.push(...takesFromFeed(handle, parsed))
       // A 200 with an empty feed is genuinely empty — the entry drops.
     } catch {
       // Feed unreachable (outage / challenge): carry the last good entry.
       outcome = outcome || 'network_error'
       if (prev[handle]) { out[handle] = prev[handle]; stats.carried++ }
+      takes.push(...prevTakes.filter(t => t.handle === handle))
     }
     stats[outcome]++
   }))
@@ -2820,9 +2881,10 @@ async function buildWatched(env, prevRec, ctx) {
   // for GET /metrics; they ride in the same put, so observability costs no
   // extra KV write.
   const builtAt = Date.now()
+  takes.sort((a, b) => String(b.watched_date || '').localeCompare(String(a.watched_date || '')))
   const rec = (!handles.length || fetchedAny)
-    ? { map: out, fetchedAt: builtAt, builtAt, stats }
-    : { map: out, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: builtAt, builtAt, stats }
+    ? { map: out, takes, fetchedAt: builtAt, builtAt, stats }
+    : { map: out, takes, fetchedAt: (prevRec && prevRec.fetchedAt) || 0, missAt: builtAt, builtAt, stats }
   await env.MEMBERS_KV.put('watched:cache', JSON.stringify(rec))
 
   // One combined ingest for every member's feed (films.js chunks it). A failure is
@@ -2837,7 +2899,7 @@ async function buildWatched(env, prevRec, ctx) {
     if (ctx) ctx.waitUntil(p)
     else await p
   }
-  return rec.map
+  return rec
 }
 
 // Daily cron half of film stats: rebuild /watched (which ingests), then link
@@ -2900,7 +2962,7 @@ async function handleFilmDetail(request, env, slug) {
   return filmsResponse(env, detail, !!claims)
 }
 
-// Minimal RSS extraction matching scripts/refresh_letterboxd.py: recent
+// Minimal RSS extraction matching the retired scripts/refresh_letterboxd.py: recent
 // non-list items -> { title, year?, link, watched_date?, rating?, liked?, rewatch?, poster?,
 // tmdb_id?, review? } (the last two for film stats only; never cached or served).
 //
@@ -2954,7 +3016,7 @@ function rssTag(xml, name) {
   return m ? m[1].trim() : ''
 }
 
-// Port of extract_review in scripts/refresh_letterboxd.py: the plain-text
+// Port of extract_review in the retired scripts/refresh_letterboxd.py: the plain-text
 // review in an item's description, or null when it isn't one. Spoiler-flagged
 // reviews are dropped whole, and a plain diary entry (Letterboxd's
 // auto-generated 'Watched on ...' line) is not a review. The scraper's

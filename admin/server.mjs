@@ -20,7 +20,7 @@ const PORT = Number(process.env.ADMIN_PORT || 5174)
 const VALID_ENVS = new Set(['production', 'staging'])
 const VALID_BINDINGS = new Set(['MEMBERS_KV', 'ATTENDANCE_KV'])
 const VALID_FILES = new Set(['data/events.json', 'data/members.json'])
-const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json', 'data/watched.json', 'data/takes.json'])
+const READABLE_FILES = new Set([...VALID_FILES, 'data/attendance.json'])
 
 // E2E mode: when ADMIN_E2E_WORKER_ORIGIN is set (playwright.config.ts), all
 // KV ops talk to that join worker's /__test/kv shim (wrangler dev --local

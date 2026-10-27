@@ -10,7 +10,7 @@ on:
     # `Add/Update/Remove member` workflows are no longer in this list —
     # they still update data/*.json but don't redeploy. The 6h cron
     # snapshots are the deploy trigger for the static fallback JSON.
-    workflows: [Snapshot members, Snapshot events, Refresh Letterboxd data, Refresh Spotify episodes]
+    workflows: [Snapshot members, Snapshot events, Refresh Spotify episodes]
     types: [completed]
     branches: [main]
   workflow_dispatch: {}

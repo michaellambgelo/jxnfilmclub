@@ -39,7 +39,7 @@ Top to bottom:
    - Film grid: responsive grid (2 columns on mobile)
    - Each film card: poster, title, year, star/heart verdict, watched date
      (timeago), a `Rewatch` badge when the diary entry is a rewatch, and the
-     member's review snippet (~140 chars) when `data/takes.json` has one for
+     member's review snippet (~140 chars) when `GET /takes` has one for
      that entry.
 
 Members without a Letterboxd handle or without watched data get no section
@@ -58,38 +58,31 @@ Review matching is scoped by handle (link match, title|year fallback) so one
 member's review never lands on another's card. All `watched_date` values are
 bare `YYYY-MM-DD` strings compared lexically, never as Date objects.
 
-## Data Pipeline
+## Data source: the Worker, and only the Worker
 
-```mermaid
-flowchart LR
-    A[GitHub Actions cron<br/>every 6 hours] --> B[refresh_letterboxd.py]
-    B --> C[Read data/members.json]
-    C --> D{For each member<br/>with handle}
-    D --> E[Fetch letterboxd.com/{handle}/rss/]
-    E --> F[Extract last 12 entries<br/>FILMS_PER_MEMBER, mirrors the public depth:<br/>title, year, link, watched_date,<br/>rating, liked, rewatch, poster]
-    F --> G[Write data/watched.json]
-    G --> H{Data changed?}
-    H -->|Yes| I[Commit + push]
-    H -->|No| J[No-op]
-    I --> K[Triggers deploy-site]
-```
+`getWatched()` in `model/index.ts` calls the Worker's public `GET /watched`,
+which fetches each linked member's RSS on demand and caches the aggregate at
+`watched:cache` in `MEMBERS_KV`, treated as fresh for 15 minutes — a
+code-checked window, not a KV TTL (per-feed fetches are additionally
+edge-cached). Letterboxd sees at most one fetch per feed per window. A total
+upstream miss is deliberately not cached so an outage never gets pinned for a
+full TTL. Consumers: home "The Last Four", the `/watched` view, and the host
+panel's diary quick-picks.
 
-The same script/workflow also writes `data/takes.json` (recent member reviews) for the
-home page's Hot Takes section — see [home.md](home.md).
+The same rebuild also extracts **Hot Takes** — up to 3 recent public reviews
+per member (`takesFromFeed`: spoiler-flagged and plain "Watched on" entries
+skipped, decorative quotes stripped, cut at 300 chars on a word boundary) —
+into the record's `takes` array, served newest-first by public `GET /takes`
+(`getTakes()`). The Watched map itself never carries review text.
 
-## Live endpoint (primary source)
-
-The SPA no longer reads `data/watched.json` first: `getWatched()` in
-`model/index.ts` calls the Worker's public `GET /watched`, which fetches each
-linked member's RSS on demand and caches the aggregate at `watched:cache` in
-`MEMBERS_KV`, treated as fresh for 15 minutes — a code-checked window, not a
-KV TTL (per-feed fetches are additionally edge-cached).
-That keeps diaries minutes-fresh instead of up to 6 hours stale, while
-Letterboxd sees at most one fetch per feed per window. A total upstream miss
-is deliberately not cached so an outage never gets pinned for a full TTL.
-`data/watched.json` (this cron) remains the offline fallback and the Hot
-Takes source. Consumers: home "The Last Four", the `/watched` view, and the
-host panel's diary quick-picks.
+There is **no static fallback**. Until 2026-10-26 a 6-hour GitHub Actions
+scraper (`scripts/refresh_letterboxd.py`) committed `data/watched.json` and
+`data/takes.json` to the public repo as an offline fallback; that made the
+repo's history an archive of diary entries and reviews, contradicting the
+privacy policy's "mirror, not an archive". Both files, the script and the
+workflow are gone; if the Worker is down the sections render empty. Unlink
+and account deletion both call `evictHandleFromCaches`, which drops the
+handle from the map **and** from `takes`.
 
 ## Metrics (`GET /metrics`)
 
@@ -168,10 +161,6 @@ serves `WATCHED_PUBLIC_DEPTH = 12` to unauthenticated callers.
   returns the whole cached map. Only the admin uses it — Content Gen's paged
   diary cards and the Stats tab's film counts. It is gated on payload, not
   secrecy: the films are public on the site and on Letterboxd.
-- `FILMS_PER_MEMBER = 12` in the Python scraper mirrors the **public** depth,
-  not the cache depth: `data/watched.json` is the SPA's offline fallback, so
-  it has to match what the public endpoint serves. Committing 50 would
-  quadruple the file and the 6-hourly cron diff for nothing.
 
 Depth is not 4 because an active member can push a film out of their last
 four within a day, which used to silently drop their name from a shared-watch
@@ -183,8 +172,9 @@ often that member logs: at ~21 films/month the busiest member's 50 span about
 12 weeks, while a member who last logged in 2023 keeps their entries
 indefinitely. Anything that falls out of the RSS window is gone for good —
 Letterboxd is the archive, this only mirrors what it still serves. Nothing
-here accumulates: both the KV cache and `data/watched.json` are full
-replacements on every refresh.
+here accumulates: the KV cache (map and takes) is a full replacement on every
+refresh. The one deliberate archive of feed entries is the club film log
+(FILMS_DB, [film-stats.md](film-stats.md)), disclosed separately.
 
 Dates in the window math are bare `YYYY-MM-DD` diary dates (Letterboxd RSS
 carries no times); the 7-day cutoff is computed in America/Chicago.
@@ -196,7 +186,5 @@ carries no times); the 7-day cutoff is computed in America/Chicago.
 | `ui/views.html` | `watched-view` + `watched-member` components |
 | `model/index.ts` | `buildWatchedPage` / `filterFilms` / `centralDayCutoff` / `getTakes`; strip count line via `getFilmStats` / `filmCountLine` |
 | `css/watched.css` | Page styles incl. strip (`.ws-*`), filters, badges |
-| `scripts/refresh_letterboxd.py` | RSS fetch + poster extraction |
-| `.github/workflows/refresh-letterboxd.yml` | Cron every 6 hours |
-| `data/watched.json` | Cached film data keyed by handle |
+| `worker/src/index.js` | `GET /watched` + `GET /takes`, `buildWatched`, `takesFromFeed`, `evictHandleFromCaches` |
 | `data/members.json` | Source of member handles |

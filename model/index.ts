@@ -55,24 +55,20 @@ async function fetchList(type: string): Promise<any[]> {
 }
 
 // Live Last Four Watched: the Worker fetches + KV-caches Letterboxd RSS
-// (~15 min) so diaries stay fresh; data/watched.json (6h cron) is the
-// offline fallback. Returns a handle-keyed map of diary entries.
+// (~15 min) so diaries stay fresh. No static fallback: the data/watched.json
+// snapshot is retired (the policy promises a mirror, and a file committed to
+// the public repo every 6 hours is an archive). Worker down → empty map.
 export async function getWatched(): Promise<Record<string, any[]>> {
   const origin = resolveWorkerOrigin()
-  if (origin) {
-    try {
-      const res = await fetch(`${origin}/watched`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data && typeof data === 'object' && !Array.isArray(data)) return data
-      }
-    } catch { /* fall through to static */ }
-  }
+  if (!origin) return {}
   try {
-    const url = is_browser ? '/data/watched.json' : `file:${process.cwd()}/data/watched.json`
-    const res = await fetch(url)
-    return await res.json()
-  } catch { return {} }
+    const res = await fetch(`${origin}/watched`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data
+    }
+  } catch { /* the sections render empty */ }
+  return {}
 }
 
 // Letterboxd avatars: handle-keyed map of avatar URLs, scraped by the Worker
@@ -118,13 +114,15 @@ export function avatarsById(members: any[], letterboxd: Record<string, string> =
   return out
 }
 
-// Hot takes: member review snippets scraped to data/takes.json by the 6h
-// refresh-letterboxd cron. Static-only — there is no live Worker endpoint,
-// matching how the home page consumes the same file.
+// Hot takes: recent public member reviews, served live by the Worker's
+// GET /takes out of the same RSS cache as /watched. No static fallback, for
+// the same reason as getWatched.
 export async function getTakes(): Promise<any[]> {
+  const origin = resolveWorkerOrigin()
+  if (!origin) return []
   try {
-    const url = is_browser ? '/data/takes.json' : `file:${process.cwd()}/data/takes.json`
-    const res = await fetch(url)
+    const res = await fetch(`${origin}/takes`)
+    if (!res.ok) return []
     const data = await res.json()
     return Array.isArray(data) ? data : []
   } catch { return [] }

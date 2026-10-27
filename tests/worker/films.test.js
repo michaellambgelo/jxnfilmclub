@@ -450,7 +450,11 @@ describe('ingest from the /watched rebuild', () => {
       expect(f.review).toBeUndefined()
       expect(f.tmdb_id).toBeUndefined()
     }
-    expect(JSON.stringify(JSON.parse(await env.MEMBERS_KV.get('watched:cache')))).not.toContain('weird')
+    // The Watched map never carries review text. Hot Takes (rec.takes) does —
+    // the public, truncated take card, which is what GET /takes serves.
+    const rec = JSON.parse(await env.MEMBERS_KV.get('watched:cache'))
+    expect(JSON.stringify(rec.map)).not.toContain('weird')
+    expect(rec.takes.map(t => t.review)).toEqual(["it's great & weird"])
 
     const { results } = await db().prepare(
       `SELECT l.film_slug, l.member_key, l.rewatch, v.review, f.tmdb_id FROM logs l

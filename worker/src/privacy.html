@@ -55,7 +55,9 @@
       card. The Letterboxd handle is also used to fetch your public Letterboxd
       activity for the Watched page: we mirror up to the most recent 50 diary
       entries your public feed still serves, and nothing older than that feed
-      already carries.</li>
+      already carries. Up to three of your most recent public reviews from
+      that feed (spoiler-flagged ones are skipped, and long ones are cut to a
+      few lines) can also appear as <b>Hot Takes</b> on the home page.</li>
     <li><b>Your club film log</b> — while your Letterboxd account is linked,
       we also keep a running copy of the diary entries we read from your
       public feed: the film, the date you watched it, your rating, whether you
@@ -255,11 +257,16 @@
       address, and never your personal unsubscribe link. The link is a long
       random string and is not listed anywhere, but anyone holding it can read
       that newsletter, and it stays up indefinitely.</li>
-    <li><b>The Watched page is a mirror, not an archive.</b> We cache
-      what your public feed currently serves, refreshed continuously; when an
-      entry falls out of that feed it falls out of ours. Unlinking your
-      Letterboxd handle, or deleting your membership, drops your entries
-      immediately.</li>
+    <li><b>The Watched page and Hot Takes are a mirror, not an archive.</b>
+      We cache what your public feed currently serves, refreshed every 15
+      minutes or so; when an entry falls out of that feed it falls out of
+      ours. (If Letterboxd is unreachable we keep showing the last copy we
+      had until it comes back.) Unlinking your Letterboxd handle, or deleting
+      your membership, drops your entries and reviews immediately. Before
+      October 26, 2026 we also committed a copy of the Watched page and Hot
+      Takes to the club's public GitHub repository every six hours. We no
+      longer do, and those files are gone, but versions published before then
+      remain in that repository's history.</li>
     <li><b>Your club film log stays until you unlink Letterboxd or delete
       your membership.</b> At that moment your name, handle and every
       version of your review text are deleted. Your ratings, likes and watch

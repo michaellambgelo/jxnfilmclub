@@ -11,7 +11,7 @@ inferring it from whatever Letterboxd's RSS still serves.
 
 ## Why
 
-Today nothing accumulates. `GET /watched` and `data/watched.json` are full
+Before film stats nothing accumulated. `GET /watched` (and, until 2026-10-26, `data/watched.json`) were full
 replacements on every refresh, built from each member's RSS feed, which is a
 rolling window of at most 50 diary entries (see
 [watched.md § Film Shape](watched.md#film-shape)). A film drops out of the
@@ -133,7 +133,7 @@ flowchart LR
   `readMembersAll` list `buildWatched` uses), keyed by member **id**, not
   handle.
 - **Reviews:** `parseLetterboxdRss` doesn't extract review text today.
-  `scripts/refresh_letterboxd.py` does (`extract_review`, spoiler
+  the (since retired) `scripts/refresh_letterboxd.py` did (`extract_review`, spoiler
   filtering); port that logic to the Worker parser.
 - **Screening link:** set `event_id` when the member's id is in that event's
   attendance, the film matches, and `watched_date` is the event date or the
@@ -250,8 +250,7 @@ claiming success.
 
 Each is still open for a later decision; this is what the code does today.
 
-1. **Backfill: none.** Candidates for later: replay the committed versions of
-   `data/watched.json` (since 2026-04-14), a member CSV import of their
+1. **Backfill: none.** Candidates for later: a member CSV import of their
    Letterboxd diary export on `/edit`, or an admin-run import. Only a member
    or admin import reaches back to 2020.
 2. **Relinking: fresh.** A relink deletes the member's former-member rows

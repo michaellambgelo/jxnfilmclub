@@ -387,7 +387,7 @@
 
   <hr class="ns-rule">
 
-  <!-- HOT TAKES — random recent member reviews from Letterboxd (data/takes.json).
+  <!-- HOT TAKES — random recent member reviews from Letterboxd (Worker GET /takes).
        No :if on the section: toggling its presence after mount shifts sibling
        indexes and crashes nuedom's diff. Structure stays constant; the empty
        section is hidden via CSS (.takes:not(:has(.take-card))). -->
@@ -503,7 +503,7 @@
         getWatched().catch(function() { return {} }),
         fetch('/data/attendance.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
         fetch('/data/episodes.json').then(function(r) { return r.ok ? r.json() : {} }).catch(function() { return {} }),
-        fetch('/data/takes.json').then(function(r) { return r.ok ? r.json() : [] }).catch(function() { return [] }),
+        getTakes().catch(function() { return [] }),
         getConfig().catch(function() { return null }),
       ])
       const events = results[0].items || []

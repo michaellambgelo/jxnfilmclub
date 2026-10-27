@@ -17,17 +17,21 @@ The landing page at `/` introduces Jackson Film Club and features the podcast.
 - "Follow on Spotify" link
 
 ### Hot Takes
-- Up to 3 random recent member reviews from Letterboxd, loaded from `data/takes.json`
+- Up to 3 random recent member reviews from Letterboxd, loaded from the Worker's `GET /takes` (`getTakes()`)
 - Each card links to the review on Letterboxd (film title tape, floated poster, review excerpt, member name)
-- Section is hidden entirely when no takes are available (missing file, no linked members, no reviews)
+- Section is hidden entirely when no takes are available (Worker unreachable, no linked members, no reviews)
 - The section renders unconditionally and is collapsed via CSS `.takes:not(:has(.take-card))` —
   a `:if` on the section crashes nuedom's index-based DOM diff when it appears after mount
   (siblings shift and `diffChildrenByKey` throws on text nodes), taking out every section below it
 
 ## Hot Takes Data Pipeline
 
-`scripts/refresh_letterboxd.py` (the same 6-hourly cron that writes `data/watched.json`) also
-extracts reviews from each linked member's RSS feed into `data/takes.json`:
+The Worker's `/watched` rebuild (`buildWatched` → `takesFromFeed` in `worker/src/index.js`)
+extracts reviews from each linked member's RSS feed into the `takes` array of the
+`watched:cache` record, served by public `GET /takes`. A mirror like the Watched map: rebuilt
+from the live feeds every ~15 minutes, and unlink / account deletion evict the member at once.
+Until 2026-10-26 a 6-hourly scraper committed this as `data/takes.json` to the public repo;
+that is retired (see [watched.md](watched.md) § Data source).
 
 - Skips Letterboxd list entries (`letterboxd-list-*` guids), spoiler-flagged reviews
   ("This review may contain spoilers"), and plain diary entries ("Watched on …" with no review text)
@@ -81,6 +85,4 @@ flowchart LR
 | `scripts/refresh_spotify.py` | RSS fetch + featured ID scrape |
 | `.github/workflows/refresh-spotify.yml` | Weekly cron |
 | `data/episodes.json` | `{ featured_id, episodes }` |
-| `scripts/refresh_letterboxd.py` | Letterboxd RSS fetch → watched + takes |
-| `.github/workflows/refresh-letterboxd.yml` | 6-hourly cron |
-| `data/takes.json` | Array of recent member reviews (Hot Takes) |
+| `worker/src/index.js` | `GET /takes`, `takesFromFeed` (Hot Takes) |

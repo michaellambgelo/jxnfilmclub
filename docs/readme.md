@@ -125,11 +125,11 @@ be used to enumerate members.
 
 ### 5. Last Four Watched + event attendance
 
-`scripts/refresh_letterboxd.py` runs on a 6-hour GitHub Actions cron
-(`.github/workflows/refresh-letterboxd.yml`). Walks each member's
-Letterboxd RSS and writes `data/watched.json` (recent diary entries per
-member). It has not touched `data/attendance.json` since attendance
-became self-reported: that ledger is snapshotted off the Worker by
+Recent diary entries and Hot Takes come live from the Worker
+(`GET /watched`, `GET /takes`), cached in KV and never committed — the
+6-hour scraper that wrote `data/watched.json`/`data/takes.json` was retired
+on 2026-10-26 (see [watched.md](./features/watched.md)). Attendance is
+self-reported: that ledger is snapshotted off the Worker by
 `snapshot-attendance.yml`, and its entries are `{ id, name }` keyed on
 member id — see [attendance.md § Identity](./features/attendance.md#identity).
 
@@ -218,8 +218,7 @@ Other GitHub Actions workflows:
 
 - **Member mutations** — `add-member.yml`, `update-member.yml`,
   `remove-member.yml` (repo_dispatch from the Worker, id-keyed).
-- **Data refresh (cron)** — `refresh-letterboxd.yml` (6h, watched +
-  attendance) and `refresh-spotify.yml` (weekly, podcast episodes).
+- **Data refresh (cron)** — `refresh-spotify.yml` (weekly, podcast episodes).
 - **Snapshots (cron)** — `snapshot-members.yml`, `snapshot-events.yml`,
   `snapshot-attendance.yml` mirror live KV back into `data/*.json` every
   6h so the static fallback stays current.

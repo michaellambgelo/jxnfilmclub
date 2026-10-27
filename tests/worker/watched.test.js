@@ -311,7 +311,7 @@ describe('GET /takes', () => {
     <description><![CDATA[<p><img src="https://a.ltrbxd.com/${n}.jpg"/></p><p>${review}</p>]]></description>
   </item>`
 
-  it('serves up to three recent public reviews per member, newest first, skipping spoilers and plain logs', async () => {
+  it('serves every public review in each feed, newest first, skipping spoilers and plain logs', async () => {
     await seedMembers([{ id: 'm1', name: 'Q', handle: 'qa' }, { id: 'm2', name: 'R', handle: 'rb' }])
     const long = 'word '.repeat(80).trim()
     mockFetch(async (url) => {
@@ -322,14 +322,14 @@ describe('GET /takes', () => {
           reviewItem(3, '2026-07-18', 'Watched on Friday July 18, 2026.'),
           reviewItem(4, '2026-07-17', long),
           reviewItem(5, '2026-07-16', 'Third take.'),
-          reviewItem(6, '2026-07-15', 'Fourth take, over the cap.'),
+          reviewItem(6, '2026-07-15', 'Fourth take.'),
         ]))
       }
       return new Response(rssFeed([reviewItem(9, '2026-07-21', 'Newest of all.')]))
     })
     const takes = await (await req('/takes')).json()
     expect(takes.map(t => [t.handle, t.title])).toEqual([
-      ['rb', 'Film 9'], ['qa', 'Film 1'], ['qa', 'Film 4'], ['qa', 'Film 5'],
+      ['rb', 'Film 9'], ['qa', 'Film 1'], ['qa', 'Film 4'], ['qa', 'Film 5'], ['qa', 'Film 6'],
     ])
     const first = takes.find(t => t.title === 'Film 1')
     expect(first).toMatchObject({ review: 'Quoted take.', rating: '4.0', poster: 'https://a.ltrbxd.com/1.jpg', watched_date: '2026-07-20' })

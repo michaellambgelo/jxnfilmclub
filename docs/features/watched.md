@@ -69,8 +69,8 @@ upstream miss is deliberately not cached so an outage never gets pinned for a
 full TTL. Consumers: home "The Last Four", the `/watched` view, and the host
 panel's diary quick-picks.
 
-The same rebuild also extracts **Hot Takes** — up to 3 recent public reviews
-per member (`takesFromFeed`: spoiler-flagged and plain "Watched on" entries
+The same rebuild also extracts **Hot Takes** — every public review in each
+member's feed (`takesFromFeed`: spoiler-flagged and plain "Watched on" entries
 skipped, decorative quotes stripped, cut at 300 chars on a word boundary) —
 into the record's `takes` array, served newest-first by public `GET /takes`
 (`getTakes()`). The Watched map itself never carries review text.

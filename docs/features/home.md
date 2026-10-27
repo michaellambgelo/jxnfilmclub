@@ -38,7 +38,8 @@ that is retired (see [watched.md](watched.md) § Data source).
 - Strips HTML tags and the poster `<img>`, unescapes entities, collapses whitespace,
   drops wrapping quotation marks (the card adds its own), truncates to ~300 chars
   at a word boundary
-- Keeps up to 3 reviews per member (`TAKES_PER_MEMBER`), array sorted newest-first
+- Keeps every review in the feed (no per-member cap since 2026-10-26; the feed itself
+  serves the 50 most recent diary entries), array sorted newest-first
 - Stores `handle`, `title`, `year`, `link`, `review`, `watched_date`, `poster`, and `rating`
   (rating is stored for future use but not rendered)
 

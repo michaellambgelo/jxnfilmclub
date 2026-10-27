@@ -7,8 +7,8 @@ them at random; this page shows them all.
 ## Data
 
 One fetch of public `GET /takes` (see [watched.md](watched.md) § Data source
-and [home.md](home.md) § Hot Takes): up to 3 recent public Letterboxd reviews
-per linked member, spoiler-flagged and plain diary entries skipped, cut at 300
+and [home.md](home.md) § Hot Takes): every public Letterboxd review in each
+linked member's feed (their 50 most recent diary entries), spoiler-flagged and plain diary entries skipped, cut at 300
 characters, already sorted newest first by `watched_date`. The page keeps that
 order. Like the home page, it joins takes to `GET /members` by handle and drops
 any take whose handle is no longer a member's. Avatars come from

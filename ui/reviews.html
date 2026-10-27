@@ -1,0 +1,131 @@
+<!doctype dhtml lib>
+
+<!-- Reviews, /reviews: every Hot Take the join Worker has cached (GET /takes,
+     up to three recent public Letterboxd reviews per linked member, already
+     newest first), as one long page. docs/features/reviews.md.
+
+     One fetch, one update. All cards render at once, hidden; the page then
+     reveals them five at a time as the reader nears the bottom (an
+     IntersectionObserver on the sentinel, plus a Show more button for
+     keyboards and browsers without one). Revealing is a class flip on the DOM,
+     never an update: nuedom replaces the component root on update, which
+     would re-hide everything and orphan the observer. Hidden posters are
+     display:none, so with loading=lazy they are not fetched until shown.
+
+     No :if toggles after mount (they shift siblings and crash the diff), no
+     apostrophes in attribute values, every interpolation on one line. -->
+
+<script>
+  import { getTakes, getMembers, getAvatars, avatarsById, filmSlug } from 'app'
+</script>
+
+<article :is="reviews-view" class="reviews">
+  <p class="rv-eyebrow">Reviews</p>
+  <h1>Hot Takes</h1>
+  <p class="lede">Recent reviews from the Letterboxd diaries of club members, newest first. Straight from each public feed, refreshed every few minutes.</p>
+
+  <p class="muted rv-status" :hidden="!loading">Loading reviews…</p>
+  <p class="empty-state rv-status" :hidden="loading || items.length">No reviews to show yet. Members who link Letterboxd show up here when they review a film.</p>
+
+  <ol class="rv-list">
+    <li :each="r in items" key="{ r.key }" class="rv-card -pending">
+      <img :if="r.poster" class="rv-poster" src="{ r.poster }" alt="" loading="lazy">
+      <span class="ns-tape rv-tape">{ r.when }</span>
+      <h2 class="rv-film"><a :if="r.slug" href="/film?slug={ r.slug }">{ r.title }</a><span :if="!r.slug">{ r.title }</span><span :if="r.year" class="rv-year">{ r.year }</span></h2>
+      <blockquote class="rv-text">“{ r.review }”</blockquote>
+      <footer class="rv-by">
+        <avatar :name="r.who" :src="r.avatar"/>
+        <span class="rv-who">{ r.who }</span>
+        <span :if="r.rating || r.liked" class="lb-verdict">{ starsOf(r.rating) }<b :if="r.liked" class="lb-like">♥</b></span>
+        <a class="rv-source" href="{ r.link }" target="_blank" rel="noopener">Read on Letterboxd</a>
+      </footer>
+    </li>
+  </ol>
+
+  <div class="rv-more" hidden>
+    <button type="button" class="rv-more-btn">Show more</button>
+  </div>
+  <p class="rv-end muted" hidden>That is every review we have right now.</p>
+
+  <script>
+    const RV_BATCH = 5
+    let rvObserver = null
+
+    const RV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    // Diary dates stay YYYY-MM-DD strings end to end; formatted by splitting,
+    // never through Date, so the day cannot shift with the viewer timezone.
+    function rvWhen(d) {
+      const p = String(d || '').split('-')
+      if (p.length !== 3) return ''
+      const m = RV_MONTHS[Number(p[1]) - 1]
+      return m ? m + ' ' + Number(p[2]) + ', ' + p[0] : ''
+    }
+
+    // Reveal the next batch, then keep going while the sentinel is still on
+    // screen (a tall viewport can swallow a whole batch). Pure DOM; see above.
+    function rvReveal() {
+      const pending = document.querySelectorAll('.rv-card.-pending')
+      for (let i = 0; i < pending.length && i < RV_BATCH; i++) pending[i].classList.remove('-pending')
+      const left = pending.length - RV_BATCH
+      const more = document.querySelector('.rv-more')
+      const end = document.querySelector('.rv-end')
+      if (more) more.hidden = left <= 0
+      if (end) end.hidden = left > 0 || !document.querySelector('.rv-card')
+      if (left <= 0 && rvObserver) { rvObserver.disconnect(); rvObserver = null }
+      if (left > 0 && more && more.getBoundingClientRect().top < innerHeight) requestAnimationFrame(rvReveal)
+    }
+
+    this.items = []
+    this.loading = true
+
+    // Letterboxd half-star strings: 4.5 renders as four stars and a half mark.
+    this.starsOf = function(r) {
+      const n = Number(r) || 0
+      let s = ''
+      for (let i = 0; i < Math.floor(n); i++) s += '★'
+      return n - Math.floor(n) >= 0.5 ? s + '½' : s
+    }
+
+    this.mounted = async function() {
+      // Show more is bound by delegation on document behind a global once
+      // guard: an :onclick would run update after the handler, and that
+      // re-render would hide every card revealed so far.
+      if (!globalThis.jxnfcReviewsBound) {
+        globalThis.jxnfcReviewsBound = true
+        document.addEventListener('click', function(e) {
+          if (e.target.closest && e.target.closest('.rv-more-btn')) rvReveal()
+        })
+      }
+      const results = await Promise.all([
+        getTakes().catch(function() { return [] }),
+        getMembers({ limit: 1000 }).catch(function() { return { items: [] } }),
+        getAvatars().catch(function() { return {} }),
+      ])
+      const members = results[1].items || []
+      const byHandle = {}
+      members.forEach(function(m) { if (m.handle) byHandle[m.handle] = m })
+      const avatars = avatarsById(members, results[2])
+      // Only current members: a take whose handle has since been unlinked is
+      // dropped here too, as on the home page.
+      const items = results[0].filter(function(t) { return t && t.review && byHandle[t.handle] }).map(function(t) {
+        const m = byHandle[t.handle]
+        return {
+          key: t.link, title: t.title, year: t.year, link: t.link, review: t.review,
+          poster: t.poster, rating: t.rating, liked: t.liked, slug: filmSlug(t.link),
+          who: m.name, avatar: avatars[m.id] || '', when: rvWhen(t.watched_date),
+        }
+      })
+      this.update({ items: items, loading: false })
+      setTimeout(function() {
+        rvReveal()
+        const sentinel = document.querySelector('.rv-more')
+        if (!sentinel || sentinel.hidden || typeof IntersectionObserver === 'undefined') return
+        rvObserver = new IntersectionObserver(function(entries) {
+          if (entries.some(function(x) { return x.isIntersecting })) rvReveal()
+        }, { rootMargin: '0px 0px 400px 0px' })
+        rvObserver.observe(sentinel)
+      }, 0)
+    }
+  </script>
+</article>

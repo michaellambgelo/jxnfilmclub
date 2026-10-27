@@ -52,6 +52,7 @@ Day-to-day dev: two terminals running `npx nue` + `cd worker && npx wrangler dev
 | `ui/auth.html` | `sign-in-view`, `verify-view` (signup confirmation), `edit-view` (name/pronouns + Letterboxd panel) |
 | `ui/widgets.html` | `avatar` + `timeago` leaf components |
 | `ui/masthead.html` | Root-level chrome: `mast-nav` (hamburger, signed-in links) + `policy-toast`. Child components so their updates never re-render the root (see the root-update gotcha below) |
+| `ui/reviews.html` | `reviews-view` (`/reviews`, the Reviews tab): every Hot Take from `GET /takes`, newest first, revealed five at a time by class flip, not update — see `docs/features/reviews.md` |
 | `ui/map.html` | `map-view` (`/map`): venue pins from `GET /map`, rendered imperatively with self-hosted MapLibre — see `docs/features/map.md` |
 | `tiles/` + `vendor/` | Self-hosted map assets: static vector tiles `tiles/jxn/{z}/{x}/{y}.pbf` (**not** a `.pmtiles` archive: GitHub Pages breaks Range requests), label glyphs, `style.json` (`scripts/fetch_map_assets.sh`, `scripts/split_map_tiles.mjs`, `scripts/build_map_style.mjs`), MapLibre as **`.mjs`** (the build minifies `.js` and renames globals) |
 | `css/` | Vanilla CSS — `global`, `form`, `auth`, `widgets`, `table`, `readme` |

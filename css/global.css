@@ -161,12 +161,20 @@ body > header {
   border-radius: 2px;
 }
 
-/* Six tabs plus Join and Log in fill the row below ~1060px. Tighter spacing
-   holds them on one line down to ~880px; below 900px the menu button takes
-   over, so Log in never wraps to a second line. */
-@media (max-width: 1100px) and (min-width: 901px) {
+/* Seven tabs plus Join and Log in fill the row below ~1170px. Tighter
+   spacing, Join and Log in included, holds them on one line down to 901px;
+   below that the menu button takes over, so Log in never wraps to a second
+   line. Measured with Playwright across 901 to 1300px when Reviews joined
+   the nav (2026-10-27); re-measure when a tab is added. */
+@media (max-width: 1180px) and (min-width: 901px) {
   .mastnav { gap: .5em; }
   .mastnav a { padding-left: .35rem; padding-right: .35rem; letter-spacing: var(--tracking-wide, .06em); }
+  .mastnav a.nav-login, .mastnav a.auth-link { padding-left: .9rem; padding-right: .9rem; }
+}
+
+/* The last ~25px signed out: the stamp beside the wordmark gives way first. */
+@media (max-width: 960px) and (min-width: 901px) {
+  .mastnav .logo-stamp { display: none; }
 }
 
 @media (max-width: 900px) {

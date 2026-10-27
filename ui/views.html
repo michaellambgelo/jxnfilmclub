@@ -332,7 +332,7 @@
   <!-- THE PROGRAM — recent & upcoming screenings -->
   <section class="program">
     <header class="ns-sechead">
-      <h2>{ sectionProgram }</h2>
+      <h2><a class="sec-link" href="/events">{ sectionProgram }</a></h2>
     </header>
     <div :each="e in program" key="{ e.id }" class="program-row { (e.upcoming ? '-upcoming' : '-past') + (e.lead ? ' -lead' : '') }">
       <div class="program-date">
@@ -357,7 +357,7 @@
   <section class="lastfour">
     <div class="lastfour-films">
       <p class="ns-label">Letterboxd</p>
-      <h2>{ sectionWatches }</h2>
+      <h2><a class="sec-link" href="/watched">{ sectionWatches }</a></h2>
       <div class="lastfour-grid">
         <a :each="f in lastFour" key="{ f.link }" class="lf-card" href="{ f.link }" target="_blank" rel="noopener">
           <figure class="ns-poster">
@@ -392,7 +392,7 @@
        indexes and crashes nuedom's diff. Structure stays constant; the empty
        section is hidden via CSS (.takes:not(:has(.take-card))). -->
   <section class="takes">
-    <h2>{ sectionTakes }</h2>
+    <h2><a class="sec-link" href="/reviews">{ sectionTakes }</a></h2>
     <div class="takes-grid">
       <a :each="t in takes" key="{ t.link }" class="take-card" href="{ t.link }" target="_blank" rel="noopener">
         <span class="ns-tape">{ t.title }</span>

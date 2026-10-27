@@ -149,6 +149,22 @@
   margin: var(--space-12) 0;
 }
 
+/* Section titles that have a tab of their own (The Program, Recent
+   Watches, Hot Takes) link to it. They keep the heading look; the link
+   only shows on hover and keyboard focus. */
+.home h2 a.sec-link {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+  text-decoration-thickness: 2px;
+}
+
+.home h2 a.sec-link:hover,
+.home h2 a.sec-link:focus-visible {
+  color: var(--brand-tint-fg);
+  text-decoration-line: underline;
+}
+
 .ns-sechead {
   display: flex;
   align-items: baseline;

@@ -39,6 +39,17 @@ test.describe('reviews page', () => {
     await expect(page.locator('h1')).toHaveText('Hot Takes')
   })
 
+  test('home section titles link to their tabs; Hot Takes opens Reviews', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.program h2 a')).toHaveAttribute('href', '/events')
+    await expect(page.locator('.lastfour h2 a')).toHaveAttribute('href', '/watched')
+    const takes = page.locator('.takes h2 a')
+    await expect(takes).toHaveAttribute('href', '/reviews')
+    await takes.click()
+    await expect(page).toHaveURL(/[/]reviews$/)
+    await expect(page.locator('h1')).toHaveText('Hot Takes')
+  })
+
   test('shows five, then five more as you scroll, until every review is in', async ({ page }) => {
     await page.goto('/reviews')
     const visible = page.locator('.rv-card:not(.-pending)')

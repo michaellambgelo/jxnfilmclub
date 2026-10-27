@@ -16,6 +16,11 @@ The landing page at `/` introduces Jackson Film Club and features the podcast.
 - Full episode list loaded from `data/episodes.json`
 - "Follow on Spotify" link
 
+### Section titles link to their tabs
+- **The Program** → `/events`, **Recent Watches from Members** → `/watched`,
+  **Hot Takes** → `/reviews` (`a.sec-link` inside the `h2`; heading look at rest,
+  brand color and underline on hover/focus, `css/home.css`)
+
 ### Hot Takes
 - Up to 3 random recent member reviews from Letterboxd, loaded from the Worker's `GET /takes` (`getTakes()`)
 - Each card links to the review on Letterboxd (film title tape, floated poster, review excerpt, member name)

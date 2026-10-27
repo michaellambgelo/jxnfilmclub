@@ -18,7 +18,7 @@ The landing page at `/` introduces Jackson Film Club and features the podcast.
 
 ### Section titles link to their tabs
 - **The Program** → `/events`, **Recent Watches from Members** → `/watched`,
-  **Hot Takes** → `/reviews` (`a.sec-link` inside the `h2`; heading look at rest,
+  **Hot Takes** → `/reviews`, **The Podcast** → `/speak` (`a.sec-link` inside the `h2`; heading look at rest,
   brand color and underline on hover/focus, `css/home.css`)
 
 ### Hot Takes

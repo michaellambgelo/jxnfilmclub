@@ -43,6 +43,7 @@ test.describe('reviews page', () => {
     await page.goto('/')
     await expect(page.locator('.program h2 a')).toHaveAttribute('href', '/events')
     await expect(page.locator('.lastfour h2 a')).toHaveAttribute('href', '/watched')
+    await expect(page.locator('.podcast h2 a')).toHaveAttribute('href', '/speak')
     const takes = page.locator('.takes h2 a')
     await expect(takes).toHaveAttribute('href', '/reviews')
     await takes.click()

@@ -150,7 +150,7 @@
 }
 
 /* Section titles that have a tab of their own (The Program, Recent
-   Watches, Hot Takes) link to it. They keep the heading look; the link
+   Watches, Hot Takes, The Podcast) link to it. They keep the heading look; the link
    only shows on hover and keyboard focus. */
 .home h2 a.sec-link {
   color: inherit;

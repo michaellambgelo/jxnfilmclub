@@ -2783,8 +2783,8 @@ async function currentWatchedRecord(env, ctx) {
   return await watchedInflight
 }
 
-// GET /takes — Hot Takes: up to TAKES_PER_MEMBER recent public reviews per
-// linked member, newest first, out of the same feed fetch and cache as
+// GET /takes — Hot Takes: every public review in each linked member's feed
+// (the feed serves their 50 most recent diary entries), newest first, out of the same feed fetch and cache as
 // /watched. Like the Watched map it is a mirror: rebuilt from what each feed
 // serves now, never accumulated, and an unlink or account deletion evicts the
 // member at once (evictHandleFromCaches). Replaces the data/takes.json file
@@ -2802,7 +2802,6 @@ async function handleTakesGet(request, env, ctx) {
 // Take-card shape, ported from the retired scripts/refresh_letterboxd.py:
 // review text already spoiler- and diary-filtered by extractRssReview, with
 // decorative quotes stripped (the card adds its own) and a word-boundary cut.
-const TAKES_PER_MEMBER = 3
 const TAKE_MAX = 300
 
 function takeText(review) {
@@ -2826,7 +2825,6 @@ function takesFromFeed(handle, parsed) {
     if (f.liked) take.liked = true
     if (f.poster) take.poster = f.poster
     out.push(take)
-    if (out.length >= TAKES_PER_MEMBER) break
   }
   return out
 }

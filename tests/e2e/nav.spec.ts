@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, signInAs, WORKER_ORIGIN } from './fixtures'
 
 // Regression: clicking the nav link for the page you are already on used to
 // leave the view untouched and rewrite the URL to the site root. nuestate's
@@ -50,5 +50,25 @@ test.describe('same-route nav links', () => {
     await page.locator('.mastnav-links a[href^="https://join."]').click()
     await page.waitForURL(/join\.jxnfilm\.club/)
     expect(page.url()).toContain('join.jxnfilm.club')
+  })
+})
+
+// join.jxnfilm.club/privacy can't read jxnfilm.club's localStorage, so a
+// hidden same-site frame (embed/signed-in.htm) tells it whether you're signed
+// in: signed in, its Signup links become Account → the site's /edit.
+test.describe('privacy page on the join Worker', () => {
+  test('a signed-out visitor sees Signup', async ({ page }) => {
+    await page.goto(`${WORKER_ORIGIN}/privacy`)
+    await expect(page.locator('.topnav-link')).toHaveText('Signup')
+    await expect(page.locator('.topnav-link')).toHaveAttribute('href', '/')
+  })
+
+  test('a member signed in on the site sees Account, linking to their account page', async ({ page, baseURL }) => {
+    await signInAs(page, 'privacy-nav@e2e.test')
+    await page.goto(`${WORKER_ORIGIN}/privacy`)
+    const top = page.locator('.topnav-link')
+    await expect(top).toHaveText('Account')
+    await expect(top).toHaveAttribute('href', `${baseURL}/edit`)
+    await expect(page.locator('.site-footer-links a[data-member-link]')).toHaveText('Account')
   })
 })

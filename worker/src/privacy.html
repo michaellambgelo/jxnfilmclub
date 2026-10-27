@@ -31,7 +31,7 @@
       <span class="logo-word">JXN Film Club</span>
       <span class="logo-stamp">Est. JXN MS</span>
     </a>
-    <a class="topnav-link" href="/">Signup</a>
+    <a class="topnav-link" href="/" data-member-link>Signup</a>
   </nav>
 
   <h1>Privacy Policy</h1>
@@ -356,9 +356,24 @@
   <footer class="site-footer">
     <span class="site-footer-mark">Jackson Film Club · Est. JXN MS</span>
     <nav class="site-footer-links">
-      <a href="/">Signup</a>
+      <a href="/" data-member-link>Signup</a>
       <a href="mailto:privacy@jxnfilm.club">Contact</a>
     </nav>
   </footer>
+
+  <!-- Signed in on jxnfilm.club? The session is in that origin's
+       localStorage, out of this page's reach, so a hidden same-site frame
+       (embed/signed-in.htm) answers yes/no and the Signup links become
+       Account. No answer (blocked frame, signed out) leaves Signup. -->
+  <iframe src="%SITE_ORIGIN%/embed/signed-in.htm" hidden aria-hidden="true" tabindex="-1" title="Session check"></iframe>
+  <script>
+    addEventListener('message', function (e) {
+      if (e.origin !== '%SITE_ORIGIN%' || !e.data || e.data.jxnfcSignedIn !== true) return
+      document.querySelectorAll('[data-member-link]').forEach(function (a) {
+        a.textContent = 'Account'
+        a.href = '%SITE_ORIGIN%/edit'
+      })
+    })
+  </script>
 </body>
 </html>

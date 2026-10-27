@@ -472,8 +472,34 @@
     "ticketed": true
   },
   {
+    "id": "2026-12-17-avengers-doomsday-capri",
+    "title": "DOOMSDAY preview screening at Capri",
+    "film": "Avengers: Doomsday",
+    "year": 2026,
+    "date": "2026-12-17",
+    "venue": "Capri Theater",
+    "poster": "https://image.tmdb.org/t/p/w500/sLYCyO58UvBuBtbHTQjPCCgJ4dG.jpg",
+    "kind": "meetup",
+    "time": "20:50",
+    "rsvp": true,
+    "ticketed": true
+  },
+  {
+    "id": "2026-12-17-avengers-doomsday-legacy",
+    "title": "DOOMSDAY preview screening at Legacy Parkway",
+    "film": "Avengers: Doomsday",
+    "year": 2026,
+    "date": "2026-12-17",
+    "venue": "Legacy Theaters Parkway",
+    "poster": "https://image.tmdb.org/t/p/w500/sLYCyO58UvBuBtbHTQjPCCgJ4dG.jpg",
+    "time": "18:00",
+    "rsvp": false,
+    "ticketUrl": "https://957138.formovietickets.com:2235/T.ASP?WCI=BT&Page=PickTickets&SHOWID=170890&PLACEID=38",
+    "ticketed": true
+  },
+  {
     "id": "2026-12-17-dune-part-three",
-    "title": "DUNE Part 3 Premiere Screening",
+    "title": "DUNE Part 3 preview screening",
     "film": "Dune: Part Three",
     "year": 2026,
     "date": "2026-12-17",

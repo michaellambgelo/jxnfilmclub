@@ -247,6 +247,7 @@ async function route(request, env, ctx) {
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/reminders')       return handleAdminReminders(request, env)
+    if (request.method === 'POST' && pathname === '/admin/reminders/schedule') return handleAdminReminderSchedule(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/unlink')   return handleAdminMemberUnlink(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/avatar/flag')   return handleAdminAvatarFlag(request, env)
     if (request.method === 'POST' && pathname === '/admin/member/avatar/unflag') return handleAdminAvatarUnflag(request, env)
@@ -5086,6 +5087,26 @@ function joinOrigin(env) {
   return env.JOIN_ORIGIN || 'https://join.jxnfilm.club'
 }
 
+const remindedKey = (event) => `reminded:${event.id}:${event.date}`
+
+async function readReminded(env, event) {
+  return new Set(safeParseArray(await env.ATTENDANCE_KV.get(remindedKey(event)) || '[]'))
+}
+
+// Every confirmed entry with where it stands for this reminder: 'sent',
+// 'pending' (will be or is being sent), 'late' (RSVP'd after the due time),
+// or 'no-email' (a name-only guest). The sweep sends exactly the 'pending'
+// ones, so the admin schedule built from this can't disagree with it.
+function reminderRecipients(rsvp, done, dueAt) {
+  return rsvp.confirmed.map(entry => ({
+    entry,
+    state: !entry.email ? 'no-email'
+      : done.has(entry.memberId) ? 'sent'
+      : typeof entry.at === 'number' && entry.at >= dueAt ? 'late'
+      : 'pending',
+  }))
+}
+
 async function sendEventReminders(env, { now = Date.now(), dryRun = false } = {}) {
   const today = centralDate(now)
   const horizon = addDays(today, 3)
@@ -5100,11 +5121,10 @@ async function sendEventReminders(env, { now = Date.now(), dryRun = false } = {}
     const dueAt = reminderDueAt(event)
     if (dueAt === null || now < dueAt || now >= dueAt + REMINDER_WINDOW_MS) continue
 
-    const key = `reminded:${event.id}:${event.date}`
-    const done = new Set(safeParseArray(await env.ATTENDANCE_KV.get(key) || '[]'))
-    const rsvp = await readRsvp(env, event.id)
-    const pending = rsvp.confirmed.filter(r =>
-      r.email && !done.has(r.memberId) && !(typeof r.at === 'number' && r.at >= dueAt))
+    const key = remindedKey(event)
+    const done = await readReminded(env, event)
+    const pending = reminderRecipients(await readRsvp(env, event.id), done, dueAt)
+      .filter(x => x.state === 'pending').map(x => x.entry)
     due.push({ id: event.id, title: event.title, recipients: pending.length })
     if (dryRun || !pending.length) continue
 
@@ -5123,6 +5143,46 @@ async function sendEventReminders(env, { now = Date.now(), dryRun = false } = {}
   }
   console.log(`sendEventReminders: events=${due.length} sent=${sent}${dryRun ? ' (dry run)' : ''}`)
   return { events: due, sent }
+}
+
+// POST /admin/reminders/schedule (ADMIN_TOKEN) — read-only: the reminder of
+// every upcoming event that takes RSVPs, when it goes (or went) out, and who
+// it is for. Names only; the admin's Events tab already has the rest.
+//   status: 'scheduled' (due time ahead) · 'sending' (in the window, someone
+//   still pending — the next :07 tick sends) · 'sent' (everyone eligible has
+//   it) · 'closed' (window over, nothing sent: the event was set up or
+//   RSVP'd inside the two days) · 'none' (nobody to send to)
+async function reminderSchedule(env, now = Date.now()) {
+  const today = centralDate(now)
+  const out = []
+  for (const proj of await readEventsAll(env)) {
+    if (!proj?.date || proj.date < today || !rsvpEnabled(proj)) continue
+    const event = await readEvent(env, proj.id)
+    if (!event || !rsvpEnabled(event)) continue
+    const dueAt = reminderDueAt(event)
+    if (dueAt === null) continue
+    const recipients = reminderRecipients(await readRsvp(env, event.id), await readReminded(env, event), dueAt)
+    const n = (state) => recipients.filter(x => x.state === state).length
+    const closesAt = dueAt + REMINDER_WINDOW_MS
+    const status = now < dueAt ? (n('pending') ? 'scheduled' : 'none')
+      : now < closesAt ? (n('pending') ? 'sending' : n('sent') ? 'sent' : 'none')
+      : n('sent') ? 'sent' : 'closed'
+    out.push({
+      id: event.id, title: event.title, date: event.date, time: event.time || '', kind: event.kind || '',
+      dueAt: new Date(dueAt).toISOString(), closesAt: new Date(closesAt).toISOString(), status,
+      recipients: recipients.map(({ entry, state }) => ({ name: entry.name || '', guest: isGuestId(entry.memberId), state })),
+    })
+  }
+  out.sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+  return { now: new Date(now).toISOString(), events: out }
+}
+
+async function handleAdminReminderSchedule(request, env) {
+  const auth = request.headers.get('Authorization')?.replace(/^Bearer /, '')
+  if (!env.ADMIN_TOKEN || auth !== env.ADMIN_TOKEN) {
+    return json(env, { error: 'unauthorized' }, 401)
+  }
+  return json(env, await reminderSchedule(env))
 }
 
 // POST /admin/reminders (ADMIN_TOKEN) { dryRun? } — run the hourly sweep now.

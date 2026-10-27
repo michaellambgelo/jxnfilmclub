@@ -128,6 +128,38 @@ test.describe('admin dashboard', () => {
     expect(await getKv(page, `session:${m.id}`)).toBeNull()
   })
 
+  // Scheduled reminders: the table lists an upcoming RSVP event's reminder
+  // with its recipients, and Preview loads that event into the gallery.
+  test('Emails tab lists scheduled reminders and previews one', async ({ page }) => {
+    const ev = { id: 'e2e-remind', title: 'E2E Reminder Night', date: '2099-07-15', time: '19:30', kind: 'meetup',
+      venue: 'The Capri Theatre', rsvp: true }
+    const att = (key: string, value: string) =>
+      page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key, value } })
+    // Append to events:all rather than replace it — other tests' rows stay.
+    const cur = await (await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=events:all`)).json()
+    const all = (cur.value ? JSON.parse(cur.value) : []).filter((e: { id: string }) => e.id !== ev.id)
+    await att('events:all', JSON.stringify([...all, ev]))
+    await att(`event:${ev.id}`, JSON.stringify(ev))
+    await att(`rsvp:${ev.id}`, JSON.stringify({ confirmed: [{ memberId: 'm-e2e', name: 'Remy', email: 'remy@e2e.test', at: Date.now() }], waitlist: [] }))
+    try {
+      await page.goto(`${ADMIN_ORIGIN}/`)
+      await page.locator('#tabs button[data-tab="emails"]').click()
+      const row = page.locator('.email-schedule tr', { hasText: 'E2E Reminder Night' })
+      await expect(row).toContainText('Mon, Jul 13, 7:30 PM')
+      await expect(row.locator('.pill')).toHaveText('Scheduled')
+      await row.locator('summary').click()
+      await expect(row).toContainText('Remy — will get it')
+      await expect(row).not.toContainText('remy@e2e.test')
+      await row.locator('[data-em-preview]').click()
+      await expect(page.locator('#em-event')).toHaveValue(ev.id)
+      await expect(page.locator('.email-card', { hasText: 'Reminder (48 hours before)' })).toContainText('Reminder: E2E Reminder Night')
+    } finally {
+      await att('events:all', JSON.stringify(all))
+      await page.request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent('event:e2e-remind')}`)
+      await page.request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent('rsvp:e2e-remind')}`)
+    }
+  })
+
   // The Emails tab renders the join Worker's real transactional senders and
   // can mail one of them as a test. It must never mail anything on render.
   test('Emails tab previews every transactional email and test-sends one', async ({ page }) => {

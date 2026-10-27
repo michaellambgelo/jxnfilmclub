@@ -299,16 +299,61 @@ let nlInsertClean = false  // the last body change was an insert, untouched sinc
 
 let emailPreviewEvent = ''  // '' = the Worker's sample event
 
+// The 48-hour reminders the join Worker's hourly cron will send, from
+// POST /admin/reminders/schedule — the same recipient rules the sweep uses.
+const REMINDER_STATUS = {
+  scheduled: ['off', 'Scheduled'],
+  sending: ['warn', 'Sending next hour'],
+  sent: ['on', 'Sent'],
+  closed: ['danger', 'Window closed'],
+  none: ['off', 'Nobody to send to'],
+}
+const RECIPIENT_STATE = {
+  pending: 'will get it', sent: 'sent', late: "RSVP'd after it was due — skipped", 'no-email': 'no email — skipped',
+}
+const fmtCentral = (iso) => new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+}).format(new Date(iso))
+
+function scheduledEmailsHtml(schedule) {
+  const rows = schedule.events.map(e => {
+    const [cls, label] = REMINDER_STATUS[e.status] || ['off', e.status]
+    const counted = e.recipients.filter(r => r.state === 'pending' || r.state === 'sent')
+    const guests = counted.filter(r => r.guest).length
+    return `<tr>
+      <td><b>${escapeHtml(e.title || e.id)}</b><div class="muted">${escapeHtml(`${e.date}${e.time ? ` ${e.time}` : ''}${e.kind ? ` · ${e.kind}` : ''}`)}</div></td>
+      <td>${escapeHtml(fmtCentral(e.dueAt))}</td>
+      <td>${e.recipients.length ? `<details><summary>${counted.length}${guests ? ` (${guests} guest${guests === 1 ? '' : 's'})` : ''}</summary><ul class="email-recipients">
+        ${e.recipients.map(r => `<li>${escapeHtml(r.name || '(no name)')}${r.guest ? ' <span class="muted">guest</span>' : ''} — <span class="muted">${escapeHtml(RECIPIENT_STATE[r.state] || r.state)}</span></li>`).join('')}
+      </ul></details>` : '0'}</td>
+      <td><span class="pill ${cls}">${escapeHtml(label)}</span></td>
+      <td><button data-em-preview="${attr(e.id)}">Preview</button></td>
+    </tr>`
+  }).join('')
+  return `
+    <h2>Scheduled</h2>
+    <p class="section-hint">48-hour reminders for upcoming events that take RSVPs. Times are Central; the
+      Worker sends due reminders at :07 past each hour.</p>
+    ${schedule.events.length ? `<table class="email-schedule">
+      <thead><tr><th>Event</th><th>Reminder goes out</th><th>Recipients</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '<p class="muted">Nothing scheduled — no upcoming event takes RSVPs.</p>'}`
+}
+
 async function renderEmails() {
   const perEvent = await api('GET', `/api/kv?${qs({ env: env(), binding: 'ATTENDANCE_KV', prefix: 'event:' })}`)
   const events = perEvent.keys.map(k => tryParse(perEvent.values[k.name])).filter(Boolean)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
   // A pick from the other environment would 404 after an env switch.
   if (emailPreviewEvent && !events.some(e => e.id === emailPreviewEvent)) emailPreviewEvent = ''
-  const data = await api('POST', `/api/email/preview?${qs({ env: env() })}`,
-    JSON.stringify(emailPreviewEvent ? { eventId: emailPreviewEvent } : {}))
+  const [data, schedule] = await Promise.all([
+    api('POST', `/api/email/preview?${qs({ env: env() })}`,
+      JSON.stringify(emailPreviewEvent ? { eventId: emailPreviewEvent } : {})),
+    api('POST', `/api/email/scheduled?${qs({ env: env() })}`, '{}'),
+  ])
 
   content().innerHTML = `
+    ${scheduledEmailsHtml(schedule)}
+    <h2>Templates</h2>
     <div class="email-gallery-bar">
       <label>Event
         <select id="em-event">
@@ -339,6 +384,10 @@ async function renderEmails() {
   // so links in the preview are inert.
   for (const e of data.emails) content().querySelector(`[data-em-frame="${e.type}"]`).srcdoc = e.html
 
+  content().querySelectorAll('[data-em-preview]').forEach(btn => btn.addEventListener('click', () => {
+    emailPreviewEvent = btn.dataset.emPreview
+    withBusy(renderEmails)
+  }))
   $('#em-event').addEventListener('change', (ev) => {
     emailPreviewEvent = ev.target.value
     withBusy(renderEmails)

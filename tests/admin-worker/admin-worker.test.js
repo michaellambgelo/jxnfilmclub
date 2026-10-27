@@ -310,6 +310,18 @@ describe('/api/email/preview', () => {
   })
 })
 
+describe('/api/email/scheduled', () => {
+  it('proxies to the join Worker reminder schedule with the env token', async () => {
+    const { service, calls } = stubService({ events: [] })
+    const res = await call('/api/email/scheduled?env=production', {
+      method: 'POST', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/reminders/schedule')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+  })
+})
+
 // --- TMDB poster search proxy: GET with the admin token, no body ---
 
 describe('/api/tmdb/search', () => {

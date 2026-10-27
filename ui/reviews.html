@@ -47,6 +47,10 @@
   </div>
   <p class="rv-end muted" hidden>That is every review we have right now.</p>
 
+  <!-- Floats in once the reader is two screens down; shown by the scroll
+       listener below toggling a class, never by an update. -->
+  <button type="button" class="rv-top" aria-label="Back to top" tabindex="-1">↑ Top</button>
+
   <script>
     const RV_BATCH = 5
     let rvObserver = null
@@ -64,6 +68,16 @@
 
     // Reveal the next batch, then keep going while the sentinel is still on
     // screen (a tall viewport can swallow a whole batch). Pure DOM; see above.
+    // Show the Top button past two screens of scrolling. Looks the button up
+    // each time, so it simply does nothing once the reader leaves the page.
+    function rvTopSync() {
+      const b = document.querySelector('.rv-top')
+      if (!b) return
+      const on = scrollY > innerHeight * 2
+      b.classList.toggle('-on', on)
+      b.tabIndex = on ? 0 : -1
+    }
+
     function rvReveal() {
       const pending = document.querySelectorAll('.rv-card.-pending')
       for (let i = 0; i < pending.length && i < RV_BATCH; i++) pending[i].classList.remove('-pending')
@@ -94,8 +108,15 @@
       if (!globalThis.jxnfcReviewsBound) {
         globalThis.jxnfcReviewsBound = true
         document.addEventListener('click', function(e) {
-          if (e.target.closest && e.target.closest('.rv-more-btn')) rvReveal()
+          if (!e.target.closest) return
+          if (e.target.closest('.rv-more-btn')) rvReveal()
+          if (e.target.closest('.rv-top')) {
+            scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+            const h = document.querySelector('.reviews h1')
+            if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) }
+          }
         })
+        addEventListener('scroll', rvTopSync, { passive: true })
       }
       const results = await Promise.all([
         getTakes().catch(function() { return [] }),

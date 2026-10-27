@@ -64,3 +64,12 @@ take. E2E's `GET /takes` serves whatever a test seeds into `watched:cache`
 | `ui/masthead.html` | The Reviews tab |
 | `index.html` | `/reviews` → `reviews-view` |
 | `worker/src/index.js` | `GET /takes` (`handleTakesGet`, `takesFromFeed`) |
+
+## Back to top
+
+A fixed **↑ Top** button (`.rv-top`) fades in once the reader is two screens
+down and scrolls back to the heading (smoothly, unless reduced motion is on),
+moving focus there. It sits bottom left because the beta Feedback button and
+its panel own the bottom-right corner. Like the reveal, it is pure DOM: a
+passive scroll listener (`rvTopSync`, bound once) toggles `-on`, and the click
+rides the same document delegation as Show more.

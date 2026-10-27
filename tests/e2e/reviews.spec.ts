@@ -75,6 +75,22 @@ test.describe('reviews page', () => {
     await expect(page.locator('.rv-card:not(.-pending)')).toHaveCount(10)
   })
 
+  test('a Top button floats in two screens down and goes back up', async ({ page }) => {
+    await page.goto('/reviews')
+    await expect(page.locator('.rv-card:not(.-pending)')).toHaveCount(5)
+    const top = page.locator('.rv-top')
+    await expect(top).toBeHidden()
+    // Reveal everything, then go to the very bottom.
+    await page.locator('.rv-more-btn').evaluate((b: HTMLElement) => b.click())
+    await page.locator('.rv-more-btn').evaluate((b: HTMLElement) => b.click())
+    await expect(page.locator('.rv-end')).toBeVisible()
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight))
+    await expect(top).toBeVisible()
+    await top.click()
+    await expect.poll(() => page.evaluate(() => scrollY)).toBe(0)
+    await expect(top).toBeHidden()
+  })
+
   test('says so when there are no reviews', async ({ page }) => {
     await seedKv(page, 'watched:cache', JSON.stringify({ map: {}, takes: [], fetchedAt: Date.now() }))
     await page.goto('/reviews')

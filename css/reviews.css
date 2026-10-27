@@ -176,3 +176,44 @@
   .rv-text { font-size: var(--fs-18); }
   .rv-source { margin-left: 0; flex-basis: 100%; }
 }
+
+/* Back to top: faded in past two screens (rvTopSync). Bottom left, because
+   the beta Feedback button and its panel own the bottom-right corner
+   (css/feedback.css). Same offsets and layer as that button. */
+.rv-top {
+  position: fixed;
+  left: max(1.25rem, env(safe-area-inset-left));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 90;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-lift);
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  translate: 0 8px;
+  transition: opacity 160ms ease-out, translate 160ms ease-out, visibility 0s linear 160ms;
+}
+
+.rv-top.-on {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 0;
+  transition: opacity 160ms ease-out, translate 160ms ease-out;
+}
+
+.rv-top:hover {
+  border-color: var(--brand);
+  color: var(--brand-tint-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-top, .rv-top.-on { transition: none; }
+}

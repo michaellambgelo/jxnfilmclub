@@ -457,6 +457,11 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/email/preview') {
     return proxyJoinAdmin(request, env, q, '/admin/email/preview')
   }
+  // POST /api/email/scheduled?env= — the Emails tab's reminder schedule
+  // (read-only on the join Worker side).
+  if (method === 'POST' && url.pathname === '/api/email/scheduled') {
+    return proxyJoinAdmin(request, env, q, '/admin/reminders/schedule')
+  }
   // POST /api/newsletter/image?env=  body = JSON { contentType, b64 }
   // JSON rather than raw bytes precisely so proxyJoinAdmin carries it verbatim
   // — it forwards `await request.text()` re-headed as application/json.

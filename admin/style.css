@@ -616,6 +616,9 @@ dialog pre.rich {
 }
 
 /* Emails tab: one card per transactional email, preview at mail width. */
+.email-schedule { margin: 0 0 1.5rem }
+.email-schedule summary { cursor: pointer }
+.email-recipients { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.9rem }
 .email-gallery-bar { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 0.75rem }
 .email-gallery-bar label { display: flex; align-items: center; gap: 0.4rem }
 .email-gallery-bar select, .email-gallery-bar input { padding: 0.25rem 0.4rem; min-width: 14rem }

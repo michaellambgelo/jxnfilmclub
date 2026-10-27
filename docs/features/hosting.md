@@ -62,6 +62,11 @@ screening, the notes, and the cancel link (framed as removal for a guest).
 - `POST /admin/reminders` (`ADMIN_TOKEN`, body `{ dryRun? }`) runs the sweep
   now; a dry run lists what is due without sending or marking anything.
   Preview + test-send: admin **Emails** tab, "Reminder (48 hours before)".
+- `POST /admin/reminders/schedule` (`ADMIN_TOKEN`, read-only) lists every
+  upcoming RSVP event's reminder: due time, status, and each confirmed
+  recipient by name with their state. It and the sweep both classify through
+  `reminderRecipients()`, so the schedule shows exactly who the sweep will
+  mail. Shown in the admin **Emails** tab under *Scheduled*.
 
 Tests: `tests/worker/reminders.test.js`.
 

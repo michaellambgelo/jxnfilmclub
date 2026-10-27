@@ -314,9 +314,11 @@ async function handle(req, res) {
     return json(res, workerRes.status, data)
   }
   // POST /api/email/preview?env=  body = JSON { eventId?, type?, testTo? }
-  // Mirrors the hosted admin worker's route; same server-side token handling
+  // POST /api/email/scheduled?env= — the reminder schedule.
+  // Mirror the hosted admin worker's routes; same server-side token handling
   // as the newsletter send above.
-  if (method === 'POST' && url.pathname === '/api/email/preview') {
+  const EMAIL_ROUTES = { '/api/email/preview': '/admin/email/preview', '/api/email/scheduled': '/admin/reminders/schedule' }
+  if (method === 'POST' && EMAIL_ROUTES[url.pathname]) {
     if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
     const token = q.env === 'staging'
       ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
@@ -326,7 +328,7 @@ async function handle(req, res) {
       throw new HttpError(400, `set ${name} in the admin server environment before previewing emails`)
     }
     const body = await readBody(req)
-    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/email/preview`, {
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}${EMAIL_ROUTES[url.pathname]}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body,

@@ -196,3 +196,57 @@ describe('POST /admin/reminders', () => {
     expect(sent).toHaveLength(1)
   })
 })
+
+describe('POST /admin/reminders/schedule', () => {
+  const schedule = (token = ADMIN_TOKEN) => SELF.fetch('https://join.jxnfilm.club/admin/reminders/schedule', {
+    method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+
+  it('401s without the admin token', async () => {
+    expect((await schedule(null)).status).toBe(401)
+  })
+
+  it('lists upcoming reminders with due time, status, and who each is for — names, never emails', async () => {
+    const past = Date.now() - 24 * HOUR
+    const lateAt = Date.now() + 365 * 24 * HOUR
+    const curated = { ...JULY, id: 'ev-curated', rsvp: false }
+    const meetup = { id: 'ev-meet', title: 'Meetup', date: '2099-07-15', kind: 'meetup', venue: 'The Capri Theatre', rsvp: true }
+    await seed([JULY, curated, meetup], {
+      'ev-july': { confirmed: [{ ...alice, at: past }, { ...guest, at: past }, { memberId: 'guest:noemail1', name: 'Nora', at: past }], waitlist: [bob] },
+    })
+    // Sent already to Alice, and a member who RSVP'd after the due time.
+    await env.ATTENDANCE_KV.put('reminded:ev-july:2099-07-15', JSON.stringify(['m-alice']))
+    await env.ATTENDANCE_KV.put('rsvp:ev-meet', JSON.stringify({ confirmed: [{ ...bob, at: lateAt }], waitlist: [] }))
+
+    const body = await (await schedule()).json()
+    expect(body.events.map(e => e.id)).toEqual(['ev-meet', 'ev-july']) // by due time; no RSVP-less event
+    const [meet, july] = body.events
+    expect(meet.dueAt).toBe('2099-07-13T14:00:00.000Z')
+    expect(meet.status).toBe('scheduled')
+    expect(july.dueAt).toBe(new Date(JULY_DUE).toISOString())
+    expect(july.status).toBe('scheduled')
+    expect(july.recipients).toEqual([
+      { name: 'Alice', guest: false, state: 'sent' },
+      { name: 'Gus', guest: true, state: 'pending' },
+      { name: 'Nora', guest: true, state: 'no-email' },
+    ])
+    expect(JSON.stringify(body)).not.toContain('@example.com')
+    expect(JSON.stringify(body)).not.toContain('9 Private Rd')
+  })
+
+  it('agrees with the sweep: what the schedule calls pending is what gets sent', async () => {
+    const soon = new Date(Date.now() + 47 * HOUR)
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(soon)
+    const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(soon)
+    await seed([{ ...JULY, date, time }], { 'ev-july': { confirmed: [{ ...alice, at: Date.now() - 24 * HOUR }], waitlist: [] } })
+    const sent = captureResend()
+
+    let [ev] = (await (await schedule()).json()).events
+    expect(ev.status).toBe('sending')
+    await SELF.fetch('https://join.jxnfilm.club/admin/reminders', { method: 'POST', headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } })
+    expect(sent).toHaveLength(1)
+    ;[ev] = (await (await schedule()).json()).events
+    expect(ev.status).toBe('sent')
+    expect(ev.recipients[0].state).toBe('sent')
+  })
+})

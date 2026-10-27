@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Jackson Film Club</title>
+<!--
+  Framed (hidden) by join.jxnfilm.club pages so they can show "Account"
+  instead of "Signup" to a signed-in member. The session lives in this
+  origin's localStorage, which the join Worker's pages cannot read, and the
+  privacy policy promises no cookies — so this page reads it and posts back a
+  bare yes/no. Never the token. Same-site framing keeps localStorage
+  unpartitioned in every current browser.
+
+  Deliberately .htm: Nue passes it through untouched (an .html file would be
+  wrapped in the SPA shell). Same signed-in rule as isSignedIn() in
+  ui/masthead.html — keep the two in step.
+-->
+<script>
+(function () {
+  var to = ''
+  try { to = new URL(document.referrer).origin } catch (e) { return }
+  // Only the join Worker's own origins (and local dev) hear the answer.
+  if (!/^https:\/\/join(-staging)?\.jxnfilm\.club$/.test(to) &&
+      !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(to)) return
+  var signedIn = false
+  try {
+    var s = JSON.parse(localStorage.jxnfc_session || 'null')
+    signedIn = !!(s && ((s.token && s.exp > Date.now()) || s.refresh))
+  } catch (e) {}
+  parent.postMessage({ jxnfcSignedIn: signedIn }, to)
+})()
+</script>

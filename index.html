@@ -98,7 +98,7 @@
   // and backslashes in this codebase are their own hazard. Seven routes is
   // a short enough list to simply enumerate. The one route that needs its
   // query is a film page, kept only in the exact shape /film?slug=<slug>.
-  const NEXT_OK = ['/speak', '/events', '/watched', '/members', '/host', '/feedback', '/giveaways']
+  const NEXT_OK = ['/speak', '/events', '/watched', '/reviews', '/members', '/host', '/feedback', '/giveaways']
   // (No backslashes: a string prefix plus a plain character class.)
   const FILM_NEXT = '/film?slug='
   const filmNextOk = (p) => p.startsWith(FILM_NEXT) && /^[a-z0-9-]+$/.test(p.slice(FILM_NEXT.length))
@@ -182,6 +182,7 @@
         type === 'members' ? 'members-view' :
         type === 'events'  ? 'events-view' :
         type === 'watched' ? 'watched-view' :
+        type === 'reviews' ? 'reviews-view' :    // Hot Takes, every cached member review; see docs/features/reviews.md
         type === 'film'    ? 'film-view' :        // one film, /film?slug=SLUG; see docs/features/film-stats.md
         type === 'map'     ? 'map-view' :         // venue map; tiles and MapLibre are self-hosted, see docs/features/map.md
         type === 'signin'  ? 'sign-in-view' :

@@ -2790,7 +2790,11 @@ async function currentWatchedRecord(env, ctx) {
 // member at once (evictHandleFromCaches). Replaces the data/takes.json file
 // the 6-hour scraper used to commit to the public repo.
 async function handleTakesGet(request, env, ctx) {
-  if (env.E2E_MODE === 'true') return watchedResponse(env, [])
+  // E2E never fetches Letterboxd: it serves whatever a test seeded.
+  if (env.E2E_MODE === 'true') {
+    const seeded = readWatchedRecord(await env.MEMBERS_KV.get('watched:cache'))
+    return watchedResponse(env, seeded && Array.isArray(seeded.takes) ? seeded.takes : [])
+  }
   const rec = await currentWatchedRecord(env, ctx)
   return watchedResponse(env, Array.isArray(rec.takes) ? rec.takes : [])
 }

@@ -1,0 +1,178 @@
+/* Reviews, /reviews (ui/reviews.html): every cached Hot Take as one column of
+   the home page take cards, revealed five at a time. */
+
+.reviews {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.reviews .rv-eyebrow {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--brand);
+}
+
+.reviews .lede {
+  color: var(--ink-3);
+  margin: 0 0 var(--space-8);
+}
+
+.rv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-8);
+}
+
+/* Not yet revealed. display:none, so its lazy poster is not fetched either. */
+.rv-card.-pending {
+  display: none;
+}
+
+.rv-card {
+  background: var(--surface);
+  padding: 24px 24px 20px;
+  box-shadow: var(--shadow-lift);
+  animation: rv-in 240ms ease-out;
+}
+
+.rv-card:nth-child(3n + 1) { transform: rotate(-0.6deg); }
+.rv-card:nth-child(3n + 2) { transform: rotate(0.5deg); }
+.rv-card:nth-child(3n)     { transform: rotate(-0.3deg); }
+
+@keyframes rv-in {
+  from { opacity: 0; translate: 0 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-card { animation: none; }
+}
+
+.rv-poster {
+  float: right;
+  width: 84px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  margin: 0 0 12px 16px;
+  box-shadow: var(--shadow-lift);
+  transform: rotate(1.4deg);
+  background: var(--surface-2);
+}
+
+.rv-tape {
+  margin-bottom: 12px;
+}
+
+.rv-film {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: var(--fs-18);
+  font-weight: 700;
+  line-height: var(--lh-snug);
+  color: var(--ink-strong);
+}
+
+.rv-film a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rv-film a:hover {
+  color: var(--brand);
+}
+
+.rv-year {
+  margin-left: 0.4em;
+  font-family: var(--font-label);
+  font-size: var(--fs-13);
+  font-weight: 400;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-5);
+}
+
+.rv-text {
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-size: var(--fs-22);
+  font-style: italic;
+  line-height: 1.42;
+  color: #ece6da;
+  overflow-wrap: anywhere;
+}
+
+.rv-by {
+  clear: both;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.rv-by .avatar {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+
+.rv-by .avatar b {
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.rv-who {
+  color: var(--ink-2);
+}
+
+.rv-source {
+  margin-left: auto;
+  color: var(--brand-tint-fg);
+  text-decoration: none;
+}
+
+.rv-source:hover {
+  text-decoration: underline;
+}
+
+.rv-more,
+.rv-end {
+  margin: var(--space-8) 0 0;
+  text-align: center;
+}
+
+.rv-more[hidden],
+.rv-end[hidden],
+.rv-status[hidden] {
+  display: none;
+}
+
+.rv-more-btn {
+  font-family: var(--font-label);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  padding: 0.6rem 1.4rem;
+  cursor: pointer;
+}
+
+.rv-more-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand-tint-fg);
+}
+
+@media (max-width: 600px) {
+  .rv-card { padding: 18px 18px 16px; }
+  .rv-poster { width: 64px; margin-left: 12px; }
+  .rv-text { font-size: var(--fs-18); }
+  .rv-source { margin-left: 0; flex-basis: 100%; }
+}

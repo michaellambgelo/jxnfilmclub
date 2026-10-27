@@ -17,6 +17,7 @@ docs_for_file() {
     ui/auth.html)                  echo "signup signin member-profile attendance" ;;
     ui/feedback.html)              echo "feedback" ;;
     ui/widgets.html)               echo "members-directory" ;;
+    ui/reviews.html|css/reviews.css) echo "reviews" ;;
     model/index.ts)                echo "events members-directory watched" ;;
     scripts/refresh_spotify.py)    echo "home" ;;
     admin/admin.js|admin/server.mjs|admin/index.html) echo "admin/README.md" ;;

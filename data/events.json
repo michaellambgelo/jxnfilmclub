@@ -492,6 +492,7 @@
     "date": "2026-12-17",
     "venue": "Legacy Theaters Parkway",
     "poster": "https://image.tmdb.org/t/p/w500/sLYCyO58UvBuBtbHTQjPCCgJ4dG.jpg",
+    "kind": "meetup",
     "time": "18:00",
     "rsvp": false,
     "ticketUrl": "https://957138.formovietickets.com:2235/T.ASP?WCI=BT&Page=PickTickets&SHOWID=170890&PLACEID=38",

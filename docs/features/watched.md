@@ -88,10 +88,12 @@ handle from the map **and** from `takes`.
 
 A public, aggregate-only Prometheus scrape target (text format 0.0.4,
 `Cache-Control: public, max-age=60`) that Grafana Alloy on node0 scrapes every
-5 minutes. It reads only the existing KV records (`watched:cache`,
-`avatars:cache`, raw `members:all`) and never fetches Letterboxd or triggers a
-rebuild. Every label is a closed set — `cache` (watched/avatars), `outcome`
-(ok/forbidden/http_error/network_error/carried), `window` (7d/30d) and
+5 minutes. It reads the existing KV records (`watched:cache`,
+`avatars:cache`, raw `members:all`) plus one read-only `FILMS_DB` query, and
+never fetches Letterboxd or triggers a rebuild. Every label is a closed set —
+`cache` (watched/avatars), `outcome`
+(ok/forbidden/http_error/network_error/carried), `source` (feed/films_db),
+`window` (7d/30d) and
 `rating` (the ten half-star values) — so no handle, name, email or film title
 can reach a series. Both cache builds store `builtAt` and per-handle fetch
 `stats` on the record they already write, so a burst of 403s (Letterboxd's
@@ -100,12 +102,29 @@ rather than only as a stale `fetchedAt`.
 
 Series: `jxnfc_letterboxd_cache_{fetched,built}_timestamp_seconds`,
 `jxnfc_letterboxd_cache_miss_active`, `jxnfc_letterboxd_last_build_fetches`,
-`jxnfc_letterboxd_cache_handles`, `jxnfc_members_{total,linked}`, and the club
-activity gauges `jxnfc_club_{diary_entries,active_members,liked_entries,rewatch_entries,shared_films,rated_entries,rating_sum}`.
+`jxnfc_letterboxd_cache_handles`, `jxnfc_members_{total,linked}`, the club
+activity gauges `jxnfc_club_{diary_entries,active_members,liked_entries,rewatch_entries,shared_films,rated_entries,rating_sum}`,
+and `jxnfc_films_db_up` plus, when it is 1, `jxnfc_films_db_{logs,films}`
+(all-time totals of the club film log).
 Windows compare `watched_date` strings against UTC dates: 7d is today-6
-through today, 30d is today-29 through today. They inherit the cache's
-rolling 50-per-member depth, so a member logging more than 50 films in 30
-days would be undercounted. The privacy policy names Grafana Labs for these
+through today, 30d is today-29 through today.
+
+Each club activity gauge is emitted once per `source` (since 2026-10-28):
+
+- `source="feed"` counts `watched:cache`, so it inherits the rolling
+  50-per-member depth: a member logging more than 50 films in 30 days is
+  undercounted. Current linked members only.
+- `source="films_db"` counts the club film log (`FILMS_DB`, see
+  [film-stats.md](film-stats.md)), each log at its latest version. It
+  accumulates, so nothing rolls off, but it only began on 2026-10-23: entries
+  that had already left a feed before then were never captured. Former
+  members' anonymized logs count (as one opaque member each). Omitted when the
+  binding is missing or the query throws, and `jxnfc_films_db_up` reads 0.
+
+The Grafana dashboard (cluster-ops `grafana/generators/letterboxd.py`) shows
+each source in its own row and the two 30d diary counts side by side; its
+feed queries match `source!="films_db"` so series scraped before the label
+existed stay continuous. The privacy policy names Grafana Labs for these
 counts — keep the two in sync.
 
 ## Avatars (`GET /avatars`)

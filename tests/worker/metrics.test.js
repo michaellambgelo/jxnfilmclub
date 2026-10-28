@@ -203,24 +203,24 @@ describe('GET /metrics', () => {
     await seedActivity()
     const m = parseProm(await (await req('/metrics')).text())
     // 7d: unmistakable(0), shared-one(6), bee shared-one(2)
-    expect(m['jxnfc_club_diary_entries{window="7d"}']).toBe(3)
-    expect(m['jxnfc_club_active_members{window="7d"}']).toBe(2)
-    expect(m['jxnfc_club_liked_entries{window="7d"}']).toBe(2)
-    expect(m['jxnfc_club_rewatch_entries{window="7d"}']).toBe(0)
-    expect(m['jxnfc_club_shared_films{window="7d"}']).toBe(1) // shared-one, keyed by slug despite /1/
-    expect(m['jxnfc_club_rated_entries{window="7d",rating="4.5"}']).toBe(1)
-    expect(m['jxnfc_club_rated_entries{window="7d",rating="3.0"}']).toBe(1)
-    expect(m['jxnfc_club_rated_entries{window="7d",rating="4.0"}']).toBe(1) // "4" normalized
-    expect(m['jxnfc_club_rated_entries{window="7d",rating="5.0"}']).toBe(0)
-    expect(m['jxnfc_club_rating_sum{window="7d"}']).toBe(11.5)
+    expect(m['jxnfc_club_diary_entries{source="feed",window="7d"}']).toBe(3)
+    expect(m['jxnfc_club_active_members{source="feed",window="7d"}']).toBe(2)
+    expect(m['jxnfc_club_liked_entries{source="feed",window="7d"}']).toBe(2)
+    expect(m['jxnfc_club_rewatch_entries{source="feed",window="7d"}']).toBe(0)
+    expect(m['jxnfc_club_shared_films{source="feed",window="7d"}']).toBe(1) // shared-one, keyed by slug despite /1/
+    expect(m['jxnfc_club_rated_entries{source="feed",window="7d",rating="4.5"}']).toBe(1)
+    expect(m['jxnfc_club_rated_entries{source="feed",window="7d",rating="3.0"}']).toBe(1)
+    expect(m['jxnfc_club_rated_entries{source="feed",window="7d",rating="4.0"}']).toBe(1) // "4" normalized
+    expect(m['jxnfc_club_rated_entries{source="feed",window="7d",rating="5.0"}']).toBe(0)
+    expect(m['jxnfc_club_rating_sum{source="feed",window="7d"}']).toBe(11.5)
     // 30d adds month-only(7, rewatch) and bee month-only(29); sea's day-30 entry is out.
-    expect(m['jxnfc_club_diary_entries{window="30d"}']).toBe(5)
-    expect(m['jxnfc_club_active_members{window="30d"}']).toBe(2)
-    expect(m['jxnfc_club_rewatch_entries{window="30d"}']).toBe(1)
-    expect(m['jxnfc_club_shared_films{window="30d"}']).toBe(2)
-    expect(m['jxnfc_club_rating_sum{window="30d"}']).toBe(11.5)
+    expect(m['jxnfc_club_diary_entries{source="feed",window="30d"}']).toBe(5)
+    expect(m['jxnfc_club_active_members{source="feed",window="30d"}']).toBe(2)
+    expect(m['jxnfc_club_rewatch_entries{source="feed",window="30d"}']).toBe(1)
+    expect(m['jxnfc_club_shared_films{source="feed",window="30d"}']).toBe(2)
+    expect(m['jxnfc_club_rating_sum{source="feed",window="30d"}']).toBe(11.5)
     // The rating label is a closed set of ten half-star values per window.
-    const ratingLabels = Object.keys(m).filter(k => k.startsWith('jxnfc_club_rated_entries{window="30d"'))
+    const ratingLabels = Object.keys(m).filter(k => k.startsWith('jxnfc_club_rated_entries{source="feed",window="30d"'))
     expect(ratingLabels).toHaveLength(10)
   })
 
@@ -232,7 +232,60 @@ describe('GET /metrics', () => {
     }
     // Only the four bounded label keys ever appear.
     const keys = new Set([...text.matchAll(/[{,]([a-z_]+)="/g)].map(x => x[1]))
-    expect([...keys].sort()).toEqual(['cache', 'outcome', 'rating', 'window'])
+    expect([...keys].sort()).toEqual(['cache', 'outcome', 'rating', 'source', 'window'])
+  })
+
+  // FILMS_DB keeps every diary entry ingest has seen, so a member past the
+  // feed's 50-entry window still counts in full there.
+  it('counts the club film log as source="films_db", next to the feed', async () => {
+    await seedActivity()
+    const db = env.FILMS_DB
+    const now = new Date().toISOString()
+    const stmts = [
+      db.prepare("INSERT INTO films (slug, title, first_seen) VALUES ('shared-one', 'T', ?1), ('db-only', 'T', ?1), ('old', 'T', ?1)").bind(now),
+    ]
+    const logs = [
+      // [id, url, slug, member, date, rewatch, rating, liked]
+      [1, 'u1', 'shared-one', 'a', daysAgo(1), 0, 4.5, 1],
+      [2, 'u2', 'shared-one', 'former:x', daysAgo(3), 1, null, 0],
+      [3, 'u3', 'db-only', 'a', daysAgo(10), 0, 2, 0],
+      [4, 'u4', 'old', 'b', daysAgo(400), 0, 5, 0],
+    ]
+    for (const [id, url, slug, member, date, rewatch, rating, liked] of logs) {
+      stmts.push(db.prepare('INSERT INTO logs (id, entry_url, film_slug, member_key, watched_date, rewatch, first_seen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
+        .bind(id, url, slug, member, date, rewatch, now))
+      stmts.push(db.prepare('INSERT INTO log_versions (log_id, seen_at, rating, liked) VALUES (?1, ?2, ?3, ?4)').bind(id, now, rating, liked))
+    }
+    // A later version wins: log 3 was re-rated 3.5.
+    stmts.push(db.prepare("INSERT INTO log_versions (log_id, seen_at, rating, liked) VALUES (3, '9999-01-01T00:00:00Z', 3.5, 1)"))
+    await db.batch(stmts)
+
+    const m = parseProm(await (await req('/metrics')).text())
+    expect(m['jxnfc_films_db_up']).toBe(1)
+    expect(m['jxnfc_films_db_logs']).toBe(4)
+    expect(m['jxnfc_films_db_films']).toBe(3)
+    expect(m['jxnfc_club_diary_entries{source="films_db",window="7d"}']).toBe(2)
+    expect(m['jxnfc_club_diary_entries{source="films_db",window="30d"}']).toBe(3)
+    expect(m['jxnfc_club_active_members{source="films_db",window="7d"}']).toBe(2) // a + a former member
+    expect(m['jxnfc_club_shared_films{source="films_db",window="7d"}']).toBe(1)
+    expect(m['jxnfc_club_rewatch_entries{source="films_db",window="7d"}']).toBe(1)
+    expect(m['jxnfc_club_liked_entries{source="films_db",window="30d"}']).toBe(2)
+    expect(m['jxnfc_club_rated_entries{source="films_db",window="30d",rating="3.5"}']).toBe(1)
+    expect(m['jxnfc_club_rated_entries{source="films_db",window="30d",rating="2.0"}']).toBe(0)
+    expect(m['jxnfc_club_rating_sum{source="films_db",window="30d"}']).toBe(8)
+    // The feed numbers are untouched by the second source.
+    expect(m['jxnfc_club_diary_entries{source="feed",window="7d"}']).toBe(3)
+  })
+
+  it('omits films_db samples and reports down without the binding', async () => {
+    await seedActivity()
+    const worker = (await import('../../worker/src/index.js')).default
+    const ctx = { waitUntil() {}, passThroughOnException() {} }
+    const res = await worker.fetch(new Request('https://join.jxnfilm.club/metrics'), { ...env, FILMS_DB: undefined }, ctx)
+    const m = parseProm(await res.text())
+    expect(m['jxnfc_films_db_up']).toBe(0)
+    expect(Object.keys(m).some(k => k.includes('source="films_db"'))).toBe(false)
+    expect(m['jxnfc_club_diary_entries{source="feed",window="7d"}']).toBe(3)
   })
 
   it('renders zeros (not an error) with empty KV', async () => {
@@ -241,6 +294,6 @@ describe('GET /metrics', () => {
     const m = parseProm(await res.text())
     expect(m['jxnfc_letterboxd_cache_fetched_timestamp_seconds{cache="watched"}']).toBe(0)
     expect(m['jxnfc_members_total']).toBe(0)
-    expect(m['jxnfc_club_diary_entries{window="7d"}']).toBe(0)
+    expect(m['jxnfc_club_diary_entries{source="feed",window="7d"}']).toBe(0)
   })
 })

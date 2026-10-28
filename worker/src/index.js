@@ -3235,6 +3235,7 @@ function normalizeRating(r) {
 // logs), so the slug is the shared key; title|year is the fallback for a
 // link that doesn't match. Used only to COUNT shared films — never emitted.
 function filmKey(film) {
+  if (film.slug) return `slug:${film.slug}`
   const m = /\/film\/([^/]+)\//.exec(String(film.link || ''))
   return m ? `slug:${m[1]}` : `title:${film.title || ''}|${film.year || ''}`
 }
@@ -3273,6 +3274,36 @@ function clubActivity(map, now, days) {
   }
   for (const set of watchers.values()) if (set.size >= 2) out.shared++
   return out
+}
+
+// Club activity from FILMS_DB, shaped like the watched map so clubActivity
+// counts both sources the same way: { memberKey: [{ slug, watched_date,
+// rewatch, rating, liked }] }, each log with its latest version. Only the
+// widest window is read. Former members stay in (as their opaque key): the
+// log is the club's history, and the feed source never had them to begin
+// with, which is one of the differences the source label exists to show.
+async function filmsDbActivity(db, now) {
+  const widest = Math.max(...METRICS_WINDOWS.map(([, days]) => days))
+  const cutoff = utcDateDaysBack(now, widest - 1)
+  const [rows, totals] = await db.batch([
+    db.prepare(`
+      SELECT l.member_key, l.film_slug, l.watched_date, l.rewatch, lv.rating, lv.liked
+      FROM logs l
+      LEFT JOIN log_versions lv ON lv.log_id = l.id
+        AND lv.seen_at = (SELECT MAX(seen_at) FROM log_versions WHERE log_id = l.id)
+      WHERE l.watched_date >= ?1`).bind(cutoff),
+    db.prepare('SELECT (SELECT COUNT(*) FROM logs) AS logs, (SELECT COUNT(*) FROM films) AS films'),
+  ])
+  const map = {}
+  for (const r of rows.results || []) {
+    const f = { slug: r.film_slug, watched_date: r.watched_date }
+    if (r.rewatch) f.rewatch = true
+    if (r.liked) f.liked = true
+    if (r.rating !== null && r.rating !== undefined) f.rating = r.rating
+    ;(map[r.member_key] = map[r.member_key] || []).push(f)
+  }
+  const t = (totals.results && totals.results[0]) || {}
+  return { map, logs: Number(t.logs) || 0, films: Number(t.films) || 0 }
 }
 
 // Minimal exposition builder: one HELP/TYPE header per metric, then all of
@@ -3324,11 +3355,30 @@ async function handleMetricsGet(env) {
   promMetric(lines, 'jxnfc_members_linked', 'Members with a linked Letterboxd profile.',
     [[{}, members.filter(m => m && m.handle).length]])
 
+  // Club activity, once per source. source="feed" counts the rolling
+  // 50-per-member RSS cache, so a member who logs more than 50 films in a
+  // window is undercounted there. source="films_db" counts FILMS_DB, which
+  // accumulates every diary entry ingest has seen (docs/features/film-stats.md)
+  // and so never rolls off; it is omitted when the binding is missing or the
+  // query fails (jxnfc_films_db_up says which).
   const watchedMap = (caches[0][1] && caches[0][1].map) || {}
-  const activity = METRICS_WINDOWS.map(([window, days]) => [window, clubActivity(watchedMap, now, days)])
-  const perWindow = fn => activity.map(([window, a]) => [{ window }, fn(a)])
+  const sources = [['feed', watchedMap]]
+  let filmsDb = null
+  if (env.FILMS_DB) {
+    try {
+      filmsDb = await filmsDbActivity(env.FILMS_DB, now)
+      sources.push(['films_db', filmsDb.map])
+    } catch (err) {
+      console.error('metrics: FILMS_DB query failed', err)
+    }
+  }
+  const activity = []
+  for (const [source, map] of sources) {
+    for (const [window, days] of METRICS_WINDOWS) activity.push([{ source, window }, clubActivity(map, now, days)])
+  }
+  const perWindow = fn => activity.map(([labels, a]) => [labels, fn(a)])
   promMetric(lines, 'jxnfc_club_diary_entries',
-    'Dated diary entries in the window (7d = UTC today-6..today, 30d = today-29..today), from the rolling 50-per-member feed cache.',
+    'Dated diary entries in the window (7d = UTC today-6..today, 30d = today-29..today). source=feed is the rolling 50-per-member RSS cache; source=films_db is the accumulating club film log.',
     perWindow(a => a.entries))
   promMetric(lines, 'jxnfc_club_active_members', 'Members with at least one diary entry in the window.',
     perWindow(a => a.active))
@@ -3339,14 +3389,22 @@ async function handleMetricsGet(env) {
   promMetric(lines, 'jxnfc_club_shared_films', 'Distinct films logged by two or more members in the window.',
     perWindow(a => a.shared))
   const ratedSamples = []
-  for (const [window, a] of activity) {
-    for (const rating of METRICS_RATINGS) ratedSamples.push([{ window, rating }, a.rated[rating]])
+  for (const [labels, a] of activity) {
+    for (const rating of METRICS_RATINGS) ratedSamples.push([{ ...labels, rating }, a.rated[rating]])
   }
   promMetric(lines, 'jxnfc_club_rated_entries', 'Rated diary entries in the window, by half-star rating.',
     ratedSamples)
   promMetric(lines, 'jxnfc_club_rating_sum',
     'Sum of star ratings in the window; divide by sum(jxnfc_club_rated_entries) for the average.',
     perWindow(a => a.ratingSum))
+  promMetric(lines, 'jxnfc_films_db_up', '1 if the FILMS_DB query for this scrape succeeded, else 0.',
+    [[{}, filmsDb ? 1 : 0]])
+  if (filmsDb) {
+    promMetric(lines, 'jxnfc_films_db_logs', 'Diary entries in the club film log, all time (club era).',
+      [[{}, filmsDb.logs]])
+    promMetric(lines, 'jxnfc_films_db_films', 'Distinct films in the club film log, all time.',
+      [[{}, filmsDb.films]])
+  }
 
   return new Response(lines.join('\n') + '\n', {
     headers: { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'public, max-age=60' },

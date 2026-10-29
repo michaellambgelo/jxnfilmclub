@@ -1,6 +1,6 @@
 import { SELF, env } from 'cloudflare:test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { filmDescription } from '../../worker/src/site-meta.js'
+import { filmDescription, eventSummary } from '../../worker/src/site-meta.js'
 
 // worker/src/site-meta.js: the join Worker on jxnfilm.club's page routes
 // rewrites the GitHub Pages shell's head for link previews and search.
@@ -161,6 +161,73 @@ describe('site link previews (jxnfilm.club pages)', () => {
     expect(html).not.toContain('<b>')
     expect(filmDescription({ film: { title: 'X', year: '1999' }, members: 2, avg: 3.04, screenings: [] }))
       .toBe('2 Jackson Film Club members have logged X (1999) · club average 3.0★.')
+  })
+
+  describe('events', () => {
+    const MEETUP = {
+      id: '2099-12-17-dune-part-three', title: 'DUNE Part 3 preview screening', film: 'Dune: Part Three', year: 2026,
+      date: '2099-12-17', time: '15:05', venue: 'Malco Grandview & IMAX', kind: 'meetup',
+      hostId: 'm-host', hostName: 'Hosty McHostface', poster: 'https://image.tmdb.org/t/p/w500/dune.jpg',
+    }
+    const EARLIER = { ...MEETUP, id: '2099-11-02-sooner', title: 'Sooner Screening', film: 'Sooner', date: '2099-11-02', time: '18:00', poster: '' }
+    const HOUSE = { id: '2099-11-01-secret-night', title: 'Secret Night', film: 'Hidden', date: '2099-11-01', venue: "Alice Secretname's house", kind: 'house', hostId: 'm1', hostName: 'Alice Secretname' }
+    const LEGACY_HOUSE = { id: '2099-10-30-old-house', title: 'Old Hosted Night', date: '2099-10-30', venue: 'Somewhere', hostId: 'm2' }
+    const PAST_CLUB = { id: '2020-11-10-boys-state', title: 'November 2020 Screening', film: 'Boys State', year: 2020, date: '2020-11-10', venue: "Michael Lamb's house" }
+    const seed = events => env.ATTENDANCE_KV.put('events:all', JSON.stringify(events))
+
+    it('an event link previews that event: title, film, date, venue, poster', async () => {
+      await seed([MEETUP, HOUSE, PAST_CLUB])
+      originServes()
+      const res = await page('/events?event=2099-12-17-dune-part-three')
+      expect(res.status).toBe(200)
+      const html = await res.text()
+      const m = metaMap(html)
+      expect(html).toContain('<title>DUNE Part 3 preview screening · Jackson Film Club</title>')
+      expect(m.description).toEqual(['Dune: Part Three (2026) · Dec 17, 2099 at 3:05 PM · Malco Grandview &amp; IMAX. A Jackson Film Club event.'])
+      expect(m['og:image']).toEqual(['https://image.tmdb.org/t/p/w500/dune.jpg'])
+      // Unknown size, so no dimensions are claimed.
+      expect(m['og:image:width']).toBeUndefined()
+      expect(m['og:url']).toEqual(['https://jxnfilm.club/events?event=2099-12-17-dune-part-three'])
+      expect(html).not.toContain('Hosty')
+    })
+
+    it('a house screening id gets exactly the tab preview an unknown id gets', async () => {
+      await seed([MEETUP, EARLIER, HOUSE, LEGACY_HOUSE])
+      const bodies = []
+      for (const id of ['2099-11-01-secret-night', '2099-10-30-old-house', '2099-01-01-no-such-event', 'NOT AN ID']) {
+        originServes()
+        const res = await page('/events?event=' + encodeURIComponent(id))
+        expect(res.status).toBe(200)
+        bodies.push(await res.text())
+      }
+      expect(new Set(bodies).size).toBe(1)
+      for (const secret of ['Secret Night', 'Secretname', 'Hidden', 'Old Hosted Night', 'Somewhere']) expect(bodies[0]).not.toContain(secret)
+      expect(metaMap(bodies[0])['og:url']).toEqual(['https://jxnfilm.club/events'])
+    })
+
+    it('the Events tab leads with the next public screening, never a house one', async () => {
+      await seed([MEETUP, EARLIER, HOUSE, PAST_CLUB])
+      originServes()
+      const m = metaMap(await (await page('/events')).text())
+      expect(m['og:title']).toEqual(['Events'])
+      expect(m.description[0]).toMatch(/^Next up: Sooner Screening · Sooner \(2026\) · Nov 2, 2099 at 6:00 PM · Malco Grandview &amp; IMAX\. Upcoming screenings/)
+      // Sooner has no poster, so the logo stands in.
+      expect(m['og:image']).toEqual(['https://jxnfilm.club/img/logo.png'])
+      expect(m['og:image:width']).toEqual(['500'])
+    })
+
+    it('the Events tab falls back to its fixed description with nothing upcoming', async () => {
+      await seed([PAST_CLUB, HOUSE])
+      originServes()
+      const m = metaMap(await (await page('/events')).text())
+      expect(m.description[0]).toMatch(/^Upcoming screenings, house nights/)
+    })
+
+    it('a legacy club event shows no venue: those were mostly homes', () => {
+      expect(eventSummary(PAST_CLUB)).toBe('Boys State (2020) · Nov 10, 2020')
+      expect(eventSummary({ ...MEETUP, venue: "Jo's house" })).toBe('Dune: Part Three (2026) · Dec 17, 2099 at 3:05 PM')
+      expect(eventSummary({ title: 'Trivia', kind: 'social', date: '2099-01-05', time: '09:00', venue: 'Fertile Ground' })).toBe('Jan 5, 2099 at 9:00 AM · Fertile Ground')
+    })
   })
 
   it('leaves the join API alone', async () => {

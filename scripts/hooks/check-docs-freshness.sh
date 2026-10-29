@@ -19,6 +19,7 @@ docs_for_file() {
     ui/widgets.html)               echo "members-directory" ;;
     ui/reviews.html|css/reviews.css) echo "reviews" ;;
     worker/src/site-meta.js)       echo "link-previews" ;;
+    worker/src/event-visibility.js) echo "link-previews" ;;
     model/index.ts)                echo "events members-directory watched" ;;
     scripts/refresh_spotify.py)    echo "home" ;;
     admin/admin.js|admin/server.mjs|admin/index.html) echo "admin/README.md" ;;

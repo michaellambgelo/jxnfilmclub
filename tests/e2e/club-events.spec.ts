@@ -252,4 +252,33 @@ test.describe('club events', () => {
       'You\'re in. Get your ticket from Malco Grandview and meet us there.')
     await expect(card.locator('.rsvp-hint')).toHaveCount(1)
   })
+
+  // /events?event=ID: the shareable per-event link (docs/features/link-previews.md).
+  test('an event link outlines that card, and Copy link copies it', async ({ page, context }) => {
+    const rows = []
+    for (let i = 1; i <= 12; i++) {
+      rows.push({ id: `2099-07-${String(i).padStart(2, '0')}-e2e-film-${i}`, title: `Film Night ${i}`, kind: 'meetup', date: `2099-07-${String(i).padStart(2, '0')}`, venue: 'Malco Grandview' })
+    }
+    rows.push({ id: '2099-08-01-e2e-house', title: 'Private House Night', kind: 'house', hostId: 'someone', date: '2099-08-01', venue: 'A house' })
+    await seedEvents(page, rows)
+
+    // Newest first, so Film Night 1 sits at the bottom of the list.
+    await page.goto('/events?event=2099-07-01-e2e-film-1')
+    const card = page.locator('#event-2099-07-01-e2e-film-1')
+    await expect(card).toHaveClass(/-target/)
+    await expect(card).toBeInViewport()
+    await expect(page.locator('.event-card.-target')).toHaveCount(1)
+
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    const share = card.locator('.event-share')
+    await share.click()
+    await expect(share).toHaveText('Link copied')
+    expect(await page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(new URL('/events?event=2099-07-01-e2e-film-1', page.url()).href)
+
+    // Signed out, a house screening link just shows the public list.
+    await page.goto('/events?event=2099-08-01-e2e-house')
+    await expect(page.locator('.event-card')).toHaveCount(12)
+    await expect(page.locator('.event-card.-target')).toHaveCount(0)
+  })
 })

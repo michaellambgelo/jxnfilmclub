@@ -44,8 +44,9 @@ const PAGES = {
   host: { title: 'Host a screening', description: DEFAULT_DESCRIPTION, noindex: true },
 }
 
-// Event ids lead with the event date: 2026-12-17-dune-part-three.
-const EVENT_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]{1,120}$/
+// Event ids usually lead with the date (2026-12-17-dune-part-three), but the
+// admin types them freehand, so this only bounds the lookup key.
+const EVENT_ID_RE = /^[A-Za-z0-9_-]{1,160}$/
 // A venue named after somebody's home. Legacy rows carry these with no kind.
 const HOME_VENUE_RE = /\b(house|home)\b/i
 

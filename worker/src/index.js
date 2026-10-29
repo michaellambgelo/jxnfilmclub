@@ -24,6 +24,7 @@ import {
   anonymizeFilmLogs, centralDayCutoff, FILM_SLUG_RE, filmDetail, filmStats, ingestMany, linkScreenings,
   MAX_STATS_SLUGS, purgeFilmLogs, relinkFilmLogs,
 } from './films.js'
+import { handleSitePage } from './site-meta.js'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -122,6 +123,19 @@ async function clearAttempts(env, key) {
 
 export default {
   async fetch(request, env, ctx) {
+    // The public site's HTML routes (jxnfilm.club, not join.): link-preview
+    // and search tags on the GitHub Pages shell. Ahead of everything else,
+    // since the join API's Origin and CORS rules are not written for pages
+    // or bots. Fails open to the untouched origin response.
+    if (env.SITE_ORIGIN && new URL(request.url).host === new URL(env.SITE_ORIGIN).host) {
+      ctx.passThroughOnException()
+      try {
+        return await handleSitePage(request, env, ctx)
+      } catch (err) {
+        console.error('site page failed', err && err.stack || err)
+        return fetch(request)
+      }
+    }
     try {
       return await route(request, env, ctx)
     } catch (err) {

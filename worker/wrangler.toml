@@ -4,7 +4,25 @@ compatibility_date = "2024-12-30"
 
 # Production (default env): deployed from `main` branch.
 routes = [
-  { pattern = "join.jxnfilm.club/*", zone_name = "jxnfilm.club" }
+  { pattern = "join.jxnfilm.club/*", zone_name = "jxnfilm.club" },
+  # The public site's HTML pages (GitHub Pages behind Cloudflare): link-preview
+  # and search tags, src/site-meta.js. Page paths only, so assets never touch
+  # the Worker; each ends in * to catch query strings (/film?slug=...). A new
+  # app tab needs a pattern here and an entry in PAGES there.
+  { pattern = "jxnfilm.club/", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/film*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/events*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/watched*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/reviews*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/members*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/map*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/speak*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/giveaways*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/feedback*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/signin*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/verify*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/edit*", zone_name = "jxnfilm.club" },
+  { pattern = "jxnfilm.club/host*", zone_name = "jxnfilm.club" }
 ]
 
 # Mirrored by the module-rules plugin in tests/worker/vitest.config.ts —

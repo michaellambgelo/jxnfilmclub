@@ -294,6 +294,39 @@
     return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + ampm
   }
 
+  // Event deep links, /events?event=ID (docs/features/link-previews.md). Once
+  // the list has painted, the card for that id is scrolled to and outlined.
+  // Pure DOM, never an update, so a later re-render simply drops the outline.
+  // Signed out, a house screening has no card, so nothing happens.
+  function evFocusTarget() {
+    const id = new URLSearchParams(location.search).get('event')
+    if (!id) return
+    const card = document.getElementById('event-' + id)
+    if (!card) return
+    card.classList.add('-target')
+    card.scrollIntoView({ block: 'center' })
+  }
+
+  // Copy link on every event card. Bound once on document by delegation: an
+  // onclick handler would update the card, and event-card is near the script
+  // cap. Falls back to the share sheet where the clipboard is refused.
+  if (!globalThis.jxnfcEventShareBound) {
+    globalThis.jxnfcEventShareBound = true
+    document.addEventListener('click', async function(e) {
+      const btn = e.target.closest ? e.target.closest('[data-ev-share]') : null
+      if (!btn) return
+      const url = location.origin + '/events?event=' + encodeURIComponent(btn.dataset.evShare)
+      try {
+        await navigator.clipboard.writeText(url)
+      } catch (err) {
+        if (navigator.share) navigator.share({ url: url }).catch(function() {})
+        return
+      }
+      btn.textContent = 'Link copied'
+      setTimeout(function() { btn.textContent = 'Copy link' }, 2000)
+    })
+  }
+
 </script>
 
 
@@ -1145,6 +1178,7 @@
       if (evMounting) return
       const evSig = [state.query || '', state.sort || '', state.venue || ''].join('|')
       if (evSig === evReloadSig) return
+      const evFirst = evReloadSig === null
       evReloadSig = evSig
       const [{ items, total }, { attendance, error }] = await Promise.all([
         getEvents({
@@ -1169,6 +1203,7 @@
       // trade account-stats makes.
       const rsvps = await loadMyRsvps(items, evSession)
       this.update({ items, total, attendance, attendanceError: error, rsvps })
+      if (evFirst) setTimeout(evFocusTarget, 0)
     }
 
     async mounted() {
@@ -1234,7 +1269,7 @@
      For member-hosted screenings (event.hostId set), the card swaps the
      post-hoc "I was there" toggle for an RSVP / waitlist affordance, and
      when the viewer is the host renders a host-only sub-section. -->
-<article :is="event-card" class="event-card">
+<article :is="event-card" class="event-card" id="event-{ event.id }">
   <div class="event-poster-wrap">
     <img :if="event.poster" src="{ event.poster }" alt="{ event.film || event.title }" class="event-poster">
     <!-- The title card OWNS the heading and date stamp when it is showing,
@@ -1260,6 +1295,7 @@
       <span :if="event.poster" class="event-date">{ formatDate(event.date) }</span>
       <span :if="event.poster && event.time" class="event-time">{ formatTime(event.time) }</span>
     </p>
+    <button type="button" class="event-share" data-ev-share="{ event.id }">Copy link</button>
 
     <div :if="rsvpOn()" class="event-rsvp">
       <div :if="!ticketsPending()" class="rsvp-meter">

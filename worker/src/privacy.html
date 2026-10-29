@@ -199,8 +199,9 @@
     <li><b>Cloudflare</b> hosts the membership service and its storage, and
       sits in front of the public site. When a page of the site loads, the
       membership service adds that page's title and link-preview details
-      (for a film, its poster and the club's public counts; never names or
-      reviews). Cloudflare's standard infrastructure logs record request
+      (for a film, its poster and the club's public counts; for an event, its
+      date and theater; never names or reviews, and nothing for a screening
+      at a member's home). Cloudflare's standard infrastructure logs record request
       metadata (like IP addresses and the page requested) under Cloudflare's
       own retention.</li>
     <li><b>Resend</b> delivers our email. We don't keep contact lists

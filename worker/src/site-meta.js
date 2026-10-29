@@ -10,13 +10,16 @@
 // for each page the app owns, fetches the shell from GitHub Pages as before,
 // promotes the 404 to 200, and rewrites the head: a real title, description,
 // canonical URL, Open Graph and Twitter tags. A film page reads its title,
-// poster and club counts from FILMS_DB. Everything here is public: counts,
-// the average and the screening date, never a member name or review.
+// poster and club counts from FILMS_DB; an event link (/events?event=ID) and
+// the bare /events tab read the public events from ATTENDANCE_KV. Everything
+// here is public: counts, the average, dates, theater names, never a member
+// name or review. House screenings never get a preview of their own.
 //
 // Fail-open: any error returns the shell exactly as GitHub Pages sent it, so
 // a bug here costs the previews, never the site.
 
 import { filmDetail, FILM_SLUG_RE } from './films.js'
+import { isMembersOnly } from './event-visibility.js'
 
 const SITE_NAME = 'Jackson Film Club'
 const DEFAULT_DESCRIPTION = 'A community space for analytical conversations about cinema, founded in Jackson, Mississippi in 2018. We watch discussion-worthy films, together.'
@@ -41,6 +44,11 @@ const PAGES = {
   host: { title: 'Host a screening', description: DEFAULT_DESCRIPTION, noindex: true },
 }
 
+// Event ids lead with the event date: 2026-12-17-dune-part-three.
+const EVENT_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]{1,120}$/
+// A venue named after somebody's home. Legacy rows carry these with no kind.
+const HOME_VENUE_RE = /\b(house|home)\b/i
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function escapeAttr(s) {
@@ -53,6 +61,56 @@ function screeningDate(eventId) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(eventId || ''))
   if (!m || !MONTHS[Number(m[2]) - 1]) return null
   return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`
+}
+
+// "18:00" -> "6:00 PM". Event times are local wall-clock strings.
+function eventTime(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''))
+  if (!m || Number(m[1]) > 23) return null
+  const h = Number(m[1])
+  return `${h % 12 || 12}:${m[2]} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+// The venue, only where it is a public place: a theater meetup or a social.
+// Legacy rows (no kind) are mostly "Somebody's house", so they never show one.
+function publicVenue(e) {
+  if (!e.kind || !e.venue || HOME_VENUE_RE.test(e.venue)) return null
+  return String(e.venue)
+}
+
+// "DOOMSDAY preview screening · Avengers: Doomsday · Dec 17, 2026 at 6:00 PM
+// · Legacy Theaters Parkway". No host name, attendees or notes.
+export function eventSummary(e) {
+  const parts = []
+  if (e.film && e.film !== e.title) parts.push(e.year ? `${e.film} (${e.year})` : String(e.film))
+  const day = screeningDate(e.date)
+  const time = eventTime(e.time)
+  if (day) parts.push(time ? `${day} at ${time}` : day)
+  const venue = publicVenue(e)
+  if (venue) parts.push(venue)
+  return parts.join(' · ')
+}
+
+// Every event an anonymous visitor may see, from the public aggregate the
+// join API serves. Never bootstraps or writes: no aggregate, no previews.
+async function publicEvents(env) {
+  if (!env.ATTENDANCE_KV) return []
+  const raw = await env.ATTENDANCE_KV.get('events:all')
+  if (!raw) return []
+  let all
+  try { all = JSON.parse(raw) } catch { return [] }
+  return Array.isArray(all) ? all.filter(e => e && e.id && !isMembersOnly(e)) : []
+}
+
+// Today in Jackson, as YYYY-MM-DD, compared as a string like every date here.
+function centralToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+
+function eventImage(e) {
+  if (!e.poster || !/^https:\/\//.test(e.poster)) return null
+  // Event posters come in whatever size the admin pasted, so no dimensions.
+  return { url: e.poster, alt: `${e.title} poster` }
 }
 
 export function filmDescription(d) {
@@ -96,8 +154,41 @@ async function pageMeta(url, env) {
       status: 200,
     }
   }
+  if (key === 'events') return eventsMeta(url, env, origin)
   const page = PAGES[key]
   return { ...page, url: `${origin}/${key}`, status: 200 }
+}
+
+// /events?event=ID previews that event when it is public. Anything else, an
+// unknown id, a house screening, a search, gets the tab preview, byte for byte
+// the same either way, so the response never confirms a private event exists.
+// The tab preview leads with the next public screening.
+async function eventsMeta(url, env, origin) {
+  const tab = { ...PAGES.events, url: `${origin}/events`, status: 200 }
+  const id = url.searchParams.get('event') || ''
+  const events = await publicEvents(env)
+  const e = EVENT_ID_RE.test(id) ? events.find(x => x.id === id) : null
+  if (e && e.title) {
+    const summary = eventSummary(e)
+    return {
+      title: String(e.title),
+      description: summary ? `${summary}. A Jackson Film Club event.` : 'A Jackson Film Club event.',
+      url: `${origin}/events?event=${encodeURIComponent(e.id)}`,
+      image: eventImage(e),
+      status: 200,
+    }
+  }
+  const today = centralToday()
+  const next = events
+    .filter(x => x.title && typeof x.date === 'string' && x.date >= today)
+    .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))[0]
+  if (!next) return tab
+  const summary = eventSummary(next)
+  return {
+    ...tab,
+    description: `Next up: ${next.title}${summary ? ` · ${summary}` : ''}. ${PAGES.events.description}`,
+    image: eventImage(next),
+  }
 }
 
 function headHtml(meta, origin) {
@@ -111,8 +202,8 @@ function headHtml(meta, origin) {
     ['property', 'og:description', meta.description],
     ['property', 'og:url', meta.url],
     ['property', 'og:image', img.url],
-    ['property', 'og:image:width', img.width],
-    ['property', 'og:image:height', img.height],
+    img.width ? ['property', 'og:image:width', img.width] : null,
+    img.height ? ['property', 'og:image:height', img.height] : null,
     ['property', 'og:image:alt', img.alt],
     ['property', 'og:locale', 'en_US'],
     // summary, not summary_large_image: a 2:3 poster or the square logo
@@ -124,7 +215,7 @@ function headHtml(meta, origin) {
     ['name', 'twitter:image:alt', img.alt],
   ]
   if (meta.noindex) tags.push(['name', 'robots', 'noindex'])
-  const lines = tags.map(([attr, key, value]) => `<meta ${attr}="${key}" content="${escapeAttr(value)}">`)
+  const lines = tags.filter(Boolean).map(([attr, key, value]) => `<meta ${attr}="${key}" content="${escapeAttr(value)}">`)
   lines.push(`<link rel="canonical" href="${escapeAttr(meta.url)}">`)
   return { fullTitle, html: '\n' + lines.join('\n') + '\n' }
 }

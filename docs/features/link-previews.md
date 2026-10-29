@@ -57,6 +57,8 @@ cover anything later. A broken deploy costs the previews, not the site.
 | `/film?slug=SLUG` (or `/film/SLUG`) | `Title (Year) · Jackson Film Club` | 200 | `og:type video.movie`, the poster (600×900) as the image, canonical `?slug=` form |
 | `/film?slug=unknown`, `/film` | Film not found | 404 | `noindex` |
 | `/events`, `/watched`, `/reviews` (Hot Takes), `/members`, `/map`, `/speak`, `/giveaways`, `/feedback` | Tab name | 200 | Fixed description per tab (`PAGES`) |
+| `/events?event=ID` (public event) | The event title | 200 | Film, date and time, theater, the event poster (no size claimed). Canonical `?event=` form |
+| `/events`, `/events?event=` house, unknown or malformed id, `/events?query=…` | Events | 200 | Byte-identical for all of these. Leads with "Next up:" the next public event (by Central date) and its poster, else the fixed description |
 | `/signin`, `/verify`, `/edit`, `/host` | Log in / Account / Host a screening | 200 | `noindex` |
 
 Default image: `/img/logo.png` (500×500). `twitter:card` is `summary`, not
@@ -68,6 +70,21 @@ anonymous caller: member count, the club average (one decimal), and the most
 recent screening date (from the event id's date prefix). Never names,
 handles or review text; those need a session on the film page, and the
 tests assert none of them reach the head.
+
+Events come from the `events:all` aggregate in `ATTENDANCE_KV`, filtered by
+`isMembersOnly()` (`worker/src/event-visibility.js`, the same function
+`GET /events` uses for anonymous callers). A house screening never gets a
+preview of its own, and its id gets exactly the response an unknown id gets,
+so a preview cannot confirm a private event exists. An event description
+carries the film, the date and time, and the venue only for a meetup or
+social whose venue is not a home: legacy rows (no `kind`) were mostly
+"Somebody's house", so they show none. No host name, attendees or notes.
+
+The app side: each event card has `id="event-ID"` and a **Copy link** button
+(`data-ev-share`, delegated in the `ui/views.html` lib script). On first
+paint, `evFocusTarget()` scrolls to the card named by `?event=` and outlines
+it (`.event-card.-target`). Signed out, a house screening has no card, so the
+link just shows the list.
 
 ## Maintenance
 

@@ -487,3 +487,30 @@ article > header .dir-toggle:hover {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 }
+
+/* Copy link (data-ev-share, delegated in ui/views.html). Quiet, like a meta
+   line, so it never competes with the RSVP button. */
+.event-share {
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-label);
+  font-size: var(--fs-12);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--brand-tint-fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.event-share:hover,
+.event-share:focus-visible {
+  text-decoration: underline;
+}
+
+/* The card a /events?event=ID link points at. */
+.event-card.-target {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}

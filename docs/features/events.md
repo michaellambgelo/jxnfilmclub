@@ -209,6 +209,7 @@ flowchart TD
 | Param | Effect | Example |
 |-------|--------|---------|
 | `query` | Filters by title, film, or venue | `?query=whiplash` |
+| `event` | Scrolls to and outlines one event card; each card's **Copy link** makes this link, and it gets its own link preview (link-previews.md) | `?event=2026-12-17-dune-part-three` |
 | `sort` | Sort direction | `?sort=date-asc` or `?sort=date-desc` |
 | `venue` | Filter to one venue | `?venue=Capri+Theatre` |
 

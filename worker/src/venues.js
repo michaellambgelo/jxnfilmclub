@@ -82,7 +82,7 @@ export function validVenueList(value) {
 }
 
 // A house screening never gets a pin, even if somebody aliased its venue.
-// Same reading as isMembersOnly() in index.js; repeated here so this module
+// Same reading as isMembersOnly() in event-visibility.js; repeated here so this module
 // stays import-free. The caller also passes only the anonymous event list.
 function privateEvent(e) {
   return e.kind === 'house' || (!e.kind && !!e.hostId)

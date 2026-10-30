@@ -83,6 +83,17 @@ describe('getEvents', () => {
     expect(dates).toEqual(sortedAsc)
   })
 
+  it('orders same-day events by start time in both directions', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([
+      { id: 'early', date: '2026-12-17', time: '15:05' },
+      { id: 'next', date: '2026-12-18', time: '09:00' },
+      { id: 'mid', date: '2026-12-17', time: '18:00' },
+      { id: 'late', date: '2026-12-17', time: '20:50' },
+    ])))
+    const res = await getEvents({ sort: 'date-desc' })
+    expect(res.items.map((i: any) => i.id)).toEqual(['next', 'late', 'mid', 'early'])
+  })
+
   it('filters events by title via search', async () => {
     const res = await getEvents({ search: 'Documentary' })
     expect(res.total).toBe(1)

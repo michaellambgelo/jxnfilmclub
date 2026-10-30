@@ -345,12 +345,18 @@ async function getList(type: string, opts: any) {
   return { type, total: items.length, items: items.slice(start, start + limit) }
 }
 
+// Events sharing a date order by start time, so a 3pm screening sorts before
+// an 8:50pm one on the same day. A missing time sorts first within its day.
+function sortVal(o: any, key: string) {
+  return key === 'date' ? String(o.date ?? '') + 'T' + String(o.time ?? '') : o[key]
+}
+
 function sortBy(spec: string, arr: any[]) {
   const m = /^(.+)-(asc|desc)$/.exec(spec)
   if (m) {
     const key = m[1], desc = m[2] === 'desc'
     arr.sort((a, b) => {
-      const av = a[key], bv = b[key]
+      const av = sortVal(a, key), bv = sortVal(b, key)
       const cmp = typeof av == 'number' && typeof bv == 'number'
         ? av - bv
         : String(av ?? '').localeCompare(String(bv ?? ''))
@@ -359,7 +365,7 @@ function sortBy(spec: string, arr: any[]) {
     return
   }
   arr.sort((a, b) => {
-    const av = a[spec], bv = b[spec]
+    const av = sortVal(a, spec), bv = sortVal(b, spec)
     if (typeof av == 'number' && typeof bv == 'number') return bv - av
     return String(av ?? '').localeCompare(String(bv ?? ''))
   })

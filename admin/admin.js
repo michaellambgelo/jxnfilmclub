@@ -1769,11 +1769,13 @@ const attendeeCount = (e) => (attendanceCache[e.id] || []).length
 
 // Dates are YYYY-MM-DD strings — compare them as strings, never as Dates
 // (parsing them as UTC instants shifts them a day in America/Chicago).
+// Same-day events order by start time; a missing time sorts first in its day.
+const eventWhen = (e) => String(e.date || '') + 'T' + String(e.time || '')
 const EVENT_SORTS = {
-  'date-asc': (a, b) => String(a.date || '').localeCompare(String(b.date || '')),
-  'date-desc': (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
+  'date-asc': (a, b) => eventWhen(a).localeCompare(eventWhen(b)),
+  'date-desc': (a, b) => eventWhen(b).localeCompare(eventWhen(a)),
   title: (a, b) => String(a.title || a.id).localeCompare(String(b.title || b.id), undefined, { sensitivity: 'base' }),
-  attendance: (a, b) => attendeeCount(b) - attendeeCount(a) || String(b.date || '').localeCompare(String(a.date || '')),
+  attendance: (a, b) => attendeeCount(b) - attendeeCount(a) || eventWhen(b).localeCompare(eventWhen(a)),
 }
 
 function sortEvents() {

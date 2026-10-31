@@ -67,6 +67,18 @@
   text-decoration: underline;
 }
 
+/* Hint-line links on the dark surface ("Didn't get the email? Start over")
+   — ink and underlined, never the UA blue that vanished on the background. */
+.auth .hint a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.auth .hint a:hover {
+  color: var(--brand);
+}
+
 /* Sign-in: secondary join button under the log-in form */
 .auth .signin-join {
   margin-top: 1.5rem;

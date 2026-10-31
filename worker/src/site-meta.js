@@ -39,7 +39,7 @@ const PAGES = {
   feedback: { title: 'Feedback', description: 'Tell the Jackson Film Club what is working on the site and what is not.' },
   // Account pages: real pages, but nothing worth a search result.
   signin: { title: 'Log in', description: DEFAULT_DESCRIPTION, noindex: true },
-  verify: { title: 'Log in', description: DEFAULT_DESCRIPTION, noindex: true },
+  verify: { title: 'Confirm your email', description: DEFAULT_DESCRIPTION, noindex: true },
   edit: { title: 'Account', description: DEFAULT_DESCRIPTION, noindex: true },
   host: { title: 'Host a screening', description: DEFAULT_DESCRIPTION, noindex: true },
 }

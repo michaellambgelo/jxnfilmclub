@@ -68,7 +68,8 @@ DNS records are printed in the Resend dashboard.
 | GET    | `/members`                 | Array of public member projections `[{ id, name, joined, pronouns?, handle? }]`. Emails are never on the wire. Reads from `members:all` aggregate; bootstraps from `data/members.json` on cold KV. |
 | GET    | `/events`                  | Array of public event projections `[{ id, title, film, year, date, venue, poster, letterboxd_uri, hostId?, hostName?, capacity?, kind?, time? }]` — never `address` or `notes` (both are RSVP-email/host-only). Reads from `events:all` aggregate (in `ATTENDANCE_KV`); bootstraps from `data/events.json` on cold KV. |
 | GET    | `/events/attendance`       | Bulk attendance map `{ eventId: [{ id, name }] }`, names resolved off `members:all`. |
-| GET    | `/watched`                 | Live Last Four: handle-keyed map of linked members' recent Letterboxd diary entries, fetched from RSS on demand and KV-cached 15 min (`watched:cache`). Empty map under `E2E_MODE`. |
+| GET    | `/watched`                 | Live Last Four: handle-keyed map of linked members' recent Letterboxd diary entries, fetched from RSS on demand and cached in `watched:cache` (rebuilt once older than 15 min). Empty map under `E2E_MODE`. |
+| GET    | `/metrics`                 | Prometheus text exposition (0.0.4) for Grafana Alloy: Letterboxd cache health (`watched`/`avatars` build times, miss backoff, per-outcome fetch counts), member totals and club activity. Aggregates only, every label a closed enumeration (no handles/names/titles); reads existing KV records (+ `FILMS_DB` when bound) and never triggers a Letterboxd fetch or cache rebuild. |
 | GET    | `/events/:id/attendance`   | Per-event attendees `[{ id, name }]`, names resolved off `members:all`. |
 
 ### Authenticated (bearer token from `/signup/verify` or `/otp/verify`)
@@ -120,7 +121,7 @@ Set in `wrangler.toml` per env:
 - `members:bootstrapped` — `'1'` marker; presence means JSON→KV seed has run.
 - `email:{handle}` / `handle:{email}` — bidirectional link, written on `/signup/verify` (when the signup carried a handle) and on `/member/update`.
 - `otp:{email}` — 6-digit login code, 10min TTL.
-- `watched:cache` — aggregated Last Four RSS results, 15min `expirationTtl`.
+- `watched:cache` — aggregated Last Four RSS results + Hot Takes (`{ map, takes, fetchedAt, builtAt, stats, missAt? }`). No KV expiration: freshness (15 min, `WATCHED_CACHE_TTL`) is checked in code, so a stale record triggers a rebuild while the last good data keeps serving through any Letterboxd outage; a total miss stamps `missAt` and backs off 2 min before retrying. `builtAt`/`stats` feed `GET /metrics`.
 
 **ATTENDANCE_KV:**
 - `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot. Entries are `{ id, name }` keyed on the member id; the name is a snapshot resolved off `members:all` on read, so a rename lands everywhere at once (see `docs/features/attendance.md` § Identity). Reads still accept the legacy `[name]` shape. For hosted events, `attend:{id}` is a write-through mirror of `rsvp:{id}.confirmed` plus the host.

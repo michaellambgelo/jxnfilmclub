@@ -41,10 +41,8 @@
 // run, or resuming an interrupted one, costs nothing and corrupts nothing.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   archivePathFor, BUCKETS, CONCAT_GAP_SECONDS, concatWithGaps, ensureWritable, ffmpeg, fmtDur,
@@ -56,6 +54,8 @@ import {
   buildRenderArgs, FORMATS, instantiateTemplate, mergeManifest, parseArgs,
   plannedRenderPaths, safeName, selectClips,
 } from './lib/audiogram.mjs'
+import { launchChromium, screenshotHtml, startServer } from './lib/frames.mjs'
+import { wordPopHtml, wordPopTimeline } from './lib/reel.mjs'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const TEMPLATE_PATH = join(REPO_ROOT, 'scripts', 'assets', 'audiogram.html')
@@ -70,66 +70,14 @@ process.on('exit', () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true })
 })
 
-// --- ephemeral asset server ---------------------------------------------
-// tokens.css references /fonts/… with absolute URLs, so file:// pages load no
-// fonts. Serve /css and /fonts from the repo plus the instantiated frame HTML
-// from memory; nothing ever binds beyond 127.0.0.1.
-
-const MIME = {
-  '.css': 'text/css', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
-  '.otf': 'font/otf', '.html': 'text/html',
-}
-
-function startServer(frames) {
-  return new Promise((resolveStart, rejectStart) => {
-    const srv = createServer(async (req, res) => {
-      const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname)
-      if (path.startsWith('/frame/')) {
-        const html = frames.get(path.slice('/frame/'.length))
-        if (html === undefined) { res.writeHead(404); res.end(); return }
-        res.writeHead(200, { 'content-type': 'text/html' })
-        res.end(html)
-        return
-      }
-      const file = resolve(REPO_ROOT, path.slice(1))
-      const allowed = file.startsWith(join(REPO_ROOT, 'css')) || file.startsWith(join(REPO_ROOT, 'fonts'))
-      if (!allowed) { res.writeHead(404); res.end(); return }
-      try {
-        const data = await readFile(file)
-        res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' })
-        res.end(data)
-      } catch {
-        res.writeHead(404)
-        res.end()
-      }
-    })
-    srv.on('error', rejectStart)
-    srv.listen(0, '127.0.0.1', () => resolveStart(srv))
-  })
-}
-
 // --- frame rendering -----------------------------------------------------
-
-async function launchChromium() {
-  try {
-    const { chromium } = await import('playwright')
-    return await chromium.launch()
-  } catch (err) {
-    fail(`could not launch headless Chromium (needed to render the branded frame): ${err.message}\n` +
-      'If the browser binaries are missing, install them with: npx playwright install chromium')
-  }
-}
+// Asset server + Chromium live in scripts/lib/frames.mjs (shared with make_reel).
 
 // Screenshot one instantiated frame. The template body is transparent except
 // the panels/grill, so the PNG composites on top of the waveform.
-async function screenshotFrame(page, port, frames, { format, title, name, caption }, pngPath) {
-  const key = `${frames.size}-${format}.html`
-  frames.set(key, instantiateTemplate(TEMPLATE, { format, title, name, caption }))
-  const { width, height } = FORMATS[format]
-  await page.setViewportSize({ width, height })
-  await page.goto(`http://127.0.0.1:${port}/frame/${key}`, { waitUntil: 'load' })
-  await page.evaluate(() => document.fonts.ready)
-  await page.screenshot({ path: pngPath, omitBackground: true })
+async function screenshotFrame(page, port, frames, opts, pngPath) {
+  const { width, height } = FORMATS[opts.format]
+  await screenshotHtml(page, port, frames, instantiateTemplate(TEMPLATE, opts), { width, height, path: pngPath })
 }
 
 // --- main ----------------------------------------------------------------
@@ -145,9 +93,10 @@ try {
   run('ffmpeg', ['-version'])
 } catch (err) { fail(err.message) }
 
-const browser = await launchChromium()
+let browser
+try { browser = await launchChromium() } catch (err) { fail(err.message) }
 const frames = new Map()
-const server = await startServer(frames)
+const server = await startServer(frames, { repoRoot: REPO_ROOT })
 const port = server.address().port
 const page = await browser.newPage()
 
@@ -164,12 +113,16 @@ try {
   // frame layer becomes a timed SEQUENCE of stills instead of one looped PNG:
   // a screenshot per distinct cue plus one uncaptioned frame reused for every
   // silence, played back through an ffconcat playlist.
-  async function renderJob({ audioPath, title, name, outDir, stem, cues }) {
+  async function renderJob({ audioPath, title, name, outDir, stem, cues, wordGroups }) {
     mkdirSync(outDir, { recursive: true })
     const files = {}
-    const timeline = cues && cues.length
-      ? captionTimeline(cues, probeSeconds(audioPath))
-      : null
+    // Word-pop (--words): one still per (group, active word); phrase cues
+    // (--captions): one still per cue. Both play through the same playlist.
+    const timeline = wordGroups && wordGroups.length
+      ? wordPopTimeline(wordGroups, probeSeconds(audioPath))
+      : cues && cues.length
+        ? captionTimeline(cues, probeSeconds(audioPath))
+        : null
 
     for (const format of args.formats) {
       let frameArgs
@@ -178,7 +131,10 @@ try {
         for (const seg of timeline) {
           if (pngFor.has(seg.text)) continue
           const png = join(tmp, `cap-${safeName(stem)}-${format}-${pngFor.size}.png`)
-          await screenshotFrame(page, port, frames, { format, title, name, caption: seg.text }, png)
+          const caption = seg.words
+            ? { captionHtml: wordPopHtml(seg.words, seg.on) }
+            : { caption: seg.text }
+          await screenshotFrame(page, port, frames, { format, title, name, ...caption }, png)
           pngFor.set(seg.text, png)
         }
         const playlist = join(tmp, `frames-${safeName(stem)}-${format}.txt`)
@@ -230,11 +186,19 @@ try {
       if (!cues.length) throw new Error(`${args.srtPath} has no cues`)
     }
 
+    let wordGroups = null
+    if (args.wordsPath) {
+      // make_reel's reviewed groups: [[{ text, start, end }]], audio-clock times.
+      wordGroups = JSON.parse(readFileSync(args.wordsPath, 'utf8'))
+      if (!Array.isArray(wordGroups) || !wordGroups.length) throw new Error(`${args.wordsPath} has no caption groups`)
+    }
+
     const norm = join(tmp, 'norm.wav')
     console.log(`Normalizing ${args.audioPath}…`)
     normalizeClip(args.audioPath, norm, args.audioPath)
     await renderJob({
       cues,
+      wordGroups,
       audioPath: norm,
       title: args.title,
       name: args.name || 'JXN Film Club',

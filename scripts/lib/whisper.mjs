@@ -32,3 +32,16 @@ export function whisperArgs(wavPath, outDir, model = DEFAULT_MODEL) {
 }
 
 export const RAW_SRT = 'raw.srt'
+
+// uvx argv that writes <outDir>/words.json with per-word timestamps — for
+// make_reel's word-pop captions ONLY. The audiogram/drafter path above stays
+// segment-timed on purpose (see scripts/lib/srt.mjs for why word times are
+// not trusted there).
+export function whisperWordArgs(wavPath, outDir, model = DEFAULT_MODEL) {
+  if (!MODELS.includes(model)) throw new Error(`unknown whisper model: ${model}`)
+  return ['--from', 'mlx-whisper', 'mlx_whisper', wavPath,
+    '--model', `mlx-community/whisper-${model}-mlx`, '--word-timestamps', 'True',
+    '--output-dir', outDir, '--output-name', 'words', '--output-format', 'json']
+}
+
+export const WORDS_JSON = 'words.json'

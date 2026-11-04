@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- Instagram Reel stills — screenshotted by scripts/make_reel.mjs, one per
+     instantiation (scripts/lib/reel.mjs instantiateReel):
+
+     {{MODE}}         caption | bug | card — which layer this still shows
+     {{CAPTION_HTML}} word-pop markup from wordPopHtml (every word escaped there)
+     {{KICKER}}       escaped label over the hook ("JXN Film Club · Reactions")
+     {{HOOK_HTML}}    escaped hook; *starred* words become the red italic <em>
+     {{PHOTO}}        data: URI of a footage frame (cover only), or empty
+
+     caption/bug are TRANSPARENT and composite over the video; card (intro +
+     cover) is opaque. Colors and fonts come straight from /css/tokens.css and
+     the logo from /img/logo.png, served by the CLI's local asset server.
+
+     Instagram safe areas at 1080x1920: the top ~210px is the reel header, the
+     bottom ~20% is caption/audio chrome, and the action rail covers x > ~958
+     down the middle. Captions sit centered at y≈1190 inside x 70..930; the
+     card's content stays inside the centre 1080x1440 so the profile grid's
+     3:4 crop keeps it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/css/tokens.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1920px; background: transparent; overflow: hidden; }
+  .layer { position: absolute; inset: 0; display: none; }
+  body.m-caption #caption, body.m-bug #bug, body.m-card #card { display: block; }
+
+  /* ---- word-pop captions ---- */
+  #caption .line {
+    position: absolute; left: 70px; right: 150px; top: 1190px; transform: translateY(-50%);
+    text-align: center; font-family: var(--font-label); font-weight: 700;
+    font-size: 104px; line-height: 1.02; text-transform: uppercase; letter-spacing: .01em;
+    color: var(--ink-strong);
+    -webkit-text-stroke: 14px #000; paint-order: stroke fill;
+    text-shadow: 0 6px 0 #000, 0 10px 28px rgba(0, 0, 0, .65);
+  }
+  #caption .w { display: inline-block; margin: 0 .12em; }
+  #caption .w.on { color: var(--brand); transform: scale(1.08); }
+
+  /* ---- persistent logo bug (the logo always needs its white pad on dark) ---- */
+  #bug .pad {
+    position: absolute; top: 210px; right: 44px; width: 150px; padding: 10px 10px 8px;
+    background: #fff; border-radius: 10px; box-shadow: 0 6px 22px rgba(0, 0, 0, .45); text-align: center;
+  }
+  #bug img { width: 130px; height: 130px; display: block; margin: 0 auto; }
+  #bug .url { font: 600 21px/1 var(--font-label); color: var(--bg); letter-spacing: .04em; margin-top: 2px; }
+
+  /* ---- intro / cover card ---- */
+  #card { background: var(--bg); color: var(--ink-strong); }
+  #card .photo { position: absolute; inset: 0; background-size: cover; background-position: center;
+    filter: grayscale(1) contrast(1.1) brightness(.28); }
+  #card .grain { position: absolute; inset: 0; opacity: .22; mix-blend-mode: overlay; }
+  #card .stack { position: absolute; left: 96px; right: 96px; top: 240px; height: 1440px;
+    display: flex; flex-direction: column; justify-content: center; }
+  #card .logo { width: 210px; height: 210px; background: #fff; border-radius: 14px; padding: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .5); margin-bottom: 64px; }
+  #card .logo img { width: 100%; height: 100%; display: block; }
+  #card .kicker { font: 600 40px/1.2 var(--font-label); letter-spacing: .22em; text-transform: uppercase; color: var(--brand); }
+  #card .rule { width: 160px; height: 8px; background: var(--brand); margin: 34px 0 44px; }
+  #card h1 { font: 900 124px/1.02 var(--font-display); letter-spacing: -.01em; }
+  #card h1 em { font-style: italic; color: var(--brand); }
+  #card .foot { margin-top: 64px; font: 500 38px/1 var(--font-label); letter-spacing: .14em; color: var(--ink-2); text-transform: uppercase; }
+</style>
+</head>
+<body class="m-{{MODE}}">
+  <div id="caption" class="layer"><div class="line">{{CAPTION_HTML}}</div></div>
+
+  <div id="bug" class="layer">
+    <div class="pad"><img src="/img/logo.png" alt=""><div class="url">JXNFILM.CLUB</div></div>
+  </div>
+
+  <div id="card" class="layer">
+    <div class="photo" style="background-image: url(&quot;{{PHOTO}}&quot;)"></div>
+    <svg class="grain" width="1080" height="1920" aria-hidden="true"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>
+    <div class="stack">
+      <div class="logo"><img src="/img/logo.png" alt=""></div>
+      <div class="kicker">{{KICKER}}</div>
+      <div class="rule"></div>
+      <h1>{{HOOK_HTML}}</h1>
+      <div class="foot">jxnfilm.club</div>
+    </div>
+  </div>
+</body>
+</html>

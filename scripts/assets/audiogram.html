@@ -196,6 +196,24 @@
   body.f-1x1 .caption { font-size: 40px; }
   body.f-9x16 .caption-row { top: 660px; height: 300px; }
   body.f-9x16 .caption { font-size: 50px; }
+
+  /* Word-pop captions (make_reel / --words): 2–4 words at a time in big
+     Oswald caps, the spoken word in signal red. Same band as phrase captions,
+     centered rather than bottom-anchored so a one-word group doesn't sink. */
+  body.cap-wordpop .caption-row { align-items: center; justify-content: center; }
+  body.cap-wordpop .caption {
+    font-family: var(--font-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1.04;
+    letter-spacing: 0.01em;
+  }
+  body.cap-wordpop .caption .w { display: inline-block; }
+  body.cap-wordpop .caption .w.on { color: var(--brand); transform: scale(1.06); }
+  body.f-9x16.cap-wordpop .caption { font-size: 92px; }
+  body.f-1x1.cap-wordpop .caption { font-size: 64px; }
+  body.f-16x9.cap-wordpop .caption { font-size: 80px; }
 </style>
 </head>
 <body class="{{FORMAT}}" style="--title-scale: {{TITLE_SCALE}}">

@@ -79,19 +79,22 @@ export function titleScale(title) {
   return 0.62
 }
 
-export function instantiateTemplate(tpl, { format, title, name, caption }) {
+// captionHtml (word-pop) is pre-built markup from reel.mjs wordPopHtml, which
+// escapes every word itself; it replaces the escaped `caption` and switches the
+// caption block to the word-pop style via the body's cap-wordpop class.
+export function instantiateTemplate(tpl, { format, title, name, caption, captionHtml }) {
   const f = FORMATS[format]
   if (!f) throw new Error(`unknown format: ${format}`)
   return tpl
     .replaceAll('{{TITLE_SCALE}}', String(titleScale(title)))
-    .replaceAll('{{FORMAT}}', `f-${format}`)
+    .replaceAll('{{FORMAT}}', `f-${format}${captionHtml ? ' cap-wordpop' : ''}`)
     .replaceAll('{{WX}}', String(f.wave.x))
     .replaceAll('{{WY}}', String(f.wave.y))
     .replaceAll('{{WW}}', String(f.wave.w))
     .replaceAll('{{WH}}', String(f.wave.h))
     .replaceAll('{{TITLE}}', escapeHtml(title))
     .replaceAll('{{NAME}}', escapeHtml(name))
-    .replaceAll('{{CAPTION}}', escapeHtml(caption))
+    .replaceAll('{{CAPTION}}', captionHtml ?? escapeHtml(caption))
 }
 
 // The -filter_complex graph: the speech ENVELOPE, drawn as bottom-anchored
@@ -274,7 +277,7 @@ export function resolveFormats(flag) {
 
 export const USAGE = `usage:
   node scripts/make_audiogram.mjs <audio-file> [--format 16x9|1x1|9x16|all] [--title T] [--name N]
-  [--captions --srt FILE] [--force] [--out DIR]
+  [--captions --srt FILE | --words GROUPS.json] [--force] [--out DIR]
   node scripts/make_audiogram.mjs --prompt <promptId> [--env production|staging] [--format ...] [--with-prompt] [--member ID[,ID]] [--segment-only|--clips-only] [--force] [--out DIR]
 
   --member narrows the round to specific approved clips (repeatable, or comma-
@@ -286,6 +289,9 @@ export const USAGE = `usage:
   --captions burns in the clip's transcript. In prompt mode that is the copy
   reviewed in the admin panel; a clip whose row is not marked reviewed is
   refused, so nothing unread reaches a video. File mode takes --srt.
+
+  --words (file mode) burns in word-pop captions from make_reel's reviewed
+  caption groups instead — see scripts/make_reel.mjs.
 
   Existing output is never overwritten or deleted: a run that would land on top
   of files already in --out stops and names them. --force is the only override.
@@ -303,7 +309,7 @@ export function parseArgs(argv) {
     audioPath: null, promptId: null, envName: 'production', format: '16x9',
     title: null, name: null, outDir: 'out', segmentOnly: false, clipsOnly: false,
     withPrompt: false, members: [], force: false, keepAudio: true,
-    captions: false, srtPath: null,
+    captions: false, srtPath: null, wordsPath: null,
   }
   const flagValue = (flag, v) => {
     if (v === undefined || v.startsWith('--')) throw new Error(`${flag} needs a value\n${USAGE}`)
@@ -327,6 +333,7 @@ export function parseArgs(argv) {
     else if (a === '--no-keep-audio') opts.keepAudio = false
     else if (a === '--captions') opts.captions = true
     else if (a === '--srt') opts.srtPath = flagValue(a, argv[++i])
+    else if (a === '--words') opts.wordsPath = flagValue(a, argv[++i])
     else if (a.startsWith('--')) throw new Error(`unknown flag: ${a}\n${USAGE}`)
     else if (!opts.audioPath) opts.audioPath = a
     else throw new Error(`unexpected argument: ${a}\n${USAGE}`)
@@ -343,6 +350,8 @@ export function parseArgs(argv) {
     // walk straight around that gate.
     throw new Error(`--srt only applies to file mode; --prompt reads the reviewed transcript\n${USAGE}`)
   }
+  if (opts.wordsPath && opts.promptId) throw new Error(`--words only applies to file mode\n${USAGE}`)
+  if (opts.wordsPath && opts.captions) throw new Error(`--words and --captions are alternatives; pass one\n${USAGE}`)
   // Rendering a one-clip "segment" duplicates the clip video byte for byte, so
   // --member on its own means the per-clip files and nothing else. An explicit
   // scope flag always wins.

@@ -328,6 +328,19 @@ describe('DELETE /admin/events/:id', () => {
     captureEmails()
     expect((await req('/admin/events/ghost', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(404)
   })
+
+  it("drops the event's Content Gen poster layouts, and only its own", async () => {
+    await env.ATTENDANCE_KV.put('event:d3', JSON.stringify({ id: 'd3', title: 'Cropped', date: '2020-01-01', venue: 'Banner Hall' }))
+    await env.ATTENDANCE_KV.put('cardlayout:d3:ig-post', '{"fy":0.1}')
+    await env.ATTENDANCE_KV.put('cardlayout:d3:ig-story', '{"fy":0.2}')
+    await env.ATTENDANCE_KV.put('cardlayout:d3-2:ig-post', '{"fy":0.3}')
+    captureEmails()
+
+    expect((await req('/admin/events/d3', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(200)
+    expect(await env.ATTENDANCE_KV.get('cardlayout:d3:ig-post')).toBeNull()
+    expect(await env.ATTENDANCE_KV.get('cardlayout:d3:ig-story')).toBeNull()
+    expect(await env.ATTENDANCE_KV.get('cardlayout:d3-2:ig-post')).toBe('{"fy":0.3}')
+  })
 })
 
 // Venue-ticketed events: the club markets the screening and funnels members to

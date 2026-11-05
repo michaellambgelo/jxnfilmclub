@@ -193,6 +193,90 @@ export function fitBox(srcW, srcH, { maxW = 1072, maxH = 1440, displayMax = IMAG
   return { width, height, displayWidth }
 }
 
+// --- Content Gen poster layout ---
+//
+// Per-(event, card size) adjustments to how a single-poster card is composed:
+// where the poster is cropped (focal point + zoom), how much of the card it
+// takes, the fade into the ink panel, band vs full-bleed, and a text-size
+// nudge. Saved as `cardlayout:<eventId>:<size>` in ATTENDANCE_KV — one key
+// per pair so a save is a blind overwrite, never a read-modify-write.
+//
+// The saved row carries the poster URL it was tuned against. A focal point is
+// meaningless against a different image, so if the event's poster has since
+// changed the saved layout is ignored (reported as `stale`) rather than
+// silently producing a wrong crop.
+
+export const CARD_LAYOUT_PREFIX = 'cardlayout:'
+export const cardLayoutKey = (eventId, size) => `${CARD_LAYOUT_PREFIX}${eventId}:${size}`
+
+export const LAYOUT_LIMITS = {
+  zoom: [1, 3],
+  band: [0.2, 0.8],
+  fade: [0, 600],
+  text: [0.7, 1.4],
+}
+
+// `band`/`fade: null` mean "the card's own default for its shape and mode"
+// (resolved by resolveLayout in contentgen.js) — kept distinct from any number
+// so a later change to that default still reaches layouts that never touched
+// the knob.
+export const DEFAULT_LAYOUT = Object.freeze({
+  fx: 0.5, fy: 0.5, zoom: 1, band: null, fade: null, mode: 'band', text: 1,
+})
+
+const clampNum = (v, lo, hi, dflt) => {
+  const n = Number(v)
+  if (v === null || v === undefined || v === '' || !Number.isFinite(n)) return dflt
+  return Math.min(hi, Math.max(lo, n))
+}
+
+export function normalizeLayout(raw, poster) {
+  const base = { ...DEFAULT_LAYOUT }
+  if (!raw || typeof raw !== 'object') return { ...base, stale: false }
+  if ((raw.poster || '') !== (poster || '')) return { ...base, stale: true }
+  return {
+    fx: clampNum(raw.fx, 0, 1, base.fx),
+    fy: clampNum(raw.fy, 0, 1, base.fy),
+    zoom: clampNum(raw.zoom, ...LAYOUT_LIMITS.zoom, base.zoom),
+    band: clampNum(raw.band, ...LAYOUT_LIMITS.band, null),
+    fade: clampNum(raw.fade, ...LAYOUT_LIMITS.fade, null),
+    mode: raw.mode === 'full' ? 'full' : 'band',
+    text: clampNum(raw.text, ...LAYOUT_LIMITS.text, base.text),
+    stale: false,
+  }
+}
+
+// True when a layout renders identically to the defaults — nothing to save.
+export function isDefaultLayout(l) {
+  return !!l && Object.keys(DEFAULT_LAYOUT).every(k => l[k] === DEFAULT_LAYOUT[k])
+}
+
+// object-fit: cover with a movable focal point and a zoom >= 1. (fx, fy) is
+// the point of the source image, in 0..1, that the crop is centred on; the
+// window is then clamped so it never leaves the image (a cover crop must not
+// expose the canvas behind it). Returns the source rect for drawImage plus
+// the source->destination scale the pointer handler needs to map drags.
+export function coverRect(nw, nh, w, h, { fx = 0.5, fy = 0.5, zoom = 1 } = {}) {
+  const scale = Math.max(w / nw, h / nh) * Math.max(1, Number(zoom) || 1)
+  const sw = w / scale
+  const sh = h / scale
+  const sx = Math.min(nw - sw, Math.max(0, fx * nw - sw / 2))
+  const sy = Math.min(nh - sh, Math.max(0, fy * nh - sh / 2))
+  return { sx, sy, sw, sh, scale }
+}
+
+// Move a focal point by a destination-space drag. Dragging right moves the
+// image right, i.e. the crop window (and its centre) left. The result is
+// re-expressed as the centre of the CLAMPED window, so dragging past an edge
+// doesn't bank invisible travel that has to be undone before it moves back.
+export function panFocal(nw, nh, w, h, layout, dx, dy) {
+  const { sw, sh, scale } = coverRect(nw, nh, w, h, layout)
+  const fx = layout.fx - dx / scale / nw
+  const fy = layout.fy - dy / scale / nh
+  const r = coverRect(nw, nh, w, h, { ...layout, fx, fy })
+  return { fx: (r.sx + sw / 2) / nw, fy: (r.sy + sh / 2) / nh }
+}
+
 // --- Newsletter body size + safety guards ---
 //
 // Three independent failure modes live on this one path, and two of them are

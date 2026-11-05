@@ -19,6 +19,8 @@ import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange, daysUntil, countdownLead,
   PLATFORM_LIMITS, PLATFORM_LABELS,
+  CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, normalizeLayout, isDefaultLayout,
+  coverRect, panFocal,
 } from './lib.js'
 
 // --- Brand (mirrors css/tokens.css "Night Shift" values) ---
@@ -145,6 +147,9 @@ let cg = {
   stat: 'members',     // selected milestone stat
   membersCount: 0,
   voicePrompt: null,   // config:voice_prompt, or the site's generic default
+  layouts: {},         // cardlayout:<eventId>:<size> -> saved raw layout (see lib.js)
+  layoutsEnv: null,    // env the layouts map was read from
+  posterHit: null,     // { x, y, w, h, nw, nh, kind, size } of the last painted poster
 }
 
 let ctx = null         // { api, env, content, toast } injected by admin.js
@@ -177,6 +182,19 @@ async function loadEvents() {
     const id = k.name.slice('attend:'.length)
     cg.attendCounts[id] = (tryParse(attRaw.values[k.name]) || []).length
   }
+
+  const layRaw = await ctx.api('GET', `/api/kv?${qs({ env: ctx.env(), binding: 'ATTENDANCE_KV', prefix: CARD_LAYOUT_PREFIX })}`)
+  // Keep any edits still waiting on their debounced save — a re-render (event
+  // switch, kind switch) re-reads KV, and the pending value is the newer one.
+  const pending = cg.layoutsEnv === ctx.env() ? Object.fromEntries(
+    [...layoutSaves.keys()].filter(k => k in cg.layouts).map(k => [k, cg.layouts[k]])) : {}
+  cg.layouts = {}
+  for (const k of layRaw.keys) {
+    const v = tryParse(layRaw.values[k.name])
+    if (v) cg.layouts[k.name] = v
+  }
+  Object.assign(cg.layouts, pending)
+  cg.layoutsEnv = ctx.env()
 }
 
 async function loadRoundup() {
@@ -505,14 +523,31 @@ function drawStars(c, rating, x, y, px, color = BRAND) {
   return cx - r - x
 }
 
-// object-fit: cover crop into the destination rect.
-function drawCover(c, img, x, y, w, h) {
-  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight)
-  const sw = w / scale
-  const sh = h / scale
-  const sx = (img.naturalWidth - sw) / 2
-  const sy = (img.naturalHeight - sh) / 2
+// object-fit: cover crop into the destination rect, optionally re-centred on
+// a focal point and zoomed (see coverRect in lib.js). Returns the painted
+// region in canvas space plus the source size — the "hit" the drag handler
+// maps pointer motion through.
+function drawCover(c, img, x, y, w, h, layout) {
+  const nw = img.naturalWidth, nh = img.naturalHeight
+  const { sx, sy, sw, sh } = coverRect(nw, nh, w, h, layout)
   c.drawImage(img, sx, sy, sw, sh, x, y, w, h)
+  return { x, y, w, h, nw, nh }
+}
+
+// The layout knobs that default per orientation (`null` in a saved layout).
+// Resolved here, in one place, so the drawers and the sliders agree on what
+// "default" currently means for this card shape.
+function resolveLayout(layout, W, H) {
+  const L = { ...DEFAULT_LAYOUT, ...(layout || {}) }
+  const landscape = W > H
+  const full = L.mode === 'full'
+  return {
+    ...L,
+    band: L.band ?? (landscape ? 0.36 : H > W ? 0.52 : 0.5),
+    // Landscape's side column historically had a hard edge; full-bleed needs
+    // a long veil for the text to sit on.
+    fade: L.fade ?? (full ? Math.round(H * 0.3) : landscape ? 0 : 160),
+  }
 }
 
 function label(c, text, x, y, px, color = BRAND) {
@@ -538,35 +573,56 @@ function footer(c, W, H, pad, url, x = pad) {
 
 // --- Card templates ---
 
-async function drawEventCard(c, W, H, event, lead) {
+// `layout` is optional (and trailing, so the visual-QA harness's existing
+// calls keep working): omitted, the card renders exactly as it always has.
+// Returns the poster's hit region, or null when there's no poster.
+async function drawEventCard(c, W, H, event, lead, layout) {
   const e = event || {}
   const name = e.film || e.title || 'Untitled'
   const poster = await loadImage(e.poster)
   const landscape = W > H
   const pad = Math.round(W * 0.065)
+  const L = resolveLayout(layout, W, H)
+  const full = !!poster && L.mode === 'full'
+  let hit = null
 
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
 
-  // Poster panel: left column on landscape, top band otherwise.
+  // Poster panel: left column on landscape, top band otherwise — or, in
+  // full-bleed mode, the whole card with the text set over a veil.
   let tx = pad, ty, tw
-  if (poster && landscape) {
-    const pw = Math.round(W * 0.36)
+  if (full) {
+    hit = drawCover(c, poster, 0, 0, W, H, L)
+    tw = W - pad * 2
+  } else if (poster && landscape) {
+    const pw = Math.round(W * L.band)
     c.fillStyle = SURFACE
     c.fillRect(0, 0, pw, H)
-    drawCover(c, poster, 0, 0, pw, H)
+    hit = drawCover(c, poster, 0, 0, pw, H, L)
+    const fade = Math.min(pw, L.fade)
+    if (fade > 0) {
+      const g = c.createLinearGradient(pw - fade, 0, pw, 0)
+      g.addColorStop(0, 'rgba(16,15,14,0)')
+      g.addColorStop(1, 'rgba(16,15,14,1)')
+      c.fillStyle = g
+      c.fillRect(pw - fade, 0, fade, H)
+    }
     tx = pw + pad
     tw = W - pw - pad * 2
     ty = Math.round(H * 0.2)
   } else if (poster) {
-    const ph = Math.round(H * (H > W ? 0.52 : 0.5))
-    drawCover(c, poster, 0, 0, W, ph)
+    const ph = Math.round(H * L.band)
+    hit = drawCover(c, poster, 0, 0, W, ph, L)
     // Fade the poster into the ink panel below it.
-    const fade = c.createLinearGradient(0, ph - 160, 0, ph)
-    fade.addColorStop(0, 'rgba(16,15,14,0)')
-    fade.addColorStop(1, 'rgba(16,15,14,1)')
-    c.fillStyle = fade
-    c.fillRect(0, ph - 160, W, 160)
+    const fade = Math.min(ph, L.fade)
+    if (fade > 0) {
+      const g = c.createLinearGradient(0, ph - fade, 0, ph)
+      g.addColorStop(0, 'rgba(16,15,14,0)')
+      g.addColorStop(1, 'rgba(16,15,14,1)')
+      c.fillStyle = g
+      c.fillRect(0, ph - fade, W, fade)
+    }
     tw = W - pad * 2
     ty = ph + Math.round(H * 0.05)
   } else {
@@ -574,47 +630,77 @@ async function drawEventCard(c, W, H, event, lead) {
     ty = Math.round(H * 0.24)
   }
 
-  label(c, `Jackson Film Club · ${lead || 'Next screening'}`, tx, ty, Math.round(W * 0.021))
-  ty += Math.round(W * 0.02)
-
-  // Film title — Playfair, wrapped, shrink-to-fit.
-  let titlePx = Math.round(W * (landscape ? 0.062 : 0.072))
+  // Measure the whole text block before drawing any of it: full-bleed anchors
+  // it to the bottom edge, so its top depends on its height.
+  const ts = L.text
+  const labelPx = Math.round(W * 0.021 * ts)
+  const labelGap = Math.round(W * 0.02 * ts)
+  let titlePx = Math.round(W * (landscape ? 0.062 : 0.072) * ts)
+  const titleFloor = Math.round(W * 0.04 * ts)
   c.font = `800 ${titlePx}px ${DISPLAY}`
   let lines = wrapText(c, name, tw)
-  while (lines.length > 3 && titlePx > Math.round(W * 0.04)) {
+  while (lines.length > 3 && titlePx > titleFloor) {
     titlePx = Math.round(titlePx * 0.88)
     c.font = `800 ${titlePx}px ${DISPLAY}`
     lines = wrapText(c, name, tw)
   }
+  const lineH = Math.round(titlePx * 1.12)
+  const yearH = e.year ? Math.round(titlePx * 0.75) : 0
+  const metaPx = Math.round(W * 0.031 * ts)
+  const when = fmtSocialDate(e.date) + (e.time ? `  ·  ${fmtShowtime(e.time)}` : '')
+  const venue = e.venue || (e.hostId ? 'Member-hosted screening' : '')
+  const blockH = labelPx + labelGap + lines.length * lineH + yearH + Math.round(H * 0.035)
+    + (when.trim() ? Math.round(metaPx * 1.5) : 0) + (venue ? metaPx : 0)
+
+  if (full) {
+    // Bottom-anchored above the footer, with the veil running `fade` px above
+    // the text's top and solid ink behind the text itself.
+    const footTop = H - pad - 22 - Math.round(W * 0.024)
+    const top = footTop - Math.round(H * 0.05) - blockH
+    const veilTop = Math.max(0, top - L.fade)
+    const g = c.createLinearGradient(0, veilTop, 0, Math.max(veilTop + 1, top))
+    g.addColorStop(0, 'rgba(16,15,14,0)')
+    g.addColorStop(1, 'rgba(16,15,14,0.9)')
+    c.fillStyle = g
+    c.fillRect(0, veilTop, W, top - veilTop)
+    c.fillStyle = 'rgba(16,15,14,0.9)'
+    c.fillRect(0, top, W, H - top)
+    ty = top + labelPx
+  }
+
+  c.textBaseline = 'alphabetic'
+  label(c, `Jackson Film Club · ${lead || 'Next screening'}`, tx, ty, labelPx)
+  ty += labelGap
+
+  // Film title — Playfair, wrapped, shrink-to-fit.
+  c.font = `800 ${titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
   c.textBaseline = 'top'
   for (const line of lines) {
     c.fillText(line, tx, ty)
-    ty += Math.round(titlePx * 1.12)
+    ty += lineH
   }
   if (e.year) {
     c.font = `italic 500 ${Math.round(titlePx * 0.5)}px ${DISPLAY}`
     c.fillStyle = PAPER_4
     c.fillText(String(e.year), tx, ty + Math.round(titlePx * 0.1))
-    ty += Math.round(titlePx * 0.75)
+    ty += yearH
   }
   ty += Math.round(H * 0.035)
 
-  const metaPx = Math.round(W * 0.031)
   c.font = `500 ${metaPx}px ${LABEL}`
   c.fillStyle = PAPER_2
-  const when = fmtSocialDate(e.date) + (e.time ? `  ·  ${fmtShowtime(e.time)}` : '')
   if (when.trim()) {
     c.fillText(when, tx, ty)
     ty += Math.round(metaPx * 1.5)
   }
-  const venue = e.venue || (e.hostId ? 'Member-hosted screening' : '')
   if (venue) {
     c.fillStyle = PAPER_4
     c.fillText(venue, tx, ty)
   }
 
   footer(c, W, H, pad, 'jxnfilm.club/events')
+  return hit
 }
 
 // A poster for an event that has no film to borrow one from.
@@ -691,17 +777,23 @@ async function drawTitleCard(c, W, H, event) {
   footer(c, W, H, pad, 'jxnfilm.club/events')
 }
 
-async function drawRecapCard(c, W, H, event, count) {
+// Takes the same optional layout as drawEventCard, but only its crop (fx, fy,
+// zoom) and text nudge mean anything here — the poster is always a
+// full-card ghost, so band/fade/mode don't apply and the UI hides them.
+async function drawRecapCard(c, W, H, event, count, layout) {
   const e = event || {}
   const name = e.film || e.title || 'Untitled'
   const poster = await loadImage(e.poster)
   const pad = Math.round(W * 0.065)
+  const L = resolveLayout(layout, W, H)
+  const ts = L.text
+  let hit = null
 
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
   if (poster) {
     c.globalAlpha = 0.18
-    drawCover(c, poster, 0, 0, W, H)
+    hit = drawCover(c, poster, 0, 0, W, H, L)
     c.globalAlpha = 1
     const veil = c.createLinearGradient(0, 0, 0, H)
     veil.addColorStop(0, 'rgba(16,15,14,0.55)')
@@ -711,34 +803,34 @@ async function drawRecapCard(c, W, H, event, count) {
   }
 
   let ty = Math.round(H * 0.2)
-  label(c, "Jackson Film Club · That's a wrap", pad, ty, Math.round(W * 0.021))
-  ty += Math.round(W * 0.025)
+  label(c, "Jackson Film Club · That's a wrap", pad, ty, Math.round(W * 0.021 * ts))
+  ty += Math.round(W * 0.025 * ts)
   c.textBaseline = 'top'
 
   if (count > 0) {
-    const numPx = Math.round(Math.min(W, H) * 0.3)
+    const numPx = Math.round(Math.min(W, H) * 0.3 * ts)
     c.font = `800 ${numPx}px ${DISPLAY}`
     c.fillStyle = BRAND
     c.fillText(String(count), pad, ty)
     const numW = c.measureText(String(count)).width
-    const ofPx = Math.round(W * 0.033)
+    const ofPx = Math.round(W * 0.033 * ts)
     c.font = `500 ${ofPx}px ${LABEL}`
     c.fillStyle = PAPER_2
     c.fillText('OF US', pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42))
     c.fillText('WATCHED', pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
     ty += Math.round(numPx * 1.18)
   } else {
-    const wePx = Math.round(W * 0.035)
+    const wePx = Math.round(W * 0.035 * ts)
     c.font = `500 ${wePx}px ${LABEL}`
     c.fillStyle = PAPER_2
     c.fillText('WE WATCHED', pad, ty)
     ty += Math.round(wePx * 1.9)
   }
 
-  let titlePx = Math.round(W * 0.06)
+  let titlePx = Math.round(W * 0.06 * ts)
   c.font = `800 ${titlePx}px ${DISPLAY}`
   let lines = wrapText(c, name + (e.year ? ` (${e.year})` : ''), W - pad * 2)
-  while (lines.length > 3 && titlePx > Math.round(W * 0.035)) {
+  while (lines.length > 3 && titlePx > Math.round(W * 0.035 * ts)) {
     titlePx = Math.round(titlePx * 0.88)
     c.font = `800 ${titlePx}px ${DISPLAY}`
     lines = wrapText(c, name + (e.year ? ` (${e.year})` : ''), W - pad * 2)
@@ -750,6 +842,7 @@ async function drawRecapCard(c, W, H, event, count) {
   }
 
   footer(c, W, H, pad, 'jxnfilm.club/events')
+  return hit
 }
 
 // Aspect-correct poster wall: 2:3 tiles with gutters and rounded corners,
@@ -1229,6 +1322,218 @@ async function drawEpisodeCard(c, W, H, { episode } = {}) {
   footer(c, W, H, pad, 'jxnfilm.club')
 }
 
+// --- Poster layout editing (announce / countdown / recap) ---
+//
+// The single-poster cards can be re-cropped and re-composed per event and per
+// card size: drag the poster on the canvas to pan, wheel or the Zoom slider to
+// scale, plus band size / fade / full-bleed / text nudges. Edits re-render on
+// the next animation frame and save, debounced, to `cardlayout:<id>:<size>`.
+// Resetting to defaults deletes the key rather than writing defaults, so a
+// later change to a default reaches every card that never touched that knob.
+
+const POSTER_KINDS = new Set(['announce', 'countdown', 'recap'])
+const layoutSaves = new Map()   // key -> pending timer, or 'inflight'
+
+function layoutTarget() {
+  if (!POSTER_KINDS.has(cg.kind)) return null
+  const ev = currentEvent()
+  if (!ev || !ev.id || !ev.poster) return null
+  return { ev, key: cardLayoutKey(ev.id, cg.size) }
+}
+
+function currentLayout() {
+  const t = layoutTarget()
+  return t ? normalizeLayout(cg.layouts[t.key], t.ev.poster) : undefined
+}
+
+function setLayout(patch) {
+  const t = layoutTarget()
+  if (!t) return
+  const { stale, ...cur } = normalizeLayout(cg.layouts[t.key], t.ev.poster)
+  const next = { ...cur, ...patch, poster: t.ev.poster }
+  cg.layouts[t.key] = next
+  scheduleLayoutSave(t.key, next)
+  syncLayoutPanel()
+  scheduleRender()
+}
+
+function resetLayout() {
+  const t = layoutTarget()
+  if (!t) return
+  cg.layouts[t.key] = { ...DEFAULT_LAYOUT, poster: t.ev.poster }
+  scheduleLayoutSave(t.key, cg.layouts[t.key])
+  syncLayoutPanel()
+  scheduleRender()
+}
+
+function layoutStatus(text) {
+  const el = document.querySelector('#cg-l-status')
+  if (el) el.textContent = text
+}
+
+function scheduleLayoutSave(key, value) {
+  // Captured now: an env switch during the debounce must not redirect the
+  // write to the other environment's KV.
+  const env = ctx.env()
+  const prev = layoutSaves.get(key)
+  if (prev && prev !== 'inflight') clearTimeout(prev)
+  layoutStatus('Saving…')
+  layoutSaves.set(key, setTimeout(async () => {
+    layoutSaves.set(key, 'inflight')
+    try {
+      const where = `/api/kv?${qs({ env, binding: 'ATTENDANCE_KV', key })}`
+      if (isDefaultLayout(normalizeLayout(value, value.poster))) await ctx.api('DELETE', where)
+      else await ctx.api('PUT', where, JSON.stringify(value))
+      if (layoutSaves.get(key) === 'inflight') {
+        layoutSaves.delete(key)
+        layoutStatus('Saved')
+      }
+    } catch (e) {
+      if (layoutSaves.get(key) === 'inflight') layoutSaves.delete(key)
+      layoutStatus('Save failed')
+      ctx.toast(`Layout not saved: ${e.message || e}`, true)
+    }
+  }, 500))
+}
+
+let renderQueued = false
+function scheduleRender() {
+  if (renderQueued) return
+  renderQueued = true
+  requestAnimationFrame(() => {
+    renderQueued = false
+    renderCanvas({ quiet: true }).catch(e => ctx.toast(e.message || String(e), true))
+  })
+}
+
+const LAYOUT_SLIDERS = {
+  zoom: { label: 'Zoom', step: 0.01, fmt: v => `${v.toFixed(2)}×` },
+  band: { label: 'Poster size', step: 0.01, fmt: v => `${Math.round(v * 100)}%` },
+  fade: { label: 'Fade', step: 10, fmt: v => `${Math.round(v)}px` },
+  text: { label: 'Text', step: 0.01, fmt: v => `${Math.round(v * 100)}%` },
+}
+
+function renderLayoutPanel() {
+  const host = document.querySelector('#cg-layout')
+  if (!host) return
+  const t = layoutTarget()
+  const canvas = document.querySelector('#cg-canvas')
+  if (canvas) canvas.classList.toggle('cg-layout-on', !!t)
+  if (!t) {
+    host.hidden = true
+    host.innerHTML = ''
+    return
+  }
+  host.hidden = false
+  // Recap's poster is a full-card ghost: only the crop and the text apply.
+  const keys = cg.kind === 'recap' ? ['zoom', 'text'] : ['zoom', 'band', 'fade', 'text']
+  host.innerHTML = `
+    <div class="cg-layout-row">
+      ${cg.kind === 'recap' ? '' : `
+      <div class="cg-seg" role="group" aria-label="Poster layout">
+        <button type="button" data-mode="band">Band</button><button type="button" data-mode="full">Full-bleed</button>
+      </div>`}
+      ${keys.map(k => {
+        const s = LAYOUT_SLIDERS[k]
+        const [min, max] = LAYOUT_LIMITS[k]
+        return `<label class="cg-l" data-knob="${k}">${s.label}
+          <input type="range" id="cg-l-${k}" min="${min}" max="${max}" step="${s.step}">
+          <output id="cg-l-${k}-out"></output></label>`
+      }).join('')}
+      <button type="button" id="cg-l-reset">Reset</button>
+    </div>
+    <p class="cg-layout-hint muted">Drag the poster to reposition · scroll over it to zoom · double-click to reset.
+      Saved per event and card size. <span id="cg-l-status" aria-live="polite"></span></p>`
+  for (const k of keys) {
+    const input = host.querySelector(`#cg-l-${k}`)
+    input.addEventListener('input', () => setLayout({ [k]: Number(input.value) }))
+  }
+  host.querySelectorAll('[data-mode]').forEach(b =>
+    b.addEventListener('click', () => setLayout({ mode: b.dataset.mode })))
+  host.querySelector('#cg-l-reset').addEventListener('click', resetLayout)
+  syncLayoutPanel()
+  const saved = currentLayout()
+  if (saved && saved.stale) layoutStatus('The saved layout was for a previous poster — showing defaults.')
+  else if (layoutSaves.has(t.key)) layoutStatus('Saving…')
+}
+
+// Push the current values into the controls without rebuilding them (a
+// rebuild mid-drag would steal focus from the slider being dragged).
+function syncLayoutPanel() {
+  const host = document.querySelector('#cg-layout')
+  const raw = currentLayout()
+  if (!host || !raw) return
+  const { w, h } = SIZES[cg.size]
+  const L = resolveLayout(raw, w, h)
+  for (const k of Object.keys(LAYOUT_SLIDERS)) {
+    const input = host.querySelector(`#cg-l-${k}`)
+    if (!input) continue
+    input.value = String(L[k])
+    host.querySelector(`#cg-l-${k}-out`).textContent = LAYOUT_SLIDERS[k].fmt(L[k])
+  }
+  host.querySelectorAll('[data-mode]').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === L.mode)
+    b.setAttribute('aria-pressed', String(b.dataset.mode === L.mode))
+  })
+  // Poster size is the band's share of the card; full-bleed has no band.
+  const band = host.querySelector('[data-knob="band"]')
+  if (band) band.hidden = L.mode === 'full'
+}
+
+// Pointer → poster crop. Pointer events (not mouse) so touch works, with
+// capture so a drag that leaves the canvas keeps tracking. Motion is applied
+// as a TOTAL delta from the drag's start against the layout as it was then,
+// so the crop never accumulates rounding drift over a long drag.
+function bindCanvasDrag(canvas) {
+  let drag = null
+  const pt = (ev) => {
+    const r = canvas.getBoundingClientRect()
+    return { x: (ev.clientX - r.left) * canvas.width / r.width, y: (ev.clientY - r.top) * canvas.height / r.height }
+  }
+  const hitAt = (p) => {
+    const t = layoutTarget()
+    const h = cg.posterHit
+    if (!t || !h || h.key !== t.key) return null
+    return p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h ? h : null
+  }
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return
+    const p = pt(ev)
+    const h = hitAt(p)
+    if (!h) return
+    ev.preventDefault()
+    drag = { p, h, base: currentLayout() }
+    canvas.setPointerCapture(ev.pointerId)
+    canvas.classList.add('cg-dragging')
+  })
+  canvas.addEventListener('pointermove', (ev) => {
+    const p = pt(ev)
+    if (!drag) {
+      canvas.classList.toggle('cg-pannable', !!hitAt(p))
+      return
+    }
+    const { h, base } = drag
+    setLayout(panFocal(h.nw, h.nh, h.w, h.h, base, p.x - drag.p.x, p.y - drag.p.y))
+  })
+  const end = () => {
+    if (!drag) return
+    drag = null
+    canvas.classList.remove('cg-dragging')
+  }
+  canvas.addEventListener('pointerup', end)
+  canvas.addEventListener('pointercancel', end)
+  // Non-passive so the page doesn't scroll while zooming — but only over the
+  // poster; everywhere else the wheel scrolls the page as usual.
+  canvas.addEventListener('wheel', (ev) => {
+    if (!hitAt(pt(ev))) return
+    ev.preventDefault()
+    const [lo, hi] = LAYOUT_LIMITS.zoom
+    const zoom = Math.min(hi, Math.max(lo, currentLayout().zoom * Math.exp(-ev.deltaY * 0.0015)))
+    setLayout({ zoom: Math.round(zoom * 100) / 100 })
+  }, { passive: false })
+  canvas.addEventListener('dblclick', (ev) => { if (hitAt(pt(ev))) resetLayout() })
+}
+
 // Renders are async (fonts, then posters through /api/img) and the prev/next
 // pager makes overlapping renders the NORMAL interaction, not a rarity — a
 // dropdown produced one every so often, arrows produce one per click. Without
@@ -1250,13 +1555,15 @@ async function drawEpisodeCard(c, W, H, { episode } = {}) {
 // Silent, plausible, and exactly the mis-post this feature guards against
 // everywhere else. The download buttons are therefore disabled while a render
 // is outstanding.
-async function renderCanvas() {
+// `quiet` (layout edits, many per second while dragging) skips the dimmed
+// loading state, which would otherwise strobe — downloads are still disabled.
+async function renderCanvas({ quiet = false } = {}) {
   const seq = ++cg.renderSeq
   const canvas = document.querySelector('#cg-canvas')
   if (!canvas) return
   const { w, h } = SIZES[cg.size]
   const data = copyData()
-  setRenderBusy(true)
+  setRenderBusy(true, quiet)
   try {
     await loadFonts()
     if (cg.kind === 'diary') await Promise.all((data.films || []).map(f => loadImage(f.poster)))
@@ -1265,7 +1572,11 @@ async function renderCanvas() {
     canvas.height = h
     const c = canvas.getContext('2d')
     c.textBaseline = 'alphabetic'
-    await drawForKind(c, w, h, data)
+    const hit = await drawForKind(c, w, h, data)
+    // A superseded paint must not stamp its geometry under the newer target's key.
+    if (seq !== cg.renderSeq) return
+    const t = layoutTarget()
+    cg.posterHit = hit && t ? { ...hit, key: t.key } : null
   } finally {
     // Only the newest render clears the flag; an older one finishing late must
     // not re-enable the buttons while the current paint is still in flight.
@@ -1276,10 +1587,10 @@ async function renderCanvas() {
 // Downloads read cg.diaryPage/cg.size at click time, so they are only honest
 // once the canvas matches. Batch export drives its own detached canvas and
 // manages these buttons itself, so it is left alone while batching.
-function setRenderBusy(on) {
+function setRenderBusy(on, quiet = false) {
   cg.rendering = on
   const wrap = document.querySelector('.cg-canvas-wrap')
-  if (wrap) wrap.classList.toggle('loading', on)
+  if (wrap) wrap.classList.toggle('loading', on && !quiet)
   if (cg.batching) return
   for (const id of ['#cg-download', '#cg-download-all', '#cg-use-poster']) {
     const b = document.querySelector(id)
@@ -1295,10 +1606,11 @@ async function drawForKind(c, w, h, data) {
   else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data)
   else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data)
   else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data)
-  else if (cg.kind === 'recap') await drawRecapCard(c, w, h, data.event, data.count)
+  else if (cg.kind === 'recap') return drawRecapCard(c, w, h, data.event, data.count, currentLayout())
   else if (cg.kind === 'titlecard') await drawTitleCard(c, w, h, data.event)
-  else if (cg.kind === 'countdown') await drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)))
-  else await drawEventCard(c, w, h, data.event, 'Next screening')
+  else if (cg.kind === 'countdown') return drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)), currentLayout())
+  else return drawEventCard(c, w, h, data.event, 'Next screening', currentLayout())
+  return null
 }
 
 const toBlobAsync = (canvas) => new Promise(r => canvas.toBlob(r, 'image/png'))
@@ -1572,6 +1884,7 @@ export async function renderContentGen(context) {
           ${Object.entries(SIZES).map(([k, s]) => `<button type="button" class="cg-size ${k === cg.size ? 'active' : ''}" data-size="${attr(k)}">${escapeHtml(s.label)} <span class="muted">${s.w}×${s.h}</span></button>`).join('')}
         </div>
         <div class="cg-canvas-wrap"><canvas id="cg-canvas"></canvas></div>
+        <div class="cg-layout" id="cg-layout" hidden></div>
         <div class="toolbar">
           <button type="button" class="primary" id="cg-download">Download PNG</button>
           ${cg.kind === 'titlecard' && cg.size === 'poster'
@@ -1608,6 +1921,7 @@ export async function renderContentGen(context) {
   })
   const refresh = () => {
     renderCopyPanel()
+    renderLayoutPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
   const evSel = document.querySelector('#cg-event')
@@ -1672,6 +1986,7 @@ export async function renderContentGen(context) {
     btn.addEventListener('click', () => {
       cg.size = btn.dataset.size
       document.querySelectorAll('.cg-size').forEach(b => b.classList.toggle('active', b === btn))
+      renderLayoutPanel()
       renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
     })
   })
@@ -1734,7 +2049,10 @@ export async function renderContentGen(context) {
   })
 
   if (!emptyMsg) {
+    const canvas = document.querySelector('#cg-canvas')
+    if (canvas) bindCanvasDrag(canvas)
     renderCopyPanel()
+    renderLayoutPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
 }

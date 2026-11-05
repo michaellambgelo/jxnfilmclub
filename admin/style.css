@@ -359,6 +359,21 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   justify-content: center;
 }
 #cg-canvas { max-width: 100%; max-height: 520px; box-shadow: 0 4px 16px rgba(0,0,0,0.2) }
+/* Poster layout editing: the canvas only claims touch gestures when there is
+   a poster to drag, so a phone can still scroll past the other card types. */
+#cg-canvas.cg-layout-on { touch-action: none }
+#cg-canvas.cg-pannable { cursor: grab }
+#cg-canvas.cg-dragging { cursor: grabbing }
+.cg-layout { margin: 0 0 0.8rem }
+.cg-layout-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center }
+.cg-l { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted) }
+.cg-l[hidden] { display: none }
+.cg-l input[type=range] { width: 110px }
+.cg-l output { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text, inherit) }
+.cg-seg { display: inline-flex }
+.cg-seg button + button { margin-left: -1px }
+.cg-seg button.active { border-color: #100f0e; background: #100f0e; color: #f0ebe0 }
+.cg-layout-hint { font-size: 0.8rem; margin: 0.5rem 0 0 }
 .cg-copy-card { margin-bottom: 1rem }
 .cg-copy-card textarea { width: 100%; font-size: 0.85rem }
 .cg-copy-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.3rem }

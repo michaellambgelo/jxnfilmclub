@@ -3717,6 +3717,11 @@ async function writeEvent(env, event) {
 
 async function deleteEvent(env, eventId) {
   await env.ATTENDANCE_KV.delete(`event:${eventId}`)
+  // Admin Content Gen's per-size poster crops (`cardlayout:<id>:<size>`,
+  // written via the admin portal's raw KV route). The trailing colon keeps
+  // event `abc` from sweeping up `abc-2`'s layouts.
+  const layouts = await env.ATTENDANCE_KV.list({ prefix: `cardlayout:${eventId}:` })
+  await Promise.all(layouts.keys.map(k => env.ATTENDANCE_KV.delete(k.name)))
   const allRaw = await env.ATTENDANCE_KV.get('events:all')
   if (allRaw) {
     const all = safeParseArray(allRaw)

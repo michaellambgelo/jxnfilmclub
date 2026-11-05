@@ -127,6 +127,7 @@ Set in `wrangler.toml` per env:
 - `attend:{eventId}` / `attendance:all` / `attendance:bootstrapped` — attendance live + snapshot. Entries are `{ id, name }` keyed on the member id; the name is a snapshot resolved off `members:all` on read, so a rename lands everywhere at once (see `docs/features/attendance.md` § Identity). Reads still accept the legacy `[name]` shape. For hosted events, `attend:{id}` is a write-through mirror of `rsvp:{id}.confirmed` plus the host.
 - `event:{id}` — canonical per-event row (admin dashboard or hosted-event handlers). Hosted rows carry `hostId`/`hostName` and `kind` (`'house'` with private `address`, or `'meetup'` with public `venue`/optional `time`; rows without `kind` predate meetups = house).
 - `rsvp:{eventId}` — `{ confirmed: [{ memberId, name, email, at }], waitlist: [...] }` for hosted events.
+- `cardlayout:{eventId}:{size}` — admin Content Gen poster crop/composition for one card size (`{ fx, fy, zoom, band, fade, mode, text, poster }`). Written only by the admin portal's raw KV route; this Worker never reads it, but `deleteEvent()` sweeps the event's keys.
 - `events:all` — public projection array served by `GET /events`. Patched in lockstep by `event:{id}` writes.
 - `events:bootstrapped` — `'1'` marker.
 

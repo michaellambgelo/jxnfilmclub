@@ -574,6 +574,56 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('.cg-copy-all')).toHaveCount(0)
     await expect(page.locator('.cg-copy-page')).toHaveCount(0)
   })
+
+  test('Content Gen: poster layout knobs save per event + size and survive a reload', async ({ page }) => {
+    // Poster on a host the image proxy allowlists; the layout panel keys off
+    // the event HAVING a poster, so this doesn't depend on the bytes loading.
+    const poster = 'https://image.tmdb.org/t/p/w500/e2e-layout.jpg'
+    const ev = { id: 'cg-e2e-layout', title: 'Layout Night', film: 'Metropolis', year: 1927, date: '2030-02-01', venue: 'The Parlor', poster }
+    const seeded = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${ev.id}`, value: JSON.stringify(ev) },
+    })
+    expect(seeded.ok()).toBeTruthy()
+    const key = `cardlayout:${ev.id}:ig-post`
+    const getLayout = async (): Promise<string | null> => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent(key)}`)
+      expect(res.ok()).toBeTruthy()
+      return (await res.json()).value
+    }
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+
+    const panel = page.locator('#cg-layout')
+    await expect(panel).toBeVisible()
+    await page.locator('#cg-l-text').fill('1.2')
+    await page.getByRole('button', { name: 'Full-bleed' }).click()
+    // Full-bleed has no band, so its size knob goes away.
+    await expect(page.locator('[data-knob="band"]')).toBeHidden()
+
+    await expect.poll(async () => JSON.parse((await getLayout()) || '{}').mode).toBe('full')
+    const saved = JSON.parse((await getLayout())!)
+    expect(saved).toMatchObject({ text: 1.2, poster })
+
+    // Another size is untouched; a reload restores this one.
+    await page.locator('.cg-size[data-size="ig-story"]').click()
+    await expect(page.locator('#cg-l-text')).toHaveValue('1')
+    await page.reload()
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+    await page.locator('.cg-size[data-size="ig-post"]').click()
+    await expect(page.locator('#cg-l-text')).toHaveValue('1.2')
+    await expect(page.locator('[data-mode="full"]')).toHaveClass(/active/)
+
+    // Reset removes the key rather than persisting defaults.
+    await page.locator('#cg-l-reset').click()
+    await expect.poll(() => getLayout()).toBeNull()
+
+    // Cards without a single poster don't offer the knobs.
+    await page.locator('#cg-kind').selectOption('titlecard')
+    await expect(page.locator('#cg-layout')).toBeHidden()
+  })
   // The Events tab writes KV directly, so the form scrape IS the validation.
   // Two things it has to get right, both of which were wrong before:
   // a checkbox carries its state in .checked (its .value is the string "on"

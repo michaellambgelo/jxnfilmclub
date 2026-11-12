@@ -279,8 +279,12 @@ async function route(request, env, ctx) {
     if (request.method === 'POST'   && pathname === '/transcriber/measure') return handleTranscriberMeasure(request, env)
     // Admin event writes. Same id-in-path shape as /events/:id; the ADMIN_TOKEN
     // gate lives in the handlers so an unset token can never read as a match.
-    const adminEventMatch = /^\/admin\/events\/([^\/]+)$/.exec(pathname)
-    if (adminEventMatch) {
+    const adminEventMatch = /^\/admin\/events\/([^\/]+)(?:\/(promote|message))?$/.exec(pathname)
+    if (adminEventMatch && adminEventMatch[2]) {
+      const id = decodeURIComponent(adminEventMatch[1])
+      if (request.method === 'POST' && adminEventMatch[2] === 'promote') return handleAdminEventPromote(request, env, id)
+      if (request.method === 'POST' && adminEventMatch[2] === 'message') return handleAdminEventMessage(request, env, id)
+    } else if (adminEventMatch) {
       const id = decodeURIComponent(adminEventMatch[1])
       if (request.method === 'PUT')    return handleAdminEventPut(request, env, id)
       if (request.method === 'DELETE') return handleAdminEventDelete(request, env, id)
@@ -4095,6 +4099,50 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
+// A note from the organizers (POST /admin/events/:id/message). The details
+// ride along so the note never has to restate them, on the same terms as
+// every other event mail: someone holding a seat gets the address and a
+// cancel link, someone waiting gets neither.
+async function sendAttendeeMessageEmail(env, entry, event, { subject, message, confirmed }, origin) {
+  if (!entry.email) return
+  const lines = [
+    `A note from Jackson Film Club about ${event.title}:`,
+    '',
+    message,
+    '',
+    'Current details:',
+    `Date: ${fmtScreeningWhen(event)}`,
+  ]
+  let cancelUrl = ''
+  if (confirmed) {
+    lines.push(...eventWhereLines(event))
+    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+    const token = await signRsvpCancelToken(env, event.id, entry.memberId)
+    cancelUrl = `${origin}/rsvp/cancel?token=${encodeURIComponent(token)}`
+    lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
+  } else {
+    if (event.venue) lines.push(`Venue: ${event.venue}`)
+    if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+    lines.push('', 'You are on the list for this one, not confirmed. We will email you if that changes.')
+  }
+  const html = transactionalEmailHtml({
+    subject,
+    preheader: message.replace(/\s+/g, ' ').slice(0, 90),
+    eyebrow: 'From the club',
+    heading: subject,
+    blocks: [
+      paragraphHtml(message),
+      eventCardHtml(event, { address: confirmed ? (event.address || '') : '', free: isFreeAdmission(event) }),
+      confirmed
+        ? buttonsHtml([{ href: cancelUrl, label: "Can't make it anymore? Cancel", secondary: true }])
+        : paragraphHtml('You are on the list for this one, not confirmed. We will email you if that changes.', { muted: true }),
+    ],
+    why: `You're receiving this because you ${confirmed ? "RSVP'd to" : 'are on the list for'} ${event.title}.`,
+    siteOrigin: siteOrigin(env),
+  })
+  await sendEmail(env, entry.email, subject, lines.join('\n'), html)
+}
+
 // Waitlisted members get the same change notice, minus the cancel link (they
 // hold no seat to give up) and with their position restated so the mail is
 // self-explanatory to someone who is not yet in.
@@ -4917,6 +4965,108 @@ async function handleAdminEventPut(request, env, eventId) {
   })
 }
 
+// POST /admin/events/:id/promote — body { memberId, force? }. Move one person
+// from the waitlist to confirmed and send them the normal confirmation.
+//
+// Refused while tickets are pending: the waitlist is then the pre-sale queue,
+// and someone pulled out of it would be told they are in with nothing to buy
+// - and would then miss the on-sale mail, which goes to the queue.
+// A full event needs `force`, the same word the guest-add form uses.
+async function handleAdminEventPromote(request, env, eventId) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!rsvpEnabled(event)) return json(env, { error: 'this event does not accept RSVPs' }, 409)
+  if (event.date && event.date < centralToday()) {
+    return json(env, { error: 'this screening has already happened' }, 409)
+  }
+  if (ticketsPending(event)) {
+    return json(env, { error: 'tickets are not on sale yet — adding the ticket link confirms the whole list' }, 409)
+  }
+  const body = await request.json().catch(() => ({}))
+  const rsvp = await readRsvp(env, eventId)
+  const idx = rsvp.waitlist.findIndex(r => r.memberId === body.memberId)
+  if (idx === -1) return json(env, { error: 'that person is not on the waitlist' }, 404)
+
+  const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
+  if (rsvp.confirmed.length >= capacity && body.force !== true) {
+    return json(env, { error: `the event is full (${rsvp.confirmed.length}/${capacity})`, full: true }, 409)
+  }
+  const [entry] = rsvp.waitlist.splice(idx, 1)
+  entry.promotedAt = Date.now()
+  rsvp.confirmed.push(entry)
+  await writeRsvp(env, eventId, rsvp, event)
+  try { await sendRsvpEmail(env, { id: entry.memberId, email: entry.email, name: entry.name }, event, new URL(request.url).origin) }
+  catch (e) { console.error('promotion email failed:', e?.message || e) }
+  return json(env, { ok: true, status: 'confirmed', emailed: !!entry.email })
+}
+
+// POST /admin/events/:id/message — body { message, subject?, waitlist? }.
+// A free-form note from the organizers to the people on an event's list:
+// confirmed, plus the waitlist when asked. Plain text only. Nothing is
+// stored - the note exists in the recipients' inboxes and nowhere else.
+//
+// This is a transactional mail to people who RSVP'd, so it carries no
+// unsubscribe and must stay about the event; announcements go through the
+// newsletter, which is opt-in. The privacy policy names this mail.
+const ATTENDEE_MESSAGE_MAX = 2000
+const ATTENDEE_SUBJECT_MAX = 120
+const ATTENDEE_MESSAGE_THROTTLE = 60
+
+async function handleAdminEventMessage(request, env, eventId) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  const event = await readEvent(env, eventId)
+  if (!event) return json(env, { error: 'event not found' }, 404)
+  if (!rsvpEnabled(event)) return json(env, { error: 'this event does not accept RSVPs' }, 409)
+
+  const body = await request.json().catch(() => ({}))
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  if (!message) return json(env, { error: 'message is required' }, 400)
+  if (message.length > ATTENDEE_MESSAGE_MAX) {
+    return json(env, { error: `message too long (<=${ATTENDEE_MESSAGE_MAX} chars)` }, 400)
+  }
+  // One line: a newline in a subject is a header-injection shape.
+  const subject = (typeof body.subject === 'string' ? body.subject : '').replace(/[\r\n]+/g, ' ').trim()
+    || `A note about ${event.title}`
+  if (subject.length > ATTENDEE_SUBJECT_MAX) {
+    return json(env, { error: `subject too long (<=${ATTENDEE_SUBJECT_MAX} chars)` }, 400)
+  }
+
+  const rsvp = await readRsvp(env, eventId)
+  // Deduped by address, confirmed first, so someone on both lists (a member
+  // and a guest row sharing an email) gets the confirmed version once.
+  const seen = new Set()
+  const recipients = []
+  for (const [list, confirmed] of [[rsvp.confirmed, true], [body.waitlist === true ? rsvp.waitlist : [], false]]) {
+    for (const r of list) {
+      const key = r && r.email ? r.email.toLowerCase() : ''
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      recipients.push({ entry: r, confirmed })
+    }
+  }
+  if (!recipients.length) return json(env, { error: 'nobody on that list has an email address' }, 400)
+
+  // A double-click guard, not a review step: the same room must not get the
+  // same note twice because a button was pressed twice.
+  if (!(await throttle(env, `rate:eventmsg:${eventId}`, ATTENDEE_MESSAGE_THROTTLE))) {
+    return json(env, { error: 'a message for this event was sent in the last minute — wait before sending another' }, 429)
+  }
+
+  const origin = new URL(request.url).origin
+  let sent = 0, failed = 0
+  for (const { entry, confirmed } of recipients) {
+    try {
+      await sendAttendeeMessageEmail(env, entry, event, { subject, message, confirmed }, origin)
+      sent++
+    } catch (e) {
+      failed++
+      console.error('attendee message failed:', e?.message || e)
+    }
+  }
+  return json(env, { ok: true, sent, failed })
+}
+
 // DELETE /admin/events/:id — cancellation notices, then teardown.
 //
 // Always notifies, with no opt-out: the event is gone, and the failure mode
@@ -5294,14 +5444,22 @@ async function readReminded(env, event) {
 // 'pending' (will be or is being sent), 'late' (RSVP'd after the due time),
 // or 'no-email' (a name-only guest). The sweep sends exactly the 'pending'
 // ones, so the admin schedule built from this can't disagree with it.
+//
+// `promotedAt` (stamped by a manual admin promotion) stands in for `at`: that
+// person was told they are in at that moment, with every detail the reminder
+// carries, so one promoted inside the window is 'late' like a late RSVP -
+// not owed a second mail an hour after the first.
 function reminderRecipients(rsvp, done, dueAt) {
-  return rsvp.confirmed.map(entry => ({
-    entry,
-    state: !entry.email ? 'no-email'
-      : done.has(entry.memberId) ? 'sent'
-      : typeof entry.at === 'number' && entry.at >= dueAt ? 'late'
-      : 'pending',
-  }))
+  return rsvp.confirmed.map(entry => {
+    const since = typeof entry.promotedAt === 'number' ? entry.promotedAt : entry.at
+    return {
+      entry,
+      state: !entry.email ? 'no-email'
+        : done.has(entry.memberId) ? 'sent'
+        : typeof since === 'number' && since >= dueAt ? 'late'
+        : 'pending',
+    }
+  })
 }
 
 async function sendEventReminders(env, { now = Date.now(), dryRun = false } = {}) {
@@ -5710,6 +5868,7 @@ const EMAIL_PREVIEW_TYPES = [
   ['waitlist-update', 'Event updated (waitlist)'],
   ['cancelled', 'Event cancelled'],
   ['reminder', 'Reminder (48 hours before)'],
+  ['attendee-message', 'Note from the organizers'],
   ['signup', 'Signup code'],
   ['login', 'Login code'],
 ]
@@ -5744,6 +5903,11 @@ async function handleEmailPreview(request, env) {
     'waitlist-update': (e) => sendWaitlistUpdateEmail(e, member, event, changes, 1),
     'cancelled': (e) => sendScreeningCancelledEmail(e, member, event),
     'reminder': (e) => sendEventReminderEmail(e, { memberId: member.id, email: to }, event, origin),
+    'attendee-message': (e) => sendAttendeeMessageEmail(e, { memberId: member.id, email: to }, event, {
+      subject: `A note about ${event.title}`,
+      message: 'Doors open half an hour early this time, and parking is easier on the street behind the building.\n\nSee you there.',
+      confirmed: true,
+    }, origin),
     'signup': (e) => sendSignupEmail(e, to, '123456'),
     'login': (e) => sendLoginEmail(e, to, '123456'),
   }

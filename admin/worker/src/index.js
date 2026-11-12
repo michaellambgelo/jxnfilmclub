@@ -503,6 +503,15 @@ async function handle(request, env, access) {
     if (!q.id) throw new HttpError(400, 'id required')
     return proxyJoinAdmin(request, env, q, `/admin/events/${encodeURIComponent(q.id)}`, method)
   }
+  // POST /api/events/promote?env=&id=  body { memberId, force? }
+  // POST /api/events/message?env=&id=  body { message, subject?, waitlist? }
+  // One waitlisted person to confirmed, or a note to everyone on the list —
+  // both through the join Worker, which owns the list and the mail.
+  const eventAction = /^\/api\/events\/(promote|message)$/.exec(url.pathname)
+  if (method === 'POST' && eventAction) {
+    if (!q.id) throw new HttpError(400, 'id required')
+    return proxyJoinAdmin(request, env, q, `/admin/events/${encodeURIComponent(q.id)}/${eventAction[1]}`)
+  }
   // Identity comes from the verified Access JWT.
   if (method === 'GET' && url.pathname === '/api/whoami') {
     return json(200, { email: access.email || '(no email claim)', mode: 'hosted' })

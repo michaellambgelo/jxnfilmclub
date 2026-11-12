@@ -697,3 +697,12 @@ dialog pre.rich {
 /* `hidden` loses to any author display rule, so say it again where the
    elements above set one. */
 .list-more[hidden], .list-none[hidden], .form [hidden] { display: none }
+
+/* The note composer under an event's RSVP list. */
+.people-message { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--border) }
+.people-message > summary { cursor: pointer; font-weight: 600 }
+.people-message label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.5rem 0 0.2rem }
+.people-message .cfg-inline { color: var(--ink); margin: 0.6rem 0 }
+.people-message .form-foot { margin-top: 0.6rem }
+.detail .attendance li button { margin-left: 0.4rem }
+

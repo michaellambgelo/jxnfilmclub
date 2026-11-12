@@ -166,7 +166,7 @@ test.describe('admin dashboard', () => {
     await seedKv(page, '__last_email__', '')
     await page.goto(`${ADMIN_ORIGIN}/`)
     await page.locator('#tabs button[data-tab="emails"]').click()
-    await expect(page.locator('.email-card')).toHaveCount(10)
+    await expect(page.locator('.email-card')).toHaveCount(11)
     await expect(page.locator('.email-card', { hasText: 'RSVP confirmation' })).toContainText("You're in for")
     expect(await getKv(page, '__last_email__')).toBe('')
 
@@ -1048,6 +1048,74 @@ test.describe('admin dashboard', () => {
     expect((await read('rsvp:2099-04-07-zzyzx-dupfilm'))?.confirmed ?? []).toHaveLength(0)
     // And the source is untouched.
     expect((await read(`event:${id}`)).notes).toBe('Row F, ask for Sam')
+  })
+
+  // The two RSVP-list actions that are not an event edit. Both go through the
+  // join Worker, and neither may disturb an unsaved edit in the form above.
+  test('Events tab: promote one waitlisted person, then message the list', async ({ page }) => {
+    const id = 'e2e-people'
+    const putKv = (key: string, value: unknown) =>
+      page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key, value: JSON.stringify(value) } })
+    await putKv(`event:${id}`, { id, title: 'Night at the Capri', date: '2099-08-01', venue: 'Capri Theater', rsvp: true, capacity: 1 })
+    await putKv(`rsvp:${id}`, {
+      confirmed: [{ memberId: 'm1', name: 'Confirmed Cass', email: 'cass@example.com', at: 1 }],
+      waitlist: [
+        { memberId: 'm2', name: 'Waiting Wes', email: 'wes@example.com', at: 2 },
+        { memberId: 'm3', name: 'Waiting Wyn', email: 'wyn@example.com', at: 3 },
+      ],
+    })
+    const readRsvp = async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('rsvp:' + id)}`)
+      return JSON.parse((await res.json()).value)
+    }
+    const lastMail = async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?key=__last_email__`)
+      return JSON.parse((await res.json()).value)
+    }
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    const item = page.locator(`.list-item[data-id="${id}"]`)
+    await item.locator('.list-row').click()
+    await item.locator('[data-form="edit"] [name="venue"]').fill('Typed But Not Saved')
+
+    // The event is full, so the button says what it is about to do.
+    const wyn = item.locator('.rsvp-admin li', { hasText: 'Waiting Wyn' })
+    await expect(wyn.locator('button[data-action="rsvp-promote"]')).toHaveText('promote over capacity')
+    await wyn.locator('button[data-action="rsvp-promote"]').click()
+    await expect(page.locator('#toast')).toContainText('Promoted')
+
+    // Wyn jumped the queue; Wes is still waiting.
+    await expect.poll(async () => (await readRsvp()).confirmed.map((r: { memberId: string }) => r.memberId)).toEqual(['m1', 'm3'])
+    expect((await readRsvp()).waitlist.map((r: { memberId: string }) => r.memberId)).toEqual(['m2'])
+    expect((await lastMail()).to).toBe('wyn@example.com')
+    await expect(item.locator('.list-row')).toContainText('2/1 RSVPed')
+    // The list refreshed in place: the unsaved venue edit is still there.
+    await expect(item.locator('[data-form="edit"] [name="venue"]')).toHaveValue('Typed But Not Saved')
+
+    // The send button names its audience, and follows the waitlist box.
+    await item.locator('.people-message summary').click()
+    const send = item.locator('button[data-action="rsvp-message"]')
+    await expect(send).toHaveText('Send to 2 confirmed')
+    await item.locator('[name="msg-waitlist"]').check()
+    await expect(send).toHaveText('Send to 2 confirmed + 1 waitlisted')
+
+    // An empty note is refused before anything is sent.
+    await send.click()
+    await expect(page.locator('#toast')).toContainText('Write a message first')
+
+    await item.locator('[name="msg-body"]').fill('Doors open at 6:30 this time.')
+    await send.click()
+    await expect(page.locator('#toast')).toContainText('Sent to 3 people')
+    await expect(item.locator('[name="msg-body"]')).toHaveValue('')
+
+    // E2E mode keeps only the most recent send: the waitlisted copy, which
+    // carries the note but no cancel link.
+    const mail = await lastMail()
+    expect(mail.to).toBe('wes@example.com')
+    expect(mail.subject).toBe('A note about Night at the Capri')
+    expect(mail.text).toContain('Doors open at 6:30 this time.')
+    expect(mail.text).not.toContain('/rsvp/cancel')
   })
 })
 

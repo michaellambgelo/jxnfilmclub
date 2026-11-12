@@ -482,6 +482,56 @@ describe('/api/events', () => {
 
 // --- Guest RSVP proxy: POST adds, DELETE removes, both via the join worker ---
 
+describe('/api/events/promote and /api/events/message', () => {
+  it('proxies each to its join worker admin route with the admin token and body', async () => {
+    for (const [action, body, reply] of [
+      ['promote', { memberId: 'm2', force: true }, { ok: true, status: 'confirmed', emailed: true }],
+      ['message', { message: 'Doors at 6:30', waitlist: true }, { ok: true, sent: 3, failed: 0 }],
+    ]) {
+      const { service, calls } = stubService(reply)
+      const res = await call(`/api/events/${action}?env=production&id=club-1`, {
+        method: 'POST', body: JSON.stringify(body), token: await signToken(), envOverrides: { JOIN_WORKER: service },
+      })
+      expect(await res.json(), action).toEqual(reply)
+      expect(calls[0].url).toBe(`https://join.jxnfilm.club/admin/events/club-1/${action}`)
+      expect(calls[0].init.method).toBe('POST')
+      expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+      expect(calls[0].init.body).toBe(JSON.stringify(body))
+    }
+  })
+
+  it('routes staging to the staging worker, requires an id, and encodes it', async () => {
+    const { service, calls } = stubService({ ok: true })
+    await call('/api/events/message?env=staging&id=club-2', {
+      method: 'POST', body: '{"message":"x"}', token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/events/club-2/message')
+
+    const missing = await call('/api/events/promote?env=production', {
+      method: 'POST', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(missing.status).toBe(400)
+
+    // An id cannot walk the path onto another admin route.
+    await call(`/api/events/promote?env=production&id=${encodeURIComponent('a/../../admin/scrub')}`, {
+      method: 'POST', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(calls[1].url).toBe('https://join.jxnfilm.club/admin/events/a%2F..%2F..%2Fadmin%2Fscrub/promote')
+  })
+
+  it('is not reachable by any other method or action', async () => {
+    const { service, calls } = stubService({ ok: true })
+    for (const [path, method] of [['/api/events/promote', 'GET'], ['/api/events/message', 'PUT'], ['/api/events/scrub', 'POST']]) {
+      const res = await call(`${path}?env=production&id=club-1`, {
+        method, ...(method === 'GET' ? {} : { body: '{}' }), token: await signToken(), envOverrides: { JOIN_WORKER: service },
+      })
+      // 404 for an unknown path, 405 for a known one with the wrong method.
+      expect([404, 405], `${method} ${path}`).toContain(res.status)
+    }
+    expect(calls).toHaveLength(0)
+  })
+})
+
 describe('/api/rsvp/guest', () => {
   it('POST proxies to the join worker guest endpoint with the admin token', async () => {
     const { service, calls } = stubService({ ok: true, status: 'confirmed', id: 'guest:abc12345' })

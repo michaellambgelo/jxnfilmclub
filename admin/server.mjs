@@ -490,6 +490,31 @@ async function handle(req, res) {
     try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
     return json(res, workerRes.status, data)
   }
+  // POST /api/events/promote | /api/events/message ?env=&id=  — mirrors the
+  // hosted admin worker: one waitlisted person to confirmed, or a note to
+  // everyone on the list, both via the join Worker.
+  const eventAction = /^\/api\/events\/(promote|message)$/.exec(url.pathname)
+  if (method === 'POST' && eventAction) {
+    if (!VALID_ENVS.has(q.env)) throw new HttpError(400, `invalid env: ${q.env}`)
+    if (!q.id) throw new HttpError(400, 'id required')
+    const token = q.env === 'staging'
+      ? (process.env.ADMIN_TOKEN_STAGING || process.env.ADMIN_TOKEN)
+      : process.env.ADMIN_TOKEN
+    if (!token) {
+      const name = q.env === 'staging' ? 'ADMIN_TOKEN_STAGING (or ADMIN_TOKEN)' : 'ADMIN_TOKEN'
+      throw new HttpError(400, `set ${name} in the admin server environment before managing RSVPs`)
+    }
+    const body = await readBody(req)
+    const workerRes = await fetch(`${WORKER_ORIGINS[q.env]}/admin/events/${encodeURIComponent(q.id)}/${eventAction[1]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body,
+    })
+    const text = await workerRes.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text || `worker ${workerRes.status}` } }
+    return json(res, workerRes.status, data)
+  }
   // GET /api/tmdb/search?env=&q=  → proxies the join Worker's admin-gated
   // TMDB poster search with ADMIN_TOKEN held server-side, mirroring the
   // hosted admin worker's /api/tmdb/search.

@@ -1590,25 +1590,153 @@ export function eventIdFrom(date, name) {
 // The Worker's validAdminEvent() is the authority and rejects the same shapes
 // — this exists so the form can refuse before writing anything, rather than
 // surfacing a 400 after the fact.
-export function newEventIssues(row, existingIds = []) {
+//
+// One checker for both modes. A NEW event must also have a free id and an
+// answer to "how do people get in" — that question is the whole reason old
+// rows are unlabelled, so a new one does not get to skip it. An EDIT checks
+// neither: its id is fixed, and a legacy row may stay unanswered.
+function eventIssues(row, { create, existingIds = [] }) {
   const out = []
-  const s = (k) => String((row || {})[k] || '').trim()
+  const s = (k) => String((row || {})[k] ?? '').trim()
   if (!s('title')) out.push('Title is required.')
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s('date'))) out.push('Date is required (YYYY-MM-DD).')
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(s('id'))) {
-    out.push('ID must be lowercase letters, numbers and hyphens.')
-  } else if ((existingIds || []).includes(s('id'))) {
-    out.push(`An event with the id "${s('id')}" already exists.`)
+  if (create) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(s('id'))) {
+      out.push('ID must be lowercase letters, numbers and hyphens.')
+    } else if ((existingIds || []).includes(s('id'))) {
+      out.push(`An event with the id "${s('id')}" already exists.`)
+    }
+    if (!ADMISSIONS.includes(s('admission'))) out.push('Choose an admission: Free, Ticketed or Buy your own.')
+  } else if (s('admission') && !ADMISSIONS.includes(s('admission'))) {
+    out.push('Unknown admission.')
   }
   if (s('year') && !/^[0-9]{4}$/.test(s('year'))) out.push('Year must be four digits.')
   if (s('time') && !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(s('time'))) out.push('Time must be HH:MM.')
-  if (s('capacity') && !/^[0-9]+$/.test(s('capacity'))) out.push('Capacity must be a whole number.')
-  for (const [k, label] of [['poster', 'Poster URL'], ['ticketUrl', 'Ticket URL'], ['letterboxd_uri', 'Letterboxd URI']]) {
+  if (s('capacity') && !/^[1-9][0-9]*$/.test(s('capacity'))) out.push('Capacity must be a whole number, 1 or more.')
+  for (const [k, label] of [['poster', 'Poster URL'], ['ticketUrl', 'Ticket link'], ['letterboxd_uri', 'Letterboxd URI']]) {
     if (s(k) && !/^https:\/\/\S+$/.test(s(k))) out.push(`${label} must be an https link.`)
   }
   if (s('letterboxd_uri') && !/^https:\/\/(www\.)?(letterboxd\.com|boxd\.it)\//.test(s('letterboxd_uri'))) {
     out.push('Letterboxd URI must be a letterboxd.com or boxd.it link.')
   }
   if (s('kind') && !['house', 'meetup', 'social'].includes(s('kind'))) out.push('Unknown kind.')
+  // Mirrors the Worker: nobody sells tickets to a living room.
+  if (s('kind') === 'house' && ['ticketed', 'own'].includes(s('admission'))) {
+    out.push('A house screening cannot be ticketed — choose Free.')
+  }
+  return out
+}
+export const newEventIssues = (row, existingIds = []) => eventIssues(row, { create: true, existingIds })
+export const editEventIssues = (row) => eventIssues(row, { create: false })
+
+// --- Events tab: list + shared form helpers (pure; tested in tests/admin) ---
+
+// Dates are YYYY-MM-DD strings — compared as strings, never as Dates (parsing
+// them as UTC instants shifts them a day in America/Chicago). Same-day events
+// order by start time; a missing time sorts first in its day.
+const eventWhenKey = (e) => String((e && e.date) || '') + 'T' + String((e && e.time) || '')
+
+// Upcoming soonest-first, then past newest-first. Undated rows fall into the
+// past group, at the bottom. `today` is a Central YYYY-MM-DD.
+export function groupEvents(events, today) {
+  const list = (events || []).filter(Boolean)
+  const upcoming = list.filter(e => String(e.date || '') >= today)
+    .sort((a, b) => eventWhenKey(a).localeCompare(eventWhenKey(b)))
+  // !a.date - !b.date first: a bare 'T' key would otherwise sort ABOVE every
+  // real date in descending order.
+  const past = list.filter(e => String(e.date || '') < today)
+    .sort((a, b) => (!a.date - !b.date) || eventWhenKey(b).localeCompare(eventWhenKey(a)))
+  return { upcoming, past }
+}
+
+// What the search box matches against, lowercased.
+export function eventSearchText(e) {
+  if (!e) return ''
+  return [e.title, e.film, e.venue, e.id, e.date, e.hostName, e.kind]
+    .filter(Boolean).join(' ').toLowerCase()
+}
+
+// The fields the shared event form edits as text. `rsvp` and `admission` are
+// handled apart from these because neither is a plain stored string: rsvp has
+// a fallback (rsvpEnabled) and admission has a "not set" state.
+export const EVENT_TEXT_FIELDS = ['title', 'film', 'year', 'date', 'time', 'venue', 'kind',
+  'capacity', 'ticketUrl', 'address', 'notes', 'poster', 'letterboxd_uri']
+const EVENT_NUMBER_FIELDS = ['year', 'capacity']
+
+// A stored row as the form shows it: every text field a string, rsvp as the
+// EFFECTIVE boolean, admission as the STORED value ('' when never answered).
+export function eventFormValues(e) {
+  const out = {}
+  for (const f of EVENT_TEXT_FIELDS) out[f] = e && e[f] != null ? String(e[f]) : ''
+  out.rsvp = rsvpEnabled(e)
+  out.admission = e && ADMISSIONS.includes(e.admission) ? e.admission : ''
+  return out
+}
+
+// The body of the PUT. The Worker merges a PUT over the stored row, so an edit
+// sends ONLY what changed, with '' meaning "clear this".
+//
+// That is what keeps absent absent. The old form scraped every input on every
+// save, so opening a 2021 row to fix a typo stamped `rsvp: false` and
+// `ticketed: false` onto it. Here an untouched RSVP box is compared against
+// what the row already MEANT (rsvpEnabled), an untouched admission against
+// what it STORED, and `ticketed` is never sent at all — the Worker derives it
+// from admission.
+//
+// A field missing from `values` (undefined) was not on the form, and is left
+// alone. A create sends everything that has a value.
+export function eventPutDiff(before, values, { create = false } = {}) {
+  const v = values || {}
+  const out = {}
+  const typed = (f, s) => (EVENT_NUMBER_FIELDS.includes(f) ? Number(s) : s)
+  if (create) {
+    for (const f of EVENT_TEXT_FIELDS) {
+      const s = v[f] == null ? '' : String(v[f]).trim()
+      if (s) out[f] = typed(f, s)
+    }
+    out.rsvp = !!v.rsvp
+    if (ADMISSIONS.includes(v.admission)) out.admission = v.admission
+    return out
+  }
+  const was = eventFormValues(before)
+  for (const f of EVENT_TEXT_FIELDS) {
+    if (v[f] === undefined) continue
+    const s = String(v[f]).trim()
+    if (s !== was[f]) out[f] = s === '' ? '' : typed(f, s)
+  }
+  if (typeof v.rsvp === 'boolean' && v.rsvp !== was.rsvp) out.rsvp = v.rsvp
+  if (v.admission !== undefined && v.admission !== was.admission) out.admission = v.admission
+  return out
+}
+
+// What a save leaves in the local cache, before the Worker's reply is merged
+// over it: the diff applied to the stored row, with cleared fields removed.
+export function applyEventDiff(before, diff) {
+  const out = { ...(before || {}) }
+  for (const [k, val] of Object.entries(diff || {})) {
+    if (val === '' || val === null) delete out[k]
+    else out[k] = val
+  }
+  return out
+}
+
+// Starting values for "duplicate this event". An explicit allowlist, because
+// the default for a new field must be NOT copied: the private address and
+// notes, the host, the box-office link (it is for the other screening) and
+// every RSVP stay behind. The date is blank on purpose — a copy that keeps
+// its date is the mistake this button would otherwise invite.
+//
+// Admission and RSVP carry over as what the source row MEANT, so duplicating
+// a legacy meetup gives a new event that already answers the question.
+export function duplicateSeed(e) {
+  const src = e || {}
+  const out = eventFormValues({})
+  for (const f of ['title', 'film', 'year', 'venue', 'kind', 'time', 'capacity', 'poster', 'letterboxd_uri']) {
+    if (src[f] != null) out[f] = String(src[f])
+  }
+  out.rsvp = rsvpEnabled(src)
+  out.admission = eventAdmission(src)
+  // A copied house row would otherwise carry an admission the Worker rejects.
+  if (out.kind === 'house') out.admission = 'free'
   return out
 }

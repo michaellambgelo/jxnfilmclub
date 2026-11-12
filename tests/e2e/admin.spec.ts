@@ -641,9 +641,10 @@ test.describe('admin dashboard', () => {
 
     await page.goto(`${ADMIN_ORIGIN}/`)
     await page.locator('#tabs button[data-tab="events"]').click()
-    // Located by the id input's value, not hasText: every field on this form
-    // is an <input>, so its text content is empty.
-    const form = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
+    // One event is open at a time: its row opens the shared form beneath it.
+    const item = page.locator(`.list-item[data-id="${id}"]`)
+    await item.locator('.list-row').click()
+    const form = item.locator('[data-form="edit"]')
     await expect(form).toBeVisible()
 
     // Tick RSVP and pick a kind from the select (a scrape of input+textarea
@@ -663,17 +664,23 @@ test.describe('admin dashboard', () => {
 
     expect((await readRow()).kind).toBe('social')
 
-    // Now that RSVPs are on, the tab re-render puts the guest-add block INSIDE
-    // this same .event-form. Fill it and save the event again: an unscoped
-    // scrape would sweep those inputs onto the event row — and because a
-    // checkbox's .value is "on" whether ticked or not, it did exactly that.
-    const form2 = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
-    await expect(form2.locator('input[name="guest-name"]')).toBeVisible()
-    await form2.locator('input[name="guest-name"]').fill('Should Not Persist')
-    await form2.locator('input[name="guest-email"]').fill('leak@example.com')
-    await form2.locator('button[data-action="event-save"]').click()
+    // The save used the Worker's merge and sent only what changed: the row
+    // was never asked the admission question, so it still has no answer, and
+    // no `ticketed: false` was stamped on it either.
+    expect('admission' in (await readRow())).toBe(false)
+    expect('ticketed' in (await readRow())).toBe(false)
 
-    await expect.poll(async () => (await readRow())?.title).toBe('Admin E2E Event')
+    // Now that RSVPs are on, the guest-add block sits right under the form.
+    // Fill it and save the event again: an unscoped scrape would sweep those
+    // inputs onto the event row — and because a checkbox's .value is "on"
+    // whether ticked or not, it once did exactly that.
+    await expect(item.locator('input[name="guest-name"]')).toBeVisible()
+    await item.locator('input[name="guest-name"]').fill('Should Not Persist')
+    await item.locator('input[name="guest-email"]').fill('leak@example.com')
+    await form.locator('input[name="venue"]').fill('Somewhere Else')
+    await item.locator('button[data-action="event-save"]').click()
+
+    await expect.poll(async () => (await readRow())?.venue).toBe('Somewhere Else')
     const row = await readRow()
     expect('guest-force' in row).toBe(false)
     expect('guest-name' in row).toBe(false)
@@ -700,7 +707,8 @@ test.describe('admin dashboard', () => {
 
     await page.goto(`${ADMIN_ORIGIN}/`)
     await page.locator('#tabs button[data-tab="events"]').click()
-    const form = page.locator(`.event-form:has(input[name="id"][value="${id}"])`)
+    await page.locator(`.list-item[data-id="${id}"] .list-row`).click()
+    const form = page.locator(`.list-item[data-id="${id}"] [data-form="edit"]`)
     await expect(form).toBeVisible()
 
     // The notify control names its audience, so the admin knows the blast
@@ -814,67 +822,232 @@ test.describe('admin dashboard', () => {
 
     // Wait for the list to actually render before counting it — the tab loads
     // asynchronously, and a count taken too early reads 0 and proves nothing.
-    await expect(page.locator('#events-list')).toBeVisible()
-    await expect(page.locator('.event-form').first()).toBeVisible()
-    const before = await page.locator('.event-form').count()
+    await expect(page.locator('#ev-list .list-item').first()).toBeAttached()
+    const before = await page.locator('#ev-list .list-item').count()
 
     await page.locator('button[data-action="event-new"]').click()
     const panel = page.locator('#event-new-panel')
     await expect(panel).toBeVisible()
     // Opening the form must not have created anything.
-    await expect(page.locator('.event-form')).toHaveCount(before)
+    await expect(page.locator('#ev-list .list-item')).toHaveCount(before)
 
     // The id derives from date + film as you type.
     // 2099 + a nonsense film: data/events.json is re-snapshotted from
     // production every 6h and the fixture reseeds events:all from it, so any
     // plausible real slug can collide with live club data. This one cannot.
-    await panel.locator('#ne-date').fill('2099-10-22')
-    await panel.locator('#ne-film').fill('Zzyzx Testfilm')
-    await expect(panel.locator('#ne-id')).toHaveValue('2099-10-22-zzyzx-testfilm')
+    await panel.locator('[name="date"]').fill('2099-10-22')
+    await panel.locator('[name="film"]').fill('Zzyzx Testfilm')
+    await expect(panel.locator('[name="id"]')).toHaveValue('2099-10-22-zzyzx-testfilm')
 
-    // No title yet: creating is refused, and still nothing is written.
+    // No title and no admission yet: creating is refused, BOTH problems are
+    // listed at once, and still nothing is written.
+    const issues = panel.locator('[data-issues]')
     await panel.locator('button[data-action="event-create"]').click()
-    await expect(page.locator('#ne-issues')).toContainText('Title is required')
+    await expect(issues).toContainText('Title is required')
+    await expect(issues).toContainText('Choose an admission')
     const stillNothing = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=${encodeURIComponent('event:')}`)
     expect((await stillNothing.json()).keys).toHaveLength(0)
 
     // A bad optional field is caught before the Worker ever sees it.
-    await panel.locator('#ne-title').fill('Zzyzx Preview Screening')
-    await panel.locator('#ne-ticket').fill('http://tix.example.com')
+    await panel.locator('[name="title"]').fill('Zzyzx Preview Screening')
+    await panel.locator('[name="admission"][value="ticketed"]').check()
+    await panel.locator('[name="ticketUrl"]').fill('http://tix.example.com')
     await panel.locator('button[data-action="event-create"]').click()
-    await expect(page.locator('#ne-issues')).toContainText('https link')
-    await panel.locator('#ne-ticket').fill('')
+    await expect(issues).toContainText('https link')
+    await expect(issues).not.toContainText('Title is required')
+    await panel.locator('[name="ticketUrl"]').fill('')
 
     // Now it publishes, complete.
-    await panel.locator('#ne-venue').fill('Capri Theater')
-    await panel.locator('#ne-time').fill('20:30')
-    await panel.locator('#ne-kind').selectOption('meetup')
+    await panel.locator('[name="venue"]').fill('Capri Theater')
+    await panel.locator('[name="time"]').fill('20:30')
+    await panel.locator('[name="kind"]').selectOption('meetup')
     await panel.locator('button[data-action="event-create"]').click()
     await expect(page.locator('#toast')).toContainText('live on /events')
     await expect(page.locator('#event-new-panel')).toHaveCount(0)
 
-    const row = await expect.poll(async () => {
-      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2099-10-22-zzyzx-testfilm')}`)
+    const readRow = async (key: string) => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent(key)}`)
       const raw = (await res.json()).value
       return raw ? JSON.parse(raw) : null
-    }).not.toBeNull().then(async () => {
-      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:2099-10-22-zzyzx-testfilm')}`)
-      return JSON.parse((await res.json()).value)
-    })
+    }
+    await expect.poll(() => readRow('event:2099-10-22-zzyzx-testfilm')).not.toBeNull()
+    const row = await readRow('event:2099-10-22-zzyzx-testfilm')
     expect(row).toMatchObject({
       id: '2099-10-22-zzyzx-testfilm', title: 'Zzyzx Preview Screening', date: '2099-10-22',
       film: 'Zzyzx Testfilm', venue: 'Capri Theater', time: '20:30', kind: 'meetup', rsvp: true,
+      // The admission is stored, and decides the flag the pre-sale queue reads.
+      admission: 'ticketed', ticketed: true,
     })
     // Never written half-made: the very first version in KV is the finished one.
     expect(row.title).not.toBe('Untitled')
 
+    // It lands in the list with its admission and pre-sale state on the row.
+    const item = page.locator('.list-item[data-id="2099-10-22-zzyzx-testfilm"]')
+    await expect(item.locator('.list-row')).toContainText('Ticketed')
+    await expect(item.locator('.list-row')).toContainText('Pre-sale')
+
     // A second event on the same day and film is caught as a duplicate id.
     await page.locator('button[data-action="event-new"]').click()
-    await page.locator('#ne-date').fill('2099-10-22')
-    await page.locator('#ne-film').fill('Zzyzx Testfilm')
-    await page.locator('#ne-title').fill('Another one')
-    await page.locator('button[data-action="event-create"]').click()
-    await expect(page.locator('#ne-issues')).toContainText('already exists')
+    await panel.locator('[name="date"]').fill('2099-10-22')
+    await panel.locator('[name="film"]').fill('Zzyzx Testfilm')
+    await panel.locator('[name="title"]').fill('Another one')
+    await panel.locator('[name="admission"][value="free"]').check()
+    await panel.locator('button[data-action="event-create"]').click()
+    await expect(panel.locator('[data-issues]')).toContainText('already exists')
+  })
+
+  // The list replaced a wall of always-open forms: upcoming first, one event
+  // open at a time, search across everything, and a fold on the long past.
+  test('Events tab: a searchable list with one event open at a time', async ({ page }) => {
+    const put = (row: Record<string, unknown>) => page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${row.id}`, value: JSON.stringify(row) },
+    })
+    await page.request.delete(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&prefix=event%3A`)
+    await put({ id: 'e2e-up-far', title: 'Far Future Night', date: '2099-12-01', venue: 'Capri Theater', admission: 'free' })
+    await put({ id: 'e2e-up-near', title: 'Near Future Night', date: '2099-01-01', venue: 'Banner Hall' })
+    for (let i = 1; i <= 17; i++) {
+      await put({ id: `e2e-past-${i}`, title: `Old Night ${i}`, date: `20${String(i).padStart(2, '0')}-05-05`, venue: i === 1 ? 'Needle Haystack Hall' : 'Capri Theater' })
+    }
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    const groups = page.locator('#ev-list .list-group')
+    const upcoming = groups.nth(0), past = groups.nth(1)
+
+    // Upcoming soonest-first, with the admission on the row only where set.
+    await expect(upcoming.locator('.list-item')).toHaveCount(2)
+    await expect(upcoming.locator('.list-item').nth(0)).toContainText('Near Future Night')
+    await expect(upcoming.locator('.list-item').nth(1)).toContainText('Free')
+    await expect(upcoming.locator('.list-item').nth(0)).not.toContainText('Free')
+
+    // The past is folded to its most recent rows until asked for.
+    await expect(past.locator('.list-item:visible')).toHaveCount(15)
+    await expect(past.locator('.list-item:visible').first()).toContainText('Old Night 17')
+
+    // Nothing is open until a row is clicked, and opening a second closes the first.
+    await expect(page.locator('[data-form]')).toHaveCount(0)
+    await page.locator('.list-item[data-id="e2e-up-near"] .list-row').click()
+    await expect(page.locator('[data-form="edit"]')).toHaveCount(1)
+    await page.locator('.list-item[data-id="e2e-up-far"] .list-row').click()
+    await expect(page.locator('[data-form="edit"]')).toHaveCount(1)
+    await expect(page.locator('.list-item[data-id="e2e-up-far"] [data-form="edit"]')).toBeVisible()
+
+    // Unsaved edits are not thrown away silently when another row is clicked.
+    await page.locator('[data-form="edit"] [name="venue"]').fill('Typed But Not Saved')
+    page.once('dialog', d => d.dismiss())
+    await page.locator('.list-item[data-id="e2e-up-near"] .list-row').click()
+    await expect(page.locator('.list-item[data-id="e2e-up-far"] [name="venue"]')).toHaveValue('Typed But Not Saved')
+
+    // Search reaches past the fold, and does not disturb the open form.
+    await page.locator('#ev-search').fill('needle haystack')
+    await expect(past.locator('.list-item:visible')).toHaveCount(1)
+    await expect(past.locator('.list-item:visible')).toContainText('Old Night 1')
+    await expect(upcoming.locator('.list-none')).toBeVisible()
+    await page.locator('#ev-search').fill('')
+    await expect(page.locator('.list-item[data-id="e2e-up-far"] [name="venue"]')).toHaveValue('Typed But Not Saved')
+
+    await past.locator('button[data-action="event-past-all"]').click()
+    await expect(past.locator('.list-item:visible')).toHaveCount(17)
+  })
+
+  // The bug this form was rebuilt around: the old one scraped every input on
+  // every save, so fixing a typo on a 2021 row stamped rsvp:false and
+  // ticketed:false onto it. An edit now sends only what changed.
+  test('Events tab: saving a legacy row changes only what was edited', async ({ page }) => {
+    const id = 'e2e-legacy-row'
+    const legacy = { id, title: 'Whiplash', film: 'Whiplash', year: 2014, date: '2021-01-13', venue: 'Capri Theater' }
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: { ns: 'ATTENDANCE_KV', key: `event:${id}`, value: JSON.stringify(legacy) },
+    })
+    const readRow = async () => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('event:' + id)}`)
+      return JSON.parse((await res.json()).value)
+    }
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    await page.locator('#ev-search').fill('whiplash')
+    const item = page.locator(`.list-item[data-id="${id}"]`)
+    await item.locator('.list-row').click()
+    const form = item.locator('[data-form="edit"]')
+
+    // Never asked the admission question, so it is offered as unanswered.
+    await expect(form.locator('[name="admission"][value=""]')).toBeChecked()
+
+    // Saving untouched writes nothing at all.
+    await item.locator('button[data-action="event-save"]').click()
+    await expect(page.locator('#toast')).toContainText('No changes')
+    expect(await readRow()).toEqual(legacy)
+
+    // A one-field edit lands as a one-field change.
+    await form.locator('[name="title"]').fill('Whiplash (35mm)')
+    await item.locator('button[data-action="event-save"]').click()
+    await expect(page.locator('#toast')).toContainText('Saved')
+    expect(await readRow()).toEqual({ ...legacy, title: 'Whiplash (35mm)' })
+
+    // Answering the question stores it, and takes "Not set" off the table.
+    await form.locator('[name="admission"][value="free"]').check()
+    await item.locator('button[data-action="event-save"]').click()
+    await expect.poll(async () => (await readRow()).admission).toBe('free')
+    expect((await readRow()).ticketed).toBe(false)
+    await expect(item.locator('[data-form="edit"] [name="admission"][value=""]')).toHaveCount(0)
+    await expect(item.locator('.list-row')).toContainText('Free')
+  })
+
+  test('Events tab: duplicate starts a new event without the private parts', async ({ page }) => {
+    const id = 'e2e-dup-source'
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: {
+        ns: 'ATTENDANCE_KV', key: `event:${id}`,
+        value: JSON.stringify({
+          id, title: 'Monthly Meetup', film: 'Zzyzx Dupfilm', date: '2099-03-03', time: '19:00', venue: 'Malco Grandview',
+          kind: 'meetup', rsvp: true, capacity: 12, admission: 'ticketed', ticketed: true,
+          ticketUrl: 'https://tix.example.com/march', notes: 'Row F, ask for Sam',
+        }),
+      },
+    })
+    await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+      data: {
+        ns: 'ATTENDANCE_KV', key: `rsvp:${id}`,
+        value: JSON.stringify({ confirmed: [{ memberId: 'm1', name: 'Cass', email: 'cass@example.com', at: 1 }], waitlist: [] }),
+      },
+    })
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    await page.locator(`.list-item[data-id="${id}"] .list-row`).click()
+    await page.locator(`.list-item[data-id="${id}"] button[data-action="event-dup"]`).click()
+
+    const panel = page.locator('#event-new-panel')
+    await expect(panel).toContainText('a copy of Monthly Meetup')
+    await expect(panel.locator('[name="title"]')).toHaveValue('Monthly Meetup')
+    await expect(panel.locator('[name="venue"]')).toHaveValue('Malco Grandview')
+    await expect(panel.locator('[name="capacity"]')).toHaveValue('12')
+    await expect(panel.locator('[name="admission"][value="ticketed"]')).toBeChecked()
+    // The date is blank on purpose, and the private parts stayed behind.
+    await expect(panel.locator('[name="date"]')).toHaveValue('')
+    await expect(panel.locator('[name="notes"]')).toHaveValue('')
+    await expect(panel.locator('[name="ticketUrl"]')).toHaveValue('')
+
+    await panel.locator('[name="date"]').fill('2099-04-07')
+    await expect(panel.locator('[name="id"]')).toHaveValue('2099-04-07-zzyzx-dupfilm')
+    await panel.locator('button[data-action="event-create"]').click()
+    await expect(page.locator('#toast')).toContainText('live on /events')
+
+    const read = async (key: string) => {
+      const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent(key)}`)
+      const raw = (await res.json()).value
+      return raw ? JSON.parse(raw) : null
+    }
+    await expect.poll(() => read('event:2099-04-07-zzyzx-dupfilm')).not.toBeNull()
+    const copy = await read('event:2099-04-07-zzyzx-dupfilm')
+    expect(copy).toMatchObject({ title: 'Monthly Meetup', date: '2099-04-07', kind: 'meetup', capacity: 12, admission: 'ticketed', rsvp: true })
+    expect('notes' in copy).toBe(false)
+    expect('ticketUrl' in copy).toBe(false)
+    // Nobody came along: the copy starts with an empty list.
+    expect((await read('rsvp:2099-04-07-zzyzx-dupfilm'))?.confirmed ?? []).toHaveLength(0)
+    // And the source is untouched.
+    expect((await read(`event:${id}`)).notes).toBe('Row F, ask for Sam')
   })
 })
 

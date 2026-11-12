@@ -157,24 +157,6 @@ textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.
   flex-wrap: wrap;
 }
 
-.event-form {
-  background: var(--card);
-  border: 1px solid var(--border);
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-/* Shared by the inline edit form and the new-event panel — the two are the
-   same set of fields, so they should not drift apart visually. */
-.event-form .grid,
-.event-new-panel .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.6rem;
-  margin-bottom: 0.7rem;
-}
-.event-form label,
-.event-new-panel label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.2rem }
-
 .attendance {
   background: #fafafa;
   padding: 0.7rem;
@@ -248,8 +230,6 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   border-right: 1px solid var(--border);
 }
 
-.ev-sort-label { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; font-size: 0.85rem; color: var(--muted) }
-.ev-sort-label select { padding: 0.2rem 0.4rem }
 #nl-preview {
   width: 100%;
   height: 320px;
@@ -598,29 +578,6 @@ dialog pre.rich {
    save, not a field of the event — so it needs its own emphasis. */
 .notify-rsvps { color: var(--warn, #c84); font-weight: 600; }
 
-/* New-event form — the editorial gate before an event is published. */
-.event-new-panel {
-  border: 1px solid var(--line, #333);
-  border-left: 3px solid var(--accent, #d7321f);
-  padding: 0.9rem 1rem 1rem;
-  margin: 0 0 1rem;
-}
-.event-new-panel h3 { margin: 0 0 0.25rem; }
-/* The TMDB result strip is a grid child; it needs the full row. */
-.event-new-panel #ne-tmdb-results { grid-column: 1 / -1; }
-/* Selects and time/date inputs size to content by default, which left Kind
-   and Time visibly narrower than every field beside them. */
-.event-new-panel select,
-.event-new-panel input[type="time"],
-.event-new-panel input[type="date"] { width: 100%; box-sizing: border-box; }
-.event-new-panel .cfg-inline { margin-bottom: 0; }
-.event-new-panel .req { color: var(--accent, #d7321f); }
-.ne-issues {
-  margin: 0.5rem 0 0;
-  color: var(--accent, #d7321f);
-  font-weight: 600;
-}
-
 /* Profile photo thumbnail in the Members table. */
 .member-photo {
   width: 40px;
@@ -647,3 +604,96 @@ dialog pre.rich {
 @media (max-width: 720px) {
   .email-gallery { grid-template-columns: 1fr }
 }
+
+/* --- List + detail + sectioned form ---------------------------------------
+   Introduced for the Events tab, named generically on purpose: a compact
+   list where one row opens into a detail panel, and a form broken into
+   labelled sections. Other tabs can adopt the same classes. */
+
+.list-search { flex: 1 1 16rem; max-width: 26rem; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 3px; font: inherit }
+
+.list-group { margin: 0 0 1.5rem }
+.list-group > h3 { margin: 0 0 0.4rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted) }
+.list-group > h3 .muted { font-weight: normal }
+.list-group > .empty { padding: 1rem; background: var(--card); border: 1px solid var(--border) }
+
+.list-item { background: var(--card); border: 1px solid var(--border); border-bottom-width: 0 }
+.list-item:last-of-type { border-bottom-width: 1px }
+.list-item.-open { border-color: var(--brand); border-bottom-width: 1px; margin: 0.5rem 0; box-shadow: 0 1px 6px rgba(0,0,0,0.08) }
+.list-item.-open + .list-item { border-top-width: 1px }
+
+.list-row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr) auto;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.list-row:hover { background: #fafafa }
+.list-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px }
+.list-item.-open > .list-row { background: #f1fafa; border-bottom: 1px solid var(--border) }
+.list-row-when, .list-row-main { display: flex; flex-direction: column; min-width: 0 }
+.list-row-when span, .list-row-main span { color: var(--muted); font-size: 0.85rem }
+.list-row-main strong, .list-row-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.list-row-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; justify-content: flex-end }
+.list-more { display: block; width: 100%; margin-top: 0.5rem; padding: 0.5rem; color: var(--muted) }
+
+.detail { padding: 1rem }
+.detail.-new { background: var(--card); border: 1px solid var(--brand); border-left-width: 3px; margin: 0 0 1.5rem }
+.detail.-new > h3 { margin: 0 0 0.25rem }
+.detail-note { margin: 0 0 0.8rem }
+
+.form-section { margin: 0 0 0.9rem; padding: 0.7rem 0.8rem 0.8rem; border: 1px solid var(--border); border-radius: 4px; min-width: 0 }
+.form-section > legend, .form-advanced > summary { padding: 0 0.3rem; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em }
+.form-advanced > summary { cursor: pointer; color: var(--muted) }
+.form-advanced[open] > summary { margin-bottom: 0.6rem }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem 0.8rem }
+.form-grid > .-wide { grid-column: 1 / -1 }
+.form label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.2rem }
+.form select, .form input[type="time"], .form input[type="date"], .form input[type="search"] {
+  width: 100%; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 3px; font: inherit; background: #fff;
+}
+.form .req { color: var(--accent) }
+.form .cfg-inline { color: var(--ink); margin-bottom: 0 }
+.form-hint { margin: 0.2rem 0 0 }
+.form-static { margin: 0 }
+.form-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center }
+.form-inline > input[type="text"], .form-inline > input[type="email"] { flex: 1 1 12rem; width: auto }
+.form-inline > input[type="email"] { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 3px; font: inherit }
+
+/* One option per line, each a whole clickable row saying what it does. */
+.choices { display: grid; gap: 0.4rem; margin: 0 0 0.8rem }
+.form .choice { display: flex; gap: 0.6rem; align-items: flex-start; margin: 0; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; color: var(--ink); cursor: pointer }
+.choice > input { margin: 0.2rem 0 0; flex: none }
+.choice > span { display: flex; flex-direction: column }
+.choice:has(input:checked) { border-color: var(--brand); background: #f1fafa }
+.choice:has(input:disabled) { opacity: 0.5; cursor: not-allowed }
+
+.form-banner { margin: 0 0 0.8rem; padding: 0.5rem 0.7rem; background: #fff3e0; border-left: 3px solid var(--warn); }
+.form-warn { margin: 0.3rem 0 0; color: var(--warn); font-size: 0.85rem }
+.form-issues { margin: 0 0 0.8rem; padding: 0.5rem 0.7rem 0.5rem 1.8rem; background: #fde8e8; border-left: 3px solid var(--danger); color: #8a1c1c; font-weight: 600 }
+.form .notify-rsvps { margin: 0 0 0.8rem; color: var(--warn) }
+.form-foot { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center }
+.form-foot-gap { flex: 1 }
+.detail .attendance { margin-top: 1rem; border: 1px solid var(--border); border-radius: 4px }
+.detail .attendance li { margin: 0.15rem 0 }
+.detail .guest-add { margin-top: 0.6rem }
+
+@media (max-width: 640px) {
+  .list-row { grid-template-columns: 1fr; padding: 0.6rem 0.7rem }
+  .list-row-when { flex-direction: row; gap: 0.5rem; align-items: baseline }
+  .list-row-main strong, .list-row-main span { white-space: normal }
+  .list-row-pills { justify-content: flex-start }
+  .form-grid { grid-template-columns: 1fr }
+  .detail { padding: 0.7rem }
+  .form-foot-gap { flex-basis: 100% }
+}
+
+/* `hidden` loses to any author display rule, so say it again where the
+   elements above set one. */
+.list-more[hidden], .list-none[hidden], .form [hidden] { display: none }

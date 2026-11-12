@@ -14,10 +14,10 @@ describe('admin ↔ worker venue mirrors', () => {
     for (const s of samples) expect(venueKey(s)).toBe(workerVenueKey(s))
   })
 
-  it('DEFAULT_VENUES in admin/admin.js matches the worker literal', () => {
-    // admin.js is a browser module (DOM at import time), so read the literal
+  it('DEFAULT_VENUES in admin/config-tab.js matches the worker literal', () => {
+    // config-tab.js is a browser module (DOM at import time), so read the literal
     // out of the source rather than importing it.
-    const src = readFileSync('admin/admin.js', 'utf8')
+    const src = readFileSync('admin/config-tab.js', 'utf8')
     const m = src.match(/const DEFAULT_VENUES = (\[[\s\S]*?\n\])/)
     expect(m).not.toBeNull()
     const adminDefaults = Function(`return ${m[1]}`)()

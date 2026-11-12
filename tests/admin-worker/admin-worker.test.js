@@ -105,7 +105,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/events-tab.js', '/email.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/events-tab.js', '/config-tab.js', '/email.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -163,6 +163,12 @@ describe('access gate', () => {
     expect(evTab.status).toBe(200)
     expect(evTab.headers.get('Content-Type')).toContain('javascript')
     expect(await evTab.text()).toContain('export async function renderEvents')
+
+    // Same for config-tab.js, the Config tab.
+    const cfgTab = await call('/config-tab.js', { token: await signToken() })
+    expect(cfgTab.status).toBe(200)
+    expect(cfgTab.headers.get('Content-Type')).toContain('javascript')
+    expect(await cfgTab.text()).toContain('export async function renderConfig')
 
     // admin.js imports email.js; a missing route 404s the import and takes
     // the whole SPA down with it, not just the newsletter tab.

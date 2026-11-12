@@ -19,6 +19,7 @@ import adminJs from '../../admin.js'
 import libJs from '../../lib.js'
 import contentgenJs from '../../contentgen.js'
 import eventsTabJs from '../../events-tab.js'
+import configTabJs from '../../config-tab.js'
 import emailJs from '../../email.js'
 import styleCss from '../../style.css'
 import { giveawayRoute } from '../../giveaway-routes.mjs'
@@ -367,6 +368,7 @@ const STATIC = {
   '/lib.js': [libJs, 'application/javascript; charset=utf-8'],
   '/contentgen.js': [contentgenJs, 'application/javascript; charset=utf-8'],
   '/events-tab.js': [eventsTabJs, 'application/javascript; charset=utf-8'],
+  '/config-tab.js': [configTabJs, 'application/javascript; charset=utf-8'],
   '/email.js': [emailJs, 'application/javascript; charset=utf-8'],
   '/style.css': [styleCss, 'text/css; charset=utf-8'],
 }

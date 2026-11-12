@@ -1117,6 +1117,37 @@ test.describe('admin dashboard', () => {
     expect(mail.text).toContain('Doors open at 6:30 this time.')
     expect(mail.text).not.toContain('/rsvp/cancel')
   })
+
+  // Thirty days after an RSVP event the scrub deletes rsvp:{id} and keeps the
+  // names-only attend:{id}. That attendance is then the only record of who
+  // came, so the tab has to keep showing it - and keep it editable.
+  test('Events tab: a past RSVP event still shows and edits its attendance', async ({ page }) => {
+    const id = 'e2e-past-rsvp'
+    const putKv = (key: string, value: unknown) =>
+      page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key, value: JSON.stringify(value) } })
+    await putKv(`event:${id}`, { id, title: 'Scrubbed Meetup', date: '2001-07-30', venue: 'Malco Grandview', kind: 'meetup', hostId: 'm9', hostName: 'Sam', rsvp: true, scrubbedAt: '2001-08-30T00:00:00Z' })
+    await putKv(`attend:${id}`, [{ id: 'm9', name: 'Sam' }, { id: 'm1', name: 'Cass Carter' }])
+    // No rsvp: row at all - the scrub removed it.
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="events"]').click()
+    await page.locator('#ev-search').fill('scrubbed meetup')
+    const item = page.locator(`.list-item[data-id="${id}"]`)
+    await expect(item.locator('.list-row')).toContainText('2 attended')
+    await expect(item.locator('.list-row')).not.toContainText('RSVPed')
+
+    await item.locator('.list-row').click()
+    const attendanceBlock = item.locator('.attendance:not(.rsvp-admin)')
+    await expect(attendanceBlock).toContainText('Attendance (2)')
+    await expect(attendanceBlock).toContainText('Cass Carter')
+    // Nothing to promote on a past event.
+    await expect(item.locator('button[data-action="rsvp-promote"]')).toHaveCount(0)
+
+    page.once('dialog', d => d.accept())
+    await attendanceBlock.locator('li', { hasText: 'Cass Carter' }).locator('button[data-action="attend-rm"]').click()
+    await expect(attendanceBlock).toContainText('Attendance (1)')
+    await expect(item.locator('.list-row')).toContainText('1 attended')
+  })
 })
 
 test.describe('admin giveaways', () => {

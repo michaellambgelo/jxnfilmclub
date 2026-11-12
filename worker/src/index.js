@@ -2275,7 +2275,36 @@ async function handleAttendanceMap(env) {
     out[e.id] = withHost(out[e.id] || [], e)
   }
   for (const id of Object.keys(out)) out[id] = resolveAttendees(out[id], names)
-  return json(env, { attendance: out })
+  return json(env, { attendance: out, waitlist: await waitlists(env, events, names) })
+}
+
+// Who is waiting on each upcoming RSVP event, in order:
+// { eventId: [{ id, name }] }. Covers both kinds of waitlist: the queue behind
+// a full event, and the pre-sale list of a ticketed event whose box office
+// link does not exist yet (always present for those, even when empty, so the
+// card can say nobody is on it yet).
+//
+// PUBLIC, like the RSVP list beside it: someone who asked to be listed wants
+// to see where they stand, and someone deciding whether to join wants to see
+// who already has. This endpoint has always served every event's confirmed
+// names, house screenings included, to anyone; the waitlist now rides with it.
+//
+// Read from rsvp:{id} at request time and never written anywhere: nobody on a
+// waitlist has attended, so they must not land in attend:{id}, attendance:all
+// or the data/attendance.json snapshot (which copies only the `attendance`
+// key of this response). Names and ids only, the same shape as an attendee.
+// Past events are skipped, so a list nobody was promoted from does not linger.
+async function waitlists(env, events, names) {
+  const out = {}
+  const today = centralToday()
+  for (const e of events) {
+    if (!e || !e.id || !rsvpEnabled(e)) continue
+    if (e.date && e.date < today) continue
+    const rsvp = await readRsvp(env, e.id)
+    if (!rsvp.waitlist.length && !ticketsPending(e)) continue
+    out[e.id] = resolveAttendees(rsvp.waitlist.map(r => attendEntry(r.memberId, r.name)), names)
+  }
+  return out
 }
 
 // POST /events/:id/attend — authenticated.

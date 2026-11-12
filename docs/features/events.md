@@ -136,9 +136,28 @@ bundles and giveaways. **The club controls neither admission nor the door.**
 
 | State | Card | RSVP lands in |
 |---|---|---|
-| `ticketed`, no `ticketUrl` | *Tickets are not on sale yet…* → **Count me in** | the **waitlist** — a pre-sale queue |
+| `ticketed`, no `ticketUrl` | *N people on the pre-sale list* with their names, numbered, *Tickets are not on sale yet…* → **Count me in** | the **waitlist** — a pre-sale queue |
 | `ticketed` + `ticketUrl` | *Admission is sold by {venue} — a headcount, not a ticket* → **RSVP and get tickets** | confirmed |
 | `ticketed` + `ticketUrl` + `kind: meetup` | one merged hint, *Self-organized — buy your ticket from {venue}…*, and one status, *You're in. Get your ticket from {venue} and meet us there.* — never the meetup and ticketed lines stacked. The confirmation email merges the same way (`MEETUP_TICKETED` in the Worker) | confirmed |
+
+**Waitlists are public, in order.** Michael's call (2026-11-12): an event's
+waitlist is listed the way its RSVPs are, so a member who asked to be listed
+can see where they stand and a visitor can see others are already waiting.
+That covers both kinds: the queue behind a full event (house screenings
+included) and the pre-sale list. `GET /events/attendance` returns a second
+map, `waitlist: { eventId: [{ id, name }] }`, built at request time from
+`rsvp:{id}.waitlist` for every upcoming RSVP event with someone waiting, plus
+every pre-sale event even when empty (`waitlists()` in the Worker). It is
+never written anywhere: nobody waiting has attended, so they stay out of
+`attend:{id}`, `attendance:all` and the `data/attendance.json` snapshot (the
+snapshot job copies only the `attendance` key). Names and ids only. The
+privacy policy says all of this; keep the two in step. On the card,
+`evQueue()` feeds a numbered list (`.waiting-list`), labelled *Waitlist:* on
+a capacity event and headed by the *N people on the pre-sale list* meter on a
+pre-sale; `evAfterCancel()` mirrors the Worker's head-of-line promotion so
+the card is right before a reload. The host panel no longer repeats the
+waitlist. The SPA tolerates a response with no `waitlist` key because the
+site and the Worker deploy separately.
 
 **Why `ticketed` is its own field.** It cannot be inferred from a missing
 `ticketUrl`, because an ordinary club event has no ticket URL either —

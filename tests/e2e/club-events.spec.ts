@@ -175,8 +175,9 @@ test.describe('club events', () => {
     await page.goto('/events')
     const card = page.locator('.event-card', { hasText: 'CLAYFACE' })
 
-    // A confirmed-attendee meter would read 0 forever while every RSVP queues.
-    await expect(card.locator('.rsvp-meter')).toHaveCount(0)
+    // A confirmed-attendee meter would read 0 forever while every RSVP queues,
+    // so the meter counts the pre-sale list instead.
+    await expect(card.locator('.rsvp-meter')).toHaveText('0 people on the pre-sale list')
     await expect(card.locator('.rsvp-hint')).toContainText('not on sale yet')
 
     await card.getByRole('button', { name: 'Count me in' }).click()
@@ -334,5 +335,126 @@ test.describe('club events', () => {
     await page.goto('/events?event=2099-08-01-e2e-house')
     await expect(page.locator('.event-card')).toHaveCount(12)
     await expect(page.locator('.event-card.-target')).toHaveCount(0)
+  })
+})
+
+// Waitlists are public and numbered, like the RSVP list beside them: a member
+// who asked to be listed can see where they stand, and a visitor can see that
+// others are already waiting.
+test.describe('waitlists on the card', () => {
+  const presale = {
+    id: 'e2e-presale-list', title: 'Presale List Preview', film: 'Clayface',
+    date: FUTURE, venue: 'Capri Theater', rsvp: true, ticketed: true,
+  }
+  const full = {
+    id: 'e2e-full-list', title: 'Full House Night', date: FUTURE, venue: 'Capri Theater', rsvp: true, capacity: 1,
+  }
+  const putAtt = (page, key: string, value: unknown) =>
+    page.request.post(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key, value: JSON.stringify(value) } })
+  const person = (n: number, name = `Queued ${n}`) => ({ memberId: `q${n}`, name, email: `q${n}@example.com`, at: n })
+  const seedQueue = (page, waitlist: Record<string, unknown>[]) =>
+    putAtt(page, `rsvp:${presale.id}`, { confirmed: [], waitlist })
+  // A full event: one confirmed seat taken, the rest waiting.
+  async function seedFull(page, waitlist: Record<string, unknown>[]) {
+    const seat = person(9, 'Seated Sam')
+    await putAtt(page, `rsvp:${full.id}`, { confirmed: [seat], waitlist })
+    await putAtt(page, `attend:${full.id}`, [{ id: seat.memberId, name: seat.name }])
+    await putAtt(page, 'attendance:all', { [full.id]: [{ id: seat.memberId, name: seat.name }] })
+  }
+  const names = (card) => card.locator('.waiting-list .attendee')
+
+  test('a signed-out visitor sees who is on a pre-sale list, in order', async ({ page }) => {
+    await seedEvents(page, [presale])
+    await seedQueue(page, [person(1), person(2)])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'Presale List Preview' })
+    await expect(card.locator('.presale-meter')).toHaveText('2 people on the pre-sale list')
+    await expect(names(card)).toHaveText(['1. Queued 1', '2. Queued 2'])
+    // They are on a list, not attending: the attendance block stays empty.
+    await expect(card.locator('.event-attendance .attendee')).toHaveCount(0)
+    await expect(card).not.toContainText('@example.com')
+  })
+
+  test('joining an empty pre-sale list and leaving it again both repaint the card', async ({ page }) => {
+    await signInAs(page, 'presale-list-e2e@example.com', { name: 'Paula Presale' })
+    await seedEvents(page, [presale])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'Presale List Preview' })
+    await expect(card.locator('.presale-meter')).toHaveText('0 people on the pre-sale list')
+    await expect(card.locator('.waiting-list')).toHaveCount(0)
+
+    await card.getByRole('button', { name: 'Count me in' }).click()
+    await expect(card.locator('.presale-meter')).toHaveText('1 person on the pre-sale list')
+    await expect(names(card)).toHaveText(['1. Paula Presale'])
+    await expect(card.locator('.rsvp-status')).toContainText('You are #1 on the list')
+
+    await card.getByRole('button', { name: 'Cancel RSVP' }).click()
+    await expect(card.locator('.presale-meter')).toHaveText('0 people on the pre-sale list')
+    await expect(card.locator('.waiting-list')).toHaveCount(0)
+
+    // And the server agrees after a reload.
+    await card.getByRole('button', { name: 'Count me in' }).click()
+    await expect(names(card)).toHaveText(['1. Paula Presale'])
+    await page.reload()
+    const again = page.locator('.event-card', { hasText: 'Presale List Preview' })
+    await expect(names(again)).toHaveText(['1. Paula Presale'])
+    await expect(again.locator('.rsvp-status')).toContainText('You are #1 on the list')
+  })
+
+  test('a full event lists its waitlist, and joining shows your place on it', async ({ page }) => {
+    await signInAs(page, 'full-join-e2e@example.com', { name: 'Joiner Jo' })
+    await seedEvents(page, [full])
+    await seedFull(page, [person(1)])
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'Full House Night' })
+    await expect(card.locator('.rsvp-meter')).toHaveText('1 / 1 RSVPed')
+    await expect(card.locator('.waiting-label')).toHaveText('Waitlist:')
+    await expect(names(card)).toHaveText(['1. Queued 1'])
+    // The confirmed list is still its own list.
+    await expect(card.locator('.event-attendance .attendee')).toHaveText(['Seated Sam'])
+
+    await card.getByRole('button', { name: 'Join waitlist' }).click()
+    await expect(names(card)).toHaveText(['1. Queued 1', '2. Joiner Jo'])
+    await expect(card.locator('.rsvp-status')).toContainText('You are #2 on the waitlist')
+
+    await card.getByRole('button', { name: 'Cancel RSVP' }).click()
+    await expect(names(card)).toHaveText(['1. Queued 1'])
+  })
+
+  test('a signed-out visitor sees a full event\'s waitlist; an event with room shows none', async ({ page }) => {
+    const roomy = { id: 'e2e-roomy', title: 'Plenty Of Room', date: FUTURE, venue: 'Capri Theater', rsvp: true, capacity: 9 }
+    await seedEvents(page, [full, roomy])
+    await seedFull(page, [person(1), person(2)])
+    await page.goto('/events')
+    await expect(names(page.locator('.event-card', { hasText: 'Full House Night' }))).toHaveText(['1. Queued 1', '2. Queued 2'])
+    const other = page.locator('.event-card', { hasText: 'Plenty Of Room' })
+    await expect(other.locator('.rsvp-meter')).toHaveText('0 / 9 RSVPed')
+    await expect(other.locator('.waiting-list')).toHaveCount(0)
+  })
+
+  test('when a confirmed member cancels, the head of the waitlist moves up on the card', async ({ page }) => {
+    await signInAs(page, 'seat-holder-e2e@example.com', { name: 'Holder Hal' })
+    await seedEvents(page, [full])
+    await putAtt(page, `rsvp:${full.id}`, { confirmed: [], waitlist: [] })
+    await page.goto('/events')
+    const card = page.locator('.event-card', { hasText: 'Full House Night' })
+    await card.getByRole('button', { name: 'RSVP', exact: true }).click()
+    await expect(card.locator('.rsvp-meter')).toHaveText('1 / 1 RSVPed')
+
+    // Two people queue behind them, then the page is reloaded to pick it up.
+    const raw = await (await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent('rsvp:' + full.id)}`)).json()
+    const rsvp = JSON.parse(raw.value)
+    await putAtt(page, `rsvp:${full.id}`, { confirmed: rsvp.confirmed, waitlist: [person(1), person(2)] })
+    await page.reload()
+    const again = page.locator('.event-card', { hasText: 'Full House Night' })
+    await expect(names(again)).toHaveText(['1. Queued 1', '2. Queued 2'])
+
+    await again.getByRole('button', { name: 'Cancel RSVP' }).click()
+    await expect(names(again)).toHaveText(['1. Queued 2'])
+    await expect(again.locator('.event-attendance .attendee')).toHaveText(['Queued 1'])
+    await page.reload()
+    const after = page.locator('.event-card', { hasText: 'Full House Night' })
+    await expect(names(after)).toHaveText(['1. Queued 2'])
+    await expect(after.locator('.event-attendance .attendee')).toHaveText(['Queued 1'])
   })
 })

@@ -481,8 +481,9 @@
     "poster": "https://image.tmdb.org/t/p/w500/hyp8EXDmO4dSC8V6Q5jU7gD1kcg.jpg",
     "kind": "meetup",
     "time": "19:30",
-    "rsvp": false,
-    "ticketed": false
+    "rsvp": true,
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2026-12-17-avengers-doomsday-capri",
@@ -495,7 +496,8 @@
     "kind": "meetup",
     "time": "20:50",
     "rsvp": true,
-    "ticketed": true
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-12-17-avengers-doomsday-legacy",
@@ -509,7 +511,8 @@
     "time": "18:00",
     "rsvp": false,
     "ticketUrl": "https://957138.formovietickets.com:2235/T.ASP?WCI=BT&Page=PickTickets&SHOWID=170890&PLACEID=38",
-    "ticketed": true
+    "ticketed": false,
+    "admission": "own"
   },
   {
     "id": "2026-12-17-dune-part-three",
@@ -523,6 +526,7 @@
     "time": "15:05",
     "rsvp": true,
     "ticketUrl": "https://tickets.malco.com/seat-select?showtimeId=01a01556-2c28-727c-a7bb-e0ad21459b7a",
-    "ticketed": true
+    "ticketed": false,
+    "admission": "own"
   }
 ]

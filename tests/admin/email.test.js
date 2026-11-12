@@ -58,6 +58,14 @@ describe('formatting', () => {
 })
 
 describe('eventCardHtml', () => {
+  it('adds an Admission row only when the caller says the event is free', () => {
+    expect(eventCardHtml(event, { free: true })).toMatch(/Admission<\/td>\s*<td[^>]*>Free</)
+    expect(eventCardHtml(event)).not.toContain('Admission')
+    // The card never decides this from the row itself: a house screening
+    // marked free must not say so, and only the caller knows which it is.
+    expect(eventCardHtml({ ...event, admission: 'free' })).not.toContain('Admission')
+  })
+
   it('never reads event.address — only the explicit argument', () => {
     const out = eventCardHtml(event)
     expect(out).not.toContain('123 Main St')

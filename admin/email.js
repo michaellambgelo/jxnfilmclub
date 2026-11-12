@@ -176,7 +176,7 @@ export function codeBlockHtml(code, expiry) {
 // A house address goes only to people holding a seat, so each caller decides
 // whether to pass it — the waitlist mail simply doesn't. `cancelled` dims the
 // poster and labels the card, for the cancellation mail.
-export function eventCardHtml(event, { address = '', cancelled = false } = {}) {
+export function eventCardHtml(event, { address = '', cancelled = false, free = false } = {}) {
   const e = event || {}
   const poster = emailPoster(e.poster)
   const rows = []
@@ -192,6 +192,9 @@ export function eventCardHtml(event, { address = '', cancelled = false } = {}) {
     rows.push([address ? 'Address' : 'Venue',
       `<a href="${esc(mapUrl(place))}" style="color:${BRAND};text-decoration:none">${multiline(place)}</a>`])
   }
+  // `free` is the caller's call, like `address`: the card has no opinion on
+  // which events get to say it (never a house screening).
+  if (free) rows.push(['Admission', 'Free'])
   if (e.hostId) rows.push(['Host', esc(e.hostName || 'a member')])
 
   const detailRows = rows.map(([label, value]) => `

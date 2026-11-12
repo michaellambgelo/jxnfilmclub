@@ -380,6 +380,18 @@
   border-bottom-color: var(--ink-4);
 }
 
+/* Free admission. Always in the row and hidden by class, never by :if - the
+   row list is a keyed :each whose shape has to stay constant (see home-view). */
+.program-tag.-free {
+  margin-left: 0.6rem;
+  color: var(--brand-tint-fg);
+  border-bottom-color: var(--brand);
+}
+
+.program-tag.-free.-off {
+  display: none;
+}
+
 .program-venue p {
   font-size: var(--fs-15);
   color: var(--ink-2);

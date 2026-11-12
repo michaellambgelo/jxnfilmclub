@@ -343,6 +343,144 @@ describe('DELETE /admin/events/:id', () => {
   })
 })
 
+// `admission` is the explicit answer to "how do people get in". It rides on top
+// of the legacy `ticketed` flag, which stays the field the pre-sale queue reads.
+describe('PUT /admin/events/:id — admission', () => {
+  const stored = async (id) => JSON.parse(await env.ATTENDANCE_KV.get(`event:${id}`))
+  const base = { title: 'Night at the Capri', date: '2099-09-01', venue: 'Capri Theater', rsvp: true }
+
+  it('stores each admission, keeps ticketed in step, and projects it publicly', async () => {
+    captureEmails()
+    for (const [id, admission, ticketed] of [['a-free', 'free', false], ['a-tix', 'ticketed', true], ['a-own', 'own', false]]) {
+      const res = await put(id, { ...base, admission })
+      expect(res.status).toBe(200)
+      expect((await res.json()).event.admission).toBe(admission)
+      const row = await stored(id)
+      expect(row.admission).toBe(admission)
+      expect(row.ticketed).toBe(ticketed)
+    }
+    const all = JSON.parse(await env.ATTENDANCE_KV.get('events:all'))
+    expect(all.find(e => e.id === 'a-free').admission).toBe('free')
+  })
+
+  it('rejects an unknown admission', async () => {
+    captureEmails()
+    const res = await put('a-bad', { ...base, admission: 'donation' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/admission/)
+  })
+
+  it('leaves a row with no admission exactly as it was on an unrelated edit', async () => {
+    captureEmails()
+    await put('a-legacy', { ...base })
+    await put('a-legacy', { title: 'Night at the Capri (moved)' })
+    const row = await stored('a-legacy')
+    expect('admission' in row).toBe(false)
+    expect('ticketed' in row).toBe(false)
+  })
+
+  it('clears the label with an empty value without touching ticketed', async () => {
+    captureEmails()
+    await put('a-clear', { ...base, admission: 'ticketed', ticketUrl: 'https://capri.example.com/x' })
+    await put('a-clear', { admission: '' })
+    const row = await stored('a-clear')
+    expect('admission' in row).toBe(false)
+    expect(row.ticketed).toBe(true)
+  })
+
+  it('lets a client that only knows ticketed override a stored label', async () => {
+    captureEmails()
+    await put('a-old', { ...base, admission: 'free' })
+    await put('a-old', { ticketed: true, ticketUrl: 'https://capri.example.com/x' })
+    expect((await stored('a-old')).admission).toBe('ticketed')
+    await put('a-old', { ticketed: false })
+    const row = await stored('a-old')
+    expect('admission' in row).toBe(false)
+    expect(row.ticketed).toBe(false)
+  })
+
+  it('refuses ticketed or buy-your-own on a house screening, and allows free', async () => {
+    captureEmails()
+    const house = { ...base, kind: 'house', address: '1 Main St', capacity: 8 }
+    for (const admission of ['ticketed', 'own']) {
+      const res = await put('a-house', { ...house, admission })
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(/house/)
+    }
+    expect((await put('a-house', { ...house, admission: 'free' })).status).toBe(200)
+    // A member-hosted row with no kind is a house screening too.
+    await env.ATTENDANCE_KV.put('event:a-hosted', JSON.stringify(
+      { id: 'a-hosted', title: 'Movie night', date: '2099-09-02', hostId: 'm1', hostName: 'Sam', address: '2 Main St', capacity: 6 }))
+    expect((await put('a-hosted', { admission: 'ticketed' })).status).toBe(400)
+  })
+
+  it('switching a queued ticketed event to free confirms the queue normally', async () => {
+    captureEmails()
+    await put('a-switch', { ...base, admission: 'ticketed' })
+    await seedRsvp('a-switch', [], [rsvper(1), rsvper(2)])
+    const sent = captureEmails()
+    const res = await put('a-switch', { admission: 'free' })
+    expect((await res.json()).ticketsOnSale).toBeUndefined()
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:a-switch'))
+    expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['m1', 'm2'])
+    expect(sent).toHaveLength(2)
+    expect(sent.some(e => /^Tickets on sale:/.test(e.subject))).toBe(false)
+    expect(sent[0].text).toContain('Admission: Free')
+    expect(sent[0].html).toContain('Admission')
+  })
+
+  it('reports an admission change in words when notifying, and not a relabel', async () => {
+    captureEmails()
+    await put('a-diff', { ...base, kind: 'meetup' }) // legacy meetup reads as buy-your-own
+    await seedRsvp('a-diff', [rsvper(1)])
+    // Labelling it with what it already meant is not a change.
+    let res = await put('a-diff', { admission: 'own' }, true)
+    expect((await res.json()).changes).toEqual([])
+    const sent = captureEmails()
+    res = await put('a-diff', { admission: 'free' }, true)
+    expect((await res.json()).changes).toEqual(
+      [{ field: 'admission', from: 'Buy your own ticket', to: 'Free' }])
+    expect(sent[0].text).toContain('admission: Buy your own ticket → Free')
+    // A free meetup no longer tells people to buy a ticket.
+    expect(sent[0].text).not.toMatch(/buy your own ticket and get yourself there/)
+  })
+
+  it('keeps the buy-your-own line on a self-organized event that is not a meetup', async () => {
+    captureEmails()
+    await put('a-own2', { ...base, admission: 'own' })
+    await seedRsvp('a-own2', [], [rsvper(1)])
+    const sent = captureEmails()
+    await put('a-own2', { capacity: 5 }) // room opens: normal confirmation
+    expect(sent[0].text).toContain('This one is self-organized')
+    expect(sent[0].text).not.toContain('This meetup')
+  })
+
+  it('never says Free on a house screening', async () => {
+    captureEmails()
+    await put('a-house2', { ...base, kind: 'house', address: '1 Main St', capacity: 1, admission: 'free' })
+    await seedRsvp('a-house2', [rsvper(1)], [rsvper(2)])
+    const sent = captureEmails()
+    await put('a-house2', { capacity: 2 })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].text).not.toContain('Admission')
+    expect(sent[0].html).not.toContain('Admission')
+  })
+
+  it('409s a create over an existing id, and still upserts without the flag', async () => {
+    captureEmails()
+    await put('a-dupe', { ...base })
+    const res = await req('/admin/events/a-dupe', {
+      method: 'PUT', token: ADMIN_TOKEN, body: { event: { ...base, title: 'Other' }, create: true },
+    })
+    expect(res.status).toBe(409)
+    expect((await stored('a-dupe')).title).toBe('Night at the Capri')
+    const fresh = await req('/admin/events/a-fresh', {
+      method: 'PUT', token: ADMIN_TOKEN, body: { event: { ...base }, create: true },
+    })
+    expect(fresh.status).toBe(200)
+  })
+})
+
 // Venue-ticketed events: the club markets the screening and funnels members to
 // the theater box office, but does not control admission or the door. An RSVP
 // is a headcount, never a seat — and before tickets go on sale there is

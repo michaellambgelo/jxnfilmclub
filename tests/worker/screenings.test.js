@@ -359,6 +359,34 @@ describe('PATCH /events/:id — host edits + smart notify', () => {
     expect(res.status).toBe(403)
   })
 
+  // Admission is admin-only. The host form has never heard of it, so a host
+  // edit must carry the stored answer through untouched - and must not drain
+  // a pre-sale queue just because the meetup is uncapped.
+  it('a host edit preserves admin-set admission and leaves a pre-sale queue alone', async () => {
+    const { token: hostTok } = await getTokenFor('host@example.com')
+    captureEmails()
+    const created = await (await createMeetup(hostTok)).json()
+    const key = `event:${created.id}`
+    const row = JSON.parse(await env.ATTENDANCE_KV.get(key))
+    await env.ATTENDANCE_KV.put(key, JSON.stringify({ ...row, admission: 'ticketed', ticketed: true }))
+    await env.ATTENDANCE_KV.put(`rsvp:${created.id}`, JSON.stringify({
+      confirmed: [], waitlist: [{ memberId: 'q1', name: 'Q One', email: 'q1@example.com', at: 1 }],
+    }))
+
+    const sent = captureEmails()
+    const res = await req(`/events/${created.id}`, { method: 'PATCH', token: hostTok, body: { title: 'Renamed Meetup' } })
+    expect(res.status).toBe(200)
+
+    const after = JSON.parse(await env.ATTENDANCE_KV.get(key))
+    expect(after.title).toBe('Renamed Meetup')
+    expect(after.admission).toBe('ticketed')
+    expect(after.ticketed).toBe(true)
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get(`rsvp:${created.id}`))
+    expect(rsvp.confirmed).toHaveLength(0)
+    expect(rsvp.waitlist).toHaveLength(1)
+    expect(sent).toHaveLength(0)
+  })
+
   it('address change notifies confirmed RSVPs; title-only change does not', async () => {
     const { token: hostTok } = await getTokenFor('host@example.com')
     captureEmails()

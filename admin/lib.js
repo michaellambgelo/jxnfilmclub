@@ -537,7 +537,8 @@ export function socialEventView(e) {
   if (!e) return null
   const out = {}
   for (const k of ['id', 'title', 'film', 'year', 'date', 'venue', 'poster',
-                   'letterboxd_uri', 'hostName', 'hostId', 'kind', 'time', 'ticketUrl']) {
+                   'letterboxd_uri', 'hostName', 'hostId', 'kind', 'time', 'ticketUrl',
+                   'ticketed', 'admission']) {
     if (e[k] !== undefined && e[k] !== null && e[k] !== '') out[k] = e[k]
   }
   return out
@@ -1525,6 +1526,21 @@ export function rsvpEnabled(e) {
   if (!e) return false
   if (typeof e.rsvp === 'boolean') return e.rsvp
   return !!e.hostId
+}
+
+// How people get in: 'free' | 'ticketed' | 'own', or '' when nobody has said.
+// Rows that predate `admission` fall back to the `ticketed` flag, then to
+// "a meetup is self-organized". 'free' is never derived.
+//
+// MIRRORED in worker/src/event-visibility.js and model/index.ts — all three
+// run against tests/fixtures/admission-cases.json.
+export const ADMISSIONS = ['free', 'ticketed', 'own']
+export const ADMISSION_LABELS = { free: 'Free', ticketed: 'Ticketed', own: 'Buy your own' }
+export function eventAdmission(e) {
+  if (!e) return ''
+  if (ADMISSIONS.includes(e.admission)) return e.admission
+  if (e.ticketed) return 'ticketed'
+  return e.kind === 'meetup' ? 'own' : ''
 }
 
 // Coerce the one thing the Worker cannot see: a form checkbox.

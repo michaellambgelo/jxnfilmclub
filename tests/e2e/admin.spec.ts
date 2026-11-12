@@ -346,10 +346,11 @@ test.describe('admin dashboard', () => {
     await page.goto(`${ADMIN_ORIGIN}/`)
     await page.locator('#tabs button[data-tab="config"]').click()
 
-    // No override yet: defaults prefilled, badge says so.
+    // No override yet: defaults prefilled, and the row says so.
+    await expect(page.locator('#cfg-theaters .list-row [data-source]')).toHaveText('Default')
+    await page.locator('#cfg-theaters button[data-action="cfg-open"]').click()
     const rows = page.locator('#cfg-theaters-list input[data-theater]')
     await expect(rows).toHaveCount(7)
-    await expect(page.locator('#cfg-theaters h3')).toContainText(/defaults/)
 
     await page.locator('button[data-action="cfg-theater-add"]').click()
     await rows.last().fill('E2E Added Cinema')
@@ -359,7 +360,7 @@ test.describe('admin dashboard', () => {
       const raw = await getKv(page, 'config:theaters')
       return raw ? JSON.parse(raw) : null
     }).toContain('E2E Added Cinema')
-    await expect(page.locator('#cfg-theaters h3')).toContainText(/KV override/)
+    await expect(page.locator('#cfg-theaters .list-row [data-source]')).toHaveText('Custom')
   })
 
   // A message belongs to no round, so the round-level toggle never applied to

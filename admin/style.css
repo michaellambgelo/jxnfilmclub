@@ -362,14 +362,9 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .cg-count.over { color: var(--danger); font-weight: 600 }
 @media (max-width: 900px) { .cg-body { grid-template-columns: 1fr } }
 
-/* --- Config tab --- */
-.cfg-section {
-  background: var(--card);
-  border: 1px solid var(--border);
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-}
-.cfg-section > h3 { margin-top: 0; display: flex; align-items: center; gap: 0.6rem }
+/* --- Config tab ---
+   The list, detail and footer are the shared .list-* / .detail / .form-*
+   classes; only the editors' own rows are styled here. */
 .cfg-label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem }
 .cfg-label input, .cfg-label textarea { margin-top: 0.25rem }
 .cfg-warn { color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 0.5rem 0.8rem; font-size: 0.9rem; background: #fff0f0 }
@@ -395,6 +390,15 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
   margin-bottom: 0.8rem;
 }
 @media (max-width: 900px) { .cfg-episode { grid-template-columns: 1fr } }
+.detail > .toolbar { margin: 0.4rem 0 1rem }
+.detail > .form-banner code { background: none; padding: 0 }
+.detail > .cfg-key { margin: 0.8rem 0 0; font-size: 0.8rem }
+@media (max-width: 640px) {
+  /* Four fields will not fit on a phone: one per line, buttons below. A
+     theater row is a single field and stays on one line. */
+  .cfg-venue-row input[type="text"] { flex: 1 1 100%; max-width: none !important }
+  .cfg-copy-grid { grid-template-columns: 1fr }
+}
 
 /* --- Stats tab + the per-member card --------------------------------------
    Deliberately plainer than the member-facing card on jxnfilm.club: this is
@@ -634,6 +638,8 @@ dialog pre.rich {
   background: none;
   text-align: left;
 }
+/* A row with no date column: title and summary, then its pills. */
+.list-row.-plain { grid-template-columns: minmax(0, 1fr) auto }
 .list-row:hover { background: #fafafa }
 .list-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px }
 .list-item.-open > .list-row { background: #f1fafa; border-bottom: 1px solid var(--border) }

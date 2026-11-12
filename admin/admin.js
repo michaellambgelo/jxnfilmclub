@@ -165,7 +165,7 @@ const TABS = {
   giveaways: renderGiveaways,
   contentgen: () => renderContentGen({ api, env, content, toast, withBusy }),
   config: () => renderConfig({
-    api, env, content, toast, reload: () => switchTab(currentTab),
+    api, env, content, toast,
     defaults: {
       voicePrompt: DEFAULT_VOICE_PROMPT,
       newsletterHtml: NEWSLETTER_TEMPLATE_HTML,

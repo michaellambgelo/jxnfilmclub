@@ -128,7 +128,14 @@ function pillsHtml(e) {
   const adm = eventAdmission(e)
   if (adm) out.push(`<span class="pill ${adm === 'free' ? 'on' : 'off'}">${ADMISSION_LABELS[adm]}</span>`)
   const r = rsvpOf(e.id)
-  if (rsvpEnabled(e)) {
+  const past = String(e.date || '') < centralToday()
+  const attended = (attendance[e.id] || []).length
+  // Once an event is over, who came is the number that matters - and for an
+  // RSVP event it is the only one left: the scrub deletes rsvp:{id} thirty
+  // days on and keeps the names-only attendance.
+  if (past) {
+    if (attended) out.push(`<span class="pill off">${attended} attended</span>`)
+  } else if (rsvpEnabled(e)) {
     if (preSale(e)) {
       out.push(`<span class="pill warn">Pre-sale · ${r.waitlist.length} queued</span>`)
     } else {
@@ -136,9 +143,8 @@ function pillsHtml(e) {
       const wl = r.waitlist.length ? ` · ${r.waitlist.length} waitlisted` : ''
       out.push(`<span class="pill off">${r.confirmed.length}${cap} RSVPed${wl}</span>`)
     }
-  } else {
-    const n = (attendance[e.id] || []).length
-    if (n) out.push(`<span class="pill off">${n} ${String(e.date || '') >= centralToday() ? 'going' : 'attended'}</span>`)
+  } else if (attended) {
+    out.push(`<span class="pill off">${attended} going</span>`)
   }
   return out.join('')
 }
@@ -469,12 +475,20 @@ function rsvpAudience(id) {
   return parts.join(' + ')
 }
 
-// An event takes RSVPs or the post-hoc attendance toggle, never both: when
-// RSVPs are on, the attendance list is only a mirror of the confirmed list.
+// An upcoming event takes RSVPs or the attendance toggle, never both: while
+// RSVPs are open the attendance list is only a mirror of the confirmed list.
+// A PAST event always shows attendance, RSVP event or not - thirty days on,
+// the scrub has deleted its RSVP list and attendance is the record that is
+// left, and the only place a wrong name can be taken off it.
 function peopleHtml(e) {
-  if (!rsvpEnabled(e)) {
-    const list = attendance[e.id] || []
-    return `
+  const past = String(e.date || '') < centralToday()
+  if (!rsvpEnabled(e)) return attendanceHtml(e)
+  return rsvpListHtml(e) + (past ? attendanceHtml(e) : '')
+}
+
+function attendanceHtml(e) {
+  const list = attendance[e.id] || []
+  return `
       <div class="attendance">
         <strong>Attendance (${list.length})</strong>
         <ul>
@@ -484,7 +498,9 @@ function peopleHtml(e) {
             </li>`).join('') || '<li class="muted">no attendees</li>'}
         </ul>
       </div>`
-  }
+}
+
+function rsvpListHtml(e) {
   // Emails are visible: this dashboard already reads raw KV behind Access.
   // Adds/removes go through /api/rsvp/guest → join Worker, NOT raw KV, so
   // capacity, the waitlist, the emails and the attendance mirror all hold.

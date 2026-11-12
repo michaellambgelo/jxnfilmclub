@@ -114,6 +114,18 @@ describe('hourly reminder sweep', () => {
     expect(sent.map(m => m.to[0])).toEqual(['alice@example.com'])
   })
 
+  // A manual promotion is that person's confirmation. Their `at` is when they
+  // joined the WAITLIST, which can be weeks before the window opens.
+  it('skips someone an admin promoted after the reminder was due', async () => {
+    const promoted = { ...bob, at: JULY_DUE - 30 * 24 * HOUR, promotedAt: JULY_DUE + 10 * 60_000 }
+    const early = { ...alice, promotedAt: JULY_DUE - 24 * HOUR }
+    await seed([JULY], { 'ev-july': { confirmed: [early, promoted], waitlist: [] } })
+    const sent = captureResend()
+    await tick(JULY_DUE + HOUR)
+    // Promoted before the window: still owed the reminder. Inside it: not.
+    expect(sent.map(m => m.to[0])).toEqual(['alice@example.com'])
+  })
+
   it('closes the window a day after it opens, and skips a past event', async () => {
     await seed([JULY], { 'ev-july': { confirmed: [alice], waitlist: [] } })
     const sent = captureResend()

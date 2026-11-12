@@ -490,16 +490,25 @@ function peopleHtml(e) {
   // capacity, the waitlist, the emails and the attendance mirror all hold.
   const rsvp = rsvpOf(e.id)
   const isGuest = r => typeof r.memberId === 'string' && r.memberId.startsWith('guest:')
-  const entry = (r, tag) => `
+  // Promote is offered where the Worker will accept it: an upcoming event
+  // whose waitlist is a waitlist. A pre-sale queue is released by the ticket
+  // link, never one person at a time.
+  const upcoming = String(e.date || '') >= centralToday()
+  const full = e.capacity != null && rsvp.confirmed.length >= Number(e.capacity)
+  const promote = (r) => upcoming && !preSale(e)
+    ? `<button data-action="rsvp-promote" data-event="${attr(e.id)}" data-id="${attr(r.memberId)}"${full ? ' data-force="1"' : ''}>${full ? 'promote over capacity' : 'promote'}</button>`
+    : ''
+  const entry = (r, tag, waiting) => `
           <li>${escapeHtml(r.name || '(no name)')}${r.email ? ` &lt;${escapeHtml(r.email)}&gt;` : ''}${tag ? ` <span class="muted">${tag}</span>` : ''}${isGuest(r) ? ' <span class="muted">[guest]</span>' : ''}
+            ${waiting ? promote(r) : ''}
             ${isGuest(r) ? `<button class="danger" data-action="guest-rm" data-event="${attr(e.id)}" data-id="${attr(r.memberId)}">remove guest</button>` : ''}
           </li>`
   return `
       <div class="attendance rsvp-admin">
         <strong>RSVPs (${rsvp.confirmed.length} confirmed${rsvp.waitlist.length ? `, ${rsvp.waitlist.length} ${preSale(e) ? 'queued for tickets' : 'waitlisted'}` : ''})</strong>
         <ul>
-          ${rsvp.confirmed.map(r => entry(r, '')).join('') || '<li class="muted">no confirmed RSVPs</li>'}
-          ${rsvp.waitlist.map(r => entry(r, preSale(e) ? '(pre-sale list)' : '(waitlist)')).join('')}
+          ${rsvp.confirmed.map(r => entry(r, '', false)).join('') || '<li class="muted">no confirmed RSVPs</li>'}
+          ${rsvp.waitlist.map(r => entry(r, preSale(e) ? '(pre-sale list)' : '(waitlist)', true)).join('')}
         </ul>
         <div class="guest-add form-inline">
           <input type="text" name="guest-name" placeholder="Guest name">
@@ -507,7 +516,47 @@ function peopleHtml(e) {
           <label class="muted"><input type="checkbox" name="guest-force"> force over capacity</label>
           <button class="primary" data-action="guest-add" data-event="${attr(e.id)}">add guest</button>
         </div>
+        ${messageHtml(e)}
       </div>`
+}
+
+const emailCount = (list) => (list || []).filter(x => x && x.email).length
+
+// What the send button says. It names the audience outright, because that
+// label is the only thing standing between a note and twenty inboxes.
+function messageAudience(id, withWaitlist) {
+  const r = rsvpOf(id)
+  const c = emailCount(r.confirmed), w = withWaitlist ? emailCount(r.waitlist) : 0
+  const parts = []
+  if (c) parts.push(`${c} confirmed`)
+  if (w) parts.push(`${w} ${preSale(eventById(id)) ? 'on the pre-sale list' : 'waitlisted'}`)
+  return parts.join(' + ')
+}
+
+// A free-form note to the people on this event's list. Transactional, so it
+// has no unsubscribe link and has to stay about the event — the newsletter is
+// where announcements go.
+function messageHtml(e) {
+  const r = rsvpOf(e.id)
+  const c = emailCount(r.confirmed), w = emailCount(r.waitlist)
+  if (!c && !w) return ''
+  // Before tickets go on sale everyone is on the pre-sale list, so a note to
+  // "confirmed only" would reach nobody: start with the box ticked.
+  const withWaitlist = !c
+  return `
+        <details class="people-message" data-message="${attr(e.id)}">
+          <summary>Message attendees</summary>
+          <p class="muted">Emails the people on this event's list. Keep it about this event: it goes to everyone who RSVPed, with no unsubscribe link. Nothing is saved here after it is sent.</p>
+          <label>Subject</label>
+          <input type="text" name="msg-subject" maxlength="120" placeholder="${attr(`A note about ${e.title || e.id}`)}">
+          <label>Message</label>
+          <textarea name="msg-body" rows="4" maxlength="2000" placeholder="Doors open half an hour early this time..."></textarea>
+          ${w ? `<label class="cfg-inline"><input type="checkbox" name="msg-waitlist"${withWaitlist ? ' checked' : ''}>
+            <span>Also send to the ${w} ${preSale(e) ? 'on the pre-sale list' : 'waitlisted'}</span></label>` : ''}
+          <div class="form-foot">
+            <button class="primary" data-action="rsvp-message" data-event="${attr(e.id)}">Send to ${escapeHtml(messageAudience(e.id, withWaitlist))}</button>
+          </div>
+        </details>`
 }
 
 // --- Writes ---
@@ -697,6 +746,27 @@ const ACTIONS = {
     await refreshPeople(eventId)
     toast('Guest removed')
   },
+  'rsvp-promote': async (btn) => {
+    const { event: eventId, id } = btn.dataset
+    const body = { memberId: id }
+    if (btn.dataset.force === '1') body.force = true
+    const r = await api('POST', `/api/events/promote?${qs({ env: env(), id: eventId })}`, JSON.stringify(body))
+    await refreshPeople(eventId)
+    toast(r.emailed ? 'Promoted — confirmation emailed' : 'Promoted (no email on file, so nothing was sent)')
+  },
+  'rsvp-message': async (btn) => {
+    const wrap = btn.closest('[data-message]')
+    const message = (wrap.querySelector('[name="msg-body"]').value || '').trim()
+    const subject = (wrap.querySelector('[name="msg-subject"]').value || '').trim()
+    const box = wrap.querySelector('[name="msg-waitlist"]')
+    if (!message) { toast('Write a message first', true); return }
+    const body = { message, waitlist: !!(box && box.checked) }
+    if (subject) body.subject = subject
+    const r = await api('POST', `/api/events/message?${qs({ env: env(), id: btn.dataset.event })}`, JSON.stringify(body))
+    wrap.querySelector('[name="msg-body"]').value = ''
+    wrap.querySelector('[name="msg-subject"]').value = ''
+    toast(`Sent to ${r.sent} ${r.sent === 1 ? 'person' : 'people'}${r.failed ? ` — ${r.failed} failed` : ''}`, !!r.failed)
+  },
   'attend-rm': async (btn) => {
     // Index, not name: two attendees can share a display name, and only the
     // one the operator clicked should go.
@@ -731,6 +801,15 @@ document.addEventListener('click', async (e) => {
 for (const type of ['input', 'change']) {
   document.addEventListener(type, (e) => {
     if (!ctx || !e.target.closest) return
+    // The send button always says who it is about to reach.
+    if (e.target.name === 'msg-waitlist') {
+      const wrap = e.target.closest('[data-message]')
+      const send = wrap.querySelector('[data-action="rsvp-message"]')
+      const audience = messageAudience(wrap.dataset.message, e.target.checked)
+      send.textContent = audience ? `Send to ${audience}` : 'Nobody to send to'
+      send.disabled = !audience
+      return
+    }
     const form = e.target.closest('#content [data-form]')
     if (!form) return
     syncForm(form)

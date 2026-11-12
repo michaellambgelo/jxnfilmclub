@@ -259,6 +259,9 @@ async function route(request, env, ctx) {
     if (request.method === 'POST' && pathname === '/admin/newsletter/send') return handleNewsletterSend(request, env)
     if (request.method === 'POST' && pathname === '/admin/email/preview')   return handleEmailPreview(request, env)
     if (request.method === 'POST' && pathname === '/admin/newsletter/image') return handleNewsletterImageUpload(request, env)
+    if (request.method === 'PUT' && pathname.startsWith('/admin/newsletter/archive/')) {
+      return handleNewsletterArchivePut(request, env, pathname.slice('/admin/newsletter/archive/'.length))
+    }
     if (request.method === 'GET'  && pathname === '/admin/tmdb/search')     return handleAdminTmdbSearch(request, env)
     if (request.method === 'POST' && pathname === '/admin/scrub')           return handleAdminScrub(request, env)
     if (request.method === 'POST' && pathname === '/admin/reminders')       return handleAdminReminders(request, env)
@@ -6032,8 +6035,12 @@ async function handleNewsletterArchiveGet(env, id) {
   const rec = raw ? JSON.parse(raw) : null
   if (!rec) return html(page(env, { title: 'Not found', body: NEWSLETTER_ARCHIVE_404 }), 404)
 
+  // An edited copy no longer matches what is in inboxes, so the page says so.
+  const edited = rec.editedAt
+    ? ` · updated ${escapeHtml(String(rec.editedAt).slice(0, 10))} after it was sent`
+    : ''
   const body =
-    `<main class="prose"><p class="hint">Jackson Film Club newsletter · ${escapeHtml(String(rec.at || '').slice(0, 10))}</p>` +
+    `<main class="prose"><p class="hint">Jackson Film Club newsletter · ${escapeHtml(String(rec.at || '').slice(0, 10))}${edited}</p>` +
     `<h1>${escapeHtml(rec.subject || 'Newsletter')}</h1>` +
     `<div class="nl-archive">${rec.html || `<pre>${escapeHtml(rec.text || '')}</pre>`}</div>` +
     `<p class="hint"><a href="${siteOrigin(env)}/">← Jackson Film Club</a></p></main>`
@@ -6052,6 +6059,56 @@ async function handleNewsletterArchiveGet(env, id) {
       'Referrer-Policy': 'no-referrer',
     },
   })
+}
+
+// PUT /admin/newsletter/archive/:id — bearer ADMIN_TOKEN.
+// Body: { subject, html?, text? }. Corrects the shared copy of a newsletter
+// that has already gone out: a wrong date, a dead link, a typo. It sends no
+// mail and cannot reach the copies sitting in inboxes; what changes is the
+// page their "view it in your browser" link opens.
+//
+// The id never changes, so links in delivered mail keep working even when the
+// subject its slug was cut from is the thing being corrected. `at` and `test`
+// are the send's, not the edit's. The first edit keeps what was mailed under
+// `original`, since this record is the only server-side copy of it.
+async function handleNewsletterArchivePut(request, env, id) {
+  if (!adminAuthorized(request, env)) return json(env, { error: 'unauthorized' }, 401)
+  if (!ARCHIVE_ID.test(id || '')) return json(env, { error: 'newsletter not found' }, 404)
+  const key = `newsletter:archive:${id}`
+  const raw = await env.MEMBERS_KV.get(key)
+  let rec = null
+  try { rec = raw ? JSON.parse(raw) : null } catch { /* treated as missing */ }
+  // Never creates: a page nobody was sent is not a newsletter.
+  if (!rec) return json(env, { error: 'newsletter not found' }, 404)
+
+  const body = await request.json().catch(() => ({}))
+  const subject = typeof body.subject === 'string' ? body.subject.trim() : ''
+  const bodyHtml = typeof body.html === 'string' ? body.html : ''
+  const bodyText = typeof body.text === 'string' ? body.text : ''
+  if (!subject || (!bodyHtml.trim() && !bodyText.trim())) {
+    return json(env, { error: 'subject and html or text required' }, 400)
+  }
+  const problem = newsletterBodyProblem(bodyHtml, bodyText, new URL(request.url).origin)
+  if (problem) return json(env, { error: problem.error }, problem.status)
+
+  const editedAt = new Date().toISOString()
+  const original = rec.original ||
+    { subject: rec.subject || '', html: rec.html || '', text: rec.text || '' }
+  await putNewsletterArchive(env, id, { ...rec, subject, html: bodyHtml, text: bodyText, editedAt, original })
+
+  // The admin's Sent history reads its subject from the audit row, so a
+  // corrected subject has to land there too. Test sends have no row, and a
+  // row that points at another archive is left alone.
+  if (subject !== rec.subject && rec.at) {
+    const sentKey = `newsletter:sent:${rec.at}`
+    const sentRaw = await env.MEMBERS_KV.get(sentKey)
+    let sent = null
+    try { sent = sentRaw ? JSON.parse(sentRaw) : null } catch { /* leave it */ }
+    if (sent && sent.archiveId === id) {
+      await env.MEMBERS_KV.put(sentKey, JSON.stringify({ ...sent, subject }))
+    }
+  }
+  return json(env, { ok: true, id, editedAt, permalink: `${new URL(request.url).origin}/n/${id}` })
 }
 
 const NEWSLETTER_ARCHIVE_404 =
@@ -6174,6 +6231,35 @@ const NEWSLETTER_TEXT_MAX_BYTES = 64 * 1024
 
 const utf8Len = (s) => new TextEncoder().encode(String(s || '')).length
 
+// Why this body must not be sent or published, as { error, status }, or null.
+// One definition for the send and for an edit of the shared copy: a body that
+// could not have been sent has no business replacing one that was.
+function newsletterBodyProblem(bodyHtml, bodyText, selfOrigin) {
+  const htmlBytes = utf8Len(bodyHtml)
+  if (htmlBytes > NEWSLETTER_HTML_MAX_BYTES) {
+    return {
+      status: 413,
+      error: `html body is ${Math.round(htmlBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_HTML_MAX_BYTES / 1024)}KB limit. ` +
+        'Gmail clips messages near 102KB and a body this size can exhaust the Worker while fanning out per recipient.',
+    }
+  }
+  const textBytes = utf8Len(bodyText)
+  if (textBytes > NEWSLETTER_TEXT_MAX_BYTES) {
+    return { status: 413, error: `text body is ${Math.round(textBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_TEXT_MAX_BYTES / 1024)}KB limit.` }
+  }
+  if (/src\s*=\s*["']?\s*data:/i.test(String(bodyHtml || ''))) {
+    return {
+      status: 400,
+      error: 'html body contains an embedded data: image. Gmail strips those at render time, so most recipients would see nothing. Host the image and reference it by URL.',
+    }
+  }
+  // A staging image URL in a production send 404s for every recipient.
+  const wrong = (String(bodyHtml || '').match(/https?:\/\/[^"'\s>]*\/nl\/img\/[^"'\s>]*/gi) || [])
+    .find(u => !u.startsWith(selfOrigin + '/'))
+  if (wrong) return { status: 400, error: `html body references an image on another environment (${wrong}).` }
+  return null
+}
+
 // POST /admin/newsletter/send — bearer-auth with ADMIN_TOKEN.
 // Body: { subject, html?, text? }. Sends to every member with newsletter===true.
 async function handleNewsletterSend(request, env) {
@@ -6187,37 +6273,14 @@ async function handleNewsletterSend(request, env) {
     return json(env, { error: 'subject and html or text required' }, 400)
   }
 
-  // These run BEFORE the testTo branch below, deliberately. A test send is the
+  // This runs BEFORE the testTo branch below, deliberately. A test send is the
   // one path that makes a broken body look fine — a data: URI renders
   // perfectly in a test to an Apple Mail address and is stripped by Gmail for
   // the actual list — so an unguarded test send is a false-confidence
   // generator. The admin mirrors these checks; this is the authority, and it
   // also catches a body arriving through any other caller.
-  const htmlBytes = utf8Len(bodyHtml)
-  if (htmlBytes > NEWSLETTER_HTML_MAX_BYTES) {
-    return json(env, {
-      error: `html body is ${Math.round(htmlBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_HTML_MAX_BYTES / 1024)}KB limit. ` +
-        'Gmail clips messages near 102KB and a body this size can exhaust the Worker while fanning out per recipient.',
-    }, 413)
-  }
-  const textBytes = utf8Len(bodyText)
-  if (textBytes > NEWSLETTER_TEXT_MAX_BYTES) {
-    return json(env, { error: `text body is ${Math.round(textBytes / 1024)}KB, over the ${Math.round(NEWSLETTER_TEXT_MAX_BYTES / 1024)}KB limit.` }, 413)
-  }
-  if (/src\s*=\s*["']?\s*data:/i.test(String(bodyHtml || ''))) {
-    return json(env, {
-      error: 'html body contains an embedded data: image. Gmail strips those at render time, so most recipients would see nothing. Host the image and reference it by URL.',
-    }, 400)
-  }
-  {
-    // A staging image URL in a production send 404s for every recipient.
-    const selfOrigin = new URL(request.url).origin
-    const wrong = (String(bodyHtml || '').match(/https?:\/\/[^"'\s>]*\/nl\/img\/[^"'\s>]*/gi) || [])
-      .find(u => !u.startsWith(selfOrigin + '/'))
-    if (wrong) {
-      return json(env, { error: `html body references an image on another environment (${wrong}).` }, 400)
-    }
-  }
+  const problem = newsletterBodyProblem(bodyHtml, bodyText, new URL(request.url).origin)
+  if (problem) return json(env, { error: problem.error }, problem.status)
 
   // Postal address is OPTIONAL: the footer prints it only when the var is
   // set. (Removed from the committed config 2026-08-11 — it was a home

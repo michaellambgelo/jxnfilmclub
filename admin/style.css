@@ -286,6 +286,9 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 
 /* The send row is the consequential one — set it off from the inserts. */
 .nl-send-bar { border-top: 1px solid var(--border); padding-top: 0.8rem }
+/* .toolbar is a flex row, which would otherwise outrank the hidden attribute. */
+.nl-send-bar[hidden] { display: none }
+.nl-history td.actions button { margin-left: 0.4rem }
 .nl-poster-results { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem }
 .nl-poster-thumb {
   display: flex; flex-direction: column; align-items: center; gap: 0.3rem;

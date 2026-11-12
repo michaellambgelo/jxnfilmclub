@@ -405,3 +405,122 @@ describe('newsletter web archive', () => {
     expect(permalink).toContain(row.archiveId)
   })
 })
+
+// --- Editing the shared copy -------------------------------------------------
+describe('editing the newsletter web archive', () => {
+  const OK = { subject: 'This month at the club', html: '<p>Sherlock Jr. on Friday</p>', text: 'Sherlock Jr. on Friday' }
+  const idOf = (permalink) => permalink.split('/n/')[1]
+  const put = (id, body, token = 'test-admin-token') =>
+    req(`/admin/newsletter/archive/${id}`, { method: 'PUT', token, body })
+  const archive = async (id) => JSON.parse(await env.MEMBERS_KV.get(`newsletter:archive:${id}`))
+
+  async function sendOne(body = OK) {
+    await seedMember('edit@example.com', { newsletter: true })
+    const { res } = await captureSend(body)
+    const { permalink } = await res.json()
+    return { permalink, id: idOf(permalink) }
+  }
+
+  it('replaces the shared copy and says on the page that it changed', async () => {
+    const { permalink, id } = await sendOne()
+    const before = await archive(id)
+
+    const res = await put(id, { subject: OK.subject, html: '<p>Sherlock Jr. on SATURDAY</p>', text: 'Sherlock Jr. on Saturday' })
+    expect(res.status).toBe(200)
+    const out = await res.json()
+    expect(out.permalink).toBe(permalink)
+
+    const page = await (await SELF.fetch(permalink)).text()
+    expect(page).toContain('Sherlock Jr. on SATURDAY')
+    expect(page).not.toContain('Sherlock Jr. on Friday')
+    expect(page).toMatch(/updated \d{4}-\d{2}-\d{2} after it was sent/)
+
+    // The send's own facts survive; the first version is kept.
+    const after = await archive(id)
+    expect(after.at).toBe(before.at)
+    expect(after.test).toBe(false)
+    expect(after.editedAt).toBe(out.editedAt)
+    expect(after.original).toEqual({ subject: OK.subject, html: OK.html, text: OK.text })
+  })
+
+  it('an unedited copy carries no "updated" line', async () => {
+    const { permalink } = await sendOne()
+    expect(await (await SELF.fetch(permalink)).text()).not.toMatch(/after it was sent/)
+  })
+
+  it('keeps what was actually mailed across a second edit', async () => {
+    const { id } = await sendOne()
+    await put(id, { subject: OK.subject, html: '<p>first fix</p>' })
+    await put(id, { subject: OK.subject, html: '<p>second fix</p>' })
+    const rec = await archive(id)
+    expect(rec.html).toBe('<p>second fix</p>')
+    expect(rec.original.html).toBe(OK.html)
+  })
+
+  it('sends no mail', async () => {
+    const { id } = await sendOne()
+    const calls = []
+    mockFetch(async (url) => { calls.push(String(url)); return new Response('{}', { status: 200 }) })
+    const res = await put(id, { subject: 'Corrected', html: '<p>fixed</p>' })
+    expect(res.status).toBe(200)
+    expect(calls).toEqual([])
+  })
+
+  it('carries a corrected subject onto the Sent history row, and only that row', async () => {
+    const { id } = await sendOne()
+    const sentKey = `newsletter:sent:${(await archive(id)).at}`
+    const before = JSON.parse(await env.MEMBERS_KV.get(sentKey))
+
+    await put(id, { subject: 'This month at the club (corrected)', html: OK.html })
+    const after = JSON.parse(await env.MEMBERS_KV.get(sentKey))
+    expect(after).toEqual({ ...before, subject: 'This month at the club (corrected)' })
+
+    // A row pointing at a different archive is not this newsletter's to edit.
+    await env.MEMBERS_KV.put(sentKey, JSON.stringify({ ...after, archiveId: 'someone-else' }))
+    await put(id, { subject: 'Third subject', html: OK.html })
+    expect(JSON.parse(await env.MEMBERS_KV.get(sentKey)).subject).toBe('This month at the club (corrected)')
+  })
+
+  it('edits a test send, which has no history row to touch', async () => {
+    const { res } = await captureSend({ ...OK, testTo: 'me@example.com' })
+    const id = idOf((await res.json()).permalink)
+    const at = (await archive(id)).at
+    expect((await put(id, { subject: 'Renamed', html: OK.html })).status).toBe(200)
+    expect((await archive(id)).test).toBe(true)
+    expect(await env.MEMBERS_KV.get(`newsletter:sent:${at}`)).toBeNull()
+  })
+
+  it('refuses without the admin token', async () => {
+    const { id } = await sendOne()
+    for (const token of [null, 'wrong']) {
+      const res = await put(id, { subject: 'x', html: '<p>x</p>' }, token)
+      expect(res.status).toBe(401)
+    }
+    expect((await archive(id)).html).toBe(OK.html)
+  })
+
+  it('404s an unknown or malformed id and never creates one', async () => {
+    for (const id of ['2026-11-never-sent-0000000000', 'UPPER', 'a/b']) {
+      const res = await put(id, { subject: 'x', html: '<p>x</p>' })
+      expect(res.status, id).toBe(404)
+    }
+    expect(await env.MEMBERS_KV.get('newsletter:archive:2026-11-never-sent-0000000000')).toBeNull()
+  })
+
+  it('applies the send rules: subject and a body, no embedded or cross-environment images, size', async () => {
+    const { id } = await sendOne()
+    const cases = [
+      [{ subject: '  ', html: '<p>x</p>' }, 400],
+      [{ subject: 'x', html: '   ', text: '' }, 400],
+      [{ subject: 'x', html: '<img src="data:image/png;base64,AAAA">' }, 400],
+      [{ subject: 'x', html: '<img src="https://join-staging.jxnfilm.club/nl/img/abc.jpg">' }, 400],
+      [{ subject: 'x', html: 'x'.repeat(129 * 1024) }, 413],
+    ]
+    for (const [body, status] of cases) {
+      expect((await put(id, body)).status, JSON.stringify(body).slice(0, 60)).toBe(status)
+    }
+    const rec = await archive(id)
+    expect(rec.html).toBe(OK.html)
+    expect(rec.editedAt).toBeUndefined()
+  })
+})

@@ -538,6 +538,42 @@ describe('/api/events/promote and /api/events/message', () => {
   })
 })
 
+describe('/api/newsletter/archive', () => {
+  it('PUT proxies to the join worker archive route with the admin token and body', async () => {
+    const reply = { ok: true, id: '2026-11-this-month-ab12cd34ef', editedAt: '2026-11-12T00:00:00.000Z' }
+    const body = JSON.stringify({ subject: 'Fixed', html: '<p>Saturday</p>' })
+    const { service, calls } = stubService(reply)
+    const res = await call('/api/newsletter/archive?env=production&id=2026-11-this-month-ab12cd34ef', {
+      method: 'PUT', body, token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(await res.json()).toEqual(reply)
+    expect(calls[0].url).toBe('https://join.jxnfilm.club/admin/newsletter/archive/2026-11-this-month-ab12cd34ef')
+    expect(calls[0].init.method).toBe('PUT')
+    expect(calls[0].init.headers.Authorization).toBe('Bearer test-admin-token')
+    expect(calls[0].init.body).toBe(body)
+  })
+
+  it('requires an id, encodes it, and answers no other method', async () => {
+    const { service, calls } = stubService({ ok: true })
+    const missing = await call('/api/newsletter/archive?env=production', {
+      method: 'PUT', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect(missing.status).toBe(400)
+    expect(calls).toHaveLength(0)
+
+    await call(`/api/newsletter/archive?env=staging&id=${encodeURIComponent('a/../send')}`, {
+      method: 'PUT', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER_STAGING: service },
+    })
+    expect(calls[0].url).toBe('https://join-staging.jxnfilm.club/admin/newsletter/archive/a%2F..%2Fsend')
+
+    const post = await call('/api/newsletter/archive?env=production&id=x', {
+      method: 'POST', body: '{}', token: await signToken(), envOverrides: { JOIN_WORKER: service },
+    })
+    expect([404, 405]).toContain(post.status)
+    expect(calls).toHaveLength(1)
+  })
+})
+
 describe('/api/rsvp/guest', () => {
   it('POST proxies to the join worker guest endpoint with the admin token', async () => {
     const { service, calls } = stubService({ ok: true, status: 'confirmed', id: 'guest:abc12345' })

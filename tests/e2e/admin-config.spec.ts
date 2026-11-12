@@ -27,11 +27,18 @@ async function openConfig(page: Page) {
   await expect(page.locator('#cfg-theaters')).toBeVisible()
 }
 
-// One section of the tab, opened and ready to type into.
+// One section of the tab, opened and ready to type into. Opening is a toggle,
+// so a section that is already open is left alone.
 async function section(page: Page, id: string) {
-  return page.locator(`#cfg-${id}`)
+  const item = page.locator(`#cfg-${id}`)
+  if (!(await item.evaluate(el => el.classList.contains('-open')))) {
+    await item.locator('button[data-action="cfg-open"]').click()
+  }
+  await expect(item.locator('[data-cfg-detail]')).toBeVisible()
+  return item
 }
-const badge = (page: Page, id: string) => page.locator(`#cfg-${id} h3 .pill`)
+// Whether the section is running on a saved value or the built-in default.
+const badge = (page: Page, id: string) => page.locator(`#cfg-${id} .list-row [data-source]`)
 
 test.describe('admin Config tab', () => {
   test('reset deletes the key and the section goes back to defaults', async ({ page }) => {
@@ -42,11 +49,11 @@ test.describe('admin Config tab', () => {
 
     const s = await section(page, 'theaters')
     await expect(s.locator('input[data-theater]')).toHaveCount(1)
-    await expect(badge(page, 'theaters')).toHaveClass(/\bon\b/)
+    await expect(badge(page, 'theaters')).toHaveText('Custom')
 
     await s.locator('button[data-action="cfg-theaters-reset"]').click()
     await expect.poll(() => getKv(page, 'config:theaters')).toBeNull()
-    await expect(badge(page, 'theaters')).toHaveClass(/\boff\b/)
+    await expect(badge(page, 'theaters')).toHaveText('Default')
     await expect((await section(page, 'theaters')).locator('input[data-theater]')).toHaveCount(7)
   })
 
@@ -134,7 +141,7 @@ test.describe('admin Config tab', () => {
     await row.locator('[data-venue-field="coords"]').fill('somewhere downtown')
     await s.locator('button[data-action="cfg-venues-save"]').click()
 
-    await expect(page.locator('#toast')).toContainText('Bad Coordinates Hall: coordinates must be')
+    await expect(s.locator('.form-issues')).toContainText('Bad Coordinates Hall: coordinates must be')
     expect(await getKv(page, 'config:venues')).toBeNull()
 
     await row.locator('[data-venue-field="coords"]').fill('32.3, -90.18')
@@ -151,13 +158,89 @@ test.describe('admin Config tab', () => {
     const s = await section(page, 'voice-prompt')
     await s.locator('#cfg-vp-id').fill('Best Of 2026')
     await s.locator('button[data-action="cfg-vp-save"]').click()
-    await expect(page.locator('#toast')).toContainText('Prompt needs an id')
+    await expect(s.locator('.form-issues')).toContainText('Prompt needs an id')
     expect(await getKv(page, 'config:voice_prompt')).toBeNull()
 
     await s.locator('#cfg-vp-text').fill('What was your film of the year?')
     await s.locator('button[data-action="cfg-vp-save"]').click()
     await expect.poll(() => getJson(page, 'config:voice_prompt'))
       .toEqual({ id: 'best-of-2026', text: 'What was your film of the year?' })
-    await expect(badge(page, 'voice-prompt')).toHaveClass(/\bon\b/)
+    await expect(badge(page, 'voice-prompt')).toHaveText('Custom')
+  })
+})
+
+test.describe('admin Config tab: one section at a time', () => {
+  test('rows summarise what is in effect; opening one closes the other', async ({ page }) => {
+    await seedPodcast(page)
+    await seedKv(page, 'config:copy', JSON.stringify({ heroLabel: 'Custom label' }))
+    await openConfig(page)
+
+    await expect(page.locator('#cfg-list .list-item')).toHaveCount(6)
+    await expect(page.locator('#cfg-list [data-cfg-detail]')).toHaveCount(0)
+    await expect(page.locator('#cfg-theaters .list-row')).toContainText('7 theaters')
+    await expect(page.locator('#cfg-copy .list-row')).toContainText('1 of 10 homepage texts replaced')
+    await expect(badge(page, 'copy')).toHaveText('Custom')
+    await expect(badge(page, 'theaters')).toHaveText('Default')
+
+    await section(page, 'theaters')
+    await section(page, 'copy')
+    await expect(page.locator('#cfg-list [data-cfg-detail]')).toHaveCount(1)
+    await expect(page.locator('#cfg-theaters [data-cfg-detail]')).toHaveCount(0)
+
+    await page.locator('#cfg-copy button[data-action="cfg-close"]').click()
+    await expect(page.locator('#cfg-list [data-cfg-detail]')).toHaveCount(0)
+  })
+
+  test('leaving a section with unsaved edits asks first; defaults shown are not edits', async ({ page }) => {
+    await seedPodcast(page)
+    await openConfig(page)
+
+    // Untouched defaults (seven prefilled theaters) are not unsaved changes.
+    let asked = 0
+    page.on('dialog', d => { asked++; d.dismiss() })
+    await section(page, 'theaters')
+    await section(page, 'nl-template')
+    await section(page, 'theaters')
+    expect(asked).toBe(0)
+
+    const s = page.locator('#cfg-theaters')
+    await s.locator('button[data-action="cfg-theater-rm"]').first().click()
+    await expect(s.locator('input[data-theater]')).toHaveCount(6)
+
+    // Dismissed: still open, the edit still there.
+    await page.locator('#cfg-copy button[data-action="cfg-open"]').click()
+    expect(asked).toBe(1)
+    await expect(s.locator('input[data-theater]')).toHaveCount(6)
+    await expect(page.locator('#cfg-copy [data-cfg-detail]')).toHaveCount(0)
+    expect(await getKv(page, 'config:theaters')).toBeNull()
+  })
+
+  test('a saved section stays open and its row updates in place', async ({ page }) => {
+    await seedPodcast(page)
+    await openConfig(page)
+
+    const s = await section(page, 'theaters')
+    await s.locator('button[data-action="cfg-theater-rm"]').first().click()
+    await s.locator('button[data-action="cfg-theaters-save"]').click()
+
+    await expect(badge(page, 'theaters')).toHaveText('Custom')
+    await expect(page.locator('#cfg-theaters .list-row')).toContainText('6 theaters')
+    await expect(page.locator('#cfg-theaters [data-cfg-detail]')).toBeVisible()
+    expect(await getJson(page, 'config:theaters')).toHaveLength(6)
+  })
+
+  test('map venues names the events that are missing from the map', async ({ page }) => {
+    await seedPodcast(page)
+    // The local Worker serves the repo's real event history, so the way to a
+    // known gap is a map with one venue that no event has ever used.
+    await seedKv(page, 'config:venues', JSON.stringify([
+      { name: 'Nowhere Hall', address: '', lat: 32.3, lng: -90.18, aliases: [] },
+    ]))
+    await openConfig(page)
+
+    await expect(page.locator('#cfg-venues .list-row .pill.warn')).toHaveText(/^\d+ venues not on the map$/)
+    const s = await section(page, 'venues')
+    await expect(s.locator('.form-banner')).toContainText('Not on the map')
+    await expect(s.locator('.form-banner')).toContainText('Capri')
   })
 })

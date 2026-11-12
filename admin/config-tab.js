@@ -37,9 +37,12 @@ const delKv = (key, binding = 'MEMBERS_KV') =>
 //
 // Purpose-built editors for the config keys the join Worker and public SPA
 // consume. The mental model surfaced everywhere in this tab: a missing key
-// means "use the hardcoded defaults" — deleting a key is the reset, and the
-// site/Worker fall back automatically. Each section badges its current
-// source (KV override vs defaults) from whether the key exists.
+// means "use the built-in default" — deleting a key is the reset, and the
+// site/Worker fall back automatically. Each section's pill says which is in
+// effect (Custom vs Default) from whether the key exists.
+//
+// Shape of the tab, borrowed from events-tab.js: a short list of sections
+// where ONE is open at a time, each row summarising what is in effect.
 
 // Mirrors THEATERS in worker/src/index.js and ui/views.html (the hardcoded
 // fallback when config:theaters is absent). Shown as the starting point /
@@ -99,404 +102,517 @@ const COPY_FIELDS = [
 
 const EPISODES_JSON_URL = 'https://jxnfilm.club/data/episodes.json'
 
-// Working state for the tab. Rebuilt on every render (loadKv is the source
-// of truth); mutated in place by the add/remove/move actions between saves.
-let cfgTheaters = []
-let cfgTheatersKv = false
-// Map venue editor rows, as typed: { name, address, coords, aliases }.
-let cfgVenues = []
-let cfgVenuesKv = false
-let cfgUnmatched = []
-let cfgPodcast = { episodes: [] }
-let cfgPodcastKv = false
-let cfgPodcastSeedFailed = false
+// --- State ---
+//
+// `store` is what KV holds (key -> raw string), reloaded after every save or
+// reset. The three list editors work on copies (`theaters`, `venues`,
+// `podcast`) that the add / remove / move buttons mutate between saves; they
+// are rebuilt from `store` whenever a section is opened, so closing a section
+// throws its unsaved edits away.
 
-const cfgBadge = (fromKv) => fromKv
-  ? '<span class="pill on">KV override</span>'
-  : '<span class="pill off">defaults — no KV key</span>'
+let store = {}
+let unmatched = []             // public events whose venue is not on the map
+let podcastSeed                // live episodes.json; undefined = not fetched, null = failed
+let openId = null              // a SECTIONS id, or null
+let snapshot = ''              // the open section as rendered, for the dirty check
 
-export async function renderConfig(c) {
-  ctx = c
+let theaters = []
+let venues = []                // editor rows, as typed: { name, address, coords, aliases }
+let podcast = { episodes: [] }
+
+const has = (key) => key in store
+const stored = (key) => (has(key) ? tryParse(store[key]) : null)
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
+
+function storedVenues() {
+  const v = stored('config:venues')
+  return Array.isArray(v) ? v : DEFAULT_VENUES
+}
+
+// The podcast override, or the live site's list when there is none - so the
+// first save starts an override at what is published, not from nothing.
+function podcastSource() {
+  const v = has('config:podcast') ? stored('config:podcast') : podcastSeed
+  const out = v && typeof v === 'object' && !Array.isArray(v) ? structuredClone(v) : {}
+  if (!Array.isArray(out.episodes)) out.episodes = []
+  return out
+}
+// True when the list on screen is empty only because the live one never loaded.
+const podcastSeedFailed = () => !has('config:podcast') && !podcastSource().episodes.length
+
+async function load() {
   const { keys, values } = await loadKv('config:')
-  const has = (k) => keys.some(x => x.name === k)
+  store = {}
+  for (const k of keys) store[k.name] = values[k.name]
 
-  cfgTheatersKv = has('config:theaters')
-  cfgTheaters = cfgTheatersKv
-    ? normalizeStringList(tryParse(values['config:theaters']))
-    : [...DEFAULT_THEATERS]
-
-  cfgVenuesKv = has('config:venues')
-  const storedVenues = cfgVenuesKv ? tryParse(values['config:venues']) : null
-  const venueList = Array.isArray(storedVenues) ? storedVenues : DEFAULT_VENUES
-  cfgVenues = venueList.map(venueToRow)
   // events:all is the public projection, so no host address reaches this tab.
-  const eventsAgg = await loadKv('events:all', 'ATTENDANCE_KV').catch(() => null)
-  cfgUnmatched = unmatchedVenueNames(tryParse(eventsAgg?.values?.['events:all']) || [], venueList)
+  const agg = await loadKv('events:all', 'ATTENDANCE_KV').catch(() => null)
+  unmatched = unmatchedVenueNames(tryParse(agg?.values?.['events:all']) || [], storedVenues())
 
-  cfgPodcastKv = has('config:podcast')
-  cfgPodcastSeedFailed = false
-  if (cfgPodcastKv) {
-    cfgPodcast = tryParse(values['config:podcast']) || { episodes: [] }
-    if (!Array.isArray(cfgPodcast.episodes)) cfgPodcast.episodes = []
-  } else {
-    // No override yet — start from the live site data so "save" begins an
-    // override at the current published state, not from scratch. Bounded
-    // fetch: a slow/unreachable jxnfilm.club must not hang the tab.
+  if (!has('config:podcast') && podcastSeed === undefined) {
+    // Bounded fetch: a slow or unreachable jxnfilm.club must not hang the tab.
     try {
-      cfgPodcast = await (await fetch(EPISODES_JSON_URL, { signal: AbortSignal.timeout(3000) })).json()
-      if (!cfgPodcast || !Array.isArray(cfgPodcast.episodes)) cfgPodcast = { episodes: [] }
-      if (!cfgPodcast.episodes.length) cfgPodcastSeedFailed = true
+      podcastSeed = await (await fetch(EPISODES_JSON_URL, { signal: AbortSignal.timeout(3000) })).json()
     } catch {
-      cfgPodcast = { featured_id: '', episodes: [] }
-      cfgPodcastSeedFailed = true
+      podcastSeed = null
     }
   }
+}
 
-  const copy = (has('config:copy') && tryParse(values['config:copy'])) || {}
-  const nl = (has('config:newsletter_template') && tryParse(values['config:newsletter_template'])) || null
-  const vp = (has('config:voice_prompt') && tryParse(values['config:voice_prompt'])) || null
+function seedWorking() {
+  theaters = has('config:theaters') ? normalizeStringList(stored('config:theaters')) : [...DEFAULT_THEATERS]
+  venues = storedVenues().map(venueToRow)
+  podcast = podcastSource()
+}
 
-  content().innerHTML = `
-    <h2>Config <span class="muted">— editing <strong>${escapeHtml(env())}</strong></span></h2>
-    <p class="section-hint">Operator overrides stored under <code>config:*</code> in <code>MEMBERS_KV</code>,
-      consumed by the join Worker and the public site. A section saved here overrides the hardcoded
-      defaults; <b>deleting the key (reset) restores them automatically</b> — nothing stored means
-      "use the defaults". All reads/writes follow the env toggle above.</p>
+// --- Sections ---
+//
+// `act` is the prefix of the section's save / reset action names, which the
+// browser tests address by name.
 
-    <section class="cfg-section" id="cfg-voice-prompt">
-      <h3>Voice prompt ${cfgBadge(!!vp)}</h3>
-      <p class="section-hint"><code>config:voice_prompt</code> — the question members answer when they
-        record a podcast voice clip. Submissions are keyed by the prompt id, so changing the id starts
-        a fresh collection (the Voice tab groups by it). Reset deletes the key; the site falls back to
-        the generic default prompt (<code>${escapeHtml(ctx.defaults.voicePrompt.id)}</code> —
-        “${escapeHtml(ctx.defaults.voicePrompt.text)}”).</p>
-      <label class="cfg-label">Prompt id <span class="muted">— slug; groups the submissions and names the compiled segment</span>
-        <input id="cfg-vp-id" type="text" value="${attr(vp?.id || '')}" placeholder="${attr(ctx.defaults.voicePrompt.id)}" style="max-width:260px">
+const SECTIONS = [
+  { id: 'voice-prompt', key: 'config:voice_prompt', act: 'vp', title: 'Voice prompt' },
+  { id: 'theaters', key: 'config:theaters', act: 'theaters', title: 'Theaters' },
+  { id: 'venues', key: 'config:venues', act: 'venues', title: 'Map venues' },
+  { id: 'podcast', key: 'config:podcast', act: 'podcast', title: 'Podcast' },
+  { id: 'nl-template', key: 'config:newsletter_template', act: 'nl', title: 'Newsletter template' },
+  { id: 'copy', key: 'config:copy', act: 'copy', title: 'Homepage copy' },
+]
+const sectionById = (id) => SECTIONS.find(s => s.id === id)
+
+// One line under the title saying what is in effect right now.
+const SUMMARY = {
+  'voice-prompt': () => {
+    const vp = stored('config:voice_prompt')
+    if (!vp) return `Generic prompt: “${ctx.defaults.voicePrompt.text}”`
+    return `“${vp.text || ''}”` + (vp.deadline ? ` · until ${vp.deadline}` : '')
+  },
+  theaters: () => {
+    const n = has('config:theaters') ? normalizeStringList(stored('config:theaters')).length : DEFAULT_THEATERS.length
+    return `${plural(n, 'theater')} offered to members hosting a meetup`
+  },
+  venues: () => `${plural(storedVenues().length, 'venue')} pinned on the public map`,
+  podcast: () => {
+    const p = podcastSource()
+    return `${plural(p.episodes.length, 'episode')}${p.featured_id ? ' · one featured on the homepage' : ''}`
+  },
+  'nl-template': () => {
+    const nl = stored('config:newsletter_template')
+    return nl ? `Compose starts from “${nl.subject || 'your saved template'}”` : 'Compose starts from the built-in template'
+  },
+  copy: () => {
+    const copy = stored('config:copy') || {}
+    const n = COPY_FIELDS.filter(f => copy[f.key]).length
+    return n ? `${n} of ${COPY_FIELDS.length} homepage texts replaced` : 'The homepage shows its built-in text'
+  },
+}
+
+function pillsHtml(sec) {
+  const out = []
+  if (sec.id === 'venues' && unmatched.length) {
+    out.push(`<span class="pill warn">${plural(unmatched.length, 'venue')} not on the map</span>`)
+  }
+  if (sec.id === 'podcast' && podcastSeedFailed()) out.push('<span class="pill warn">Live list not loaded</span>')
+  out.push(has(sec.key)
+    ? '<span class="pill on" data-source="custom">Custom</span>'
+    : '<span class="pill off" data-source="default">Default</span>')
+  return out.join('')
+}
+
+const BODY = {
+  'voice-prompt': () => {
+    const vp = stored('config:voice_prompt')
+    const def = ctx.defaults.voicePrompt
+    return `
+      <p class="detail-note muted">The question members answer when they record a podcast voice clip. Clips are
+        grouped by the prompt id, so a new id starts a fresh collection on the Voice tab. With nothing saved,
+        the site asks the generic prompt (“${escapeHtml(def.text)}”, id <code>${escapeHtml(def.id)}</code>).</p>
+      <label class="cfg-label">Prompt id <span class="muted">— a short slug; groups the clips and names the compiled segment</span>
+        <input id="cfg-vp-id" type="text" value="${attr(vp?.id || '')}" placeholder="${attr(def.id)}" style="max-width:260px">
       </label>
       <label class="cfg-label">Prompt text
-        <textarea id="cfg-vp-text" rows="2" placeholder="${attr(ctx.defaults.voicePrompt.text)}">${escapeHtml(vp?.text || '')}</textarea>
+        <textarea id="cfg-vp-text" rows="2" placeholder="${attr(def.text)}">${escapeHtml(vp?.text || '')}</textarea>
       </label>
-      <label class="cfg-label">Deadline <span class="muted">— optional YYYY-MM-DD shown to members; submissions stay open regardless</span>
+      <label class="cfg-label">Deadline <span class="muted">— optional; shown to members, but clips stay open after it</span>
         <input id="cfg-vp-deadline" type="date" value="${attr(vp?.deadline || '')}" style="max-width:200px">
+      </label>`
+  },
+  theaters: () => `
+      <p class="detail-note muted">The theaters a member can pick when hosting a meetup, in this order.
+        ${has('config:theaters') ? '' : 'This is the built-in list; saving makes it yours to change.'}</p>
+      <div id="cfg-theaters-list">${theaterRowsHtml()}</div>
+      <div class="toolbar"><button data-action="cfg-theater-add">+ add theater</button></div>`,
+  venues: () => `
+      <p class="detail-note muted">The pins on the public <a href="https://jxnfilm.club/map" target="_blank" rel="noopener">map</a>.
+        This is separate from Theaters: a venue here is on the map but is <b>not</b> offered to members hosting a
+        meetup. An event lands on a pin when its venue matches the name or an alias (case, punctuation, a leading
+        “The”, &amp;/and and theatre/theater are ignored). House screenings are never pinned.</p>
+      ${unmatched.length
+        ? `<p class="form-banner"><b>Not on the map:</b>
+            ${unmatched.map(u => `<code>${escapeHtml(u.name)}</code> (${plural(u.count, 'event')})`).join(', ')}.
+            Add the venue, or add that spelling as an alias of one already here.</p>`
+        : '<p class="detail-note muted">Every public event matches a venue here.</p>'}
+      <p class="detail-note muted">Coordinates are “lat, lng” as copied from a map app; “check” opens them on
+        OpenStreetMap. Separate aliases with semicolons.</p>
+      <div id="cfg-venues-list">${venueRowsHtml()}</div>
+      <div class="toolbar"><button data-action="cfg-venue-add">+ add venue</button></div>`,
+  podcast: () => `
+      <p class="detail-note muted">The episode list on the homepage, and which episode the Spotify player shows.
+        ${has('config:podcast')
+          ? ''
+          : 'Nothing is saved yet, so this is the live site\'s list; saving makes it yours to change.'}
+        Anything this editor does not show is kept as it is.</p>
+      ${podcastSeedFailed() ? '<p class="cfg-warn">⚠ The live episode list could not be loaded, so this one started <b>empty</b>. Saving now would publish an empty list; reload the tab to try again first.</p>' : ''}
+      <label class="cfg-label">Featured episode — Spotify episode ID <span class="muted">(the 22 characters after open.spotify.com/episode/, or pick “featured” on a row below)</span>
+        <input id="cfg-featured" type="text" value="${attr(podcast.featured_id || '')}" placeholder="e.g. 2lTN7uSNEil7AoTEDzbEZs" style="max-width:340px">
       </label>
-      <div class="toolbar">
-        <button class="primary" data-action="cfg-vp-save">save prompt</button>
-        <button class="danger" data-action="cfg-vp-reset">reset to defaults</button>
-      </div>
-    </section>
-    <section class="cfg-section" id="cfg-theaters">
-      <h3>Theaters ${cfgBadge(cfgTheatersKv)}</h3>
-      <p class="section-hint"><code>config:theaters</code> — the venue allowlist/dropdown for theater
-        meetups. Row order is dropdown order. Save writes the full list; reset deletes the key so the
-        Worker and site fall back to their hardcoded list (shown here when no override exists).</p>
-      <div id="cfg-theaters-list">${renderTheaterRows()}</div>
-      <div class="toolbar">
-        <button data-action="cfg-theater-add">+ add theater</button>
-        <button class="primary" data-action="cfg-theaters-save">save list</button>
-        <button class="danger" data-action="cfg-theaters-reset">reset to defaults</button>
-      </div>
-    </section>
-
-    <section class="cfg-section" id="cfg-venues">
-      <h3>Map venues ${cfgBadge(cfgVenuesKv)}</h3>
-      <p class="section-hint"><code>config:venues</code> — the pins on the public <a href="https://jxnfilm.club/map" target="_blank" rel="noopener">/map</a>.
-        Separate from the theater list above: a venue here is shown on the map but is <b>not</b> offered to
-        members hosting a meetup. An event appears at a venue when its venue text matches the name or an alias
-        (case, punctuation, a leading “The”, &amp;/and and theatre/theater are ignored). House screenings are
-        never pinned. Coordinates are “lat, lng”, as copied from a map app; “check” opens them on OpenStreetMap.
-        Separate aliases with semicolons. Reset deletes the key so the Worker falls back to its built-in list.</p>
-      <div id="cfg-venues-list">${renderVenueRows()}</div>
-      <div class="toolbar">
-        <button data-action="cfg-venue-add">+ add venue</button>
-        <button class="primary" data-action="cfg-venues-save">save venues</button>
-        <button class="danger" data-action="cfg-venues-reset">reset to defaults</button>
-      </div>
-      ${cfgUnmatched.length
-        ? `<p class="section-hint"><b>Not on the map</b> — public events whose venue matches no entry here
-            (add the venue, or add the name as an alias):
-            ${cfgUnmatched.map(u => `<code>${escapeHtml(u.name)}</code> (${u.count})`).join(', ')}</p>`
-        : '<p class="section-hint">Every public event matches a map venue.</p>'}
-    </section>
-
-    <section class="cfg-section" id="cfg-podcast">
-      <h3>Podcast ${cfgBadge(cfgPodcastKv)}</h3>
-      <p class="section-hint"><code>config:podcast</code> — same shape as <code>data/episodes.json</code>
-        (<code>{ featured_id, episodes }</code>). ${cfgPodcastKv
-          ? 'Editing the KV override.'
-          : 'No override yet — prefilled from the live site\'s <code>data/episodes.json</code>; saving creates the override.'}
-        The featured episode drives the homepage Spotify embed. Fields this editor doesn't know about
-        are preserved on save.</p>
-      ${cfgPodcastSeedFailed ? '<p class="cfg-warn">⚠ Could not load the live <code>data/episodes.json</code> seed — this list started <b>empty</b>. Saving now would publish an empty episode list; reload the tab to retry the seed first.</p>' : ''}
-      <label class="cfg-label">Featured episode — Spotify episode ID <span class="muted">(the 22-char ID from open.spotify.com/episode/…; or use a "featured" radio below)</span>
-        <input id="cfg-featured" type="text" value="${attr(cfgPodcast.featured_id || '')}" placeholder="e.g. 2lTN7uSNEil7AoTEDzbEZs" style="max-width:340px">
-      </label>
-      <div id="cfg-episodes-list">${renderEpisodeRows()}</div>
-      <div class="toolbar">
-        <button data-action="cfg-ep-add">+ add episode</button>
-        <button class="primary" data-action="cfg-podcast-save">save podcast</button>
-        <button class="danger" data-action="cfg-podcast-reset">reset to defaults</button>
-      </div>
-    </section>
-
-    <section class="cfg-section" id="cfg-nl-template">
-      <h3>Newsletter template ${cfgBadge(!!nl)}</h3>
-      <p class="section-hint"><code>config:newsletter_template</code> — the subject + HTML the
-        Newsletter compose tab prefills. Reset deletes the key; compose then falls back to the
-        built-in branded template.</p>
+      <div id="cfg-episodes-list">${episodeRowsHtml()}</div>
+      <div class="toolbar"><button data-action="cfg-ep-add">+ add episode</button></div>`,
+  'nl-template': () => {
+    const nl = stored('config:newsletter_template')
+    return `
+      <p class="detail-note muted">The subject and HTML the Newsletter tab starts a new issue from.
+        ${nl ? '' : 'Nothing is saved yet, so this is the built-in template.'}</p>
       <label class="cfg-label">Subject
         <input id="cfg-nl-subject" type="text" value="${attr(nl?.subject || '')}" placeholder="${attr(ctx.defaults.newsletterSubject)}">
       </label>
       <label class="cfg-label">HTML body
         <textarea id="cfg-nl-html" rows="12">${escapeHtml(nl?.html || ctx.defaults.newsletterHtml)}</textarea>
-      </label>
-      <div class="toolbar">
-        <button class="primary" data-action="cfg-nl-save">save template</button>
-        <button class="danger" data-action="cfg-nl-reset">reset to defaults</button>
-      </div>
-    </section>
-
-    <section class="cfg-section" id="cfg-copy">
-      <h3>Homepage copy ${cfgBadge(has('config:copy'))}</h3>
-      <p class="section-hint"><code>config:copy</code> — per-field overrides for the homepage prose.
-        Placeholders show the current site defaults, i.e. what an override replaces. Only non-empty
-        fields are stored — leave a field empty to keep its default. Saving with every field empty
-        deletes the key entirely.</p>
+      </label>`
+  },
+  copy: () => {
+    const copy = stored('config:copy') || {}
+    return `
+      <p class="detail-note muted">Replace individual pieces of homepage text. The grey text in each box is
+        what the site shows now; leave a box empty to keep it.</p>
       <div class="cfg-copy-grid">
         ${COPY_FIELDS.map(f => `
-          <label class="cfg-label">${escapeHtml(f.label)} <code class="muted">${escapeHtml(f.key)}</code>
+          <label class="cfg-label">${escapeHtml(f.label)}
             ${f.multiline
               ? `<textarea data-copy-field="${attr(f.key)}" rows="3" placeholder="${attr(f.def)}">${escapeHtml(copy[f.key] || '')}</textarea>`
               : `<input type="text" data-copy-field="${attr(f.key)}" value="${attr(copy[f.key] || '')}" placeholder="${attr(f.def)}">`}
           </label>`).join('')}
-      </div>
-      <div class="toolbar">
-        <button class="primary" data-action="cfg-copy-save">save copy overrides</button>
-        <button class="danger" data-action="cfg-copy-reset">reset to defaults</button>
-      </div>
-    </section>
-
-  `
-
-  // Featured-episode radios live inside the re-renderable episodes list, so
-  // delegate from the section element (survives list re-renders; dies with
-  // the tab's innerHTML, so no listener accumulation).
-  $('#cfg-podcast').addEventListener('change', (e) => {
-    const radio = e.target.closest('input[name="cfg-featured-pick"]')
-    if (!radio) return
-    syncPodcastInputs()
-    const ep = cfgPodcast.episodes[Number(radio.dataset.idx)]
-    let id = ep && typeof ep.id === 'string' ? ep.id.trim() : ''
-    if (!id) {
-      // Episodes from data/episodes.json carry no Spotify ID (their anchor
-      // URLs can't be converted) — capture it once and keep it on the row.
-      id = (prompt('Spotify episode ID for this episode (from open.spotify.com/episode/…):') || '').trim()
-      if (!id) { $('#cfg-episodes-list').innerHTML = renderEpisodeRows(); return }
-      ep.id = id
-    }
-    cfgPodcast.featured_id = id
-    $('#cfg-featured').value = id
-    $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
-  })
+      </div>`
+  },
 }
 
-function renderTheaterRows() {
-  if (!cfgTheaters.length) return '<p class="empty">No theaters — add one below.</p>'
-  return cfgTheaters.map((v, i) => `
+function detailHtml(sec) {
+  return `
+    <div class="detail" data-cfg-detail="${sec.id}">
+      <ul class="form-issues" data-issues hidden></ul>
+      ${BODY[sec.id]()}
+      <div class="form-foot">
+        <button class="primary" data-action="cfg-${sec.act}-save">Save</button>
+        <button data-action="cfg-close">Close</button>
+        <span class="form-foot-gap"></span>
+        <button class="danger" data-action="cfg-${sec.act}-reset">Reset to defaults</button>
+      </div>
+      <p class="detail-note muted cfg-key">Stored as <code>${sec.key}</code> on ${escapeHtml(env())}. Reset removes it, and the built-in default applies again.</p>
+    </div>`
+}
+
+function itemHtml(sec) {
+  const open = openId === sec.id
+  return `
+    <div class="list-item${open ? ' -open' : ''}" id="cfg-${sec.id}">
+      <button type="button" class="list-row -plain" data-action="cfg-open" data-cfg="${sec.id}" aria-expanded="${open}">
+        <span class="list-row-main"><strong>${sec.title}</strong><span>${escapeHtml(SUMMARY[sec.id]())}</span></span>
+        <span class="list-row-pills">${pillsHtml(sec)}</span>
+      </button>
+      ${open ? detailHtml(sec) : ''}
+    </div>`
+}
+
+// --- Render ---
+
+export async function renderConfig(c) {
+  ctx = c
+  // A reload (refresh button, env switch) starts clean: half-typed settings
+  // must not follow the operator from staging to production.
+  openId = null
+  snapshot = ''
+  podcastSeed = undefined
+  await load()
+  seedWorking()
+
+  content().innerHTML = `
+    <h2>Config <span class="muted">— editing <strong>${escapeHtml(env())}</strong></span></h2>
+    <p class="section-hint">Settings the public site and the join Worker read. Each one has a built-in default;
+      saving here replaces it, and <b>Reset to defaults</b> brings it back. Pick one to edit; one is open at a time.</p>
+    <section class="list-group" id="cfg-list">${SECTIONS.map(itemHtml).join('')}</section>
+  `
+}
+
+const openDetail = () => document.querySelector('#content [data-cfg-detail]')
+
+// Everything typed or ticked in the open section, in document order. Adding,
+// removing or moving a row changes it too, which is what makes those dirty.
+function formState(detail) {
+  return JSON.stringify([...detail.querySelectorAll('input, textarea')]
+    .map(el => (el.type === 'radio' || el.type === 'checkbox' ? el.checked : el.value)))
+}
+
+// Re-render one row in place: the others, and the page scroll, are untouched.
+function renderItem(id) {
+  const el = $(`#cfg-${id}`)
+  if (el) el.outerHTML = itemHtml(sectionById(id))
+  if (id === openId) snapshot = formState(openDetail())
+}
+
+// True when it is safe to throw the open section's edits away. The baseline
+// is the section as rendered, so defaults shown as a starting point (the
+// theater list, the built-in newsletter HTML) do not count as changes.
+function confirmDiscard() {
+  const detail = openDetail()
+  if (!detail || formState(detail) === snapshot) return true
+  return confirm(`Discard the unsaved changes to ${sectionById(openId).title}?`)
+}
+
+function setOpen(id) {
+  const prev = openId
+  openId = id
+  seedWorking()
+  if (prev && prev !== id) renderItem(prev)
+  if (id) {
+    renderItem(id)
+    $(`#cfg-${id}`).scrollIntoView({ block: 'nearest' })
+  }
+}
+
+function showIssues(issues) {
+  const box = openDetail().querySelector('[data-issues]')
+  box.innerHTML = issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')
+  box.hidden = !issues.length
+  if (issues.length) {
+    box.scrollIntoView({ block: 'nearest' })
+    toast(issues.length === 1 ? issues[0] : `${issues.length} things need fixing before this can be saved`, true)
+  }
+  return issues.length
+}
+
+// After a save or reset: reload what KV now holds and redraw this one row,
+// still open, with its pill and summary telling the truth.
+async function settled(id, message) {
+  await load()
+  seedWorking()
+  renderItem(id)
+  toast(message)
+}
+
+async function resetSection(id, question) {
+  const sec = sectionById(id)
+  if (!confirm(`Reset ${sec.title} to its default on ${env()}?\n\n${question}`)) return
+  await delKv(sec.key).catch(() => {})
+  await settled(id, `${sec.title} reset — the default is back in effect`)
+}
+
+// --- List editors ---
+
+function theaterRowsHtml() {
+  if (!theaters.length) return '<p class="empty">No theaters — add one below.</p>'
+  return theaters.map((v, i) => `
     <div class="cfg-row">
-      <input type="text" data-theater value="${attr(v)}" placeholder="Theater name">
-      <button data-action="cfg-theater-up" data-idx="${i}" title="move up" ${i === 0 ? 'disabled' : ''}>↑</button>
-      <button data-action="cfg-theater-down" data-idx="${i}" title="move down" ${i === cfgTheaters.length - 1 ? 'disabled' : ''}>↓</button>
+      <input type="text" data-theater value="${attr(v)}" placeholder="Theater name" aria-label="Theater name">
+      <button data-action="cfg-theater-up" data-idx="${i}" title="move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button data-action="cfg-theater-down" data-idx="${i}" title="move down" aria-label="Move down" ${i === theaters.length - 1 ? 'disabled' : ''}>↓</button>
       <button class="danger" data-action="cfg-theater-rm" data-idx="${i}">remove</button>
     </div>`).join('')
 }
 
 function venueToRow(v) {
-  const has = typeof v?.lat === 'number' && typeof v?.lng === 'number'
+  const ok = typeof v?.lat === 'number' && typeof v?.lng === 'number'
   return {
     name: v?.name || '',
     address: v?.address || '',
-    coords: has ? `${v.lat}, ${v.lng}` : '',
+    coords: ok ? `${v.lat}, ${v.lng}` : '',
     aliases: Array.isArray(v?.aliases) ? v.aliases.join('; ') : '',
   }
 }
 
-function renderVenueRows() {
-  if (!cfgVenues.length) return '<p class="empty">No venues — add one below.</p>'
-  return cfgVenues.map((r, i) => {
+function venueRowsHtml() {
+  if (!venues.length) return '<p class="empty">No venues — add one below.</p>'
+  return venues.map((r, i) => {
     const c = r.coords.split(',').map(s => s.trim())
     const check = c.length === 2 && c[0] && c[1]
       ? `<a href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(c[0])}&mlon=${encodeURIComponent(c[1])}#map=18/${encodeURIComponent(c[0])}/${encodeURIComponent(c[1])}" target="_blank" rel="noopener">check</a>`
       : '<span class="muted">check</span>'
     return `
     <div class="cfg-row cfg-venue-row" data-idx="${i}">
-      <input type="text" data-venue-field="name" value="${attr(r.name)}" placeholder="Venue name">
-      <input type="text" data-venue-field="address" value="${attr(r.address)}" placeholder="Street address">
-      <input type="text" data-venue-field="coords" value="${attr(r.coords)}" placeholder="32.33554, -90.17678" style="max-width:220px">
+      <input type="text" data-venue-field="name" value="${attr(r.name)}" placeholder="Venue name" aria-label="Venue name">
+      <input type="text" data-venue-field="address" value="${attr(r.address)}" placeholder="Street address" aria-label="Street address">
+      <input type="text" data-venue-field="coords" value="${attr(r.coords)}" placeholder="32.33554, -90.17678" aria-label="Coordinates" style="max-width:220px">
       ${check}
-      <input type="text" data-venue-field="aliases" value="${attr(r.aliases)}" placeholder="Other spellings; separated by semicolons">
-      <button data-action="cfg-venue-up" data-idx="${i}" title="move up" ${i === 0 ? 'disabled' : ''}>↑</button>
-      <button data-action="cfg-venue-down" data-idx="${i}" title="move down" ${i === cfgVenues.length - 1 ? 'disabled' : ''}>↓</button>
+      <input type="text" data-venue-field="aliases" value="${attr(r.aliases)}" placeholder="Other spellings; separated by semicolons" aria-label="Other spellings">
+      <button data-action="cfg-venue-up" data-idx="${i}" title="move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button data-action="cfg-venue-down" data-idx="${i}" title="move down" aria-label="Move down" ${i === venues.length - 1 ? 'disabled' : ''}>↓</button>
       <button class="danger" data-action="cfg-venue-rm" data-idx="${i}">remove</button>
     </div>`
   }).join('')
 }
 
-function readVenueInputs() {
-  cfgVenues = [...document.querySelectorAll('#cfg-venues-list .cfg-venue-row')].map(row => {
+function episodeRowsHtml() {
+  if (!podcast.episodes.length) return '<p class="empty">No episodes — add one below.</p>'
+  const featured = String(podcast.featured_id || '')
+  return podcast.episodes.map((ep, i) => `
+    <div class="cfg-episode" data-idx="${i}">
+      <label class="cfg-feat" title="Feature this episode on the homepage player">
+        <input type="radio" name="cfg-featured-pick" data-idx="${i}"
+          ${ep.id && featured && ep.id === featured ? 'checked' : ''}> featured
+      </label>
+      <input type="text" data-ep-field="title" value="${attr(ep.title || '')}" placeholder="Episode title" aria-label="Episode title">
+      <input type="date" data-ep-field="date" value="${attr(ep.date || '')}" aria-label="Release date">
+      <input type="url" data-ep-field="url" value="${attr(ep.url || '')}" placeholder="https://podcasters.spotify.com/…" aria-label="Episode link">
+      <button class="danger" data-action="cfg-ep-rm" data-idx="${i}">delete</button>
+    </div>`).join('')
+}
+
+// DOM -> working state, called before any mutation or save so in-progress
+// typing is never lost by a list re-render.
+function readTheaters() {
+  theaters = [...document.querySelectorAll('#cfg-theaters-list input[data-theater]')].map(i => i.value)
+}
+
+function readVenues() {
+  venues = [...document.querySelectorAll('#cfg-venues-list .cfg-venue-row')].map(row => {
     const r = {}
     row.querySelectorAll('[data-venue-field]').forEach(inp => { r[inp.dataset.venueField] = inp.value })
     return r
   })
 }
 
-function renderEpisodeRows() {
-  if (!cfgPodcast.episodes.length) return '<p class="empty">No episodes — add one below.</p>'
-  const featured = String(cfgPodcast.featured_id || '')
-  return cfgPodcast.episodes.map((ep, i) => `
-    <div class="cfg-episode" data-idx="${i}">
-      <label class="cfg-feat" title="Feature this episode on the homepage embed">
-        <input type="radio" name="cfg-featured-pick" data-idx="${i}"
-          ${ep.id && featured && ep.id === featured ? 'checked' : ''}> featured
-      </label>
-      <input type="text" data-ep-field="title" value="${attr(ep.title || '')}" placeholder="Episode title">
-      <input type="date" data-ep-field="date" value="${attr(ep.date || '')}">
-      <input type="url" data-ep-field="url" value="${attr(ep.url || '')}" placeholder="https://podcasters.spotify.com/…">
-      <button class="danger" data-action="cfg-ep-rm" data-idx="${i}">delete</button>
-    </div>`).join('')
-}
-
-// DOM → working state, called before any mutation or save so in-progress
-// typing is never lost by a list re-render.
-function readTheaterInputs() {
-  cfgTheaters = [...document.querySelectorAll('#cfg-theaters-list input[data-theater]')].map(i => i.value)
-}
-
-function syncPodcastInputs() {
+function readPodcast() {
   const feat = $('#cfg-featured')
-  if (feat) cfgPodcast.featured_id = feat.value
+  if (feat) podcast.featured_id = feat.value
   document.querySelectorAll('#cfg-episodes-list .cfg-episode').forEach(row => {
-    const ep = cfgPodcast.episodes[Number(row.dataset.idx)]
+    const ep = podcast.episodes[Number(row.dataset.idx)]
     if (!ep) return
     row.querySelectorAll('[data-ep-field]').forEach(inp => { ep[inp.dataset.epField] = inp.value })
   })
 }
 
+const drawTheaters = () => { $('#cfg-theaters-list').innerHTML = theaterRowsHtml() }
+const drawVenues = () => { $('#cfg-venues-list').innerHTML = venueRowsHtml() }
+const drawEpisodes = () => { $('#cfg-episodes-list').innerHTML = episodeRowsHtml() }
+
 // --- Actions ---
 
-async function runAction(a, btn) {
-  if (a === 'cfg-theater-add') {
-    readTheaterInputs()
-    cfgTheaters.push('')
-    $('#cfg-theaters-list').innerHTML = renderTheaterRows()
+const ACTIONS = {
+  'cfg-open': (btn) => {
+    if (!confirmDiscard()) return
+    setOpen(openId === btn.dataset.cfg ? null : btn.dataset.cfg)
+  },
+  'cfg-close': () => {
+    if (confirmDiscard()) setOpen(null)
+  },
+
+  'cfg-theater-add': () => {
+    readTheaters()
+    theaters.push('')
+    drawTheaters()
     const inputs = document.querySelectorAll('#cfg-theaters-list input[data-theater]')
     inputs[inputs.length - 1]?.focus()
-  }
-  else if (a === 'cfg-theater-rm') {
-    readTheaterInputs()
-    cfgTheaters.splice(Number(btn.dataset.idx), 1)
-    $('#cfg-theaters-list').innerHTML = renderTheaterRows()
-  }
-  else if (a === 'cfg-theater-up' || a === 'cfg-theater-down') {
-    readTheaterInputs()
-    cfgTheaters = moveItem(cfgTheaters, Number(btn.dataset.idx), a === 'cfg-theater-up' ? -1 : 1)
-    $('#cfg-theaters-list').innerHTML = renderTheaterRows()
-  }
-  else if (a === 'cfg-theaters-save') {
-    readTheaterInputs()
-    const list = normalizeStringList(cfgTheaters)
-    if (!list.length) { toast('Add at least one theater — or use reset to fall back to the defaults', true); return }
+  },
+  'cfg-theater-rm': (btn) => {
+    readTheaters()
+    theaters.splice(Number(btn.dataset.idx), 1)
+    drawTheaters()
+  },
+  'cfg-theater-up': (btn) => {
+    readTheaters()
+    theaters = moveItem(theaters, Number(btn.dataset.idx), -1)
+    drawTheaters()
+  },
+  'cfg-theater-down': (btn) => {
+    readTheaters()
+    theaters = moveItem(theaters, Number(btn.dataset.idx), 1)
+    drawTheaters()
+  },
+  'cfg-theaters-save': async () => {
+    readTheaters()
+    const list = normalizeStringList(theaters)
+    if (showIssues(list.length ? [] : ['Add at least one theater, or use Reset to defaults to go back to the built-in list'])) return
     await putKv('config:theaters', JSON.stringify(list))
-    toast(`Saved ${list.length} theater(s) to config:theaters (${env()})`)
-    await ctx.reload()
-  }
-  else if (a === 'cfg-theaters-reset') {
-    if (!confirm(`Delete config:theaters on ${env()}?\n\nThe Worker and site fall back to the hardcoded theater list.`)) return
-    await delKv('config:theaters').catch(() => {})
-    toast('config:theaters deleted — defaults are back in effect')
-    await ctx.reload()
-  }
-  else if (a === 'cfg-venue-add') {
-    readVenueInputs()
-    cfgVenues.push({ name: '', address: '', coords: '', aliases: '' })
-    $('#cfg-venues-list').innerHTML = renderVenueRows()
+    await settled('theaters', `Saved ${plural(list.length, 'theater')} on ${env()}`)
+  },
+  'cfg-theaters-reset': () =>
+    resetSection('theaters', 'Members hosting a meetup will be offered the built-in theater list.'),
+
+  'cfg-venue-add': () => {
+    readVenues()
+    venues.push({ name: '', address: '', coords: '', aliases: '' })
+    drawVenues()
     const rows = document.querySelectorAll('#cfg-venues-list input[data-venue-field="name"]')
     rows[rows.length - 1]?.focus()
-  }
-  else if (a === 'cfg-venue-rm') {
-    readVenueInputs()
-    cfgVenues.splice(Number(btn.dataset.idx), 1)
-    $('#cfg-venues-list').innerHTML = renderVenueRows()
-  }
-  else if (a === 'cfg-venue-up' || a === 'cfg-venue-down') {
-    readVenueInputs()
-    cfgVenues = moveItem(cfgVenues, Number(btn.dataset.idx), a === 'cfg-venue-up' ? -1 : 1)
-    $('#cfg-venues-list').innerHTML = renderVenueRows()
-  }
-  else if (a === 'cfg-venues-save') {
-    readVenueInputs()
-    const { venues, errors } = buildVenueList(cfgVenues)
-    if (errors.length) { toast(errors.join(' · '), true); return }
-    await putKv('config:venues', JSON.stringify(venues))
-    toast(`Saved ${venues.length} venue(s) to config:venues (${env()})`)
-    await ctx.reload()
-  }
-  else if (a === 'cfg-venues-reset') {
-    if (!confirm(`Delete config:venues on ${env()}?\n\nThe map falls back to the built-in venue list.`)) return
-    await delKv('config:venues').catch(() => {})
-    toast('config:venues deleted — defaults are back in effect')
-    await ctx.reload()
-  }
-  else if (a === 'cfg-ep-add') {
-    syncPodcastInputs()
-    cfgPodcast.episodes.unshift({ title: '', date: '', url: '' })
-    $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
+  },
+  'cfg-venue-rm': (btn) => {
+    readVenues()
+    venues.splice(Number(btn.dataset.idx), 1)
+    drawVenues()
+  },
+  'cfg-venue-up': (btn) => {
+    readVenues()
+    venues = moveItem(venues, Number(btn.dataset.idx), -1)
+    drawVenues()
+  },
+  'cfg-venue-down': (btn) => {
+    readVenues()
+    venues = moveItem(venues, Number(btn.dataset.idx), 1)
+    drawVenues()
+  },
+  'cfg-venues-save': async () => {
+    readVenues()
+    const { venues: list, errors } = buildVenueList(venues)
+    if (showIssues(errors)) return
+    await putKv('config:venues', JSON.stringify(list))
+    await settled('venues', `Saved ${plural(list.length, 'venue')} on ${env()}`)
+  },
+  'cfg-venues-reset': () =>
+    resetSection('venues', 'The map will show the built-in venue list.'),
+
+  'cfg-ep-add': () => {
+    readPodcast()
+    podcast.episodes.unshift({ title: '', date: '', url: '' })
+    drawEpisodes()
     document.querySelector('#cfg-episodes-list input[data-ep-field="title"]')?.focus()
-  }
-  else if (a === 'cfg-ep-rm') {
-    syncPodcastInputs()
+  },
+  'cfg-ep-rm': (btn) => {
+    readPodcast()
     const idx = Number(btn.dataset.idx)
-    const ep = cfgPodcast.episodes[idx]
+    const ep = podcast.episodes[idx]
     if (ep && (ep.title || ep.url) && !confirm(`Delete episode "${ep.title || ep.url}" from the list?`)) return
-    cfgPodcast.episodes.splice(idx, 1)
-    $('#cfg-episodes-list').innerHTML = renderEpisodeRows()
-  }
-  else if (a === 'cfg-podcast-save') {
-    syncPodcastInputs()
-    const out = sanitizePodcastConfig(cfgPodcast)
-    // An empty override WINS over data/episodes.json and blanks the
-    // homepage podcast section — never let that happen silently.
-    if (!out.episodes.length && !confirm(`Save an EMPTY episode list to ${env()}?\n\nThe homepage podcast section will show no episodes. If you meant to fall back to data/episodes.json, cancel and use reset instead.`)) return
+    podcast.episodes.splice(idx, 1)
+    drawEpisodes()
+  },
+  'cfg-podcast-save': async () => {
+    readPodcast()
+    const out = sanitizePodcastConfig(podcast)
+    // A saved empty list WINS over data/episodes.json and blanks the
+    // homepage podcast section - never let that happen silently.
+    if (!out.episodes.length && !confirm(`Save an EMPTY episode list to ${env()}?\n\nThe homepage podcast section will show no episodes. If you meant to go back to the site's own list, cancel and use Reset to defaults instead.`)) return
+    showIssues([])
     await putKv('config:podcast', JSON.stringify(out))
-    toast(`Saved config:podcast (${out.episodes.length} episode(s)) on ${env()}`)
-    await ctx.reload()
-  }
-  else if (a === 'cfg-podcast-reset') {
-    if (!confirm(`Delete config:podcast on ${env()}?\n\nThe site falls back to data/episodes.json.`)) return
-    await delKv('config:podcast').catch(() => {})
-    toast('config:podcast deleted — data/episodes.json is back in effect')
-    await ctx.reload()
-  }
-  else if (a === 'cfg-nl-save') {
+    await settled('podcast', `Saved ${plural(out.episodes.length, 'episode')} on ${env()}`)
+  },
+  'cfg-podcast-reset': () =>
+    resetSection('podcast', 'The homepage will show the episode list published with the site.'),
+
+  'cfg-nl-save': async () => {
     const subject = $('#cfg-nl-subject').value.trim()
     const html = $('#cfg-nl-html').value
     if (!subject && !html.trim()) {
-      // Storing nothing means "use defaults" — treat an all-empty save
-      // as the reset it is.
+      // Storing nothing means "use the default" - an all-empty save is the
+      // reset it looks like.
       await delKv('config:newsletter_template').catch(() => {})
-      toast('Empty template — config:newsletter_template deleted, compose uses the built-in default')
+      await settled('nl-template', 'Empty template — nothing stored, compose uses the built-in one')
     } else {
       await putKv('config:newsletter_template', JSON.stringify({ subject, html }))
-      toast(`Saved config:newsletter_template on ${env()}`)
+      await settled('nl-template', `Saved the newsletter template on ${env()}`)
     }
-    await ctx.reload()
-  }
-  else if (a === 'cfg-nl-reset') {
-    if (!confirm(`Delete config:newsletter_template on ${env()}?\n\nThe Newsletter compose tab falls back to the built-in template.`)) return
-    await delKv('config:newsletter_template').catch(() => {})
-    toast('config:newsletter_template deleted — built-in template is back')
-    await ctx.reload()
-  }
-  else if (a === 'cfg-copy-save') {
+  },
+  'cfg-nl-reset': () =>
+    resetSection('nl-template', 'The Newsletter tab will start new issues from the built-in template.'),
+
+  'cfg-copy-save': async () => {
     const fields = {}
     document.querySelectorAll('#cfg-copy [data-copy-field]').forEach(inp => {
       fields[inp.dataset.copyField] = inp.value
@@ -504,42 +620,53 @@ async function runAction(a, btn) {
     const blob = buildCopyOverrides(fields, COPY_FIELDS.map(f => f.key))
     if (blob) {
       await putKv('config:copy', JSON.stringify(blob))
-      toast(`Saved ${Object.keys(blob).length} copy override(s) on ${env()}`)
+      await settled('copy', `Saved ${plural(Object.keys(blob).length, 'homepage text')} on ${env()}`)
     } else {
       await delKv('config:copy').catch(() => {})
-      toast('All fields empty — config:copy deleted, site uses its defaults')
+      await settled('copy', 'Every box is empty — nothing stored, the homepage shows its built-in text')
     }
-    await ctx.reload()
-  }
-  else if (a === 'cfg-copy-reset') {
-    if (!confirm(`Delete config:copy on ${env()}?\n\nEvery homepage copy field falls back to the hardcoded site text.`)) return
-    await delKv('config:copy').catch(() => {})
-    toast('config:copy deleted — site defaults are back in effect')
-    await ctx.reload()
-  }
-  else if (a === 'cfg-vp-save') {
+  },
+  'cfg-copy-reset': () =>
+    resetSection('copy', 'Every piece of homepage text goes back to what is built into the site.'),
+
+  'cfg-vp-save': async () => {
     const out = sanitizeVoicePrompt({
       id: $('#cfg-vp-id').value,
       text: $('#cfg-vp-text').value,
       deadline: $('#cfg-vp-deadline').value,
     })
-    if (!out) { toast('Prompt needs an id (slug) and text — or use reset for the generic default', true); return }
+    if (showIssues(out ? [] : ['Prompt needs an id (a slug not starting with msg_) and text — or use Reset to defaults for the generic prompt'])) return
     await putKv('config:voice_prompt', JSON.stringify(out))
-    toast(`Saved config:voice_prompt (${out.id}) on ${env()}`)
-    await ctx.reload()
-  }
-  else if (a === 'cfg-vp-reset') {
-    if (!confirm(`Delete config:voice_prompt on ${env()}?\n\nThe site falls back to the generic default prompt ("${ctx.defaults.voicePrompt.text}", id "${ctx.defaults.voicePrompt.id}").`)) return
-    await delKv('config:voice_prompt').catch(() => {})
-    toast('config:voice_prompt deleted — generic default prompt is back')
-    await ctx.reload()
-  }
+    await settled('voice-prompt', `Saved the voice prompt “${out.id}” on ${env()}`)
+  },
+  'cfg-vp-reset': () =>
+    resetSection('voice-prompt', `Members will be asked the generic prompt (“${ctx.defaults.voicePrompt.text}”).`),
 }
 
 document.addEventListener('click', async (e) => {
   if (!ctx) return
   const btn = e.target.closest('button[data-action^="cfg-"]')
-  if (!btn) return
-  try { await runAction(btn.dataset.action, btn) }
+  const run = btn && ACTIONS[btn.dataset.action]
+  if (!run) return
+  try { await run(btn) }
   catch (err) { toast(err.message || String(err), true) }
+})
+
+// The "featured" radios sit inside the re-drawn episode list, so the pick is
+// handled here rather than on an element that a redraw would replace.
+document.addEventListener('change', (e) => {
+  if (!ctx || !e.target.matches || !e.target.matches('input[name="cfg-featured-pick"]')) return
+  readPodcast()
+  const ep = podcast.episodes[Number(e.target.dataset.idx)]
+  let id = ep && typeof ep.id === 'string' ? ep.id.trim() : ''
+  if (!id) {
+    // Episodes from data/episodes.json carry no Spotify ID (their anchor URLs
+    // cannot be converted) - capture it once and keep it on the row.
+    id = (prompt('Spotify episode ID for this episode (from open.spotify.com/episode/…):') || '').trim()
+    if (!id) { drawEpisodes(); return }
+    ep.id = id
+  }
+  podcast.featured_id = id
+  $('#cfg-featured').value = id
+  drawEpisodes()
 })

@@ -20,19 +20,16 @@ function rsvpEnabled(e) {
 }
 ```
 
-A `ticketUrl` used to short-circuit this to `false`, so a ticket link and an
-RSVP could never coexist. They can now — see **Venue-ticketed events** below.
-That promise ("an RSVP never implies a seat we do not hold") is carried by
-copy rather than structure.
+A `ticketUrl` does **not** affect this: a ticket link and an RSVP coexist (see
+**Admission** and **Venue-ticketed events** below). The promise that an RSVP
+never implies a seat the club does not hold is carried by copy.
 
 The `hostId` fallback is what keeps every pre-existing row behaving as it did:
 the curated rows in `data/events.json` carry no `rsvp` field and no host, so
 they stay on attendance, and every member-hosted screening stays on RSVP.
 **Absence therefore has to keep meaning "off"** — which is why the admin
 portal stamps `rsvp: true` explicitly at create time rather than relying on a
-default. A ticket link short-circuiting to false is structural on purpose, the
-same reasoning as `isMembersOnly()`: it cannot be misconfigured into offering
-an RSVP for a seat the club does not control.
+default.
 
 Mirrored in three places, which must move in lockstep:
 `worker/src/index.js`, `model/index.ts` (imported by both SPA lib files), and
@@ -88,6 +85,48 @@ the newsletter events table, the social cards — gets it for free.
 Keep `drawTitleCard()` and `.event-titlecard` in step; the eyebrow wording is
 duplicated between `evEyebrow()` and that drawer.
 
+## Admission
+
+`admission` is the explicit, admin-set answer to how people get in:
+
+| `admission` | Means | Public effect |
+|---|---|---|
+| `'free'` | Nothing to buy | **Free** tag on the card and home row of an *upcoming, public* event (`evIsFree`); *Admission: Free* in RSVP emails. Never on a house screening |
+| `'ticketed'` | The venue sells admission | Everything under **Venue-ticketed events** below |
+| `'own'` | Self-organized; buy your own | The "buy your own ticket" hint and status, on any kind of event |
+| absent | The row predates the field | Whatever it already meant — see below |
+
+**Absent is not free.** Only 9 of the first 48 rows carried `ticketed`, and a
+meetup with `ticketed` falsy already told members to buy their own ticket, so
+"not ticketed" never meant free. `eventAdmission(e)` reads a row:
+
+```js
+function eventAdmission(e) {
+  if (!e) return ''
+  if (['free', 'ticketed', 'own'].includes(e.admission)) return e.admission
+  if (e.ticketed) return 'ticketed'           // legacy flag
+  return e.kind === 'meetup' ? 'own' : ''     // legacy meetup; else unanswered
+}
+```
+
+`'free'` is **never derived**, so no old event is labelled by accident, and
+every pre-existing row renders and mails exactly as before. The function is
+mirrored in `worker/src/event-visibility.js`, `model/index.ts` and
+`admin/lib.js`; all three run against one case table,
+`tests/fixtures/admission-cases.json`.
+
+**`ticketed` stays the behavioural field.** The pre-sale queue reads
+`ticketsPending(event)` (`ticketed && !ticketUrl`) and nothing else. When an
+admin write carries `admission`, `reconcileAdmission()` sets `ticketed` to
+match (`admission === 'ticketed'`); clearing `admission` removes the label and
+leaves `ticketed` alone; a client that only sends `ticketed` still works, and
+overrides a stored label it disagrees with. The invariant is: when `admission`
+is present, `ticketed === (admission === 'ticketed')`.
+
+A house screening (`isMembersOnly`) rejects `'ticketed'` and `'own'`. Only the
+admin route can set the field; the member `/host` form has never heard of it,
+and a host edit carries the stored value through untouched.
+
 ## Venue-ticketed events
 
 Some screenings the club markets but does not run: a preview at the Capri sold
@@ -110,8 +149,16 @@ capacity: there is nothing to confirm anyone *for* until tickets exist. It
 ignores capacity entirely (the club is not the one rationing seats), and
 `handleAdminEventPut` promotes it **whole** the moment a `ticketUrl` is saved,
 emailing everyone the box office link. That transition is detected as
-`ticketsPending(before) && !ticketsPending(after)`, and returns
-`ticketsOnSale: true`.
+`ticketsPending(before)` and a link now present on a still-ticketed event, and
+returns `ticketsOnSale: true`.
+
+**Only the link landing drains the queue.** Capacity promotion (on an admin
+save or a host edit), promotion on a cancel, and the admin's manual promote
+all skip an event whose tickets are pending: any of them would tell someone
+they are in with nothing to buy, and leave the on-sale mail an empty list to
+go to. Turning ticketing *off* on a queued event is not a sale either — there
+is no link to send — so that write falls through to ordinary capacity
+promotion and normal confirmations.
 
 **One click, two outcomes.** `RSVP and get tickets` opens the box office in a
 new tab *and* records the headcount. The tab is opened **synchronously, before

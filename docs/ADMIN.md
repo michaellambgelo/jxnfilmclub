@@ -142,12 +142,47 @@ with no film (the film fields become optional); `house` and `meetup` are
 normally stamped by the member `/host` form, though setting `meetup` on a
 curated theater event fixes the home page's House/Venue tag.
 
-**RSVP vs Ticket URL — pick one.** New events created here get RSVP **on** by
-default. Ticking RSVP gives the event the full capacity / waitlist /
-confirmation-email flow and shows the RSVP list on the card here. Setting a
-Ticket URL instead turns RSVP off structurally (the theater keeps box-office
-control) and the public card shows a "Get tickets" link. An event with RSVPs
-off gets the post-hoc "I was there" attendance toggle instead — never both.
+**Admission — Free, Ticketed or Buy your own.** Every new event has to answer
+how people get in; the form will not create one without it.
+
+| Choice | Means | Effect |
+|---|---|---|
+| **Free** | Nothing to buy | A **Free** tag on the upcoming event's card and home-page row, and an *Admission: Free* line in RSVP emails. Never shown on a house screening |
+| **Ticketed** | The venue sells admission; the club coordinates | RSVPs queue on a pre-sale list until you save a **Ticket link**, then the whole list is confirmed and emailed the link. Only the link landing drains that list — no other edit, and no cancellation, does |
+| **Buy your own** | Self-organized; everyone gets their own ticket | The "buy your own ticket" copy on the card and in mail. No pre-sale list; a capped event still waitlists when full |
+
+Events that predate the choice show **Not set** and behave exactly as they
+always did (a legacy `ticketed` flag still means Ticketed; a legacy meetup
+still reads as Buy your own). Saving one without picking leaves it unset.
+House screenings are locked to Free. A Free event may keep a ticket link (a
+free-registration page), and the form warns when it does.
+
+**RSVP** is a separate switch. New events get it **on** by default: the full
+capacity / waitlist / confirmation-email flow, with the RSVP list under the
+form. An event with RSVPs off gets the post-hoc "I was there" attendance
+toggle instead — never both.
+
+**The list.** Upcoming events first (soonest on top), then past (newest first,
+folded to the latest 15 until you ask for all of them). The search box looks
+through every event, past the fold included. One event is open at a time;
+opening another with unsaved edits asks first. An edit sends **only the fields
+you changed**, so fixing a typo on an old event rewrites nothing else on it.
+
+**Duplicate** starts a new event from an existing one: title, film, venue,
+kind, time, capacity, poster and admission carry over; the date is left blank,
+and the address, notes, ticket link and RSVPs are never copied.
+
+**Promote** (on each waitlisted person) moves that one person to confirmed and
+sends them the normal confirmation. On a full event the button reads *promote
+over capacity*. It is not offered while tickets are pending — add the ticket
+link to release that list.
+
+**Message attendees** (under the RSVP list) sends a plain-text note to
+confirmed RSVPs, and to the waitlist too if you tick the box; the send button
+always names who it is about to reach. It is a transactional mail with no
+unsubscribe link, so keep it about the event — announcements belong in the
+newsletter. Nothing is stored after sending, and the same event cannot be sent
+a second note within a minute.
 
 **Creating an event.** The **+ new event** button opens a full form above the
 list. Nothing is written until it validates, so a half-made event never exists

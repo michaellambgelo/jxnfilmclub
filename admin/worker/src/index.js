@@ -466,6 +466,14 @@ async function handle(request, env, access) {
   if (method === 'POST' && url.pathname === '/api/email/scheduled') {
     return proxyJoinAdmin(request, env, q, '/admin/reminders/schedule')
   }
+  // PUT /api/newsletter/archive?env=&id=  body = JSON { subject, html?, text? }
+  // Corrects the shared /n/{id} copy of a sent newsletter. Through the join
+  // Worker rather than the /api/kv shim so the send's body rules apply and
+  // the Sent history subject follows; it sends no mail.
+  if (method === 'PUT' && url.pathname === '/api/newsletter/archive') {
+    if (!q.id) throw new HttpError(400, 'id required')
+    return proxyJoinAdmin(request, env, q, `/admin/newsletter/archive/${encodeURIComponent(q.id)}`, 'PUT')
+  }
   // POST /api/newsletter/image?env=  body = JSON { contentType, b64 }
   // JSON rather than raw bytes precisely so proxyJoinAdmin carries it verbatim
   // — it forwards `await request.text()` re-headed as application/json.

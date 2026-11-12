@@ -446,9 +446,10 @@ async function renderNewsletter() {
   content().innerHTML = `
     <h2>Newsletter</h2>
 
-    <section class="nl-compose">
-      <h3>Compose</h3>
-      <p class="section-hint">Sends through the Worker (<code>/admin/newsletter/send</code>) for the
+    <section class="nl-compose" id="nl-compose">
+      <h3 id="nl-compose-title">Compose</h3>
+      <p class="form-banner" id="nl-edit-banner" hidden></p>
+      <p class="section-hint" id="nl-compose-hint">Sends through the Worker (<code>/admin/newsletter/send</code>) for the
         <strong>${escapeHtml(env())}</strong> env. Every email automatically gets a one-click unsubscribe
         link, <code>List-Unsubscribe</code> headers, and the CAN-SPAM postal footer.</p>
       <label>Subject<input id="nl-subject" type="text" value="${attr(prefillSubject)}" placeholder="${attr(NEWSLETTER_SUBJECT_PLACEHOLDER)}"></label>
@@ -529,7 +530,12 @@ async function renderNewsletter() {
           </div>
         </div>
       </div>
-      <div class="toolbar nl-send-bar">
+      <div class="toolbar nl-send-bar" id="nl-edit-bar" hidden>
+        <button class="primary" data-action="nl-archive-save">Save shared copy</button>
+        <button data-action="nl-archive-cancel">Cancel</button>
+        <span class="muted">Sends no email. The public page can take up to five minutes to show the change.</span>
+      </div>
+      <div class="toolbar nl-send-bar" id="nl-send-bar">
         <label>Test address<input id="nl-test-email" type="email" placeholder="you@example.com"></label>
         <button data-action="nl-test">Send test</button>
         <button class="primary" data-action="nl-send">Send to all (${optedIn.length})</button>
@@ -563,18 +569,22 @@ async function renderNewsletter() {
          the Worker wrote at send time and linked from that email's footer, so
          an admin can hand the newsletter to a non-member without digging the
          link out of their own inbox. Rows written before the archive existed
-         carry no archiveId and get a muted dash rather than a dead link. -->
+         carry no archiveId and get a muted dash rather than a dead link.
+         "edit" loads that copy into the composer above, with the send buttons
+         swapped for Save/Cancel: it corrects the public page, never the mail
+         already delivered. -->
     <section class="nl-history">
       <h3>Sent history <span class="muted">(${history.length})</span></h3>
       ${history.length ? `
       <table><thead><tr><th>When</th><th>Subject</th><th>Recipients</th><th>Shareable copy</th></tr></thead><tbody>
         ${history.map(h => `
-          <tr>
+          <tr${h.archiveId ? ` data-archive="${attr(h.archiveId)}"` : ''}>
             <td>${fmtAge(h.at)}</td>
-            <td>${escapeHtml(h.subject)}</td>
+            <td class="nl-history-subject">${escapeHtml(h.subject)}</td>
             <td>${escapeHtml(String(h.count))}</td>
             <td class="actions">${h.archiveId
-              ? `<a class="nl-share" href="${attr(nlExpectedOrigin() + '/n/' + h.archiveId)}" target="_blank" rel="noopener">view shared copy</a>`
+              ? `<a class="nl-share" href="${attr(nlExpectedOrigin() + '/n/' + h.archiveId)}" target="_blank" rel="noopener">view shared copy</a>
+                 <button data-action="nl-archive-edit" data-id="${attr(h.archiveId)}" title="Correct the public copy of this newsletter. Sends no email.">edit</button>`
               : '<span class="muted" title="Sent before the web archive existed \u2014 this broadcast has no permalink">\u2014</span>'}</td>
           </tr>
         `).join('')}
@@ -594,6 +604,7 @@ async function renderNewsletter() {
     e.target.value = ''      // so re-picking the same file fires again
   })
   nlStaged = null            // the previous mount's stage is gone with its DOM
+  nlEditing = null           // and so is any shared copy that was being edited
   nlUpdateSize()
   wireFilter($('#nl-filter'), '#nl-table tbody tr')
 }
@@ -606,6 +617,103 @@ async function renderNewsletter() {
 // is the authority on this; the client only mirrors it earlier.
 const nlExpectedOrigin = () =>
   env() === 'staging' ? 'https://join-staging.jxnfilm.club' : 'https://join.jxnfilm.club'
+
+// --- Editing the shared copy of a sent newsletter ---
+//
+// The composer doubles as the editor for a newsletter's public /n/{id} page.
+// While `nlEditing` is set the send bar is hidden, not merely disabled: an old
+// newsletter loaded next to "Send to all" is a double-send waiting to happen.
+// The draft that was in the composer is put back on the way out.
+let nlEditing = null   // { id, draft: {subject, html, text}, loaded: same shape }
+// Set across the load and the save. Without it a second click on "edit" lands
+// while the first is still fetching, and snapshots the SENT newsletter as the
+// draft to restore — which Cancel would then put back beside "Send to all".
+let nlArchiveBusy = false
+
+const nlFields = () => ({
+  subject: $('#nl-subject').value, html: $('#nl-html').value, text: $('#nl-text').value,
+})
+
+function nlFill({ subject, html, text }) {
+  $('#nl-subject').value = subject
+  $('#nl-html').value = html
+  $('#nl-text').value = text
+  $('#nl-html').dispatchEvent(new Event('input'))   // resyncs preview + size
+  $('#nl-text').dispatchEvent(new Event('input'))
+  nlUndoStack = []
+  nlInsertClean = false
+  nlSyncUndoButton()
+}
+
+function nlSetEditing(state) {
+  nlEditing = state
+  const on = !!state
+  $('#nl-send-bar').hidden = on
+  $('#nl-edit-bar').hidden = !on
+  $('#nl-compose-hint').hidden = on   // it describes sending, which this is not
+  $('#nl-compose-title').textContent = on ? 'Edit shared copy' : 'Compose'
+  const banner = $('#nl-edit-banner')
+  banner.hidden = !on
+  banner.textContent = on
+    ? 'You are correcting the public page for a newsletter that has already been sent. ' +
+      'Emails in inboxes do not change; the "view it in your browser" link in them opens this page, ' +
+      'which will say it was updated after sending.'
+    : ''
+  for (const b of document.querySelectorAll('button[data-action="nl-archive-edit"]')) b.disabled = on
+}
+
+async function nlArchiveEdit(id) {
+  if (nlEditing || nlArchiveBusy) return
+  const key = `newsletter:archive:${id}`
+  let rec
+  nlArchiveBusy = true
+  try { rec = tryParse((await loadKv(key)).values[key]) } finally { nlArchiveBusy = false }
+  if (!rec) { toast('That shared copy no longer exists', true); return }
+  const loaded = { subject: rec.subject || '', html: rec.html || '', text: rec.text || '' }
+  const draft = nlFields()
+  nlSetEditing({ id, draft, loaded })
+  nlFill(loaded)
+  $('#nl-compose').scrollIntoView({ block: 'start' })
+}
+
+function nlArchiveDirty() {
+  const now = nlFields()
+  const was = nlEditing.loaded
+  return now.subject !== was.subject || now.text !== was.text ||
+    nlNormalHtml(now.html) !== nlNormalHtml(was.html)
+}
+// The editable preview writes the body back through the DOM parser, which
+// reformats it without changing it. Compare what the parser makes of both.
+function nlNormalHtml(html) {
+  return new DOMParser().parseFromString(String(html || ''), 'text/html').body.innerHTML
+}
+
+function nlArchiveCancel() {
+  if (!nlEditing || nlArchiveBusy) return
+  if (nlArchiveDirty() && !confirm('Discard your changes to this shared copy?')) return
+  const { draft } = nlEditing
+  nlSetEditing(null)
+  nlFill(draft)
+}
+
+async function nlArchiveSave() {
+  if (!nlEditing || nlArchiveBusy) return
+  const { id, draft } = nlEditing
+  const subject = $('#nl-subject').value.trim()
+  const html = $('#nl-html').value
+  const text = $('#nl-text').value
+  if (!subject || (!html.trim() && !text.trim())) { toast('Subject and a body are required', true); return }
+  if (nlBlockedSend()) return
+  nlArchiveBusy = true
+  try {
+    await api('PUT', `/api/newsletter/archive?${qs({ env: env(), id })}`, JSON.stringify({ subject, html, text }))
+  } finally { nlArchiveBusy = false }
+  const cell = document.querySelector(`.nl-history tr[data-archive="${CSS.escape(id)}"] .nl-history-subject`)
+  if (cell) cell.textContent = subject
+  nlSetEditing(null)
+  nlFill(draft)
+  toast('Shared copy updated. No email was sent; the public page can take up to five minutes to show it.')
+}
 
 // Running byte budget under the two body fields. Wired to BOTH — #nl-text
 // reaches neither preview sync, so a meter driven off the HTML alone shows
@@ -1643,7 +1751,13 @@ document.addEventListener('click', async (e) => {
         `Inserted ${p.title} poster${link ? ' (linked)' : ''} — edit or move it in the preview`)
       $('#nl-poster-results').hidden = true
     }
+    else if (a === 'nl-archive-edit') await nlArchiveEdit(btn.dataset.id)
+    else if (a === 'nl-archive-cancel') nlArchiveCancel()
+    else if (a === 'nl-archive-save') await nlArchiveSave()
     else if (a === 'nl-test') {
+      // Belt to the hidden send bar's braces: nothing mails while a sent
+      // newsletter is loaded in the composer.
+      if (nlEditing) return
       const subject = $('#nl-subject').value.trim()
       const html = $('#nl-html').value
       const text = $('#nl-text').value
@@ -1659,6 +1773,7 @@ document.addEventListener('click', async (e) => {
       toast(r.permalink ? `Test sent to ${testTo} — shareable link: ${r.permalink}` : `Test sent to ${testTo} (${r.sent})`)
     }
     else if (a === 'nl-send') {
+      if (nlEditing) return
       const subject = $('#nl-subject').value.trim()
       const html = $('#nl-html').value
       const text = $('#nl-text').value

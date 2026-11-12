@@ -1548,7 +1548,7 @@ export function eventAdmission(e) {
 // An unchecked checkbox is absent from a scrape and a checked one yields the
 // string "on", so a row that stored "on" would read truthy forever but never
 // equal true. Everything else an admin can type — the https rule, the kind
-// allowlist, the ticket/RSVP exclusivity — is validated Worker-side by
+// allowlist, the house-screening admission rule — is validated Worker-side by
 // validAdminEvent(), which is the authority. Duplicating those checks here
 // only re-creates the failure this function exists to prevent: a value the
 // client silently drops, so the operator never sees the error.

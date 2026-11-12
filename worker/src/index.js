@@ -25,7 +25,7 @@ import {
   MAX_STATS_SLUGS, purgeFilmLogs, relinkFilmLogs,
 } from './films.js'
 import { handleSitePage } from './site-meta.js'
-import { isMembersOnly } from './event-visibility.js'
+import { ADMISSIONS, eventAdmission, isMembersOnly, reconcileAdmission } from './event-visibility.js'
 
 const OTP_TTL = 600          // 10 min
 const SESSION_TTL = 3600     // 1 hour — matches JWT exp
@@ -2479,7 +2479,7 @@ function publicEventProjection(event) {
   // to an exact film; the daily link pass reads events through this projection.
   for (const k of ['title', 'film', 'year', 'date', 'venue', 'poster', 'letterboxd_uri', 'letterboxd',
                    'hostId', 'hostName', 'capacity', 'kind', 'time', 'rsvp', 'ticketUrl',
-                   'ticketed']) {
+                   'ticketed', 'admission']) {
     if (event[k] !== undefined && event[k] !== null && event[k] !== '') out[k] = event[k]
   }
   return out
@@ -3821,6 +3821,30 @@ const MEETUP_SELF_ORGANIZED =
 const MEETUP_TICKETED =
   'This meetup is self-organized and admission is sold by the venue, so this RSVP is a headcount, not a ticket — buy your own and the club will see you there.'
 
+// The same line for a self-organized event that is not a theater meetup.
+const SELF_ORGANIZED =
+  'This one is self-organized — buy your own ticket and get yourself there; the club just shows up together.'
+
+// Free is only ever said about events the open internet can see: a house
+// screening is somebody's living room, and "Free" there reads as a price tag.
+const isFreeAdmission = (event) => eventAdmission(event) === 'free' && !isMembersOnly(event)
+
+// The buy-your-own line for a confirmation, or ''. Rows that predate
+// `admission` resolve to 'own' exactly when they are a non-ticketed meetup,
+// so their mail is unchanged.
+const selfOrganizedNotice = (event) =>
+  eventAdmission(event) !== 'own' ? '' : (event.kind === 'meetup' ? MEETUP_SELF_ORGANIZED : SELF_ORGANIZED)
+
+// The same for an update mail, which has always carried the line on every
+// meetup, ticketed or not. A free one is the only meetup that drops it.
+const updateAdmissionNotice = (event) => {
+  const a = eventAdmission(event)
+  if (event.kind === 'meetup') return a === 'free' ? '' : MEETUP_SELF_ORGANIZED
+  return a === 'own' ? SELF_ORGANIZED : ''
+}
+
+const ADMISSION_LABEL = { free: 'Free', ticketed: 'Ticketed — sold by the venue', own: 'Buy your own ticket' }
+
 // Who is running this, and what do we call it. A member-hosted screening is
 // run by its host; a club event is run by the club. A social event is not a
 // screening — mailing someone about "the screening Drinks at Banner Hall"
@@ -3866,6 +3890,7 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   // Showtime sits with the where-lines, ahead of any ticket block, so it is
   // never read as a detail of the box office link.
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
+  if (isFreeAdmission(event)) lines.push('Admission: Free')
   const meetup = event.kind === 'meetup'
   // The club does not control admission on a venue-ticketed event, so the mail
   // must not read as though an RSVP is a ticket.
@@ -3873,8 +3898,8 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
     lines.push('')
     lines.push(meetup ? MEETUP_TICKETED : 'This is a headcount, not a ticket — admission is sold by the venue.')
     if (event.ticketUrl) lines.push('Buy yours here:', event.ticketUrl)
-  } else if (meetup) {
-    lines.push('', MEETUP_SELF_ORGANIZED)
+  } else if (selfOrganizedNotice(event)) {
+    lines.push('', selfOrganizedNotice(event))
   }
   if (notes) {
     lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', notes)
@@ -3893,11 +3918,11 @@ function rsvpEmailHtml(env, subject, event, address, notes, cancelUrl, opts = {}
   const meetup = event.kind === 'meetup'
   const blocks = []
   if (opts.intro) blocks.push(paragraphHtml(opts.intro))
-  blocks.push(eventCardHtml(event, { address }))
+  blocks.push(eventCardHtml(event, { address, free: isFreeAdmission(event) }))
   if (event.ticketed) {
     blocks.push(noticeHtml(meetup ? MEETUP_TICKETED : 'This is a headcount, not a ticket — admission is sold by the venue.'))
-  } else if (meetup) {
-    blocks.push(noticeHtml(MEETUP_SELF_ORGANIZED))
+  } else if (selfOrganizedNotice(event)) {
+    blocks.push(noticeHtml(selfOrganizedNotice(event)))
   }
   if (notes) blocks.push(notesHtml(event.hostId ? 'Notes from the host' : 'Notes', notes))
   // The text lines are hard-wrapped for plain-text clients and end in a colon
@@ -4045,7 +4070,7 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   lines.push('Current details:', `Date: ${fmtScreeningWhen(event)}`)
   lines.push(...eventWhereLines(event))
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
+  if (updateAdmissionNotice(event)) lines.push('', updateAdmissionNotice(event))
   if (event.notes) lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', event.notes)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
@@ -4060,7 +4085,7 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
       paragraphHtml(`Heads up — ${eventRunner(event)} updated ${eventNoun(event)} "${event.title}".`),
       changesHtml(changes),
       eventCardHtml(event, { address: event.address || '' }),
-      event.kind === 'meetup' ? noticeHtml(MEETUP_SELF_ORGANIZED) : '',
+      updateAdmissionNotice(event) ? noticeHtml(updateAdmissionNotice(event)) : '',
       event.notes ? notesHtml(event.hostId ? 'Notes from the host' : 'Notes', event.notes) : '',
       buttonsHtml([{ href: cancelUrl, label: "Can't make it anymore? Cancel", secondary: true }]),
     ],
@@ -4090,7 +4115,7 @@ async function sendWaitlistUpdateEmail(env, member, event, changes, position) {
   // and the address is only ever mailed to people who hold a seat.
   if (event.venue) lines.push(`Venue: ${event.venue}`)
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
-  if (event.kind === 'meetup') lines.push('', MEETUP_SELF_ORGANIZED)
+  if (updateAdmissionNotice(event)) lines.push('', updateAdmissionNotice(event))
   lines.push('', 'No action needed — we will email you if a spot opens up.')
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
   // No address, no notes — same as the text part, for the same reason.
@@ -4104,7 +4129,7 @@ async function sendWaitlistUpdateEmail(env, member, event, changes, position) {
       paragraphHtml(`You are #${position} on the waitlist, so this affects you if a spot opens.`),
       changesHtml(changes),
       eventCardHtml(event),
-      event.kind === 'meetup' ? noticeHtml(MEETUP_SELF_ORGANIZED) : '',
+      updateAdmissionNotice(event) ? noticeHtml(updateAdmissionNotice(event)) : '',
       paragraphHtml('No action needed — we will email you if a spot opens up.', { muted: true }),
     ],
     why: `You're receiving this because you're on the waitlist for ${event.title}.`,
@@ -4344,6 +4369,12 @@ function validAdminEvent(body) {
   // yet" and an ordinary club event, which cannot be inferred from a missing
   // URL because an ordinary club event has no URL either.
   if (typeof body.ticketed === 'boolean') out.ticketed = body.ticketed
+  // The explicit answer to "how do people get in". When present it decides
+  // `ticketed` — see reconcileAdmission, which the PUT handler runs after this.
+  if (body.admission != null && body.admission !== '') {
+    if (!ADMISSIONS.includes(body.admission)) return { error: 'admission must be free, ticketed or own' }
+    out.admission = body.admission
+  }
 
   for (const [k, max] of [['film', MAX_EVENT_FIELD], ['venue', MAX_EVENT_FIELD],
                           ['poster', 500], ['address', MAX_ADDRESS], ['notes', MAX_NOTES]]) {
@@ -4715,6 +4746,13 @@ function diffEventNotifiable(before, after) {
       changes.push({ field, from: before[field] || '', to: after[field] || '' })
     }
   }
+  // How people get in is as much a "what you need to know" as the venue.
+  // Compared as the effective reading, so labelling a legacy row with what it
+  // already meant is not a change, and reported in words rather than enums.
+  const admBefore = eventAdmission(before), admAfter = eventAdmission(after)
+  if (admBefore !== admAfter) {
+    changes.push({ field: 'admission', from: ADMISSION_LABEL[admBefore] || '', to: ADMISSION_LABEL[admAfter] || '' })
+  }
   return changes
 }
 
@@ -4728,7 +4766,7 @@ function diffEventNotifiable(before, after) {
 // Fields an explicit empty value clears. Everything else an admin can send is
 // either required (title, date) or a boolean (rsvp).
 const ADMIN_EVENT_CLEARABLE = ['film', 'year', 'time', 'venue', 'address', 'capacity',
-                               'notes', 'poster', 'letterboxd_uri', 'ticketUrl', 'kind']
+                               'notes', 'poster', 'letterboxd_uri', 'ticketUrl', 'kind', 'admission']
 
 // Tickets are not on sale until the box office link exists. An RSVP on such an
 // event is an expression of interest, not a seat — so it queues rather than
@@ -4741,6 +4779,12 @@ async function handleAdminEventPut(request, env, eventId) {
   const input = body && body.event ? body.event : {}
 
   const existing = await readEvent(env, eventId)
+  // This route is an upsert, so "new event" and "edit" are the same request.
+  // A client that means to CREATE says so, and gets a 409 rather than
+  // silently overwriting a row its (possibly stale) list did not show.
+  if (body.create === true && existing) {
+    return json(env, { error: `an event with id ${eventId} already exists` }, 409)
+  }
   // Merge over the stored row rather than replacing it. A body that simply
   // omits `capacity` must not read as "uncapped" — that would wipe the cap
   // AND promote the whole waitlist, mailing everyone that they hold a seat
@@ -4753,6 +4797,13 @@ async function handleAdminEventPut(request, env, eventId) {
   if (v.error) return json(env, { error: v.error }, 400)
   for (const f of ADMIN_EVENT_CLEARABLE) {
     if (input[f] === '' || input[f] === null) delete v.value[f]
+  }
+  reconcileAdmission(v.value, input)
+  // Nobody sells tickets to a living room. Checked on the explicit field only,
+  // so a legacy row is never rejected for what it already holds.
+  if (['ticketed', 'own'].includes(v.value.admission)
+      && isMembersOnly({ kind: v.value.kind, hostId: existing && existing.hostId })) {
+    return json(env, { error: 'a house screening cannot be ticketed' }, 400)
   }
 
   // `kind` is immutable on a member-hosted row for the same reason it is on

@@ -317,6 +317,20 @@ export function rsvpEnabled(e: any): boolean {
   return !!e.hostId
 }
 
+// How people get in: 'free' | 'ticketed' | 'own', or '' when nobody has said.
+// Rows that predate `admission` fall back to the `ticketed` flag, then to
+// "a meetup is self-organized". 'free' is never derived, so an old row is
+// never labelled Free by accident.
+//
+// MIRRORED in worker/src/event-visibility.js and admin/lib.js — all three run
+// against tests/fixtures/admission-cases.json.
+export function eventAdmission(e: any): string {
+  if (!e) return ''
+  if (['free', 'ticketed', 'own'].includes(e.admission)) return e.admission
+  if (e.ticketed) return 'ticketed'
+  return e.kind === 'meetup' ? 'own' : ''
+}
+
 async function getList(type: string, opts: any) {
   const { start = 0, limit = 30, sort, search, venue } = opts || {}
 

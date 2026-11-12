@@ -253,6 +253,60 @@ test.describe('club events', () => {
     await expect(card.locator('.rsvp-hint')).toHaveCount(1)
   })
 
+  // Admission is an explicit admin answer. Free is only ever said about an
+  // upcoming event the open internet can see, and is never inferred from the
+  // absence of a ticket flag.
+  test('a free event carries a Free tag on its card and on the home page; others do not', async ({ page }) => {
+    await signInAs(page, 'free-e2e@example.com', { name: 'Free Fran' })
+    await seedEvents(page, [
+      { id: 'e2e-free', title: 'Free Night at the Capri', film: 'Paris, Texas', date: FUTURE, venue: 'Capri Theater', rsvp: true, admission: 'free' },
+      { id: 'e2e-unset', title: 'Unlabelled Night', film: 'Stalker', date: '2099-07-05', venue: 'Capri Theater', rsvp: true },
+      { id: 'e2e-free-house', title: 'Porch Night', film: 'Clue', kind: 'house', hostId: 'someone', hostName: 'Sam', date: '2099-07-06', rsvp: true, admission: 'free' },
+      { id: 'e2e-free-past', title: 'Old Free Night', film: 'Heat', date: '2001-01-01', venue: 'Capri Theater', admission: 'free' },
+    ])
+    await page.goto('/events')
+    const card = (title: string) => page.locator('.event-card', { hasText: title })
+    await expect(card('Free Night at the Capri').locator('.event-free')).toHaveText('Free')
+    await expect(card('Unlabelled Night')).toBeVisible()
+    await expect(card('Unlabelled Night').locator('.event-free')).toHaveCount(0)
+    await expect(card('Porch Night')).toBeVisible()
+    await expect(card('Porch Night').locator('.event-free')).toHaveCount(0)
+    await expect(card('Old Free Night')).toBeVisible()
+    await expect(card('Old Free Night').locator('.event-free')).toHaveCount(0)
+
+    await page.goto('/')
+    const row = (film: string) => page.locator('.program-row', { hasText: film })
+    await expect(row('Paris, Texas').locator('.program-tag.-free')).toBeVisible()
+    await expect(row('Stalker')).toBeVisible()
+    await expect(row('Stalker').locator('.program-tag.-free')).toBeHidden()
+  })
+
+  test('a free meetup drops the buy-your-own copy; a self-organized club night gains it', async ({ page }) => {
+    await signInAs(page, 'adm-e2e@example.com', { name: 'Admission Ada' })
+    await seedEvents(page, [
+      { id: 'e2e-free-meetup', title: 'Free Meetup', film: 'Tampopo', kind: 'meetup', date: FUTURE, venue: 'Malco Grandview', rsvp: true, admission: 'free' },
+      { id: 'e2e-own-club', title: 'Own Ticket Night', film: 'Ran', date: '2099-07-05', venue: 'Capri Theater', rsvp: true, admission: 'own' },
+      { id: 'e2e-legacy-meetup', title: 'Legacy Meetup', film: 'Ikiru', kind: 'meetup', date: '2099-07-06', venue: 'Malco Grandview', rsvp: true },
+    ])
+    await page.goto('/events')
+    const card = (title: string) => page.locator('.event-card', { hasText: title })
+    const selfOrg = 'Self-organized — buy your own ticket; the club just shows up together.'
+
+    const free = card('Free Meetup')
+    await expect(free.locator('.event-free')).toHaveText('Free')
+    await expect(free.locator('.rsvp-hint')).toHaveCount(0)
+    await free.getByRole('button', { name: 'RSVP', exact: true }).click()
+    await expect(free.locator('.rsvp-status')).toHaveText('You\'re in. Check your email for the details.')
+
+    const own = card('Own Ticket Night')
+    await expect(own.locator('.rsvp-hint')).toHaveText(selfOrg)
+    await own.getByRole('button', { name: 'RSVP', exact: true }).click()
+    await expect(own.locator('.rsvp-status')).toHaveText('You\'re in. Meet at Capri Theater — get your own ticket.')
+
+    // A meetup that predates the field reads exactly as it always did.
+    await expect(card('Legacy Meetup').locator('.rsvp-hint')).toHaveText(selfOrg)
+  })
+
   // /events?event=ID: the shareable per-event link (docs/features/link-previews.md).
   test('an event link outlines that card, and Copy link copies it', async ({ page, context }) => {
     const rows = []

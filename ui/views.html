@@ -3,7 +3,7 @@
 
 <script>
   import { state } from 'state'
-  import { getMembers, getEvents, getWatched, getAvatars, avatarsById, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled, getFilmStats, getFilm, filmSlug, filmViewer, shapeStrip, shapeFilmPage } from 'app'
+  import { getMembers, getEvents, getWatched, getAvatars, avatarsById, getConfig, getTakes, buildWatchedPage, filterFilms, normalizeAttendees, attendanceTally, rsvpEnabled, eventAdmission, getFilmStats, getFilm, filmSlug, filmViewer, shapeStrip, shapeFilmPage } from 'app'
 
   // Shared by every component in this lib file. Lib-script scope is NOT subject
   // to the 10k component-script truncation cap (Nue pushes the head script raw;
@@ -194,6 +194,16 @@
   // control the box office or the door.
   function evIsTicketed(e) { return !!(e && e.ticketed) }
 
+  // Self-organized: everyone buys their own ticket and there is no pre-sale
+  // list. An explicit admission of own, or - on rows that predate the field -
+  // any meetup the venue is not ticketing, which is what those always meant.
+  function evSelfOrg(e) { return eventAdmission(e) === 'own' }
+
+  // Free is said only where it is news: an upcoming event the open internet
+  // can see. A house screening is somebody's living room, and a tag on a past
+  // event is noise. Never derived - only an explicit admission of free.
+  function evIsFree(e) { return eventAdmission(e) === 'free' && !evIsHouse(e) && evIsFuture(e) }
+
   // Ticketed, but the box office link does not exist yet. RSVPs queue in that
   // window and are released when the link lands, so the card must not offer
   // anything that reads like a purchase.
@@ -378,6 +388,7 @@
       </div>
       <div class="program-venue">
         <span class="program-tag { e.tag === 'House' ? '-house' : (e.tag === 'Social' ? '-social' : '') }">{ e.tag }</span>
+        <span class="program-tag -free { e.free ? '' : '-off' }">Free</span>
         <p>{ e.venue }</p>
       </div>
       <div class="program-action">
@@ -568,6 +579,7 @@
           title: e.film ? e.title : '',
           venue: e.venue || (e.hostName ? 'Hosted by ' + e.hostName : 'TBA'),
           tag: evProgramTag(e),
+          free: evIsFree(e),
           action: evEventAction(e),
           upcoming: (e.date || '') >= today,
         }
@@ -1294,6 +1306,7 @@
       <span :if="event.hostId" class="event-host"><avatar :name="event.hostName || 'a member'" :src="hostAvatarSrc()"/>Hosted by { event.hostName || 'a member' }</span>
       <span :if="event.poster" class="event-date">{ formatDate(event.date) }</span>
       <span :if="event.poster && event.time" class="event-time">{ formatTime(event.time) }</span>
+      <span :if="isFree()" class="event-free">Free</span>
     </p>
     <button type="button" class="event-share" data-ev-share="{ event.id }">Copy link</button>
 
@@ -1304,7 +1317,7 @@
       <!-- A meetup can also be venue-ticketed. Each flag owns a hint and a
            status line, so the pair would stack three overlapping messages;
            the combined case gets one of each instead. -->
-      <p :if="isMeetup() && !isTicketed()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
+      <p :if="selfOrg()" class="rsvp-hint">Self-organized — buy your own ticket; the club just shows up together.</p>
       <p :if="isMeetup() && isTicketed() && !ticketsPending()" class="rsvp-hint">Self-organized — buy your ticket from { event.venue || 'the venue' }; the club just shows up together.</p>
       <p :if="ticketsPending() && !listed()" class="rsvp-hint">Tickets are not on sale yet. Add your name and we will email you the box office link when they go live.</p>
       <p :if="isTicketed() && !isMeetup() && !ticketsPending() && !listed()" class="rsvp-hint">Admission is sold by { event.venue || 'the venue' } — an RSVP here is a headcount, not a ticket.</p>
@@ -1313,10 +1326,10 @@
       <p :if="isHost" class="rsvp-status">You're hosting — you're already counted as attending.</p>
       <div :if="session && isFuture() && rsvpState() && !isHost">
         <p :if="rsvpState().status === 'confirmed' && isHouse()" class="rsvp-status">You are RSVPed. Check your email for the address.</p>
-        <p :if="rsvpState().status === 'confirmed' && isMeetup() && !isTicketed()" class="rsvp-status">You're in. Meet at { event.venue } — get your own ticket.</p>
+        <p :if="rsvpState().status === 'confirmed' && selfOrg()" class="rsvp-status">You're in. Meet at { event.venue || 'the venue' } — get your own ticket.</p>
         <p :if="rsvpState().status === 'confirmed' && isMeetup() && isTicketed()" class="rsvp-status">You're in. Get your ticket from { event.venue || 'the venue' } and meet us there.</p>
         <p :if="rsvpState().status === 'confirmed' && isTicketed() && !isMeetup()" class="rsvp-status">You're on the list. Your spot is not held — buy your ticket from { event.venue || 'the venue' }.</p>
-        <p :if="rsvpState().status === 'confirmed' && !isHouse() && !isMeetup() && !isTicketed()" class="rsvp-status">You're in. Check your email for the details.</p>
+        <p :if="rsvpState().status === 'confirmed' && !isHouse() && !selfOrg() && !isTicketed()" class="rsvp-status">You're in. Check your email for the details.</p>
         <p :if="rsvpState().status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. The address will be emailed if a spot opens.</p>
         <p :if="rsvpState().status === 'waitlisted' && ticketsPending()" class="rsvp-status">You're on the list. We will email you the box office link when tickets go on sale.</p>
         <p :if="rsvpState().status === 'waitlisted' && !isHouse() && !ticketsPending()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. You'll get an email if a spot opens.</p>
@@ -1489,6 +1502,8 @@
     // after its OWN handler is not a remount.
     this.rsvpState = function() { return this.myRsvp || this.rsvpme }
     this.isTicketed = function() { return evIsTicketed(this.event) }
+    this.selfOrg = function() { return evSelfOrg(this.event) }
+    this.isFree = function() { return evIsFree(this.event) }
     this.listed = function() { const r = this.rsvpState(); return !!r && r.status !== 'none' }
     this.ticketsPending = function() { return evTicketsPending(this.event) }
     this.eyebrow = function() { return evEyebrow(this.event) }

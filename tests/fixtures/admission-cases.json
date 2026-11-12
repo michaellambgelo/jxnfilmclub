@@ -1,0 +1,17 @@
+[
+  { "name": "null event", "event": null, "want": "" },
+  { "name": "empty row", "event": {}, "want": "" },
+  { "name": "explicit free", "event": { "admission": "free" }, "want": "free" },
+  { "name": "explicit ticketed", "event": { "admission": "ticketed", "ticketed": true }, "want": "ticketed" },
+  { "name": "explicit own", "event": { "admission": "own" }, "want": "own" },
+  { "name": "explicit free on a meetup beats the meetup fallback", "event": { "admission": "free", "kind": "meetup" }, "want": "free" },
+  { "name": "explicit own beats a stale ticketed flag", "event": { "admission": "own", "ticketed": true }, "want": "own" },
+  { "name": "unknown value is ignored", "event": { "admission": "donation" }, "want": "" },
+  { "name": "legacy ticketed flag", "event": { "ticketed": true }, "want": "ticketed" },
+  { "name": "legacy ticketed meetup", "event": { "ticketed": true, "kind": "meetup" }, "want": "ticketed" },
+  { "name": "legacy meetup is self-organized", "event": { "kind": "meetup" }, "want": "own" },
+  { "name": "legacy meetup with ticketed false", "event": { "kind": "meetup", "ticketed": false }, "want": "own" },
+  { "name": "legacy club screening is never free", "event": { "ticketed": false }, "want": "" },
+  { "name": "legacy social", "event": { "kind": "social" }, "want": "" },
+  { "name": "legacy house", "event": { "kind": "house", "hostId": "m1" }, "want": "" }
+]

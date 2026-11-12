@@ -207,6 +207,19 @@
   color: var(--ink-4);
 }
 
+/* Free admission, on upcoming public events only (evIsFree). The same label
+   voice as the home page's .program-tag. */
+.event-free {
+  font-family: var(--font-label);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-tint-fg);
+  border-bottom: 1px solid var(--brand);
+  align-self: center;
+  padding-bottom: 1px;
+}
+
 /* Compact host avatar inline with the "Hosted by" text */
 .event-host {
   display: inline-flex;

@@ -4626,8 +4626,12 @@ async function handleUpdateEvent(request, env, eventId) {
   // until either full or empty.
   const origin = new URL(request.url).origin
   let rsvpAfter = rsvp
+  // While tickets are pending the waitlist is the pre-sale queue, not people
+  // waiting on a seat. Room under the cap (or no cap at all) must not drain
+  // it: they would be told they are in with nothing to buy, and the on-sale
+  // mail would later find an empty waitlist.
   const effCap = v.value.capacity == null ? Infinity : v.value.capacity
-  if (effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
+  if (!ticketsPending(updated) && effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
     const slots = effCap - rsvp.confirmed.length
     const promoted = rsvp.waitlist.slice(0, slots)
     rsvpAfter = {
@@ -4796,7 +4800,10 @@ async function handleAdminEventPut(request, env, eventId) {
   // Promote it whole — capacity does not gate this, because the club is not
   // handing out seats, the venue is — and mail everyone the link. Runs before
   // the capacity promotion below so the two cannot both fire on one write.
-  const salesJustOpened = existing && ticketsPending(existing) && !ticketsPending(updated)
+  // "Opened" means the link landed on a still-ticketed event. Leaving the
+  // pending state by turning ticketing off is not a sale: there is no link to
+  // mail, so that write falls through to the ordinary capacity promotion.
+  const salesJustOpened = existing && ticketsPending(existing) && !!(updated.ticketed && updated.ticketUrl)
   if (salesJustOpened && rsvp.waitlist.length) {
     after = { confirmed: [...rsvp.confirmed, ...rsvp.waitlist], waitlist: [] }
     await writeRsvp(env, eventId, after, updated)
@@ -4814,8 +4821,12 @@ async function handleAdminEventPut(request, env, eventId) {
     })
   }
 
+  // While tickets are pending the waitlist is the pre-sale queue, not people
+  // waiting on a seat. Room under the cap (or no cap at all) must not drain
+  // it: they would be told they are in with nothing to buy, and the on-sale
+  // mail would later find an empty waitlist.
   const effCap = v.value.capacity == null ? Infinity : v.value.capacity
-  if (effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
+  if (!ticketsPending(updated) && effCap > rsvp.confirmed.length && rsvp.waitlist.length) {
     const slots = effCap - rsvp.confirmed.length
     const promoted = rsvp.waitlist.slice(0, slots)
     after = { confirmed: [...rsvp.confirmed, ...promoted], waitlist: rsvp.waitlist.slice(slots) }
@@ -4971,8 +4982,10 @@ async function cancelRsvp(env, eventId, memberId, origin) {
     // really is one: a force-confirmed guest can push confirmed past
     // capacity, and a cancel there must not promote into a still-full room.
     const capacity = event.capacity == null ? Infinity : (Number(event.capacity) || 0)
+    // Nor while tickets are pending: the waitlist is then the pre-sale queue
+    // (see ticketsPending), and only the link landing may drain it.
     let promoted = null
-    if (rsvp.waitlist.length && rsvp.confirmed.length < capacity) {
+    if (!ticketsPending(event) && rsvp.waitlist.length && rsvp.confirmed.length < capacity) {
       promoted = rsvp.waitlist.shift()
       rsvp.confirmed.push(promoted)
     }

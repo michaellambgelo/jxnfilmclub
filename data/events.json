@@ -472,6 +472,19 @@
     "ticketed": true
   },
   {
+    "id": "2026-11-28-chef",
+    "title": "Lydia Martin's Grit and Gratitude art showcase presents CHEF (2014) in partnership with JXN Film Club, MS Film Society, and Vibe Studio",
+    "film": "Chef",
+    "year": 2014,
+    "date": "2026-11-28",
+    "venue": "Vibe Studio",
+    "poster": "https://image.tmdb.org/t/p/w500/hyp8EXDmO4dSC8V6Q5jU7gD1kcg.jpg",
+    "kind": "meetup",
+    "time": "19:30",
+    "rsvp": false,
+    "ticketed": false
+  },
+  {
     "id": "2026-12-17-avengers-doomsday-capri",
     "title": "DOOMSDAY preview screening at Capri",
     "film": "Avengers: Doomsday",

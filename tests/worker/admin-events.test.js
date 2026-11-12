@@ -452,6 +452,66 @@ describe('venue-ticketed events — the pre-sale queue', () => {
     expect(sent).toHaveLength(0)
   })
 
+  // The queue exists because nothing is purchasable yet. Only the link
+  // landing may drain it: every other write has to leave it alone, or the
+  // queue gets a confirmation for seats that do not exist and the on-sale
+  // mail later goes to an empty waitlist.
+  it('leaves the queue alone on an unrelated edit while tickets are pending', async () => {
+    await seed() // uncapped, no ticketUrl
+    await seedRsvp('clay', [], [rsvper(1), rsvper(2)])
+    const sent = captureEmails()
+
+    const res = await put('clay', { title: 'CLAYFACE Preview Screening (moved)' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).ticketsOnSale).toBeUndefined()
+
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.confirmed).toHaveLength(0)
+    expect(rsvp.waitlist.map(r => r.memberId)).toEqual(['m1', 'm2'])
+    expect(sent).toHaveLength(0)
+
+    // ...and the link still reaches both of them afterwards.
+    const later = captureEmails()
+    await put('clay', { ticketUrl: 'https://capri.example.com/clayface' })
+    expect(later.map(e => e.to).sort()).toEqual(['m1@example.com', 'm2@example.com'])
+    expect(later.every(e => /^Tickets on sale:/.test(e.subject))).toBe(true)
+  })
+
+  it('does not promote the queue head when someone cancels while tickets are pending', async () => {
+    await seed()
+    const token = await tokenFor('c1@example.com')
+    await seedRsvp('clay',
+      [{ memberId: 'id-c1@example.com', name: 'M-c1', email: 'c1@example.com', at: 1 }],
+      [rsvper(2)])
+    const sent = captureEmails()
+
+    const res = await req('/events/clay/rsvp', { method: 'DELETE', token })
+    expect(res.status).toBe(200)
+
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.confirmed).toHaveLength(0)
+    expect(rsvp.waitlist.map(r => r.memberId)).toEqual(['m2'])
+    expect(sent.filter(e => e.to === 'm2@example.com')).toHaveLength(0)
+  })
+
+  it('sends confirmations, not a blank on-sale mail, when ticketing is turned off', async () => {
+    await seed()
+    await seedRsvp('clay', [], [rsvper(1), rsvper(2)])
+    const sent = captureEmails()
+
+    const res = await put('clay', { ticketed: false })
+    expect(res.status).toBe(200)
+    expect((await res.json()).ticketsOnSale).toBeUndefined()
+
+    // No longer venue-ticketed, so it is an ordinary uncapped RSVP event:
+    // the queue is confirmed through the normal promotion path.
+    const rsvp = JSON.parse(await env.ATTENDANCE_KV.get('rsvp:clay'))
+    expect(rsvp.waitlist).toHaveLength(0)
+    expect(rsvp.confirmed.map(r => r.memberId)).toEqual(['m1', 'm2'])
+    expect(sent).toHaveLength(2)
+    expect(sent.some(e => /^Tickets on sale:/.test(e.subject))).toBe(false)
+  })
+
   it('leaves an ordinary club RSVP event confirming immediately', async () => {
     // The whole reason `ticketed` is an explicit flag: a missing ticketUrl
     // cannot mean "pre-sale", because every ordinary club event lacks one too.

@@ -12,6 +12,7 @@ const isText = (id: string) =>
   id.endsWith('/admin.js') || id === 'admin.js' ||
   id.endsWith('/lib.js') || id === 'lib.js' ||
   id.endsWith('/contentgen.js') || id === 'contentgen.js' ||
+  id.endsWith('/events-tab.js') || id === 'events-tab.js' ||
   id.endsWith('/email.js') || id === 'email.js'
 
 const moduleRulesPlugin = {

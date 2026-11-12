@@ -105,7 +105,7 @@ describe('verifyAccessJwt', () => {
 
 describe('access gate', () => {
   it('403s every surface without the header', async () => {
-    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/email.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
+    for (const path of ['/', '/index.html', '/admin.js', '/lib.js', '/contentgen.js', '/events-tab.js', '/email.js', '/style.css', '/api/kv?env=production&binding=MEMBERS_KV', '/api/whoami', '/api/img?url=https%3A%2F%2Fimage.tmdb.org%2Fx.jpg', '/api/voice?env=production&key=voice%2Fx.webm', '/api/voice/list?env=production']) {
       const res = await call(path)
       expect(res.status, path).toBe(403)
     }
@@ -156,6 +156,13 @@ describe('access gate', () => {
     expect(cgen.status).toBe(200)
     expect(cgen.headers.get('Content-Type')).toContain('javascript')
     expect(await cgen.text()).toContain('renderContentGen')
+
+    // admin.js imports events-tab.js; unregistered, it works on the local
+    // server and takes the whole hosted dashboard down with a failed import.
+    const evTab = await call('/events-tab.js', { token: await signToken() })
+    expect(evTab.status).toBe(200)
+    expect(evTab.headers.get('Content-Type')).toContain('javascript')
+    expect(await evTab.text()).toContain('export async function renderEvents')
 
     // admin.js imports email.js; a missing route 404s the import and takes
     // the whole SPA down with it, not just the newsletter tab.

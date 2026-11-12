@@ -258,6 +258,10 @@
   font-size: 88%;
 }
 
+/* The waitlist reads as its own list, set off from the hint below it. */
+.waiting-list { margin-top: .15em; }
+.waiting-label { color: var(--ink-4); }
+
 .attendance-list .attendee:not(:last-child)::after {
   content: ",";
   color: var(--ink-6);

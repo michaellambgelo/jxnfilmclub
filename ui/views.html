@@ -209,6 +209,32 @@
   // anything that reads like a purchase.
   function evTicketsPending(e) { return evIsTicketed(e) && !evTicketUrl(e) }
 
+  // The waitlist is shown on the card in order, numbered, beside the RSVP
+  // list: whoever asked to be listed can see where they stand, and whoever is
+  // deciding can see who already has. Two kinds share it - the queue behind a
+  // full event, and the pre-sale list of a ticketed event with no link yet.
+  // Upcoming events only.
+  function evQueue(e, list) { return evRsvpOn(e) && evIsFuture(e) ? (list || []) : [] }
+  function evQueueLabel(n) { return n + (n === 1 ? ' person' : ' people') + ' on the pre-sale list' }
+  function evListAdd(list, s) {
+    const rest = evListDrop(list, s.id)
+    return rest.concat([{ id: s.id, name: s.name }])
+  }
+  function evListDrop(list, id) { return (list || []).filter(function(a) { return a.id !== id }) }
+  // What the two lists look like after this viewer cancels. Mirrors the
+  // worker: a freed confirmed seat goes to the head of the waitlist, except
+  // while tickets are pending, when the list is a queue nobody is promoted from.
+  function evAfterCancel(e, attendees, waiting, me) {
+    const evHad = (attendees || []).some(function(a) { return a.id === me })
+    let evGoing = evListDrop(attendees, me)
+    let evWait = evListDrop(waiting, me)
+    if (evHad && evWait.length && !evTicketsPending(e) && e.capacity && evGuestCount(e, evGoing) < e.capacity) {
+      evGoing = evGoing.concat([evWait[0]])
+      evWait = evWait.slice(1)
+    }
+    return { attendees: evGoing, waiting: evWait, myRsvp: { status: 'none' }, busy: false }
+  }
+
   // Hosted events without a kind predate meetups, so they are house
   // screenings. A club event has no kind and no host and is neither.
   function evIsMeetup(e) {
@@ -1125,6 +1151,7 @@
       :handles="handlesById"
       :avatars="avatars"
       :attendees="attendance[el.id] || []"
+      :waiting="waiting[el.id] || []"
       :rsvpme="rsvps[el.id] || null"/>
   </div>
 
@@ -1159,11 +1186,15 @@
             for (const id of Object.keys(data.attendance)) {
               map[id] = normalizeAttendees(data.attendance[id])
             }
-            return { attendance: map, error: false }
+            // waitlist is absent from a worker that predates it.
+            const queues = {}
+            const raw = data.waitlist || {}
+            for (const id of Object.keys(raw)) queues[id] = normalizeAttendees(raw[id])
+            return { attendance: map, waiting: queues, error: false }
           }
         }
       } catch {}
-      return { attendance: {}, error: true }
+      return { attendance: {}, waiting: {}, error: true }
     }
 
     let evReloadSig = null
@@ -1192,7 +1223,7 @@
       if (evSig === evReloadSig) return
       const evFirst = evReloadSig === null
       evReloadSig = evSig
-      const [{ items, total }, { attendance, error }] = await Promise.all([
+      const [{ items, total }, { attendance, waiting, error }] = await Promise.all([
         getEvents({
           search: state.query,
           sort: state.sort || 'date-desc',
@@ -1214,7 +1245,7 @@
       // RSVP index in KV, and the club runs one or two at a time — the same
       // trade account-stats makes.
       const rsvps = await loadMyRsvps(items, evSession)
-      this.update({ items, total, attendance, attendanceError: error, rsvps })
+      this.update({ items, total, attendance, waiting, attendanceError: error, rsvps })
       if (evFirst) setTimeout(evFocusTarget, 0)
     }
 
@@ -1249,7 +1280,7 @@
       // brace: { } inside an attribute value is template syntax, and a
       // `|| {}` guard there compiles to a syntax error in the bundle.
       evSession = session
-      this.update({ session: session, attendance: {}, rsvps: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
+      this.update({ session: session, attendance: {}, waiting: {}, rsvps: {}, attendanceError: false, venues: [], handlesById: {}, avatars: {} })
       const [all, { items: members }, lbAvatars] = await Promise.all([
         getEvents({ limit: 1000 }),
         getMembers({ limit: 1000 }),
@@ -1314,6 +1345,19 @@
       <div :if="!ticketsPending()" class="rsvp-meter">
         { guestCount() + (event.capacity ? ' / ' + event.capacity : '') + ' RSVPed' }
       </div>
+      <!-- The waitlist, numbered and public like the RSVP list: the queue
+           behind a full event, or the pre-sale list while tickets are not on
+           sale. The meter and the label ride the event prop, so their :if
+           never flips after mount. -->
+      <div :if="ticketsPending()" class="rsvp-meter presale-meter">{ queueLabel() }</div>
+      <div :if="queue().length" class="attendance-list waiting-list">
+        <span :if="!ticketsPending()" class="waiting-label">Waitlist:</span>
+        <span :each="(a, i) in queue()" key="{ a.id || a.name }" class="attendee">{ i + 1 }.
+          <a :if="handleFor(a)" href="https://letterboxd.com/{ handleFor(a) }/"
+            target="_blank" rel="noopener">{ a.name }</a>
+          <span :if="!handleFor(a)">{ a.name }</span>
+        </span>
+      </div>
       <!-- A meetup can also be venue-ticketed. Each flag owns a hint and a
            status line, so the pair would stack three overlapping messages;
            the combined case gets one of each instead. -->
@@ -1331,7 +1375,7 @@
         <p :if="rsvpState().status === 'confirmed' && isTicketed() && !isMeetup()" class="rsvp-status">You're on the list. Your spot is not held — buy your ticket from { event.venue || 'the venue' }.</p>
         <p :if="rsvpState().status === 'confirmed' && !isHouse() && !selfOrg() && !isTicketed()" class="rsvp-status">You're in. Check your email for the details.</p>
         <p :if="rsvpState().status === 'waitlisted' && isHouse()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. The address will be emailed if a spot opens.</p>
-        <p :if="rsvpState().status === 'waitlisted' && ticketsPending()" class="rsvp-status">You're on the list. We will email you the box office link when tickets go on sale.</p>
+        <p :if="rsvpState().status === 'waitlisted' && ticketsPending()" class="rsvp-status">You are #{ rsvpState().position } on the list. We will email you the box office link when tickets go on sale.</p>
         <p :if="rsvpState().status === 'waitlisted' && !isHouse() && !ticketsPending()" class="rsvp-status">You are #{ rsvpState().position } on the waitlist. You'll get an email if a spot opens.</p>
         <button :if="rsvpState().status === 'none' && ticketsPending()"
           type="button" class="attend-btn" :disabled="busy" :onclick="rsvp">{ busy ? 'Saving' : 'Count me in' }</button>
@@ -1372,10 +1416,6 @@
 
     <div :if="isHost && hostView" class="event-host-panel">
       <p class="host-panel-title"><strong>You are hosting</strong></p>
-      <p :if="hostView.waitlist && hostView.waitlist.length" class="host-waitlist">
-        Waitlist:
-        <span :each="(n, i) in hostView.waitlist" key="{ n }">{ i + 1 }. { n }<span :if="i < hostView.waitlist.length - 1"> </span></span>
-      </p>
 
       <!-- Link a Letterboxd diary entry: sets event.letterboxd_uri via PATCH.
            Quick-picks come from the live GET /watched for the host's handle. -->
@@ -1506,6 +1546,8 @@
     this.isFree = function() { return evIsFree(this.event) }
     this.listed = function() { const r = this.rsvpState(); return !!r && r.status !== 'none' }
     this.ticketsPending = function() { return evTicketsPending(this.event) }
+    this.queue = function() { return evQueue(this.event, this.waiting) }
+    this.queueLabel = function() { return evQueueLabel(this.queue().length) }
     this.eyebrow = function() { return evEyebrow(this.event) }
     this.posterMeta = function() { return evPosterMeta(this.event) }
     this.rsvpOn = function() { return evRsvpOn(this.event) }
@@ -1561,10 +1603,8 @@
         const data = await res.json().catch(function () { return {} })
         if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
         this.update({ myRsvp: { status: data.status, position: data.position }, busy: false })
-        if (data.status === 'confirmed') {
-          const list = (this.attendees || []).concat([{ id: this.session.id, name: this.session.name }])
-          this.update({ attendees: list })
-        }
+        if (data.status === 'confirmed') this.update({ attendees: evListAdd(this.attendees, this.session) })
+        if (data.status === 'waitlisted') this.update({ waiting: evListAdd(this.waiting, this.session) })
       } catch (err) {
         this.update({ busy: false, rsvpError: err.message })
       }
@@ -1580,9 +1620,7 @@
         })
         const data = await res.json().catch(function () { return {} })
         if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
-        const me = this.session.id
-        const list = (this.attendees || []).filter(function (a) { return a.id !== me })
-        this.update({ myRsvp: { status: 'none' }, attendees: list, busy: false })
+        this.update(evAfterCancel(this.event, this.attendees, this.waiting, this.session.id))
       } catch (err) {
         this.update({ busy: false, rsvpError: err.message })
       }

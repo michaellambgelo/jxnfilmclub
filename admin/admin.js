@@ -1300,6 +1300,7 @@ const DEFAULT_VENUES = [
   { name: 'Patton House & Gallery', address: '512 N State St, Jackson, MS 39201', lat: 32.30367, lng: -90.17947, aliases: [] },
   { name: 'Two Mississippi Museums', address: '222 North St, Jackson, MS 39201', lat: 32.30058, lng: -90.17948, aliases: [] },
   { name: 'Mississippi Museum of Art', address: '380 S Lamar St, Jackson, MS 39201', lat: 32.29631, lng: -90.18562, aliases: [] },
+  { name: 'Vibe Studio', address: '1700 University Blvd #21, Jackson, MS 39204', lat: 32.28362, lng: -90.20717, aliases: [] },
   { name: 'Malco Grandview & IMAX', address: '221 Grandview Blvd, Madison, MS 39110', lat: 32.46329, lng: -90.13812, aliases: ['Malco Grandview & IMAX in Madison'] },
   { name: 'Malco Renaissance Cinema Grill', address: '1000 Highland Colony Pkwy, Ridgeland, MS 39157', lat: 32.43659, lng: -90.14663, aliases: ['Malco Renaissance', 'Malco Renaissance in Ridgeland'] },
   { name: 'B&B Theatres Northpark 14', address: '250 Ring Rd, Ridgeland, MS 39157', lat: 32.40278, lng: -90.12921, aliases: ['B&B Theaters at Northpark in Ridgeland'] },

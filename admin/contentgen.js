@@ -587,6 +587,66 @@ function drawCover(c, img, x, y, w, h, layout) {
   return { x, y, w, h, nw, nh }
 }
 
+// A soft, dimmed blow-up of the poster, for a whole (uncropped) poster to sit
+// on. Scaled up from a thumbnail rather than blurred with ctx.filter, which
+// Safari does not implement.
+function drawBackdrop(c, img, x, y, w, h) {
+  if (w <= 0 || h <= 0) return
+  const tw = 24
+  const th = Math.max(1, Math.round(tw * h / w))
+  const tiny = document.createElement('canvas')
+  tiny.width = tw
+  tiny.height = th
+  const { sx, sy, sw, sh } = coverRect(img.naturalWidth, img.naturalHeight, tw, th)
+  tiny.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, tw, th)
+  c.save()
+  c.imageSmoothingEnabled = true
+  c.imageSmoothingQuality = 'high'
+  c.drawImage(tiny, x, y, w, h)
+  c.fillStyle = 'rgba(16,15,14,0.62)'
+  c.fillRect(x, y, w, h)
+  c.restore()
+}
+
+// The whole poster, uncropped, centred in the box less an `inset` margin.
+function drawWhole(c, img, x, y, w, h, inset) {
+  const bw = w - inset * 2, bh = h - inset * 2
+  if (bw <= 0 || bh <= 0) return
+  const scale = Math.min(bw / img.naturalWidth, bh / img.naturalHeight)
+  const dw = Math.round(img.naturalWidth * scale), dh = Math.round(img.naturalHeight * scale)
+  const dx = Math.round(x + (w - dw) / 2), dy = Math.round(y + (h - dh) / 2)
+  c.save()
+  c.shadowColor = 'rgba(0,0,0,0.55)'
+  c.shadowBlur = Math.round(inset * 0.8)
+  c.shadowOffsetY = Math.round(inset * 0.2)
+  c.drawImage(img, dx, dy, dw, dh)
+  c.restore()
+}
+
+// A gradient from clear (at x0,y0) to solid ink (at x1,y1) over the rect.
+function inkFade(c, x0, y0, x1, y1, rx, ry, rw, rh, alpha = 1) {
+  if (rw <= 0 || rh <= 0) return
+  const g = c.createLinearGradient(x0, y0, x1, y1)
+  g.addColorStop(0, 'rgba(16,15,14,0)')
+  g.addColorStop(1, `rgba(16,15,14,${alpha})`)
+  c.fillStyle = g
+  c.fillRect(rx, ry, rw, rh)
+}
+
+// Where a text block of height `blockH` starts inside [regionTop, limit] for
+// a placement preset. `autoTop` is the card's own default start.
+function placeBlock(vpos, regionTop, limit, blockH, autoTop) {
+  const last = Math.max(regionTop, limit - blockH)
+  if (vpos === 'top') return regionTop
+  if (vpos === 'middle') return Math.max(regionTop, Math.round((regionTop + limit - blockH) / 2))
+  if (vpos === 'bottom') return last
+  return Math.min(autoTop, last)
+}
+
+// What the last event-card paint did with a poster band nobody has sized, so
+// the Poster size slider can show the real share instead of a nominal default.
+let paintedBand = null
+
 // The layout knobs that default per orientation (`null` in a saved layout).
 // Resolved here, in one place, so the drawers and the sliders agree on what
 // "default" currently means for this card shape.
@@ -605,7 +665,9 @@ function resolveLayout(layout, W, H) {
 
 // `maxW` (optional) keeps the label inside its column: it shrinks to 70% and
 // is then cut, with a note. Without it the label is drawn as-is.
-function label(c, text, x, y, px, color = BRAND, maxW = 0) {
+// `center` treats `x` as the midpoint. Tracking adds a trailing gap after the
+// last letter, so centred text is nudged right by half of it.
+function label(c, text, x, y, px, color = BRAND, maxW = 0, center = false) {
   let out = text.toUpperCase()
   let size = px
   const set = () => {
@@ -622,8 +684,20 @@ function label(c, text, x, y, px, color = BRAND, maxW = 0) {
     }
   }
   c.fillStyle = color
-  c.fillText(out, x, y)
+  c.textAlign = center ? 'center' : 'left'
+  c.fillText(out, center ? x + Math.round(size * 0.11) : x, y)
+  c.textAlign = 'left'
   c.letterSpacing = '0px'
+}
+
+// Instagram draws its own header over the top of a story and its reply bar
+// over the bottom, about 250px of 1920 each. On that shape the event cards
+// keep their text (not the artwork) clear of both. Returns the top edge for
+// text and the height to hand footer()/footerTop() so the footer sits above
+// the reply bar; on every other shape these are just `pad` and `H`.
+function textBounds(W, H, pad) {
+  const safe = H / W > 1.7 ? Math.round(H * 0.13) : 0
+  return { edge: Math.max(pad, safe), footH: H - Math.max(0, safe - pad) }
 }
 
 // Top of the footer's text: nothing above it may reach below this.
@@ -631,21 +705,25 @@ const footerTop = (W, H, pad) => H - pad - 22 - Math.round(W * 0.024)
 
 // `x` defaults to the bottom padding; pass it separately when the footer
 // belongs to a side panel rather than the card's left edge.
-function footer(c, W, H, pad, url, x = pad) {
+// With `center`, `x` is the midpoint the rule and the link are centred on.
+function footer(c, W, H, pad, url, x = pad, center = false) {
+  const bar = Math.round(W * 0.075)
   c.fillStyle = BRAND
-  c.fillRect(x, H - pad - 6, Math.round(W * 0.075), 6)
+  c.fillRect(center ? Math.round(x - bar / 2) : x, H - pad - 6, bar, 6)
   c.font = `500 ${Math.round(W * 0.024)}px ${LABEL}`
   c.letterSpacing = '2px'
   c.fillStyle = PAPER_4
   c.textBaseline = 'alphabetic'
-  c.fillText(url.toUpperCase(), x, H - pad - 22)
+  c.textAlign = center ? 'center' : 'left'
+  c.fillText(url.toUpperCase(), center ? x + 1 : x, H - pad - 22)
+  c.textAlign = 'left'
   c.letterSpacing = '0px'
 }
 
 // --- Card templates ---
 
 // `layout` is optional (and trailing, so the visual-QA harness's existing
-// calls keep working): omitted, the card renders exactly as it always has.
+// calls keep working): omitted, the card uses its own defaults for the shape.
 // Returns the poster's hit region, or null when there's no poster.
 async function drawEventCard(c, W, H, event, lead, layout, text) {
   const e = event || {}
@@ -695,113 +773,166 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
       + (metas.length ? metaStep * (metas.length - 1) + metaPx : 0)
     return { labelPx, labelGap, titlePx, lines, lineH, yearH, metaPx, gap, metaStep, blockH, titleFits }
   }
-  const footTop = footerTop(W, H, pad)
+  const { edge, footH } = textBounds(W, H, pad)
+  const footTop = footerTop(W, footH, pad)
   const limit = footTop - Math.round(H * 0.04)
+  const center = L.align === 'center'
+  const vpos = L.vpos
+  const fit = !!poster && L.mode === 'fit'
+  // Once the Poster size knob has been touched the band is the operator's.
+  const sized = !!layout && layout.band != null
+  c.textAlign = 'left'
+  paintedBand = null
 
-  // Poster panel: left column on landscape, top band otherwise — or, in
-  // full-bleed mode, the whole card with the text set over a veil.
-  let tx = pad, ty, tw
+  // Paints the poster into a box: cropped to fill it, or (whole-poster mode)
+  // uncropped on a soft backdrop. `fades` runs in between, so the fade into
+  // the ink panel never lands on the whole poster itself. Whole-poster mode
+  // has no crop to drag, so it reports no hit region.
+  const posterIn = (x, y, w, h, fades) => {
+    let box = null
+    if (fit) drawBackdrop(c, poster, x, y, w, h)
+    else box = drawCover(c, poster, x, y, w, h, L)
+    fades()
+    if (fit) drawWhole(c, poster, x, y, w, h, Math.round(pad * 0.6))
+    return box
+  }
+
+  // Each card shape answers three questions: how wide the text is, where the
+  // block starts at scale k (`place`), and whether it failed to fit (`over`).
+  let tx = pad, tw = W - pad * 2
+  let place
+  let shape
   if (full) {
+    shape = 'full'
     hit = drawCover(c, poster, 0, 0, W, H, L)
-    tw = W - pad * 2
+    const floor = footTop - Math.round(H * 0.05)
+    place = (m) => {
+      const bottom = floor - m.blockH
+      const top = vpos === 'top' || vpos === 'middle' ? placeBlock(vpos, edge, floor, m.blockH, bottom) : bottom
+      return { top, over: bottom < edge }
+    }
   } else if (poster && landscape) {
+    shape = 'side'
     const pw = Math.round(W * L.band)
     c.fillStyle = SURFACE
     c.fillRect(0, 0, pw, H)
-    hit = drawCover(c, poster, 0, 0, pw, H, L)
     const fade = Math.min(pw, L.fade)
-    if (fade > 0) {
-      const g = c.createLinearGradient(pw - fade, 0, pw, 0)
-      g.addColorStop(0, 'rgba(16,15,14,0)')
-      g.addColorStop(1, 'rgba(16,15,14,1)')
-      c.fillStyle = g
-      c.fillRect(pw - fade, 0, fade, H)
-    }
+    hit = posterIn(0, 0, pw, H, () => inkFade(c, pw - fade, 0, pw, 0, pw - fade, 0, fade, H))
     tx = pw + pad
     tw = W - pw - pad * 2
-    ty = Math.round(H * 0.2)
+  } else if (poster && vpos === 'top') {
+    shape = 'under'   // the poster sits under the text
   } else if (poster) {
+    shape = 'over'    // the poster sits over the text
     let ph = Math.round(H * L.band)
-    // A poster band nobody has sized gives way to the text before the text
-    // shrinks: a long title under a half-card poster would otherwise be set
-    // tiny beside artwork that could spare the room. Once the Poster size
-    // knob has been touched, the band is the operator's and stays put.
-    if (!layout || layout.band == null) {
-      const need = measure(1, W - pad * 2)
+    // A poster band nobody has sized takes the room the text leaves: it grows
+    // until the text sits just above the footer (never past the whole poster
+    // at full width) and gives way to a long title before that title shrinks.
+    if (!sized) {
+      const need = measure(1, tw)
       const room = limit - need.blockH + need.labelPx - Math.round(H * 0.05)
-      ph = Math.max(Math.round(H * 0.3), Math.min(ph, room))
+      const whole = Math.round(W * poster.naturalHeight / poster.naturalWidth)
+      ph = Math.max(Math.round(H * 0.3), Math.min(room, whole))
+      paintedBand = ph / H
     }
-    hit = drawCover(c, poster, 0, 0, W, ph, L)
-    // Fade the poster into the ink panel below it.
     const fade = Math.min(ph, L.fade)
-    if (fade > 0) {
-      const g = c.createLinearGradient(0, ph - fade, 0, ph)
-      g.addColorStop(0, 'rgba(16,15,14,0)')
-      g.addColorStop(1, 'rgba(16,15,14,1)')
-      c.fillStyle = g
-      c.fillRect(0, ph - fade, W, fade)
+    hit = posterIn(0, 0, W, ph, () => inkFade(c, 0, ph - fade, 0, ph, 0, ph - fade, W, fade))
+    const regionTop = ph + Math.round(H * 0.05)
+    place = (m) => {
+      const top = placeBlock(vpos, regionTop - m.labelPx, limit, m.blockH, regionTop - m.labelPx)
+      return { top, over: top + m.blockH > limit }
     }
-    tw = W - pad * 2
-    ty = ph + Math.round(H * 0.05)
-  } else {
-    tw = W - pad * 2
-    ty = Math.round(H * 0.24)
+  }
+  if (shape === 'side' || !shape) {
+    // Beside a landscape poster, or with no poster, the default start is only
+    // a default: the block slides up to make room before it shrinks.
+    const start = Math.round(H * (shape === 'side' ? 0.2 : 0.24))
+    place = (m) => {
+      const top = placeBlock(vpos, edge, limit, m.blockH, Math.max(edge, start - m.labelPx))
+      return { top, over: top + m.blockH > limit }
+    }
+  }
+  // Text above the poster: the poster takes what is left between the text
+  // and the footer, so the block is "over" when that leaves too little.
+  let under = null
+  if (shape === 'under') {
+    const whole = Math.round(W * poster.naturalHeight / poster.naturalWidth)
+    place = (m) => {
+      const top = edge
+      const y0 = top + m.blockH + Math.round(H * 0.04)
+      const avail = limit - y0
+      const want = sized ? Math.round(H * L.band) : Math.min(avail, whole)
+      under = { y0, avail, ph: Math.max(0, Math.min(want, avail)) }
+      return { top, over: sized ? want > avail : avail < Math.round(H * 0.3) }
+    }
   }
 
-
-  // `ty` is the eyebrow's baseline, so the block runs from ty - labelPx.
-  // Beside a landscape poster, or with no poster, the start is only a default
-  // and the block may slide up to make room; under a poster band it cannot.
-  const movable = !full && (landscape || !poster)
+  // `top` is the top of the eyebrow; it is drawn on its baseline, labelPx lower.
   let m, top, over
   for (let k = 1; ; k = Math.max(0.6, k - 0.04)) {
     m = measure(k, tw)
-    if (full) {
-      top = footTop - Math.round(H * 0.05) - m.blockH
-      over = top < pad
-    } else {
-      top = ty - m.labelPx
-      if (movable && top + m.blockH > limit) top = Math.max(pad, limit - m.blockH)
-      over = top + m.blockH > limit
-    }
+    ;({ top, over } = place(m))
     if (!over || k <= 0.6) { m.k = k; break }
   }
-  if (over) note('The text does not fit above the footer, even at its smallest. Shorten a line or reduce the sizes.')
-  else if (m.k <= 0.8) {
-    note(`The text was shrunk to ${Math.round(m.k * 100)}% to clear the footer.${poster && !full && !landscape ? ' A smaller poster leaves it more room.' : ''}`)
+  if (over) {
+    note(shape === 'under'
+      ? 'The text leaves too little room for the poster, even at its smallest. Shorten a line or reduce the sizes.'
+      : 'The text does not fit above the footer, even at its smallest. Shorten a line or reduce the sizes.')
+  } else if (m.k <= 0.8) {
+    note(`The text was shrunk to ${Math.round(m.k * 100)}% to ${shape === 'under' ? 'leave room for the poster' : 'clear the footer'}.${sized && (shape === 'over' || shape === 'under') ? ' A smaller poster leaves it more room.' : ''}`)
   }
   if (!m.titleFits) note('The title is at its smallest and still does not fit its lines')
 
-  if (full) {
-    // Bottom-anchored above the footer, with the veil running `fade` px above
-    // the text's top and solid ink behind the text itself.
-    const veilTop = Math.max(0, top - L.fade)
-    const g = c.createLinearGradient(0, veilTop, 0, Math.max(veilTop + 1, top))
-    g.addColorStop(0, 'rgba(16,15,14,0)')
-    g.addColorStop(1, 'rgba(16,15,14,0.9)')
-    c.fillStyle = g
-    c.fillRect(0, veilTop, W, top - veilTop)
-    c.fillStyle = 'rgba(16,15,14,0.9)'
-    c.fillRect(0, top, W, H - top)
+  if (shape === 'under' && under.ph > 0) {
+    const { ph } = under
+    // A sized band sits on the footer side; an unsized one fills the gap.
+    const py = limit - ph
+    const fade = Math.min(Math.round(ph / 2), L.fade)
+    hit = posterIn(0, py, W, ph, () => {
+      inkFade(c, 0, py + fade, 0, py, 0, py, W, fade)
+      inkFade(c, 0, limit - fade, 0, limit, 0, limit - fade, W, fade)
+    })
+    if (!sized) paintedBand = ph / H
   }
-  ty = top + m.labelPx
 
+  if (full) {
+    // The veil: solid ink behind the text, fading out over `fade` px on any
+    // side that still has poster beyond it.
+    const INK9 = 'rgba(16,15,14,0.9)'
+    const gap = Math.round(H * 0.04)
+    const bottomUp = vpos !== 'top' && vpos !== 'middle'
+    const v0 = vpos === 'top' ? 0 : top - (bottomUp ? 0 : gap)
+    const v1 = bottomUp ? H : top + m.blockH + gap
+    if (v0 > 0) inkFade(c, 0, Math.max(0, v0 - L.fade), 0, v0, 0, Math.max(0, v0 - L.fade), W, v0 - Math.max(0, v0 - L.fade), 0.9)
+    c.fillStyle = INK9
+    c.fillRect(0, v0, W, v1 - v0)
+    if (v1 < H) {
+      inkFade(c, 0, Math.min(H, v1 + L.fade), 0, v1, 0, v1, W, Math.min(H, v1 + L.fade) - v1, 0.9)
+      // The footer still needs ink under it when the veil stops short of it.
+      const f0 = footTop - Math.round(H * 0.1)
+      inkFade(c, 0, f0, 0, footTop - Math.round(H * 0.02), 0, f0, W, H - f0, 0.9)
+    }
+  }
+  let ty = top + m.labelPx
+
+  const ax = center ? tx + Math.round(tw / 2) : tx
   c.textBaseline = 'alphabetic'
-  if (t.eyebrow) label(c, t.eyebrow, tx, ty, m.labelPx, BRAND, tw)
+  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, BRAND, tw, center)
   ty += m.labelGap
 
   // Film title — Playfair, wrapped, shrink-to-fit.
+  c.textAlign = center ? 'center' : 'left'
   c.font = `800 ${m.titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
   c.textBaseline = 'top'
   for (const line of m.lines) {
-    c.fillText(line, tx, ty)
+    c.fillText(line, ax, ty)
     ty += m.lineH
   }
   if (t.year) {
     c.font = `italic 500 ${Math.round(m.titlePx * 0.5)}px ${DISPLAY}`
     c.fillStyle = PAPER_4
-    c.fillText(t.year, tx, ty + Math.round(m.titlePx * 0.1))
+    c.fillText(t.year, ax, ty + Math.round(m.titlePx * 0.1))
     ty += m.yearH
   }
   ty += m.gap
@@ -809,13 +940,14 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   c.font = `500 ${m.metaPx}px ${LABEL}`
   for (const [line, color] of metas) {
     c.fillStyle = color
-    c.fillText(fitLine(c, line, tw, 'A detail line'), tx, ty)
+    c.fillText(fitLine(c, line, tw, 'A detail line'), ax, ty)
     ty += m.metaStep
   }
+  c.textAlign = 'left'
 
   // In the landscape band layout the text sits beside the poster, and so does
   // the footer: at the card's left edge it landed on top of the artwork.
-  footer(c, W, H, pad, t.footer, tx)
+  footer(c, W, footH, pad, t.footer, ax, center)
   return hit
 }
 
@@ -950,12 +1082,12 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
     const blockH = labelPx + labelGap + leadH + lines.length * lineH + extraH
     return { labelPx, labelGap, numPx, ofPx, wePx, leadH, titlePx, lines, lineH, extraPx, blockH, titleFits }
   }
-  const limit = footerTop(W, H, pad) - Math.round(H * 0.04)
+  const { edge, footH } = textBounds(W, H, pad)
+  const limit = footerTop(W, footH, pad) - Math.round(H * 0.04)
   let m, top, over
   for (let k = 1; ; k = Math.max(0.6, k - 0.04)) {
     m = measure(k)
-    top = Math.round(H * 0.2) - m.labelPx
-    if (top + m.blockH > limit) top = Math.max(pad, limit - m.blockH)
+    top = placeBlock(L.vpos, edge, limit, m.blockH, Math.max(edge, Math.round(H * 0.2) - m.labelPx))
     over = top + m.blockH > limit
     if (!over || k <= 0.6) { m.k = k; break }
   }
@@ -963,43 +1095,54 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
   else if (m.k <= 0.8) note(`The text was shrunk to ${Math.round(m.k * 100)}% to clear the footer.`)
   if (!m.titleFits) note('The title is at its smallest and still does not fit its lines')
 
+  const center = L.align === 'center'
+  const ax = center ? Math.round(W / 2) : pad
   let ty = top + m.labelPx
-  if (t.eyebrow) label(c, t.eyebrow, pad, ty, m.labelPx, BRAND, tw)
+  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, BRAND, tw, center)
   ty += m.labelGap
   c.textBaseline = 'top'
+  c.textAlign = 'left'
 
   if (count > 0) {
+    // The numeral and the two lines beside it are one row: centred, the row
+    // is centred as a whole rather than each piece on its own.
+    c.font = `800 ${m.numPx}px ${DISPLAY}`
+    const numW = c.measureText(String(count)).width
+    const numGap = Math.round(W * 0.02)
+    c.font = `500 ${m.ofPx}px ${LABEL}`
+    const unitMax = tw - numW - numGap
+    const units = [t.unit1 || '', t.unit2 || ''].map(u => fitLine(c, u, unitMax, 'A line beside the count'))
+    const rowW = numW + numGap + Math.max(...units.map(u => c.measureText(u).width))
+    const rowX = center ? Math.round((W - rowW) / 2) : pad
+    c.fillStyle = PAPER_2
+    units.forEach((u, i) => c.fillText(u, rowX + numW + numGap, ty + Math.round(m.numPx * 0.42) + i * Math.round(m.ofPx * 1.4)))
     c.font = `800 ${m.numPx}px ${DISPLAY}`
     c.fillStyle = BRAND
-    c.fillText(String(count), pad, ty)
-    const numW = c.measureText(String(count)).width
-    c.font = `500 ${m.ofPx}px ${LABEL}`
-    c.fillStyle = PAPER_2
-    const unitX = pad + numW + Math.round(W * 0.02)
-    const unitW = W - pad - unitX
-    c.fillText(fitLine(c, t.unit1 || '', unitW, 'A line beside the count'), unitX, ty + Math.round(m.numPx * 0.42))
-    c.fillText(fitLine(c, t.unit2 || '', unitW, 'A line beside the count'), unitX, ty + Math.round(m.numPx * 0.42) + Math.round(m.ofPx * 1.4))
+    c.fillText(String(count), rowX, ty)
   } else {
     c.font = `500 ${m.wePx}px ${LABEL}`
     c.fillStyle = PAPER_2
-    if (t.lead) c.fillText(fitLine(c, t.lead, tw, 'The lead-in'), pad, ty)
+    c.textAlign = center ? 'center' : 'left'
+    if (t.lead) c.fillText(fitLine(c, t.lead, tw, 'The lead-in'), ax, ty)
   }
   ty += m.leadH
 
+  c.textAlign = center ? 'center' : 'left'
   c.font = `800 ${m.titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
   for (const line of m.lines) {
-    c.fillText(line, pad, ty)
+    c.fillText(line, ax, ty)
     ty += m.lineH
   }
   if (t.extra) {
     ty += Math.round(m.extraPx * 0.6)
     c.font = `500 ${m.extraPx}px ${LABEL}`
     c.fillStyle = BRAND
-    c.fillText(fitLine(c, t.extra, tw, 'The extra line'), pad, ty)
+    c.fillText(fitLine(c, t.extra, tw, 'The extra line'), ax, ty)
   }
+  c.textAlign = 'left'
 
-  footer(c, W, H, pad, t.footer)
+  footer(c, W, footH, pad, t.footer, ax, center)
   return hit
 }
 
@@ -1706,9 +1849,19 @@ function renderLayoutPanel() {
   host.innerHTML = `
     <div class="cg-layout-row">
       ${cg.kind === 'recap' || !t.poster ? '' : `
-      <div class="cg-seg" role="group" aria-label="Poster layout">
-        <button type="button" data-mode="band">Band</button><button type="button" data-mode="full">Full-bleed</button>
+      <div class="cg-seg" role="group" aria-label="Poster layout"><span class="cg-seg-label">Poster</span>
+        <button type="button" data-mode="band">Band</button><button type="button" data-mode="fit">Whole poster</button><button type="button" data-mode="full">Full-bleed</button>
       </div>`}
+      ${t.poster ? `
+      <div class="cg-seg" role="group" aria-label="Poster crop" data-knob="crop"><span class="cg-seg-label">Crop</span>
+        <button type="button" data-fy="0">Top</button><button type="button" data-fy="0.5">Centre</button><button type="button" data-fy="1">Bottom</button>
+      </div>` : ''}
+      <div class="cg-seg" role="group" aria-label="Text position"><span class="cg-seg-label">Text</span>
+        <button type="button" data-vpos="auto">Auto</button><button type="button" data-vpos="top">Top</button><button type="button" data-vpos="middle">Middle</button><button type="button" data-vpos="bottom">Bottom</button>
+      </div>
+      <div class="cg-seg" role="group" aria-label="Text alignment"><span class="cg-seg-label">Align</span>
+        <button type="button" data-align="left">Left</button><button type="button" data-align="center">Centred</button>
+      </div>
       ${keys.map(k => {
         const s = LAYOUT_SLIDERS[k]
         const [min, max] = LAYOUT_LIMITS[k]
@@ -1716,16 +1869,22 @@ function renderLayoutPanel() {
           <input type="range" id="cg-l-${k}" min="${min}" max="${max}" step="${s.step}">
           <output id="cg-l-${k}-out"></output></label>`
       }).join('')}
+      <button type="button" id="cg-l-band-auto" title="Let the poster fill the room the text leaves">Auto poster size</button>
       <button type="button" id="cg-l-reset">Reset</button>
     </div>
-    <p class="cg-layout-hint muted">${t.poster ? 'Drag the poster to reposition · scroll over it to zoom · double-click to reset. ' : ''}
+    <p class="cg-layout-hint muted">${t.poster ? '<span id="cg-l-drag">Drag the poster to reposition · scroll over it to zoom · double-click to reset. </span>' : ''}
       Saved per event and card size. <span id="cg-l-status" aria-live="polite"></span></p>`
   for (const k of keys) {
     const input = host.querySelector(`#cg-l-${k}`)
     input.addEventListener('input', () => setLayout({ [k]: Number(input.value) }))
   }
-  host.querySelectorAll('[data-mode]').forEach(b =>
-    b.addEventListener('click', () => setLayout({ mode: b.dataset.mode })))
+  for (const k of ['mode', 'vpos', 'align']) {
+    host.querySelectorAll(`[data-${k}]`).forEach(b =>
+      b.addEventListener('click', () => setLayout({ [k]: b.dataset[k] })))
+  }
+  host.querySelectorAll('[data-fy]').forEach(b =>
+    b.addEventListener('click', () => setLayout({ fy: Number(b.dataset.fy) })))
+  host.querySelector('#cg-l-band-auto').addEventListener('click', () => setLayout({ band: null }))
   host.querySelector('#cg-l-reset').addEventListener('click', resetLayout)
   syncLayoutPanel()
   const saved = currentLayout()
@@ -1744,16 +1903,39 @@ function syncLayoutPanel() {
   for (const k of Object.keys(LAYOUT_SLIDERS)) {
     const input = host.querySelector(`#cg-l-${k}`)
     if (!input) continue
-    input.value = String(L[k])
-    host.querySelector(`#cg-l-${k}-out`).textContent = LAYOUT_SLIDERS[k].fmt(L[k])
+    // A band nobody has sized follows the text, so show what was painted.
+    const v = k === 'band' && raw.band == null && paintedBand != null ? paintedBand : L[k]
+    input.value = String(v)
+    host.querySelector(`#cg-l-${k}-out`).textContent = LAYOUT_SLIDERS[k].fmt(v) + (v === L[k] ? '' : ' auto')
   }
-  host.querySelectorAll('[data-mode]').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === L.mode)
-    b.setAttribute('aria-pressed', String(b.dataset.mode === L.mode))
-  })
-  // Poster size is the band's share of the card; full-bleed has no band.
-  const band = host.querySelector('[data-knob="band"]')
-  if (band) band.hidden = L.mode === 'full'
+  for (const k of ['mode', 'vpos', 'align']) {
+    host.querySelectorAll(`[data-${k}]`).forEach(b => {
+      b.classList.toggle('active', b.dataset[k] === L[k])
+      b.setAttribute('aria-pressed', String(b.dataset[k] === L[k]))
+    })
+  }
+  // Poster size is the band's share of the card; full-bleed has no band. A
+  // whole poster has no crop, so nothing to zoom or reposition.
+  const hide = (knob, on) => { const el = host.querySelector(`[data-knob="${knob}"]`); if (el) el.hidden = on }
+  hide('band', L.mode === 'full')
+  hide('zoom', L.mode === 'fit')
+  hide('crop', L.mode === 'fit')
+  const drag = host.querySelector('#cg-l-drag')
+  if (drag) drag.hidden = L.mode === 'fit'
+  // Only worth offering once the band has been sized by hand.
+  const auto = host.querySelector('#cg-l-band-auto')
+  if (auto) auto.hidden = raw.band == null || L.mode === 'full' || !host.querySelector('#cg-l-band')
+  // Under a poster band that fills the spare room there is nowhere for the
+  // text to move to, so Middle and Bottom would do nothing.
+  const { w: cw, h: ch } = SIZES[cg.size]
+  const t = layoutTarget()
+  const pinned = !!(t && t.poster) && cg.kind !== 'recap' && L.mode !== 'full' && cw <= ch && raw.band == null
+  for (const v of ['middle', 'bottom']) {
+    const b = host.querySelector(`[data-vpos="${v}"]`)
+    if (!b) continue
+    b.disabled = pinned
+    b.title = pinned ? 'The poster fills the spare room. Set Poster size to free some up.' : ''
+  }
 }
 
 // Pointer → poster crop. Pointer events (not mouse) so touch works, with
@@ -1859,6 +2041,7 @@ async function renderCanvas({ quiet = false } = {}) {
     // A superseded paint must not stamp its geometry under the newer target's key.
     if (seq !== cg.renderSeq) return
     showFitNotes(notes)
+    syncLayoutPanel()
     const t = layoutTarget()
     cg.posterHit = hit && t ? { ...hit, key: t.key } : null
   } finally {

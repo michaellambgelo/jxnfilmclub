@@ -766,6 +766,65 @@ test.describe('admin dashboard', () => {
     await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()
   })
 
+  test('Content Gen: text placement, alignment and the whole-poster mode', async ({ page }) => {
+    const poster = 'https://image.tmdb.org/t/p/w500/e2e-place.jpg'
+    const ev = { id: 'cg-e2e-place', title: 'Place Night', film: 'Metropolis', year: 1927, date: '2030-02-01', venue: 'The Parlor', poster }
+    const layoutKey = `cardlayout:${ev.id}:ig-post`
+    await dropAttendance(page, layoutKey)
+    await seedAttendance(page, `event:${ev.id}`, ev)
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+    const panel = page.locator('#cg-layout')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('[data-vpos="auto"]')).toHaveClass(/active/)
+    await expect(panel.locator('[data-align="left"]')).toHaveClass(/active/)
+
+    // Under a poster band nobody has sized, the text has nowhere to move to.
+    await expect(panel.locator('[data-vpos="middle"]')).toBeDisabled()
+    await expect(panel.locator('[data-vpos="top"]')).toBeEnabled()
+
+    await panel.locator('[data-vpos="top"]').click()
+    await panel.locator('[data-align="center"]').click()
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.align).toBe('center')
+    expect(await getAttendanceJson(page, layoutKey)).toMatchObject({ vpos: 'top', align: 'center' })
+
+    // A whole poster has no crop: nothing to zoom or reposition.
+    await panel.locator('[data-mode="fit"]').click()
+    await expect(page.locator('[data-knob="zoom"]')).toBeHidden()
+    await expect(page.locator('[data-knob="crop"]')).toBeHidden()
+    await expect(page.locator('[data-knob="band"]')).toBeVisible()
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.mode).toBe('fit')
+
+    // Sizing the band frees room under it, so Middle becomes a real choice.
+    await expect(page.locator('#cg-l-band-auto')).toBeHidden()
+    await page.locator('#cg-l-band').fill('0.3')
+    await expect(panel.locator('[data-vpos="middle"]')).toBeEnabled()
+    // ...and the way back to a band that follows the text is one click.
+    await page.locator('#cg-l-band-auto').click()
+    await expect(panel.locator('[data-vpos="middle"]')).toBeDisabled()
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.band).toBeNull()
+
+    // The crop presets set the focal point.
+    await panel.locator('[data-mode="band"]').click()
+    await panel.locator('[data-fy="0"]').click()
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.fy).toBe(0)
+
+    // Per size, and it survives a reload.
+    await page.locator('.cg-size[data-size="ig-story"]').click()
+    await expect(panel.locator('[data-vpos="auto"]')).toHaveClass(/active/)
+    await page.reload()
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+    await page.locator('.cg-size[data-size="ig-post"]').click()
+    await expect(panel.locator('[data-vpos="top"]')).toHaveClass(/active/)
+    await expect(panel.locator('[data-align="center"]')).toHaveClass(/active/)
+
+    await page.locator('#cg-l-reset').click()
+    await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()
+  })
+
   test('Content Gen: list and promo card wording saves per item', async ({ page }) => {
     // Local KV persists between runs, and these keys are not per-test ids.
     await dropAttendance(page, 'cardtext:milestone:screenings', 'cardtext:milestone:members', 'cardtext:monthwrap:2020-03')

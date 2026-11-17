@@ -357,6 +357,14 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .cg-seg button + button { margin-left: -1px }
 .cg-seg button.active { border-color: #100f0e; background: #100f0e; color: #f0ebe0 }
 .cg-layout-hint { font-size: 0.8rem; margin: 0.5rem 0 0 }
+.cg-text { margin: 0 0 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--border, #ddd) }
+.cg-text h4 { margin: 0 0 0.5rem; font-size: 0.9rem }
+.cg-text-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.5rem 0.8rem }
+.cg-t { display: block; font-size: 0.8rem; color: var(--muted) }
+.cg-t input { display: block; width: 100%; margin-top: 0.2rem; box-sizing: border-box }
+.cg-t.edited input { border-left: 3px solid var(--brand, #d7321f) }
+.cg-text code { font-size: 0.78rem }
+#cg-t-reset { font-size: 0.8rem; padding: 0.1rem 0.5rem; margin-left: 0.3rem }
 .cg-copy-card { margin-bottom: 1rem }
 .cg-copy-card textarea { width: 100%; font-size: 0.85rem }
 .cg-copy-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.3rem }
@@ -374,7 +382,7 @@ h3 { margin: 1.4rem 0 0.6rem; font-size: 1rem }
 .cfg-row { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; align-items: center }
 .cfg-row input[type="text"] { flex: 1 }
 /* Map venues: four fields per row, so wrap; aliases take their own line. */
-.cfg-venue-row { flex-wrap: wrap; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line, #ddd) }
+.cfg-venue-row { flex-wrap: wrap; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border, #ddd) }
 .cfg-venue-row input[data-venue-field="name"] { flex: 1 1 200px }
 .cfg-venue-row input[data-venue-field="address"] { flex: 2 1 260px }
 .cfg-venue-row input[data-venue-field="aliases"] { flex: 1 1 100%; order: 10 }
@@ -509,7 +517,7 @@ dialog pre.rich {
 .voice-srt {
   margin: 10px 0;
   padding: 12px;
-  border: 1px solid var(--line, #ddd);
+  border: 1px solid var(--border, #ddd);
   border-radius: 6px;
   background: var(--surface-2, #fafafa);
 }

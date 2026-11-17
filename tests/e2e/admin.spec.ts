@@ -14,6 +14,26 @@ async function getKv(page: Page, key: string): Promise<string | null> {
   return (await res.json()).value
 }
 
+// Attendance-namespace helpers (events, card layouts, card wording live there).
+async function seedAttendance(page: Page, key: string, value: unknown) {
+  const res = await page.request.post(`${WORKER_ORIGIN}/__test/kv`, {
+    data: { ns: 'ATTENDANCE_KV', key, value: JSON.stringify(value) },
+  })
+  expect(res.ok()).toBeTruthy()
+}
+async function dropAttendance(page: Page, ...keys: string[]) {
+  for (const key of keys) {
+    const res = await page.request.delete(`${WORKER_ORIGIN}/__test/kv`, { data: { ns: 'ATTENDANCE_KV', key } })
+    expect(res.ok()).toBeTruthy()
+  }
+}
+async function getAttendanceJson(page: Page, key: string) {
+  const res = await page.request.get(`${WORKER_ORIGIN}/__test/kv?ns=ATTENDANCE_KV&key=${encodeURIComponent(key)}`)
+  expect(res.ok()).toBeTruthy()
+  const { value } = await res.json()
+  return value ? JSON.parse(value) : null
+}
+
 // Every admin action goes through confirm() — auto-accept.
 function acceptDialogs(page: Page) {
   page.on('dialog', d => d.accept())
@@ -625,6 +645,108 @@ test.describe('admin dashboard', () => {
     await page.locator('#cg-kind').selectOption('titlecard')
     await expect(page.locator('#cg-layout')).toBeHidden()
   })
+  test('Content Gen: card wording saves per event, follows into captions, and resets', async ({ page }) => {
+    const ev = { id: 'cg-e2e-wording', title: 'Wording Night', film: 'Metropolis', year: 1927, date: '2030-02-01', time: '19:00', venue: 'The Parlor' }
+    await seedAttendance(page, `event:${ev.id}`, ev)
+    const key = `cardtext:event:${ev.id}`
+    await dropAttendance(page, key)
+    const saved = () => getAttendanceJson(page, key)
+    const fb = page.locator('.cg-copy-card[data-platform="facebook"] textarea')
+    const open = async () => {
+      await page.goto(`${ADMIN_ORIGIN}/`)
+      await page.locator('#tabs button[data-tab="contentgen"]').click()
+      await page.locator('#cg-event').selectOption(ev.id)
+    }
+
+    await open()
+    // Untouched: the fields show the built-in wording and nothing is stored.
+    await expect(page.locator('#cg-t-eyebrow')).toHaveValue('Jackson Film Club · Next screening')
+    await expect(page.locator('#cg-t-when')).toHaveValue('{date} · {time}')
+    await expect(page.locator('#cg-t-footer')).toHaveValue('jxnfilm.club/events')
+    await expect(fb).toHaveValue(/Metropolis \(1927\)\n📅 Friday, February 1 · 7:00 pm\n📍 The Parlor/)
+    expect(await saved()).toBeNull()
+
+    await page.locator('#cg-t-when').fill('{date} · Doors at 7')
+    await page.locator('#cg-t-title').fill('Metropolis: Restored')
+    await page.locator('#cg-t-extra').fill('Free with RSVP')
+    await page.locator('#cg-t-eyebrow').fill('JXN Film Club · This Friday')
+    await expect.poll(saved).toEqual({
+      when: '{date} · Doors at 7', title: 'Metropolis: Restored', extra: 'Free with RSVP',
+      'announce.eyebrow': 'JXN Film Club · This Friday',
+    })
+    await expect(page.locator('.cg-t[data-slot="when"]')).toHaveClass(/edited/)
+    await expect(page.locator('.cg-t[data-slot="venue"]')).not.toHaveClass(/edited/)
+    // Captions follow the reworded title and date line.
+    await expect(fb).toHaveValue(/Metropolis: Restored \(1927\)\n📅 Friday, February 1 · Doors at 7\n📍 The Parlor/)
+
+    // The countdown keeps its own eyebrow but shares the event's other lines.
+    await page.locator('#cg-kind').selectOption('countdown')
+    await expect(page.locator('#cg-t-eyebrow')).toHaveValue('Jackson Film Club · {countdown}')
+    await expect(page.locator('#cg-t-title')).toHaveValue('Metropolis: Restored')
+    await expect(page.locator('#cg-t-extra')).toHaveValue('Free with RSVP')
+    // ...and the recap does not inherit the announcement's extra line.
+    await page.locator('#cg-kind').selectOption('recap')
+    await expect(page.locator('#cg-t-title')).toHaveValue('Metropolis: Restored')
+    await expect(page.locator('#cg-t-extra')).toHaveValue('')
+    await expect(page.locator('#cg-t-lead')).toHaveValue('WE WATCHED')
+
+    // A reload restores it.
+    await open()
+    await expect(page.locator('#cg-t-when')).toHaveValue('{date} · Doors at 7')
+    await expect(page.locator('#cg-t-eyebrow')).toHaveValue('JXN Film Club · This Friday')
+
+    // Typing a line back to the default un-stores just that line.
+    await page.locator('#cg-t-when').fill('{date} · {time}')
+    await expect.poll(async () => Object.keys((await saved()) || {}).sort()).toEqual(['announce.eyebrow', 'extra', 'title'])
+
+    // Reset deletes the key rather than writing defaults. Switching post type
+    // straight away re-reads KV before the delete has landed; the stale row it
+    // brings back must not undo the reset.
+    await page.locator('#cg-t-reset').click()
+    await page.locator('#cg-kind').selectOption('countdown')
+    await expect(page.locator('#cg-t-title')).toHaveValue('{title}')
+    await expect.poll(saved).toBeNull()
+    await page.locator('#cg-kind').selectOption('announce')
+    await expect(page.locator('#cg-t-eyebrow')).toHaveValue('Jackson Film Club · Next screening')
+    await expect(page.locator('#cg-t-title')).toHaveValue('{title}')
+    expect(await saved()).toBeNull()
+    await expect(fb).toHaveValue(/Metropolis \(1927\)\n📅 Friday, February 1 · 7:00 pm/)
+
+    // The no-film event poster mirrors the site and is not reworded here.
+    await page.locator('#cg-kind').selectOption('titlecard')
+    await expect(page.locator('#cg-text')).toBeHidden()
+  })
+
+  test('Content Gen: list and promo card wording saves per item', async ({ page }) => {
+    // Local KV persists between runs, and these keys are not per-test ids.
+    await dropAttendance(page, 'cardtext:milestone:screenings', 'cardtext:milestone:members', 'cardtext:monthwrap:2020-03')
+    await seedAttendance(page, 'event:cg-e2e-past', { id: 'cg-e2e-past', title: 'Past Night', film: 'M', date: '2020-03-05' })
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+
+    await page.locator('#cg-kind').selectOption('milestone')
+    await page.locator('#cg-stat').selectOption('screenings')
+    await expect(page.locator('#cg-t-unit2')).toHaveValue('AND COUNTING')
+    await page.locator('#cg-t-thanks').fill('See you at the movies.')
+    await expect.poll(() => getAttendanceJson(page, 'cardtext:milestone:screenings'))
+      .toEqual({ thanks: 'See you at the movies.' })
+    // Another stat is a different item.
+    await page.locator('#cg-stat').selectOption('members')
+    await expect(page.locator('#cg-t-thanks')).toHaveValue('Thank you, Jackson.')
+    await page.locator('#cg-stat').selectOption('screenings')
+    await expect(page.locator('#cg-t-thanks')).toHaveValue('See you at the movies.')
+
+    await page.locator('#cg-kind').selectOption('monthwrap')
+    await page.locator('#cg-month').selectOption('2020-03')
+    await expect(page.locator('#cg-t-heading')).toHaveValue('That was {month}')
+    await page.locator('#cg-t-heading').fill('{month}, in review')
+    await expect.poll(() => getAttendanceJson(page, 'cardtext:monthwrap:2020-03'))
+      .toEqual({ heading: '{month}, in review' })
+
+    // Nothing leaked into the other items.
+    expect(await getAttendanceJson(page, 'cardtext:milestone:members')).toBeNull()
+  })
+
   // The Events tab writes KV directly, so the form scrape IS the validation.
   // Two things it has to get right, both of which were wrong before:
   // a checkbox carries its state in .checked (its .value is the string "on"

@@ -17,10 +17,11 @@
 import {
   escapeHtml, attr, tryParse, qs,
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
-  fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange, daysUntil, countdownLead,
+  fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange,
   PLATFORM_LIMITS, PLATFORM_LABELS,
   CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, normalizeLayout, isDefaultLayout,
   coverRect, panFocal,
+  CARD_TEXT_PREFIX, cardTextKey, resolveCardText, setCardText, clearCardText, cardTextForCopy,
 } from './lib.js'
 
 // --- Brand (mirrors css/tokens.css "Night Shift" values) ---
@@ -150,6 +151,8 @@ let cg = {
   layouts: {},         // cardlayout:<eventId>:<size> -> saved raw layout (see lib.js)
   layoutsEnv: null,    // env the layouts map was read from
   posterHit: null,     // { x, y, w, h, nw, nh, kind, size } of the last painted poster
+  texts: {},           // cardtext:<item> -> saved wording map (see lib.js)
+  textsEnv: null,      // env the texts map was read from
 }
 
 let ctx = null         // { api, env, content, toast } injected by admin.js
@@ -195,6 +198,19 @@ async function loadEvents() {
   }
   Object.assign(cg.layouts, pending)
   cg.layoutsEnv = ctx.env()
+
+  // Saved card wording, same shape of problem as the layouts above: a re-read
+  // must not clobber an edit whose debounced save has not landed yet.
+  const txtRaw = await ctx.api('GET', `/api/kv?${qs({ env: ctx.env(), binding: 'ATTENDANCE_KV', prefix: CARD_TEXT_PREFIX })}`)
+  const pendingText = cg.textsEnv === ctx.env() ? Object.fromEntries(
+    [...textSaves.keys()].filter(k => k in cg.texts).map(k => [k, cg.texts[k]])) : {}
+  cg.texts = {}
+  for (const k of txtRaw.keys) {
+    const v = tryParse(txtRaw.values[k.name])
+    if (v) cg.texts[k.name] = v
+  }
+  Object.assign(cg.texts, pendingText)
+  cg.textsEnv = ctx.env()
 }
 
 async function loadRoundup() {
@@ -381,7 +397,20 @@ function milestoneValue(stat) {
   return Object.values(cg.attendCounts).reduce((a, b) => a + b, 0)
 }
 
+// The card's data plus, for event posts, the reworded title / date / venue the
+// captions should follow.
 function copyData() {
+  const data = cardData()
+  const text = cardTextForCopy(cg.kind, data, cg.texts[cardTextKey(cg.kind, data)])
+  return text ? { ...data, text } : data
+}
+
+// The resolved wording for the card on screen: `text` to draw, `slots` to edit.
+function currentText(data = cardData()) {
+  return resolveCardText(cg.kind, data, cg.texts[cardTextKey(cg.kind, data)])
+}
+
+function cardData() {
   if (cg.kind === 'roundup') return cg.roundup || { films: [], total: 0 }
   if (cg.kind === 'diary') return diaryPageData()
   if (cg.kind === 'episode') return { episode: (cg.episodes || [])[cg.episodeIdx] || null }
@@ -576,9 +605,12 @@ function footer(c, W, H, pad, url, x = pad) {
 // `layout` is optional (and trailing, so the visual-QA harness's existing
 // calls keep working): omitted, the card renders exactly as it always has.
 // Returns the poster's hit region, or null when there's no poster.
-async function drawEventCard(c, W, H, event, lead, layout) {
+async function drawEventCard(c, W, H, event, lead, layout, text) {
   const e = event || {}
-  const name = e.film || e.title || 'Untitled'
+  // `text` is trailing and optional for the same reason `layout` is: without
+  // it the card says what it always has.
+  const t = text || { ...resolveCardText('announce', { event: e }).text, eyebrow: `Jackson Film Club · ${lead || 'Next screening'}` }
+  const name = t.title
   const poster = await loadImage(e.poster)
   const landscape = W > H
   const pad = Math.round(W * 0.065)
@@ -645,12 +677,14 @@ async function drawEventCard(c, W, H, event, lead, layout) {
     lines = wrapText(c, name, tw)
   }
   const lineH = Math.round(titlePx * 1.12)
-  const yearH = e.year ? Math.round(titlePx * 0.75) : 0
+  const yearH = t.year ? Math.round(titlePx * 0.75) : 0
   const metaPx = Math.round(W * 0.031 * ts)
-  const when = fmtSocialDate(e.date) + (e.time ? `  ·  ${fmtShowtime(e.time)}` : '')
-  const venue = e.venue || (e.hostId ? 'Member-hosted screening' : '')
+  // The dot separator is set wide on the card; the template keeps it plain.
+  const when = t.when.replace(/\s*·\s*/g, '  ·  ')
+  const venue = t.venue
+  const metaLines = [when, venue, t.extra].filter(Boolean).length
   const blockH = labelPx + labelGap + lines.length * lineH + yearH + Math.round(H * 0.035)
-    + (when.trim() ? Math.round(metaPx * 1.5) : 0) + (venue ? metaPx : 0)
+    + (metaLines ? Math.round(metaPx * 1.5) * (metaLines - 1) + metaPx : 0)
 
   if (full) {
     // Bottom-anchored above the footer, with the veil running `fade` px above
@@ -669,7 +703,7 @@ async function drawEventCard(c, W, H, event, lead, layout) {
   }
 
   c.textBaseline = 'alphabetic'
-  label(c, `Jackson Film Club · ${lead || 'Next screening'}`, tx, ty, labelPx)
+  if (t.eyebrow) label(c, t.eyebrow, tx, ty, labelPx)
   ty += labelGap
 
   // Film title — Playfair, wrapped, shrink-to-fit.
@@ -680,26 +714,25 @@ async function drawEventCard(c, W, H, event, lead, layout) {
     c.fillText(line, tx, ty)
     ty += lineH
   }
-  if (e.year) {
+  if (t.year) {
     c.font = `italic 500 ${Math.round(titlePx * 0.5)}px ${DISPLAY}`
     c.fillStyle = PAPER_4
-    c.fillText(String(e.year), tx, ty + Math.round(titlePx * 0.1))
+    c.fillText(t.year, tx, ty + Math.round(titlePx * 0.1))
     ty += yearH
   }
   ty += Math.round(H * 0.035)
 
   c.font = `500 ${metaPx}px ${LABEL}`
-  c.fillStyle = PAPER_2
-  if (when.trim()) {
-    c.fillText(when, tx, ty)
+  for (const [line, color] of [[when, PAPER_2], [venue, PAPER_4], [t.extra, BRAND]]) {
+    if (!line) continue
+    c.fillStyle = color
+    c.fillText(ellipsize(c, line, tw), tx, ty)
     ty += Math.round(metaPx * 1.5)
   }
-  if (venue) {
-    c.fillStyle = PAPER_4
-    c.fillText(venue, tx, ty)
-  }
 
-  footer(c, W, H, pad, 'jxnfilm.club/events')
+  // In the landscape band layout the text sits beside the poster, and so does
+  // the footer: at the card's left edge it landed on top of the artwork.
+  footer(c, W, H, pad, t.footer, tx)
   return hit
 }
 
@@ -780,9 +813,10 @@ async function drawTitleCard(c, W, H, event) {
 // Takes the same optional layout as drawEventCard, but only its crop (fx, fy,
 // zoom) and text nudge mean anything here — the poster is always a
 // full-card ghost, so band/fade/mode don't apply and the UI hides them.
-async function drawRecapCard(c, W, H, event, count, layout) {
+async function drawRecapCard(c, W, H, event, count, layout, text) {
   const e = event || {}
-  const name = e.film || e.title || 'Untitled'
+  const t = text || resolveCardText('recap', { event: e, count }).text
+  const name = t.title + (t.year ? ` (${t.year})` : '')
   const poster = await loadImage(e.poster)
   const pad = Math.round(W * 0.065)
   const L = resolveLayout(layout, W, H)
@@ -803,7 +837,7 @@ async function drawRecapCard(c, W, H, event, count, layout) {
   }
 
   let ty = Math.round(H * 0.2)
-  label(c, "Jackson Film Club · That's a wrap", pad, ty, Math.round(W * 0.021 * ts))
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, Math.round(W * 0.021 * ts))
   ty += Math.round(W * 0.025 * ts)
   c.textBaseline = 'top'
 
@@ -816,32 +850,40 @@ async function drawRecapCard(c, W, H, event, count, layout) {
     const ofPx = Math.round(W * 0.033 * ts)
     c.font = `500 ${ofPx}px ${LABEL}`
     c.fillStyle = PAPER_2
-    c.fillText('OF US', pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42))
-    c.fillText('WATCHED', pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
+    const unitW = W - pad * 2 - numW - Math.round(W * 0.02)
+    c.fillText(ellipsize(c, t.unit1 || '', unitW), pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42))
+    c.fillText(ellipsize(c, t.unit2 || '', unitW), pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
     ty += Math.round(numPx * 1.18)
   } else {
     const wePx = Math.round(W * 0.035 * ts)
     c.font = `500 ${wePx}px ${LABEL}`
     c.fillStyle = PAPER_2
-    c.fillText('WE WATCHED', pad, ty)
+    if (t.lead) c.fillText(ellipsize(c, t.lead, W - pad * 2), pad, ty)
     ty += Math.round(wePx * 1.9)
   }
 
   let titlePx = Math.round(W * 0.06 * ts)
   c.font = `800 ${titlePx}px ${DISPLAY}`
-  let lines = wrapText(c, name + (e.year ? ` (${e.year})` : ''), W - pad * 2)
+  let lines = wrapText(c, name, W - pad * 2)
   while (lines.length > 3 && titlePx > Math.round(W * 0.035 * ts)) {
     titlePx = Math.round(titlePx * 0.88)
     c.font = `800 ${titlePx}px ${DISPLAY}`
-    lines = wrapText(c, name + (e.year ? ` (${e.year})` : ''), W - pad * 2)
+    lines = wrapText(c, name, W - pad * 2)
   }
   c.fillStyle = PAPER
   for (const line of lines) {
     c.fillText(line, pad, ty)
     ty += Math.round(titlePx * 1.12)
   }
+  if (t.extra) {
+    const extraPx = Math.round(W * 0.031 * ts)
+    ty += Math.round(extraPx * 0.6)
+    c.font = `500 ${extraPx}px ${LABEL}`
+    c.fillStyle = BRAND
+    c.fillText(ellipsize(c, t.extra, W - pad * 2), pad, ty)
+  }
 
-  footer(c, W, H, pad, 'jxnfilm.club/events')
+  footer(c, W, H, pad, t.footer)
   return hit
 }
 
@@ -890,7 +932,7 @@ function drawPosterWall(c, posters, area) {
 
 // Shared wall-card layout: poster wall + label/heading/sub-lines text block
 // + footer. Used by the roundup, season lineup, and monthly wrap.
-async function drawWallCard(c, W, H, { posterUrls = [], heading, subLines = [], footerUrl }) {
+async function drawWallCard(c, W, H, { posterUrls = [], eyebrow = 'Jackson Film Club', heading, subLines = [], footerUrl }) {
   const pad = Math.round(W * 0.065)
   const landscape = W > H
   c.fillStyle = INK
@@ -939,7 +981,7 @@ async function drawWallCard(c, W, H, { posterUrls = [], heading, subLines = [], 
   let ty = text.y + Math.max(0, Math.round((text.h - m.blockH) / 2))
 
   c.textBaseline = 'top'
-  label(c, 'Jackson Film Club', text.x, ty, m.L)
+  if (eyebrow) label(c, eyebrow, text.x, ty, m.L)
   ty += m.L + m.gap
   c.font = `800 ${m.Hh}px ${DISPLAY}`
   c.fillStyle = PAPER
@@ -960,12 +1002,15 @@ async function drawWallCard(c, W, H, { posterUrls = [], heading, subLines = [], 
 
 const eventDisplayName = (e) => (e.film || e.title || '') + (e.year ? ` (${e.year})` : '')
 
-async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
+async function drawRoundupCard(c, W, H, data = {}, text) {
+  const { films = [] } = data || {}
+  const t = text || resolveCardText('roundup', data).text
   return drawWallCard(c, W, H, {
     posterUrls: films.map(f => f.poster),
-    heading: 'What the club is watching',
-    subLines: [`${total} film${total === 1 ? '' : 's'} logged by members in the last week`],
-    footerUrl: 'jxnfilm.club/watched',
+    eyebrow: t.eyebrow,
+    heading: t.heading,
+    subLines: [t.sub, t.extra].filter(Boolean),
+    footerUrl: t.footer,
   })
 }
 
@@ -980,7 +1025,9 @@ async function drawRoundupCard(c, W, H, { films = [], total = 0 } = {}) {
 // than 2x5 does. What actually buys the vertical budget is dropping the big
 // display heading on landscape (two compact label lines instead), which frees
 // ~65px and lands ~70px rows.
-async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCount = 1 } = {}) {
+async function drawDiaryCard(c, W, H, data = {}, text) {
+  const { films = [] } = data || {}
+  const t = text || resolveCardText('diary', data).text
   // The grid follows the page's actual film count. A full page is 2x5, but
   // the last page is whatever's left over — 121 films over 10 leaves ONE on
   // page 13, and a lone thumbnail parked in the top-left of an empty 2x5 is
@@ -1000,25 +1047,25 @@ async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCoun
   const labelPx = Math.round(W * (landscape ? 0.018 : tall ? 0.022 : 0.020))
   const headPx = landscape ? 0 : Math.round(W * (tall ? 0.058 : 0.050))
   const metaPx = Math.round(W * (landscape ? 0.016 : tall ? 0.022 : 0.019))
-  const range = fmtDiaryRange(from, to)
-  const pageStr = `Page ${page} of ${pageCount}`
   const headGap = Math.round((headPx || labelPx) * 0.45)
 
   c.textBaseline = 'top'
   let hy = pad
-  label(c, landscape ? 'Jackson Film Club · From the club diary' : 'Jackson Film Club', pad, hy, labelPx)
+  // Landscape has no room for a display heading, so it rides in the eyebrow.
+  const eyebrow = landscape ? [t.eyebrow, t.heading].filter(Boolean).join(' · ') : t.eyebrow
+  if (eyebrow) label(c, eyebrow, pad, hy, labelPx)
   hy += labelPx + headGap
   if (headPx) {
     c.font = `800 ${headPx}px ${DISPLAY}`
     c.fillStyle = PAPER
-    c.fillText('From the club diary', pad, hy)
+    c.fillText(ellipsize(c, t.heading, W - pad * 2), pad, hy)
     hy += Math.round(headPx * 1.05) + Math.round(headGap * 0.5)
   }
   // The range is the honest claim: feed depth is capped per member, not by
   // date, so a deep page can be years old. Never imply recency here.
   c.font = `500 ${metaPx}px ${LABEL}`
   c.fillStyle = PAPER_2
-  c.fillText(range ? `${range} · ${pageStr}` : pageStr, pad, hy)
+  c.fillText(ellipsize(c, t.meta, W - pad * 2), pad, hy)
   hy += metaPx
 
   const grid = { x: pad, y: hy + Math.round(pad * (landscape ? 0.3 : 0.5)), w: W - pad * 2 }
@@ -1149,35 +1196,39 @@ async function drawDiaryCard(c, W, H, { films = [], from, to, page = 1, pageCoun
   }
 
   c.textBaseline = 'alphabetic'
-  footer(c, W, H, pad, 'jxnfilm.club/watched')
+  footer(c, W, H, pad, t.footer)
 }
 
-async function drawLineupCard(c, W, H, { events = [] } = {}) {
+async function drawLineupCard(c, W, H, data = {}, text) {
+  const { events = [] } = data || {}
+  const t = text || resolveCardText('lineup', data).text
   return drawWallCard(c, W, H, {
     posterUrls: events.map(e => e.poster),
-    heading: 'Coming up at the club',
-    subLines: events.map(e => `${fmtSocialDate(e.date, { short: true })} — ${eventDisplayName(e)}`),
-    footerUrl: 'jxnfilm.club/events',
+    eyebrow: t.eyebrow,
+    heading: t.heading,
+    subLines: [...events.map(e => `${fmtSocialDate(e.date, { short: true })} — ${eventDisplayName(e)}`), t.extra].filter(Boolean),
+    footerUrl: t.footer,
   })
 }
 
-async function drawMonthwrapCard(c, W, H, d) {
-  const stats = `${d.screenings} screening${d.screenings === 1 ? '' : 's'}` +
-    (d.attendees > 0 ? ` · ${d.attendees} attendee${d.attendees === 1 ? '' : 's'}` : '')
+async function drawMonthwrapCard(c, W, H, d, text) {
+  const t = text || resolveCardText('monthwrap', d).text
   return drawWallCard(c, W, H, {
     posterUrls: (d.events || []).map(e => e.poster),
-    heading: `That was ${d.monthLabel}`,
-    subLines: [stats],
-    footerUrl: 'jxnfilm.club/events',
+    eyebrow: t.eyebrow,
+    heading: t.heading,
+    subLines: [t.sub, t.extra].filter(Boolean),
+    footerUrl: t.footer,
   })
 }
 
 // The current voice prompt as a card. Typographic like the episode card — the
 // prompt IS the artwork, so it gets the display face at the largest size that
 // still fits, with the invitation and deadline as supporting lines.
-async function drawVoicePromptCard(c, W, H, { prompt } = {}) {
-  const p = prompt || {}
-  const text = String(p.text || '').trim() || 'What are you watching?'
+async function drawVoicePromptCard(c, W, H, data = {}, text) {
+  const p = (data && data.prompt) || {}
+  const t = text || resolveCardText('voice', data).text
+  const quote = String(p.text || '').trim() || 'What are you watching?'
   const pad = Math.round(W * 0.065)
   const landscape = W > H
   const tall = H >= W * 1.5
@@ -1196,21 +1247,19 @@ async function drawVoicePromptCard(c, W, H, { prompt } = {}) {
   let lines
   for (;;) {
     c.font = `800 ${quotePx}px ${DISPLAY}`
-    lines = wrapText(c, `“${text}”`, tw)
+    lines = wrapText(c, `“${quote}”`, tw)
     if (lines.length <= maxLines || quotePx <= floor) break
     quotePx = Math.round(quotePx * 0.92)
   }
 
   const gap = Math.round(quotePx * 0.55)
   const lineH = Math.round(quotePx * 1.14)
-  const subLines = [
-    `Record or upload up to three minutes${p.deadline ? ` by ${fmtSocialDate(p.deadline, { short: true })}` : ''}.`,
-  ]
+  const subLines = [t.sub, t.extra].filter(Boolean)
   const blockH = labelPx + gap + lines.length * lineH + gap + subLines.length * Math.round(metaPx * 1.5)
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  label(c, 'Jackson Film Club · Podcast', pad, ty, labelPx)
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx)
   ty += labelPx + gap
 
   c.font = `800 ${quotePx}px ${DISPLAY}`
@@ -1224,26 +1273,21 @@ async function drawVoicePromptCard(c, W, H, { prompt } = {}) {
   c.font = `500 ${metaPx}px ${LABEL}`
   for (let i = 0; i < subLines.length; i++) {
     c.fillStyle = i === 0 ? PAPER_2 : PAPER_4
-    c.fillText(subLines[i], pad, ty)
+    c.fillText(ellipsize(c, subLines[i], tw), pad, ty)
     ty += Math.round(metaPx * 1.5)
   }
 
-  footer(c, W, H, pad, 'jxnfilm.club/speak')
+  footer(c, W, H, pad, t.footer)
 }
 
 // Big-numeral stat card, recap-style: brand-red value + stacked unit words.
-const MILESTONE_UNITS = {
-  members: ['MEMBERS', 'STRONG'],
-  screenings: ['SCREENINGS', 'AND COUNTING'],
-  attendance: ['SEATS', 'FILLED'],
-}
-
-async function drawMilestoneCard(c, W, H, { stat, value = 0 } = {}) {
+async function drawMilestoneCard(c, W, H, data = {}, text) {
+  const { value = 0 } = data || {}
+  const t = text || resolveCardText('milestone', data).text
   const pad = Math.round(W * 0.065)
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
 
-  const units = MILESTONE_UNITS[stat] || MILESTONE_UNITS.members
   const numPx = Math.round(Math.min(W, H) * 0.34)
   const ofPx = Math.round(W * 0.035)
   const thanksPx = Math.round(W * 0.028)
@@ -1252,7 +1296,7 @@ async function drawMilestoneCard(c, W, H, { stat, value = 0 } = {}) {
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  label(c, 'Jackson Film Club · Milestone', pad, ty, Math.round(W * 0.021))
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, Math.round(W * 0.021))
   ty += Math.round(W * 0.025) + Math.round(W * 0.01)
 
   c.font = `800 ${numPx}px ${DISPLAY}`
@@ -1261,21 +1305,22 @@ async function drawMilestoneCard(c, W, H, { stat, value = 0 } = {}) {
   const numW = c.measureText(String(value)).width
   c.font = `500 ${ofPx}px ${LABEL}`
   c.fillStyle = PAPER_2
-  c.fillText(units[0], pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42))
-  c.fillText(units[1], pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
+  const unitW = W - pad * 2 - numW - Math.round(W * 0.025)
+  c.fillText(ellipsize(c, t.unit1, unitW), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42))
+  c.fillText(ellipsize(c, t.unit2, unitW), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
   ty += Math.round(numPx * 1.05) + gap
 
   c.font = `italic 500 ${thanksPx}px ${DISPLAY}`
   c.fillStyle = PAPER
-  c.fillText('Thank you, Jackson.', pad, ty)
+  c.fillText(ellipsize(c, t.thanks, W - pad * 2), pad, ty)
 
-  footer(c, W, H, pad, 'jxnfilm.club')
+  footer(c, W, H, pad, t.footer)
 }
 
 // Typographic episode card — the podcast has no per-episode artwork the
 // admin can legally rehost, so the type carries it.
-async function drawEpisodeCard(c, W, H, { episode } = {}) {
-  const e = episode || {}
+async function drawEpisodeCard(c, W, H, data = {}, text) {
+  const t = text || resolveCardText('episode', data).text
   const pad = Math.round(W * 0.065)
   const landscape = W > H
   c.fillStyle = INK
@@ -1287,18 +1332,19 @@ async function drawEpisodeCard(c, W, H, { episode } = {}) {
   const tw = W - pad * 2
 
   c.font = `800 ${titlePx}px ${DISPLAY}`
-  let lines = wrapText(c, e.title || 'New episode', tw)
+  let lines = wrapText(c, t.title, tw)
   while (lines.length > 4 && titlePx > Math.round(W * 0.038)) {
     titlePx = Math.round(titlePx * 0.88)
     c.font = `800 ${titlePx}px ${DISPLAY}`
-    lines = wrapText(c, e.title || 'New episode', tw)
+    lines = wrapText(c, t.title, tw)
   }
   const gap = Math.round(titlePx * 0.6)
   const blockH = labelPx + gap + lines.length * Math.round(titlePx * 1.12) + gap + metaPx * 2 + Math.round(metaPx * 0.8)
+    + (t.extra ? Math.round(metaPx * 1.8) : 0)
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  label(c, 'Jackson Film Club · New podcast episode', pad, ty, labelPx)
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx)
   ty += labelPx + gap
   c.font = `800 ${titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
@@ -1307,19 +1353,20 @@ async function drawEpisodeCard(c, W, H, { episode } = {}) {
     ty += Math.round(titlePx * 1.12)
   }
   ty += gap
-  if (e.date) {
-    c.font = `500 ${metaPx}px ${LABEL}`
-    c.fillStyle = PAPER_2
-    c.fillText(fmtSocialDate(e.date), pad, ty)
+  c.font = `500 ${metaPx}px ${LABEL}`
+  for (const [line, color] of [[t.date, PAPER_2], [t.extra, BRAND]]) {
+    if (!line) continue
+    c.fillStyle = color
+    c.fillText(ellipsize(c, line, tw), pad, ty)
     ty += Math.round(metaPx * 1.8)
   }
   c.font = `500 ${Math.round(metaPx * 0.85)}px ${LABEL}`
   c.letterSpacing = '2px'
   c.fillStyle = PAPER_4
-  c.fillText('LISTEN WHEREVER YOU GET PODCASTS', pad, ty)
+  c.fillText(ellipsize(c, t.cta, tw), pad, ty)
   c.letterSpacing = '0px'
 
-  footer(c, W, H, pad, 'jxnfilm.club')
+  footer(c, W, H, pad, t.footer)
 }
 
 // --- Poster layout editing (announce / countdown / recap) ---
@@ -1372,28 +1419,127 @@ function layoutStatus(text) {
 }
 
 function scheduleLayoutSave(key, value) {
+  scheduleKvSave(layoutSaves, key,
+    isDefaultLayout(normalizeLayout(value, value.poster)) ? null : value, layoutStatus, 'Layout')
+}
+
+// Debounced blind overwrite of one ATTENDANCE_KV key; `body: null` deletes it.
+// `saves` tracks key -> pending timer or 'inflight', so a re-read of KV can
+// tell which in-memory values are newer than what it just fetched.
+function scheduleKvSave(saves, key, body, status, what) {
   // Captured now: an env switch during the debounce must not redirect the
   // write to the other environment's KV.
   const env = ctx.env()
-  const prev = layoutSaves.get(key)
+  const prev = saves.get(key)
   if (prev && prev !== 'inflight') clearTimeout(prev)
-  layoutStatus('Saving…')
-  layoutSaves.set(key, setTimeout(async () => {
-    layoutSaves.set(key, 'inflight')
+  status('Saving…')
+  const timer = setTimeout(async () => {
+    saves.set(key, 'inflight')
     try {
       const where = `/api/kv?${qs({ env, binding: 'ATTENDANCE_KV', key })}`
-      if (isDefaultLayout(normalizeLayout(value, value.poster))) await ctx.api('DELETE', where)
-      else await ctx.api('PUT', where, JSON.stringify(value))
-      if (layoutSaves.get(key) === 'inflight') {
-        layoutSaves.delete(key)
-        layoutStatus('Saved')
+      if (body === null) await ctx.api('DELETE', where)
+      else await ctx.api('PUT', where, JSON.stringify(body))
+      if (saves.get(key) === 'inflight') {
+        saves.delete(key)
+        status('Saved')
       }
     } catch (e) {
-      if (layoutSaves.get(key) === 'inflight') layoutSaves.delete(key)
-      layoutStatus('Save failed')
-      ctx.toast(`Layout not saved: ${e.message || e}`, true)
+      if (saves.get(key) === 'inflight') saves.delete(key)
+      status('Save failed')
+      ctx.toast(`${what} not saved: ${e.message || e}`, true)
     }
-  }, 500))
+  }, 500)
+  saves.set(key, timer)
+}
+
+// --- Card wording (every kind except the no-film event poster) ---
+//
+// One field per line of text the card draws, from the slot table in lib.js.
+// Edits repaint on the next frame and save, debounced, to `cardtext:<item>`.
+// Only reworded lines are stored, and a map with nothing left in it deletes
+// the key, so untouched lines keep following the built-in defaults.
+
+const textSaves = new Map()   // key -> pending timer, or 'inflight'
+
+const TEXT_SCOPE = {
+  announce: 'Saved with this event. The eyebrow is this post type’s own; the other lines carry over to the event’s other posts.',
+  countdown: 'Saved with this event. The eyebrow is this post type’s own; the other lines carry over to the event’s other posts.',
+  recap: 'Saved with this event. Title, year and footer carry over to the event’s other posts.',
+  episode: 'Saved for this episode.',
+  monthwrap: 'Saved for this month.',
+  milestone: 'Saved for this stat.',
+  voice: 'Saved for this prompt. The question itself is set on the Config tab.',
+  lineup: 'Saved for every lineup card.',
+  roundup: 'Saved for every roundup card.',
+  diary: 'Saved for every diary page.',
+}
+
+function textTarget() {
+  const data = cardData()
+  const key = cardTextKey(cg.kind, data)
+  return key ? { key, data } : null
+}
+
+function textStatus(text) {
+  const el = document.querySelector('#cg-t-status')
+  if (el) el.textContent = text
+}
+
+function storeText(key, next) {
+  // An emptied map stays in memory as {} rather than being deleted: loadEvents
+  // keeps only pending saves it can still find here, and a reset that vanished
+  // from this map would be overwritten by the stale row a re-read brings back.
+  cg.texts[key] = next
+  scheduleKvSave(textSaves, key, Object.keys(next).length ? next : null, textStatus, 'Wording')
+}
+
+function renderTextPanel() {
+  const host = document.querySelector('#cg-text')
+  if (!host) return
+  const t = textTarget()
+  if (!t) {
+    host.hidden = true
+    host.innerHTML = ''
+    return
+  }
+  const { slots, tokens } = currentText(t.data)
+  host.hidden = false
+  host.innerHTML = `
+    <h4>Wording</h4>
+    <div class="cg-text-grid">
+      ${slots.map(s => `
+        <label class="cg-t${s.edited ? ' edited' : ''}" data-slot="${attr(s.id)}">${escapeHtml(s.label)}
+          <input type="text" id="cg-t-${attr(s.id)}" maxlength="160" autocomplete="off" spellcheck="true"
+                 value="${attr(s.template)}" placeholder="${attr(s.hint || '')}">
+        </label>`).join('')}
+    </div>
+    <p class="cg-layout-hint muted">Clear a line to remove it.${tokens.length
+      ? ` ${tokens.map(k => `<code>{${escapeHtml(k)}}</code>`).join(' ')} fill in automatically.` : ''}
+      ${escapeHtml(TEXT_SCOPE[cg.kind] || '')}
+      <button type="button" id="cg-t-reset">Reset wording</button>
+      <span id="cg-t-status" aria-live="polite"></span></p>`
+
+  for (const s of slots) {
+    const input = host.querySelector(`#cg-t-${s.id}`)
+    input.addEventListener('input', () => {
+      // Re-resolve the target: the slot list was captured at render, but the
+      // saved map is whatever the latest keystroke in any field left it as.
+      const next = setCardText(cg.texts[t.key], s, input.value)
+      storeText(t.key, next)
+      input.closest('.cg-t').classList.toggle('edited',
+        Object.prototype.hasOwnProperty.call(next, s.store))
+      scheduleRender()
+      // Captions follow the reworded title, year, date and venue.
+      if (s.copy) renderCopyPanel()
+    })
+  }
+  host.querySelector('#cg-t-reset').addEventListener('click', () => {
+    storeText(t.key, clearCardText(cg.texts[t.key], slots))
+    renderTextPanel()
+    renderCopyPanel()
+    scheduleRender()
+  })
+  if (textSaves.has(t.key)) textStatus('Saving…')
 }
 
 let renderQueued = false
@@ -1599,17 +1745,17 @@ function setRenderBusy(on, quiet = false) {
 }
 
 async function drawForKind(c, w, h, data) {
-  if (cg.kind === 'roundup') await drawRoundupCard(c, w, h, data)
-  else if (cg.kind === 'diary') await drawDiaryCard(c, w, h, data)
-  else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data)
-  else if (cg.kind === 'monthwrap') await drawMonthwrapCard(c, w, h, data)
-  else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data)
-  else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data)
-  else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data)
-  else if (cg.kind === 'recap') return drawRecapCard(c, w, h, data.event, data.count, currentLayout())
+  const text = cg.kind === 'titlecard' ? null : currentText(data).text
+  if (cg.kind === 'roundup') await drawRoundupCard(c, w, h, data, text)
+  else if (cg.kind === 'diary') await drawDiaryCard(c, w, h, data, text)
+  else if (cg.kind === 'lineup') await drawLineupCard(c, w, h, data, text)
+  else if (cg.kind === 'monthwrap') await drawMonthwrapCard(c, w, h, data, text)
+  else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data, text)
+  else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data, text)
+  else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data, text)
+  else if (cg.kind === 'recap') return drawRecapCard(c, w, h, data.event, data.count, currentLayout(), text)
   else if (cg.kind === 'titlecard') await drawTitleCard(c, w, h, data.event)
-  else if (cg.kind === 'countdown') return drawEventCard(c, w, h, data.event, countdownLead(daysUntil(data.event && data.event.date, data.today)), currentLayout())
-  else return drawEventCard(c, w, h, data.event, 'Next screening', currentLayout())
+  else return drawEventCard(c, w, h, data.event, null, currentLayout(), text)
   return null
 }
 
@@ -1659,7 +1805,8 @@ async function downloadAllDiaryPages(btn) {
       c.setTransform(1, 0, 0, 1, 0, 0)
       c.clearRect(0, 0, w, h)
       c.textBaseline = 'alphabetic'
-      await drawDiaryCard(c, w, h, { ...pages[i], page: i + 1, pageCount: pages.length })
+      const pageData = { ...pages[i], page: i + 1, pageCount: pages.length }
+      await drawDiaryCard(c, w, h, pageData, currentText(pageData).text)
       const blob = await toBlobAsync(off)
       if (!blob) throw new Error(`page ${i + 1} failed to encode`)
       saveBlob(blob, socialFileName('diary', cg.size, diaryFileTag(i)))
@@ -1885,6 +2032,7 @@ export async function renderContentGen(context) {
         </div>
         <div class="cg-canvas-wrap"><canvas id="cg-canvas"></canvas></div>
         <div class="cg-layout" id="cg-layout" hidden></div>
+        <div class="cg-text" id="cg-text" hidden></div>
         <div class="toolbar">
           <button type="button" class="primary" id="cg-download">Download PNG</button>
           ${cg.kind === 'titlecard' && cg.size === 'poster'
@@ -1922,6 +2070,7 @@ export async function renderContentGen(context) {
   const refresh = () => {
     renderCopyPanel()
     renderLayoutPanel()
+    renderTextPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
   const evSel = document.querySelector('#cg-event')
@@ -2053,6 +2202,7 @@ export async function renderContentGen(context) {
     if (canvas) bindCanvasDrag(canvas)
     renderCopyPanel()
     renderLayoutPanel()
+    renderTextPanel()
     renderCanvas().catch(e => ctx.toast(e.message || String(e), true))
   }
 }

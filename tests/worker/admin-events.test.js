@@ -341,6 +341,19 @@ describe('DELETE /admin/events/:id', () => {
     expect(await env.ATTENDANCE_KV.get('cardlayout:d3:ig-story')).toBeNull()
     expect(await env.ATTENDANCE_KV.get('cardlayout:d3-2:ig-post')).toBe('{"fy":0.3}')
   })
+
+  it("drops the event's Content Gen card wording, and only its own", async () => {
+    await env.ATTENDANCE_KV.put('event:d4', JSON.stringify({ id: 'd4', title: 'Reworded', date: '2020-01-01', venue: 'Banner Hall' }))
+    await env.ATTENDANCE_KV.put('cardtext:event:d4', '{"title":"Short"}')
+    await env.ATTENDANCE_KV.put('cardtext:event:d4-2', '{"title":"Other"}')
+    await env.ATTENDANCE_KV.put('cardtext:lineup', '{"heading":"Soon"}')
+    captureEmails()
+
+    expect((await req('/admin/events/d4', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(200)
+    expect(await env.ATTENDANCE_KV.get('cardtext:event:d4')).toBeNull()
+    expect(await env.ATTENDANCE_KV.get('cardtext:event:d4-2')).toBe('{"title":"Other"}')
+    expect(await env.ATTENDANCE_KV.get('cardtext:lineup')).toBe('{"heading":"Soon"}')
+  })
 })
 
 // `admission` is the explicit answer to "how do people get in". It rides on top

@@ -109,6 +109,32 @@ describe('normalizeLayout', () => {
   })
 })
 
+describe('normalizeLayout: placement and poster mode', () => {
+  const poster = 'https://image.tmdb.org/p.jpg'
+
+  it('round-trips text placement, alignment and the whole-poster mode', () => {
+    const l = normalizeLayout({ poster, vpos: 'middle', align: 'center', mode: 'fit' }, poster)
+    expect(l).toMatchObject({ vpos: 'middle', align: 'center', mode: 'fit' })
+    expect(isDefaultLayout(l)).toBe(false)
+  })
+
+  it('defaults to the card\'s own placement and rejects junk', () => {
+    expect(normalizeLayout({ poster }, poster)).toMatchObject({ vpos: 'auto', align: 'left', mode: 'band' })
+    expect(normalizeLayout({ poster, vpos: 'sideways', align: 7, mode: null }, poster))
+      .toMatchObject({ vpos: 'auto', align: 'left', mode: 'band' })
+  })
+
+  it('keeps placement when the poster changes, but not the poster mode', () => {
+    const l = normalizeLayout({ poster: 'https://image.tmdb.org/old.jpg', vpos: 'top', align: 'center', mode: 'fit', fy: 0 }, poster)
+    expect(l).toMatchObject({ stale: true, vpos: 'top', align: 'center', mode: 'band', fy: 0.5 })
+  })
+
+  it('a placement alone is worth saving', () => {
+    expect(isDefaultLayout(normalizeLayout({ vpos: 'bottom' }, ''))).toBe(false)
+    expect(isDefaultLayout(normalizeLayout({ vpos: 'auto', align: 'left' }, ''))).toBe(true)
+  })
+})
+
 describe('isDefaultLayout / cardLayoutKey', () => {
   it('detects a no-op layout', () => {
     expect(isDefaultLayout(normalizeLayout(null, ''))).toBe(true)

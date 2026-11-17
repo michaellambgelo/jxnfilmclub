@@ -232,8 +232,17 @@ export const LAYOUT_TYPE_KEYS = ['text', 'title', 'meta', 'label']
 // the knob.
 export const DEFAULT_LAYOUT = Object.freeze({
   fx: 0.5, fy: 0.5, zoom: 1, band: null, fade: null, mode: 'band', text: 1,
-  title: 1, meta: 1, label: 1,
+  title: 1, meta: 1, label: 1, vpos: 'auto', align: 'left',
 })
+
+// How the poster is shown: cropped into a band, cropped across the whole card,
+// or whole and uncropped ('fit') inside the band.
+export const LAYOUT_MODES = ['band', 'full', 'fit']
+// Where the text block sits. 'auto' is each card's own default, which is not
+// the same as any of the three presets.
+export const LAYOUT_VPOS = ['auto', 'top', 'middle', 'bottom']
+export const LAYOUT_ALIGN = ['left', 'center']
+const oneOf = (v, list) => (list.includes(v) ? v : list[0])
 
 const clampNum = (v, lo, hi, dflt) => {
   const n = Number(v)
@@ -246,8 +255,10 @@ export function normalizeLayout(raw, poster) {
   if (!raw || typeof raw !== 'object') return { ...base, stale: false }
   const type = {}
   for (const k of LAYOUT_TYPE_KEYS) type[k] = clampNum(raw[k], ...LAYOUT_LIMITS[k], base[k])
-  // A crop tuned against a different image is meaningless; the type sizes are
-  // not, so only the crop is dropped.
+  type.vpos = oneOf(raw.vpos, LAYOUT_VPOS)
+  type.align = oneOf(raw.align, LAYOUT_ALIGN)
+  // A crop tuned against a different image is meaningless; the type sizes and
+  // the text placement are not, so only the crop is dropped.
   if ((raw.poster || '') !== (poster || '')) return { ...base, ...type, stale: true }
   return {
     fx: clampNum(raw.fx, 0, 1, base.fx),
@@ -255,7 +266,7 @@ export function normalizeLayout(raw, poster) {
     zoom: clampNum(raw.zoom, ...LAYOUT_LIMITS.zoom, base.zoom),
     band: clampNum(raw.band, ...LAYOUT_LIMITS.band, null),
     fade: clampNum(raw.fade, ...LAYOUT_LIMITS.fade, null),
-    mode: raw.mode === 'full' ? 'full' : 'band',
+    mode: oneOf(raw.mode, LAYOUT_MODES),
     ...type,
     stale: false,
   }

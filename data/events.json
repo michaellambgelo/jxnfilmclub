@@ -317,7 +317,9 @@
     "date": "2023-11-09",
     "venue": "Capri Theatre",
     "poster": "https://image.tmdb.org/t/p/original/cyK6byyA6zzvEdqB3ncg3LzPUy1.jpg",
-    "letterboxd_uri": "https://boxd.it/58AIZV"
+    "letterboxd_uri": "https://boxd.it/58AIZV",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-01-11-rising-hope",
@@ -325,7 +327,9 @@
     "film": "Rising Hope",
     "date": "2024-01-11",
     "venue": "Capri Theatre",
-    "letterboxd_uri": "https://boxd.it/5zxfCZ"
+    "letterboxd_uri": "https://boxd.it/5zxfCZ",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-01-21-fannie-lou-hamers-america",
@@ -335,7 +339,9 @@
     "date": "2024-01-21",
     "venue": "Two Mississippi Museums",
     "poster": "https://image.tmdb.org/t/p/original/3qzJZVCkR91Cpsxp3n710Pex1Sb.jpg",
-    "letterboxd_uri": "https://boxd.it/5ExGtF"
+    "letterboxd_uri": "https://boxd.it/5ExGtF",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-02-11-butterfly-in-the-sky",
@@ -345,7 +351,9 @@
     "date": "2024-02-11",
     "venue": "Two Mississippi Museums",
     "poster": "https://image.tmdb.org/t/p/original/lD8XCt4ep5VCU4OIxKsKk10QI0o.jpg",
-    "letterboxd_uri": "https://boxd.it/5OtKN7"
+    "letterboxd_uri": "https://boxd.it/5OtKN7",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-05-14-sunshine",
@@ -355,7 +363,9 @@
     "date": "2024-05-14",
     "venue": "Fertile Ground Beer Co.",
     "poster": "https://image.tmdb.org/t/p/original/fcnyp8udtt5Px3DneZRiLzcZaTL.jpg",
-    "letterboxd_uri": "https://boxd.it/6tCOcr"
+    "letterboxd_uri": "https://boxd.it/6tCOcr",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-05-18-bottoms",
@@ -365,7 +375,9 @@
     "date": "2024-05-18",
     "venue": "Urban Foxes",
     "poster": "https://image.tmdb.org/t/p/original/qVsNNFzl6aWhmyBnQPEYFyrGyk0.jpg",
-    "letterboxd_uri": "https://boxd.it/6uIuw3"
+    "letterboxd_uri": "https://boxd.it/6uIuw3",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2024-07-25-sing-sing",
@@ -375,7 +387,9 @@
     "date": "2024-07-25",
     "venue": "Capri Theatre",
     "poster": "https://image.tmdb.org/t/p/original/oclmjxk5rNxyd2EUWIiDWZxvguu.jpg",
-    "letterboxd_uri": "https://boxd.it/6XGrJb"
+    "letterboxd_uri": "https://boxd.it/6XGrJb",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2026-02-04-hamnet",
@@ -385,7 +399,9 @@
     "date": "2026-02-04",
     "venue": "Legacy Theaters Parkway",
     "poster": "https://image.tmdb.org/t/p/original/i2e7TDg5gc1JDDScKCjtEgAOwC0.jpg",
-    "letterboxd_uri": "https://boxd.it/cZLYxN"
+    "letterboxd_uri": "https://boxd.it/cZLYxN",
+    "ticketed": false,
+    "admission": "free"
   },
   {
     "id": "2026-07-16-the-odyssey-imax",
@@ -395,7 +411,9 @@
     "date": "2026-07-16",
     "venue": "Malco Grandview & IMAX",
     "poster": "https://image.tmdb.org/t/p/original/gg2ShRA7YaXV8O7xErXvMARoX0T.jpg",
-    "letterboxd_uri": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/"
+    "letterboxd_uri": "https://letterboxd.com/michaellamb/film/the-odyssey-2026/",
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-07-30-spider-man-brand-new-day-premiere-t10t",
@@ -411,7 +429,8 @@
     "kind": "meetup",
     "time": "19:05",
     "rsvp": true,
-    "ticketed": false
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-08-28-coyote-vs-acme-premiere-twuu",
@@ -427,7 +446,8 @@
     "kind": "meetup",
     "time": "12:05",
     "rsvp": true,
-    "ticketed": false
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-09-16-resident-evil",
@@ -441,7 +461,8 @@
     "time": "21:05",
     "rsvp": true,
     "ticketUrl": "https://tickets.malco.com/seat-select?showtimeId=01a0a63b-22a9-7586-9559-766ed345a64e",
-    "ticketed": true
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-10-22-clayface",
@@ -456,7 +477,8 @@
     "time": "20:30",
     "rsvp": true,
     "ticketUrl": "https://ticketing.useast.veezi.com/purchase/5127?siteToken=ec9jrhkgwvf72npmrh80fkm4jc",
-    "ticketed": true
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-10-24-you-can-see-everything",
@@ -469,7 +491,23 @@
     "time": "13:25",
     "rsvp": false,
     "ticketUrl": "https://www.cinemark.com/TicketSeatMap/?TheaterId=274&ShowtimeId=615983&CinemarkMovieId=113084&Showtime=2026-10-24T13:25:00",
-    "ticketed": true
+    "ticketed": true,
+    "admission": "ticketed"
+  },
+  {
+    "id": "2026-11-20-the-hunger-games-sunrise-on-the-reaping",
+    "title": "Opening Day Screening of The Hunger Games: Sunrise on the Reaping",
+    "film": "The Hunger Games: Sunrise on the Reaping",
+    "year": 2026,
+    "date": "2026-11-20",
+    "venue": "Malco Grandview & IMAX",
+    "poster": "https://image.tmdb.org/t/p/w500/j1MNyNNgNQL6f27cb3m3uKaPKd6.jpg",
+    "kind": "meetup",
+    "time": "12:00",
+    "rsvp": true,
+    "ticketUrl": "https://tickets.malco.com/seat-select?showtimeId=01a1833e-6a03-731f-a7f7-541926b1e870",
+    "ticketed": true,
+    "admission": "ticketed"
   },
   {
     "id": "2026-11-28-chef",

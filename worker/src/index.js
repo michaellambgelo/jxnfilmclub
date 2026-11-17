@@ -3758,6 +3758,8 @@ async function deleteEvent(env, eventId) {
   // event `abc` from sweeping up `abc-2`'s layouts.
   const layouts = await env.ATTENDANCE_KV.list({ prefix: `cardlayout:${eventId}:` })
   await Promise.all(layouts.keys.map(k => env.ATTENDANCE_KV.delete(k.name)))
+  // ...and its reworded card text (`cardtext:event:<id>`, one exact key).
+  await env.ATTENDANCE_KV.delete(`cardtext:event:${eventId}`)
   const allRaw = await env.ATTENDANCE_KV.get('events:all')
   if (allRaw) {
     const all = safeParseArray(allRaw)

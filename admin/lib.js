@@ -614,20 +614,35 @@ export function fmtMonth(ym) {
 }
 
 // Shared phrasing pieces for an event, built from the public view only.
-function eventBits(event) {
+function eventBits(event, text) {
   const e = socialEventView(event) || {}
   const name = e.film || e.title || ''
   const titled = name + (e.year ? ` (${e.year})` : '')
   const when = fmtSocialDate(e.date) + (e.time ? ` · ${fmtShowtime(e.time)}` : '')
   const whenShort = fmtSocialDate(e.date, { short: true }) + (e.time ? ` · ${fmtShowtime(e.time)}` : '')
   const venue = e.venue || (e.hostId ? 'a member-hosted screening' : '')
-  return { e, name, titled, when, whenShort, venue }
+  // Reworded image text (cardTextForCopy) wins, field by field. An empty
+  // override is honoured too: a venue line removed from the image is removed
+  // from the caption.
+  const t = text && typeof text === 'object' ? text : {}
+  const has = (k) => typeof t[k] === 'string'
+  const outName = has('name') ? t.name : name
+  const outYear = has('year') ? t.year : (e.year ? String(e.year) : '')
+  return {
+    e,
+    name: outName,
+    titled: outName + (outYear ? ` (${outYear})` : ''),
+    when: has('when') ? t.when : when,
+    whenShort: has('whenShort') ? t.whenShort : whenShort,
+    venue: has('venue') ? t.venue : venue,
+  }
 }
 
 // kind: announce | countdown | recap | roundup | diary | episode | voice | lineup | monthwrap | milestone
 // platform: instagram | facebook | discord | bluesky | x
 // data by kind:
-//   announce/recap — { event, count? }        (count = attendance, recap only)
+//   announce/recap — { event, count?, text? } (count = attendance, recap only;
+//                    text = reworded image lines from cardTextForCopy)
 //   countdown      — { event, today? }        (today = YYYY-MM-DD anchor for tests)
 //   roundup        — { films, total }         (from buildRoundupData)
 //   diary          — { films, from, to, page, pageCount }  (one buildDiaryPages page)
@@ -644,7 +659,7 @@ export function buildSocialCopy(kind, platform, data = {}) {
   if (kind === 'lineup') return lineupCopy(platform, data.events || [])
   if (kind === 'monthwrap') return monthwrapCopy(platform, data)
   if (kind === 'milestone') return milestoneCopy(platform, data)
-  const { e, titled, when, whenShort, venue } = eventBits(data.event)
+  const { e, titled, when, whenShort, venue } = eventBits(data.event, data.text)
   const lead = kind === 'countdown'
     ? countdownLead(daysUntil(e.date, data.today || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()))).toUpperCase()
     : 'NEXT SCREENING'
@@ -664,18 +679,23 @@ export function buildSocialCopy(kind, platform, data = {}) {
     return `🎬 That's a wrap on ${titled}. ${crowd}Thanks for watching with us — see what's next: ${EVENTS_URL}`
   }
 
-  // announce / countdown
+  // announce / countdown. The date and venue lines drop out when empty (a
+  // line removed from the image is removed here), which never happens for an
+  // event that has not been reworded.
+  const where = venue ? `\n📍 ${venue}` : ''
+  const details = (when ? `\n📅 ${when}` : '') + where
+  const detailsShort = whenShort ? `\n📅 ${whenShort}${venue ? ` · ${venue}` : ''}` : where
   if (platform === 'instagram') {
-    return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP at the link in bio.\n\n${IG_TAGS}`
+    return `🎬 ${lead}\n\n${titled}${details}\n\nJoin us — RSVP at the link in bio.\n\n${IG_TAGS}`
   }
   if (platform === 'discord') {
-    return `🎬 **${lead}: ${titled}**\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nRSVP: ${EVENTS_URL}${e.letterboxd_uri ? `\n${e.letterboxd_uri}` : ''}`
+    return `🎬 **${lead}: ${titled}**${details}\n\nRSVP: ${EVENTS_URL}${e.letterboxd_uri ? `\n${e.letterboxd_uri}` : ''}`
   }
   if (platform === 'bluesky' || platform === 'x') {
-    return `🎬 ${lead}: ${titled}\n📅 ${whenShort}${venue ? ` · ${venue}` : ''}\n\nRSVP: ${EVENTS_URL}`
+    return `🎬 ${lead}: ${titled}${detailsShort}\n\nRSVP: ${EVENTS_URL}`
   }
   // facebook
-  return `🎬 ${lead}\n\n${titled}\n📅 ${when}${venue ? `\n📍 ${venue}` : ''}\n\nJoin us — RSVP and details: ${EVENTS_URL}`
+  return `🎬 ${lead}\n\n${titled}${details}\n\nJoin us — RSVP and details: ${EVENTS_URL}`
 }
 
 function episodeCopy(platform, { title = '', date, url = '' }) {
@@ -1047,6 +1067,307 @@ export function socialFileName(kind, sizeKey, event) {
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   const parts = ['jfc', kind, slug(event && (event.id || event.film || event.title)), sizeKey]
   return parts.filter(Boolean).join('-') + '.png'
+}
+
+// --- Content Gen card wording ---
+//
+// Every line of text a card draws is a SLOT: an id, a field label, and a
+// default TEMPLATE. Templates carry {tokens} for the parts that come from
+// data ({date}, {countdown}, {films}), so the operator can reword a line and
+// keep the live value in it. A countdown reworded on Monday must still count
+// down on Tuesday, and a roundup saved this week must not quote this week's
+// film count next week.
+//
+// Saved wording is `cardtext:<item>` in ATTENDANCE_KV: a flat map of slot
+// store-key to template, holding ONLY the slots that differ from the default.
+// An absent slot follows the default, so a later change to a default reaches
+// every card that never reworded that line. An empty string is a real value:
+// it removes the line.
+//
+// Which item a card saves under:
+//   announce / countdown / recap  cardtext:event:<eventId>   (title, date,
+//       venue and footer are shared by the three; each keeps its own eyebrow)
+//   episode     cardtext:episode:<slug>     monthwrap  cardtext:monthwrap:<YYYY-MM>
+//   milestone   cardtext:milestone:<stat>   voice      cardtext:voice:<promptId>
+//   lineup / roundup / diary      cardtext:<kind>
+// The no-film event poster (titlecard) has no slots: it mirrors
+// .event-titlecard on the site and must keep saying what the site says.
+
+export const CARD_TEXT_PREFIX = 'cardtext:'
+export const CARD_TEXT_MAX = 160
+
+const EVENT_TEXT_KINDS = new Set(['announce', 'countdown', 'recap'])
+const textSlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+const textSlugTail = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(-80).replace(/^-+/, '')
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+export function cardTextKey(kind, data = {}) {
+  const d = data || {}
+  if (EVENT_TEXT_KINDS.has(kind)) return d.event && d.event.id ? `${CARD_TEXT_PREFIX}event:${d.event.id}` : null
+  if (kind === 'episode') {
+    const ep = d.episode || {}
+    // The TAIL of the slug: episode URLs share a long host-and-show prefix,
+    // and it is the end that tells one episode from the next.
+    const slug = textSlugTail(ep.id || ep.url || `${ep.date || ''} ${ep.title || ''}`)
+    return slug ? `${CARD_TEXT_PREFIX}episode:${slug}` : null
+  }
+  if (kind === 'monthwrap') return d.month ? `${CARD_TEXT_PREFIX}monthwrap:${d.month}` : null
+  if (kind === 'milestone') return `${CARD_TEXT_PREFIX}milestone:${MILESTONE_WORDS[d.stat] ? d.stat : 'members'}`
+  if (kind === 'voice') return `${CARD_TEXT_PREFIX}voice:${textSlug((d.prompt || {}).id) || 'general'}`
+  if (kind === 'lineup' || kind === 'roundup' || kind === 'diary') return `${CARD_TEXT_PREFIX}${kind}`
+  return null
+}
+
+const MILESTONE_WORDS = {
+  members: ['MEMBERS', 'STRONG'],
+  screenings: ['SCREENINGS', 'AND COUNTING'],
+  attendance: ['SEATS', 'FILLED'],
+}
+
+// Token values for a card. `short` gives the abbreviated date the short-form
+// captions use, so one reworded template serves the image and every caption.
+export function cardTextValues(kind, data = {}, { short = false } = {}) {
+  const d = data || {}
+  if (EVENT_TEXT_KINDS.has(kind)) {
+    const e = socialEventView(d.event) || {}
+    const count = Number(d.count) || 0
+    return {
+      title: e.film || e.title || 'Untitled',
+      year: e.year ? String(e.year) : '',
+      date: fmtSocialDate(e.date, { short }),
+      time: e.time ? fmtShowtime(e.time) : '',
+      venue: e.venue || (e.hostId ? 'Member-hosted screening' : ''),
+      countdown: countdownLead(daysUntil(e.date, d.today)),
+      count: count > 0 ? String(count) : '',
+    }
+  }
+  if (kind === 'episode') {
+    const ep = d.episode || {}
+    return { title: ep.title || 'New episode', date: ep.date ? fmtSocialDate(ep.date, { short }) : '' }
+  }
+  if (kind === 'monthwrap') {
+    const s = Number(d.screenings) || 0
+    const a = Number(d.attendees) || 0
+    return {
+      month: d.monthLabel || '',
+      screenings: plural(s, 'screening', 'screenings'),
+      attendees: a > 0 ? plural(a, 'attendee', 'attendees') : '',
+    }
+  }
+  if (kind === 'roundup') return { films: plural(Number(d.total) || 0, 'film', 'films') }
+  if (kind === 'diary') {
+    return { range: fmtDiaryRange(d.from, d.to), page: `Page ${d.page || 1} of ${d.pageCount || 1}` }
+  }
+  if (kind === 'voice') {
+    const p = d.prompt || {}
+    return { deadline: p.deadline ? fmtSocialDate(p.deadline, { short: true }) : '' }
+  }
+  if (kind === 'milestone') return { value: String(Number(d.value) || 0) }
+  return {}
+}
+
+// The slots a card has for this data, in the order the fields are shown.
+// `store` is the key inside the saved map; it differs from `id` where cards
+// that share one saved item must not share a line.
+export function cardTextSlots(kind, data = {}) {
+  const d = data || {}
+  const v = cardTextValues(kind, d)
+  const slot = (id, label, def, extra = {}) => ({ id, store: id, label, def, ...extra })
+  const BRAND_NAME = 'Jackson Film Club'
+  const extra = (store = 'extra') => slot('extra', 'Extra line', '', { store, hint: 'Optional, e.g. Free with RSVP' })
+
+  if (kind === 'announce' || kind === 'countdown') {
+    return [
+      slot('eyebrow', 'Eyebrow', kind === 'countdown' ? `${BRAND_NAME} · {countdown}` : `${BRAND_NAME} · Next screening`,
+        { store: `${kind}.eyebrow` }),
+      slot('title', 'Title', '{title}', { copy: true }),
+      slot('year', 'Year', '{year}', { copy: true }),
+      slot('when', 'Date line', v.time ? '{date} · {time}' : '{date}', { copy: true }),
+      slot('venue', 'Venue line', '{venue}', { copy: true }),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club/events'),
+    ]
+  }
+  if (kind === 'recap') {
+    return [
+      slot('eyebrow', 'Eyebrow', `${BRAND_NAME} · That's a wrap`, { store: 'recap.eyebrow' }),
+      ...(v.count
+        ? [slot('unit1', 'Beside the count, line 1', 'OF US', { store: 'recap.unit1' }),
+           slot('unit2', 'Beside the count, line 2', 'WATCHED', { store: 'recap.unit2' })]
+        : [slot('lead', 'Lead-in', 'WE WATCHED', { store: 'recap.lead' })]),
+      slot('title', 'Title', '{title}', { copy: true }),
+      slot('year', 'Year', '{year}', { copy: true }),
+      extra('recap.extra'),
+      slot('footer', 'Footer', 'jxnfilm.club/events'),
+    ]
+  }
+  if (kind === 'lineup') {
+    return [
+      slot('eyebrow', 'Eyebrow', BRAND_NAME),
+      slot('heading', 'Heading', 'Coming up at the club'),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club/events'),
+    ]
+  }
+  if (kind === 'roundup') {
+    return [
+      slot('eyebrow', 'Eyebrow', BRAND_NAME),
+      slot('heading', 'Heading', 'What the club is watching'),
+      slot('sub', 'Count line', '{films} logged by members in the last week'),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club/watched'),
+    ]
+  }
+  if (kind === 'monthwrap') {
+    return [
+      slot('eyebrow', 'Eyebrow', BRAND_NAME),
+      slot('heading', 'Heading', 'That was {month}'),
+      slot('sub', 'Stats line', v.attendees ? '{screenings} · {attendees}' : '{screenings}'),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club/events'),
+    ]
+  }
+  if (kind === 'diary') {
+    return [
+      slot('eyebrow', 'Eyebrow', BRAND_NAME),
+      slot('heading', 'Heading', 'From the club diary'),
+      slot('meta', 'Range line', v.range ? '{range} · {page}' : '{page}'),
+      slot('footer', 'Footer', 'jxnfilm.club/watched'),
+    ]
+  }
+  if (kind === 'voice') {
+    return [
+      slot('eyebrow', 'Eyebrow', `${BRAND_NAME} · Podcast`),
+      slot('sub', 'Invitation', v.deadline ? 'Record or upload up to three minutes by {deadline}.' : 'Record or upload up to three minutes.'),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club/speak'),
+    ]
+  }
+  if (kind === 'milestone') {
+    const units = MILESTONE_WORDS[d.stat] || MILESTONE_WORDS.members
+    return [
+      slot('eyebrow', 'Eyebrow', `${BRAND_NAME} · Milestone`),
+      slot('unit1', 'Beside the number, line 1', units[0]),
+      slot('unit2', 'Beside the number, line 2', units[1]),
+      slot('thanks', 'Closing line', 'Thank you, Jackson.'),
+      slot('footer', 'Footer', 'jxnfilm.club'),
+    ]
+  }
+  if (kind === 'episode') {
+    return [
+      slot('eyebrow', 'Eyebrow', `${BRAND_NAME} · New podcast episode`),
+      slot('title', 'Title', '{title}'),
+      slot('date', 'Date line', '{date}'),
+      slot('cta', 'Call to action', 'LISTEN WHEREVER YOU GET PODCASTS'),
+      extra(),
+      slot('footer', 'Footer', 'jxnfilm.club'),
+    ]
+  }
+  return []
+}
+
+// One line of card text: no control characters or line breaks, capped.
+export function cleanCardText(s) {
+  // eslint-disable-next-line no-control-regex
+  return String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, CARD_TEXT_MAX)
+}
+
+// A saved row as read from KV -> a flat map of strings. Anything else (a
+// number, a nested object, a hand-edited row) is dropped rather than drawn.
+export function normalizeCardText(raw) {
+  const out = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, val] of Object.entries(raw)) {
+    if (typeof val === 'string' && /^[a-z0-9.]{1,40}$/.test(k)) out[k] = cleanCardText(val)
+  }
+  return out
+}
+
+// Substitute {tokens}. An unknown token is left as typed, so a brace the
+// operator meant literally survives. A token that resolved to nothing can
+// strand its separator ("June 12 · "), so separators left dangling at either
+// end, or doubled up in the middle, are tidied away.
+export function fillCardText(template, values = {}) {
+  let emptied = false
+  const s = String(template ?? '').replace(/\{([a-z]+)\}/g, (m, name) => {
+    if (!Object.prototype.hasOwnProperty.call(values, name)) return m
+    const val = String(values[name] ?? '')
+    if (!val) emptied = true
+    return val
+  })
+  if (!emptied) return s.trim()
+  return s
+    .replace(/(\s*[·|—–-]\s*){2,}/g, ' · ')
+    .replace(/^[\s·|—–,-]+|[\s·|—–,-]+$/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+// The card's text, resolved. `text` is what the canvas draws (slot id ->
+// final string); `slots` adds, per slot, the template in effect and whether
+// it has been reworded, for the editor.
+export function resolveCardText(kind, data, saved, opts) {
+  const map = normalizeCardText(saved)
+  const values = cardTextValues(kind, data, opts)
+  const text = {}
+  const slots = cardTextSlots(kind, data).map(s => {
+    const edited = Object.prototype.hasOwnProperty.call(map, s.store) && map[s.store] !== s.def
+    const template = edited ? map[s.store] : s.def
+    text[s.id] = fillCardText(template, values)
+    return { ...s, template, edited }
+  })
+  return { text, slots, tokens: Object.keys(values) }
+}
+
+// A saved map with one slot set. Typing a line back to its default removes it
+// from the map (it follows the default again); the result may be empty, which
+// the caller turns into a KV delete.
+export function setCardText(saved, slot, value) {
+  const next = { ...normalizeCardText(saved) }
+  const val = cleanCardText(value)
+  if (val === slot.def) delete next[slot.store]
+  else next[slot.store] = val
+  return next
+}
+
+// A saved map with every slot of THIS card cleared. Lines belonging to the
+// other cards that share the item (a recap's eyebrow, when resetting the
+// announcement) are left alone unless they are the shared ones.
+export function clearCardText(saved, slots) {
+  const next = { ...normalizeCardText(saved) }
+  for (const s of slots) delete next[s.store]
+  return next
+}
+
+// What the captions take from reworded image text: only the event's title,
+// year, date line and venue, and only where they were actually reworded, so
+// an untouched card's captions read exactly as before. `whenShort` resolves
+// the same template against the abbreviated date.
+export function cardTextForCopy(kind, data, saved) {
+  if (!EVENT_TEXT_KINDS.has(kind)) return null
+  const long = resolveCardText(kind, data, saved)
+  const short = resolveCardText(kind, data, saved, { short: true })
+  const out = {}
+  // Slots the card itself does not show (a recap has no date line) still
+  // follow the event's shared wording.
+  const map = normalizeCardText(saved)
+  const values = cardTextValues(kind, data)
+  const shortValues = cardTextValues(kind, data, { short: true })
+  const shared = { title: '{title}', year: '{year}', venue: '{venue}', when: values.time ? '{date} · {time}' : '{date}' }
+  for (const id of Object.keys(shared)) {
+    const slot = long.slots.find(s => s.id === id)
+    const edited = slot ? slot.edited
+      : Object.prototype.hasOwnProperty.call(map, id) && map[id] !== shared[id]
+    if (!edited) continue
+    const tpl = slot ? slot.template : map[id]
+    if (id === 'when') {
+      out.when = fillCardText(tpl, values)
+      out.whenShort = slot ? short.text.when : fillCardText(tpl, shortValues)
+    } else if (id === 'title') out.name = fillCardText(tpl, values)
+    else out[id] = fillCardText(tpl, values)
+  }
+  return Object.keys(out).length ? out : null
 }
 
 // --- Config tab helpers (operator config stored under config:* in MEMBERS_KV) ---

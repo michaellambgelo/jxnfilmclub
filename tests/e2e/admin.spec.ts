@@ -717,6 +717,55 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#cg-text')).toBeHidden()
   })
 
+  test('Content Gen: title line breaks, per-element sizes and the fit warning', async ({ page }) => {
+    // No poster: the type sizes must still be offered, without the crop knobs.
+    const ev = { id: 'cg-e2e-fit', title: 'Fit Night', film: 'Dr. Strangelove or: How I Learned to Stop Worrying and Love the Bomb', year: 1964, date: '2030-02-01', time: '19:00', venue: 'The Parlor' }
+    const textKey = `cardtext:event:${ev.id}`
+    const layoutKey = `cardlayout:${ev.id}:ig-post`
+    await dropAttendance(page, textKey, layoutKey)
+    await seedAttendance(page, `event:${ev.id}`, ev)
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+
+    const panel = page.locator('#cg-layout')
+    await expect(panel).toBeVisible()
+    await expect(page.locator('#cg-l-title')).toBeVisible()
+    await expect(page.locator('#cg-l-meta')).toBeVisible()
+    await expect(page.locator('#cg-l-label')).toBeVisible()
+    await expect(page.locator('#cg-l-zoom')).toHaveCount(0)
+    await expect(panel.locator('[data-mode]')).toHaveCount(0)
+    // A long title that fits is not a problem worth a warning.
+    await expect(page.locator('#cg-fit')).toBeHidden()
+
+    // The title is a multi-line field; the break the operator types is stored.
+    const title = page.locator('#cg-t-title')
+    await expect(title).toHaveJSProperty('tagName', 'TEXTAREA')
+    await title.fill('Dr. Strangelove or:\nHow I Learned to Stop Worrying')
+    await expect.poll(() => getAttendanceJson(page, textKey)).toEqual({ title: 'Dr. Strangelove or:\nHow I Learned to Stop Worrying' })
+    // ...and the captions read it as running text.
+    await expect(page.locator('.cg-copy-card[data-platform="facebook"] textarea'))
+      .toHaveValue(/Dr\. Strangelove or: How I Learned to Stop Worrying \(1964\)/)
+
+    // The title size is its own knob, saved with the layout for this size only.
+    await page.locator('#cg-l-title').fill('0.8')
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.title).toBe(0.8)
+    await page.locator('.cg-size[data-size="ig-story"]').click()
+    await expect(page.locator('#cg-l-title')).toHaveValue('1')
+    await page.locator('.cg-size[data-size="ig-post"]').click()
+    await expect(page.locator('#cg-l-title')).toHaveValue('0.8')
+
+    // A line too long for the card is cut, and says so above the download button.
+    await page.locator('#cg-t-venue').fill('W'.repeat(150))
+    await expect(page.locator('#cg-fit')).toContainText('A detail line is too long and was cut off')
+    await page.locator('#cg-t-venue').fill('{venue}')
+    await expect(page.locator('#cg-fit')).toBeHidden()
+
+    await page.locator('#cg-l-reset').click()
+    await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()
+  })
+
   test('Content Gen: list and promo card wording saves per item', async ({ page }) => {
     // Local KV persists between runs, and these keys are not per-test ids.
     await dropAttendance(page, 'cardtext:milestone:screenings', 'cardtext:milestone:members', 'cardtext:monthwrap:2020-03')

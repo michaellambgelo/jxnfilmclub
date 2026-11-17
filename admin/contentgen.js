@@ -19,7 +19,7 @@ import {
   socialEventView, buildSocialCopy, buildRoundupData, buildDiaryPages, diarySeriesCopy, socialFileName,
   fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange,
   PLATFORM_LIMITS, PLATFORM_LABELS,
-  CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, normalizeLayout, isDefaultLayout,
+  CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, LAYOUT_TYPE_KEYS, normalizeLayout, isDefaultLayout,
   coverRect, panFocal,
   CARD_TEXT_PREFIX, cardTextKey, resolveCardText, setCardText, clearCardText, cardTextForCopy,
 } from './lib.js'
@@ -424,21 +424,45 @@ function cardData() {
 
 // --- Canvas plumbing ---
 
+// Fit problems found while painting the card on screen: a line cut off, a
+// title that cannot shrink any further. Reset by renderCanvas before each
+// paint and shown under the preview, so a card that came out wrong is not
+// downloaded by accident. Drawers called from outside (the batch export, the
+// visual-QA harness) just accumulate into a list nobody reads.
+let fitNotes = []
+const note = (msg) => { if (!fitNotes.includes(msg)) fitNotes.push(msg) }
+// For the visual-QA harness: the notes since the last call, and a clean slate.
+const takeFitNotes = () => { const n = fitNotes; fitNotes = []; return n }
+
+// Wraps to `maxWidth`. A line break typed by the operator always breaks; each
+// piece between breaks then wraps on its own.
 function wrapText(c, text, maxWidth) {
-  const words = String(text || '').split(/\s+/).filter(Boolean)
   const lines = []
-  let line = ''
-  for (const w of words) {
-    const probe = line ? `${line} ${w}` : w
-    if (line && c.measureText(probe).width > maxWidth) {
-      lines.push(line)
-      line = w
-    } else {
-      line = probe
+  for (const para of String(text || '').split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean)
+    let line = ''
+    for (const w of words) {
+      const probe = line ? `${line} ${w}` : w
+      if (line && c.measureText(probe).width > maxWidth) {
+        lines.push(line)
+        line = w
+      } else {
+        line = probe
+      }
     }
+    if (line) lines.push(line)
   }
-  if (line) lines.push(line)
   return lines
+}
+
+// How many lines the operator asked for by typing their own breaks.
+const typedLines = (text) => String(text || '').split('\n').filter(l => l.trim()).length
+
+// ellipsize() for a line the operator can reword: says so when it had to cut.
+function fitLine(c, text, maxWidth, what) {
+  const out = ellipsize(c, text, maxWidth)
+  if (out !== String(text || '')) note(`${what} is too long and was cut off`)
+  return out
 }
 
 // Single-line truncation for grid cells too tight to wrap.
@@ -579,13 +603,31 @@ function resolveLayout(layout, W, H) {
   }
 }
 
-function label(c, text, x, y, px, color = BRAND) {
-  c.font = `600 ${px}px ${LABEL}`
-  c.letterSpacing = `${Math.round(px * 0.22)}px`
+// `maxW` (optional) keeps the label inside its column: it shrinks to 70% and
+// is then cut, with a note. Without it the label is drawn as-is.
+function label(c, text, x, y, px, color = BRAND, maxW = 0) {
+  let out = text.toUpperCase()
+  let size = px
+  const set = () => {
+    c.font = `600 ${size}px ${LABEL}`
+    c.letterSpacing = `${Math.round(size * 0.22)}px`
+  }
+  set()
+  if (maxW > 0) {
+    const floor = Math.round(px * 0.7)
+    while (size > floor && c.measureText(out).width > maxW) { size--; set() }
+    if (c.measureText(out).width > maxW) {
+      out = ellipsize(c, out, maxW)
+      note('The eyebrow is too long and was cut off')
+    }
+  }
   c.fillStyle = color
-  c.fillText(text.toUpperCase(), x, y)
+  c.fillText(out, x, y)
   c.letterSpacing = '0px'
 }
+
+// Top of the footer's text: nothing above it may reach below this.
+const footerTop = (W, H, pad) => H - pad - 22 - Math.round(W * 0.024)
 
 // `x` defaults to the bottom padding; pass it separately when the footer
 // belongs to a side panel rather than the card's left edge.
@@ -621,6 +663,41 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   c.fillStyle = INK
   c.fillRect(0, 0, W, H)
 
+  // Measure the whole text block before drawing any of it: full-bleed anchors
+  // it to the bottom edge, so its top depends on its height. `k` shrinks the
+  // whole block when it would otherwise run into the footer.
+  const ts = L.text
+  // The dot separator is set wide on the card; the template keeps it plain.
+  const metas = [[t.when.replace(/\s*·\s*/g, '  ·  '), PAPER_2], [t.venue, PAPER_4], [t.extra, BRAND]].filter(([line]) => line)
+  const maxLines = Math.max(3, typedLines(name))
+  const measure = (k, tw) => {
+    const labelPx = Math.round(W * 0.021 * ts * L.label * k)
+    const labelGap = Math.round(W * 0.02 * ts * k)
+    let titlePx = Math.round(W * (landscape ? 0.062 : 0.072) * ts * L.title * k)
+    const titleFloor = Math.round(W * 0.04 * ts * L.title * k)
+    let lines
+    const wrap = () => {
+      c.font = `800 ${titlePx}px ${DISPLAY}`
+      lines = wrapText(c, name, tw)
+      return lines.length <= maxLines && lines.every(l => c.measureText(l).width <= tw)
+    }
+    let titleFits = wrap()
+    while (!titleFits && titlePx > titleFloor) {
+      titlePx = Math.round(titlePx * 0.88)
+      titleFits = wrap()
+    }
+    const lineH = Math.round(titlePx * 1.12)
+    const yearH = t.year ? Math.round(titlePx * 0.75) : 0
+    const metaPx = Math.round(W * 0.031 * ts * L.meta * k)
+    const gap = Math.round(H * 0.035 * k)
+    const metaStep = Math.round(metaPx * 1.5)
+    const blockH = labelPx + labelGap + lines.length * lineH + yearH + gap
+      + (metas.length ? metaStep * (metas.length - 1) + metaPx : 0)
+    return { labelPx, labelGap, titlePx, lines, lineH, yearH, metaPx, gap, metaStep, blockH, titleFits }
+  }
+  const footTop = footerTop(W, H, pad)
+  const limit = footTop - Math.round(H * 0.04)
+
   // Poster panel: left column on landscape, top band otherwise — or, in
   // full-bleed mode, the whole card with the text set over a veil.
   let tx = pad, ty, tw
@@ -644,7 +721,16 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
     tw = W - pw - pad * 2
     ty = Math.round(H * 0.2)
   } else if (poster) {
-    const ph = Math.round(H * L.band)
+    let ph = Math.round(H * L.band)
+    // A poster band nobody has sized gives way to the text before the text
+    // shrinks: a long title under a half-card poster would otherwise be set
+    // tiny beside artwork that could spare the room. Once the Poster size
+    // knob has been touched, the band is the operator's and stays put.
+    if (!layout || layout.band == null) {
+      const need = measure(1, W - pad * 2)
+      const room = limit - need.blockH + need.labelPx - Math.round(H * 0.05)
+      ph = Math.max(Math.round(H * 0.3), Math.min(ph, room))
+    }
     hit = drawCover(c, poster, 0, 0, W, ph, L)
     // Fade the poster into the ink panel below it.
     const fade = Math.min(ph, L.fade)
@@ -662,35 +748,33 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
     ty = Math.round(H * 0.24)
   }
 
-  // Measure the whole text block before drawing any of it: full-bleed anchors
-  // it to the bottom edge, so its top depends on its height.
-  const ts = L.text
-  const labelPx = Math.round(W * 0.021 * ts)
-  const labelGap = Math.round(W * 0.02 * ts)
-  let titlePx = Math.round(W * (landscape ? 0.062 : 0.072) * ts)
-  const titleFloor = Math.round(W * 0.04 * ts)
-  c.font = `800 ${titlePx}px ${DISPLAY}`
-  let lines = wrapText(c, name, tw)
-  while (lines.length > 3 && titlePx > titleFloor) {
-    titlePx = Math.round(titlePx * 0.88)
-    c.font = `800 ${titlePx}px ${DISPLAY}`
-    lines = wrapText(c, name, tw)
+
+  // `ty` is the eyebrow's baseline, so the block runs from ty - labelPx.
+  // Beside a landscape poster, or with no poster, the start is only a default
+  // and the block may slide up to make room; under a poster band it cannot.
+  const movable = !full && (landscape || !poster)
+  let m, top, over
+  for (let k = 1; ; k = Math.max(0.6, k - 0.04)) {
+    m = measure(k, tw)
+    if (full) {
+      top = footTop - Math.round(H * 0.05) - m.blockH
+      over = top < pad
+    } else {
+      top = ty - m.labelPx
+      if (movable && top + m.blockH > limit) top = Math.max(pad, limit - m.blockH)
+      over = top + m.blockH > limit
+    }
+    if (!over || k <= 0.6) { m.k = k; break }
   }
-  const lineH = Math.round(titlePx * 1.12)
-  const yearH = t.year ? Math.round(titlePx * 0.75) : 0
-  const metaPx = Math.round(W * 0.031 * ts)
-  // The dot separator is set wide on the card; the template keeps it plain.
-  const when = t.when.replace(/\s*·\s*/g, '  ·  ')
-  const venue = t.venue
-  const metaLines = [when, venue, t.extra].filter(Boolean).length
-  const blockH = labelPx + labelGap + lines.length * lineH + yearH + Math.round(H * 0.035)
-    + (metaLines ? Math.round(metaPx * 1.5) * (metaLines - 1) + metaPx : 0)
+  if (over) note('The text does not fit above the footer, even at its smallest. Shorten a line or reduce the sizes.')
+  else if (m.k <= 0.8) {
+    note(`The text was shrunk to ${Math.round(m.k * 100)}% to clear the footer.${poster && !full && !landscape ? ' A smaller poster leaves it more room.' : ''}`)
+  }
+  if (!m.titleFits) note('The title is at its smallest and still does not fit its lines')
 
   if (full) {
     // Bottom-anchored above the footer, with the veil running `fade` px above
     // the text's top and solid ink behind the text itself.
-    const footTop = H - pad - 22 - Math.round(W * 0.024)
-    const top = footTop - Math.round(H * 0.05) - blockH
     const veilTop = Math.max(0, top - L.fade)
     const g = c.createLinearGradient(0, veilTop, 0, Math.max(veilTop + 1, top))
     g.addColorStop(0, 'rgba(16,15,14,0)')
@@ -699,35 +783,34 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
     c.fillRect(0, veilTop, W, top - veilTop)
     c.fillStyle = 'rgba(16,15,14,0.9)'
     c.fillRect(0, top, W, H - top)
-    ty = top + labelPx
   }
+  ty = top + m.labelPx
 
   c.textBaseline = 'alphabetic'
-  if (t.eyebrow) label(c, t.eyebrow, tx, ty, labelPx)
-  ty += labelGap
+  if (t.eyebrow) label(c, t.eyebrow, tx, ty, m.labelPx, BRAND, tw)
+  ty += m.labelGap
 
   // Film title — Playfair, wrapped, shrink-to-fit.
-  c.font = `800 ${titlePx}px ${DISPLAY}`
+  c.font = `800 ${m.titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
   c.textBaseline = 'top'
-  for (const line of lines) {
+  for (const line of m.lines) {
     c.fillText(line, tx, ty)
-    ty += lineH
+    ty += m.lineH
   }
   if (t.year) {
-    c.font = `italic 500 ${Math.round(titlePx * 0.5)}px ${DISPLAY}`
+    c.font = `italic 500 ${Math.round(m.titlePx * 0.5)}px ${DISPLAY}`
     c.fillStyle = PAPER_4
-    c.fillText(t.year, tx, ty + Math.round(titlePx * 0.1))
-    ty += yearH
+    c.fillText(t.year, tx, ty + Math.round(m.titlePx * 0.1))
+    ty += m.yearH
   }
-  ty += Math.round(H * 0.035)
+  ty += m.gap
 
-  c.font = `500 ${metaPx}px ${LABEL}`
-  for (const [line, color] of [[when, PAPER_2], [venue, PAPER_4], [t.extra, BRAND]]) {
-    if (!line) continue
+  c.font = `500 ${m.metaPx}px ${LABEL}`
+  for (const [line, color] of metas) {
     c.fillStyle = color
-    c.fillText(ellipsize(c, line, tw), tx, ty)
-    ty += Math.round(metaPx * 1.5)
+    c.fillText(fitLine(c, line, tw, 'A detail line'), tx, ty)
+    ty += m.metaStep
   }
 
   // In the landscape band layout the text sits beside the poster, and so does
@@ -836,51 +919,84 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
     c.fillRect(0, 0, W, H)
   }
 
-  let ty = Math.round(H * 0.2)
-  if (t.eyebrow) label(c, t.eyebrow, pad, ty, Math.round(W * 0.021 * ts))
-  ty += Math.round(W * 0.025 * ts)
+  // Same shape as the event card: measure at scale k, slide the block up from
+  // its default start if it would reach the footer, then shrink it.
+  const tw = W - pad * 2
+  const maxLines = Math.max(3, typedLines(name))
+  const measure = (k) => {
+    const labelPx = Math.round(W * 0.021 * ts * L.label * k)
+    const labelGap = Math.round(W * 0.025 * ts * k)
+    const numPx = Math.round(Math.min(W, H) * 0.3 * ts * k)
+    const ofPx = Math.round(W * 0.033 * ts * L.meta * k)
+    const wePx = Math.round(W * 0.035 * ts * L.meta * k)
+    const leadH = count > 0 ? Math.round(numPx * 1.18) : Math.round(wePx * 1.9)
+    let titlePx = Math.round(W * 0.06 * ts * L.title * k)
+    const titleFloor = Math.round(W * 0.035 * ts * L.title * k)
+    let lines
+    const wrap = () => {
+      c.font = `800 ${titlePx}px ${DISPLAY}`
+      lines = wrapText(c, name, tw)
+      return lines.length <= maxLines && lines.every(l => c.measureText(l).width <= tw)
+    }
+    let titleFits = wrap()
+    while (!titleFits && titlePx > titleFloor) {
+      titlePx = Math.round(titlePx * 0.88)
+      titleFits = wrap()
+    }
+    const lineH = Math.round(titlePx * 1.12)
+    const extraPx = Math.round(W * 0.031 * ts * L.meta * k)
+    const extraH = t.extra ? Math.round(extraPx * 0.6) + extraPx : 0
+    // From the eyebrow's top (it is drawn on its baseline at `ty`).
+    const blockH = labelPx + labelGap + leadH + lines.length * lineH + extraH
+    return { labelPx, labelGap, numPx, ofPx, wePx, leadH, titlePx, lines, lineH, extraPx, blockH, titleFits }
+  }
+  const limit = footerTop(W, H, pad) - Math.round(H * 0.04)
+  let m, top, over
+  for (let k = 1; ; k = Math.max(0.6, k - 0.04)) {
+    m = measure(k)
+    top = Math.round(H * 0.2) - m.labelPx
+    if (top + m.blockH > limit) top = Math.max(pad, limit - m.blockH)
+    over = top + m.blockH > limit
+    if (!over || k <= 0.6) { m.k = k; break }
+  }
+  if (over) note('The text does not fit above the footer, even at its smallest. Shorten a line or reduce the sizes.')
+  else if (m.k <= 0.8) note(`The text was shrunk to ${Math.round(m.k * 100)}% to clear the footer.`)
+  if (!m.titleFits) note('The title is at its smallest and still does not fit its lines')
+
+  let ty = top + m.labelPx
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, m.labelPx, BRAND, tw)
+  ty += m.labelGap
   c.textBaseline = 'top'
 
   if (count > 0) {
-    const numPx = Math.round(Math.min(W, H) * 0.3 * ts)
-    c.font = `800 ${numPx}px ${DISPLAY}`
+    c.font = `800 ${m.numPx}px ${DISPLAY}`
     c.fillStyle = BRAND
     c.fillText(String(count), pad, ty)
     const numW = c.measureText(String(count)).width
-    const ofPx = Math.round(W * 0.033 * ts)
-    c.font = `500 ${ofPx}px ${LABEL}`
+    c.font = `500 ${m.ofPx}px ${LABEL}`
     c.fillStyle = PAPER_2
-    const unitW = W - pad * 2 - numW - Math.round(W * 0.02)
-    c.fillText(ellipsize(c, t.unit1 || '', unitW), pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42))
-    c.fillText(ellipsize(c, t.unit2 || '', unitW), pad + numW + Math.round(W * 0.02), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
-    ty += Math.round(numPx * 1.18)
+    const unitX = pad + numW + Math.round(W * 0.02)
+    const unitW = W - pad - unitX
+    c.fillText(fitLine(c, t.unit1 || '', unitW, 'A line beside the count'), unitX, ty + Math.round(m.numPx * 0.42))
+    c.fillText(fitLine(c, t.unit2 || '', unitW, 'A line beside the count'), unitX, ty + Math.round(m.numPx * 0.42) + Math.round(m.ofPx * 1.4))
   } else {
-    const wePx = Math.round(W * 0.035 * ts)
-    c.font = `500 ${wePx}px ${LABEL}`
+    c.font = `500 ${m.wePx}px ${LABEL}`
     c.fillStyle = PAPER_2
-    if (t.lead) c.fillText(ellipsize(c, t.lead, W - pad * 2), pad, ty)
-    ty += Math.round(wePx * 1.9)
+    if (t.lead) c.fillText(fitLine(c, t.lead, tw, 'The lead-in'), pad, ty)
   }
+  ty += m.leadH
 
-  let titlePx = Math.round(W * 0.06 * ts)
-  c.font = `800 ${titlePx}px ${DISPLAY}`
-  let lines = wrapText(c, name, W - pad * 2)
-  while (lines.length > 3 && titlePx > Math.round(W * 0.035 * ts)) {
-    titlePx = Math.round(titlePx * 0.88)
-    c.font = `800 ${titlePx}px ${DISPLAY}`
-    lines = wrapText(c, name, W - pad * 2)
-  }
+  c.font = `800 ${m.titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
-  for (const line of lines) {
+  for (const line of m.lines) {
     c.fillText(line, pad, ty)
-    ty += Math.round(titlePx * 1.12)
+    ty += m.lineH
   }
   if (t.extra) {
-    const extraPx = Math.round(W * 0.031 * ts)
-    ty += Math.round(extraPx * 0.6)
-    c.font = `500 ${extraPx}px ${LABEL}`
+    ty += Math.round(m.extraPx * 0.6)
+    c.font = `500 ${m.extraPx}px ${LABEL}`
     c.fillStyle = BRAND
-    c.fillText(ellipsize(c, t.extra, W - pad * 2), pad, ty)
+    c.fillText(fitLine(c, t.extra, tw, 'The extra line'), pad, ty)
   }
 
   footer(c, W, H, pad, t.footer)
@@ -974,14 +1090,20 @@ async function drawWallCard(c, W, H, { posterUrls = [], eyebrow = 'Jackson Film 
     const lines = wrapText(c, heading, text.w)
     const gap = Math.round(Hh * 0.55)
     const subH = Math.round(C * 1.55)
-    return { L, Hh, C, lines, gap, subH, blockH: L + gap + lines.length * Math.round(Hh * 1.12) + gap + subLines.length * subH }
+    // Sub-lines wrap inside the column rather than running off the card: a
+    // long lineup row beside the landscape wall takes a second line.
+    c.font = `500 ${C}px ${LABEL}`
+    const subs = subLines.flatMap(sub => wrapText(c, sub, text.w))
+    return { L, Hh, C, lines, gap, subH, subs, blockH: L + gap + lines.length * Math.round(Hh * 1.12) + gap + subs.length * subH }
   }
   let m = fit(1)
   if (m.blockH > text.h) m = fit(Math.max(0.6, text.h / m.blockH))
+  if (m.blockH > text.h) m = fit(0.6)
+  if (m.blockH > text.h) note('The text does not fit its panel, even at its smallest. Shorten the heading or drop the extra line.')
   let ty = text.y + Math.max(0, Math.round((text.h - m.blockH) / 2))
 
   c.textBaseline = 'top'
-  if (eyebrow) label(c, eyebrow, text.x, ty, m.L)
+  if (eyebrow) label(c, eyebrow, text.x, ty, m.L, BRAND, text.w)
   ty += m.L + m.gap
   c.font = `800 ${m.Hh}px ${DISPLAY}`
   c.fillStyle = PAPER
@@ -992,7 +1114,7 @@ async function drawWallCard(c, W, H, { posterUrls = [], eyebrow = 'Jackson Film 
   ty += m.gap
   c.font = `500 ${m.C}px ${LABEL}`
   c.fillStyle = PAPER_2
-  for (const sub of subLines) {
+  for (const sub of m.subs) {
     c.fillText(sub, text.x, ty)
     ty += m.subH
   }
@@ -1053,19 +1175,19 @@ async function drawDiaryCard(c, W, H, data = {}, text) {
   let hy = pad
   // Landscape has no room for a display heading, so it rides in the eyebrow.
   const eyebrow = landscape ? [t.eyebrow, t.heading].filter(Boolean).join(' · ') : t.eyebrow
-  if (eyebrow) label(c, eyebrow, pad, hy, labelPx)
+  if (eyebrow) label(c, eyebrow, pad, hy, labelPx, BRAND, W - pad * 2)
   hy += labelPx + headGap
   if (headPx) {
     c.font = `800 ${headPx}px ${DISPLAY}`
     c.fillStyle = PAPER
-    c.fillText(ellipsize(c, t.heading, W - pad * 2), pad, hy)
+    c.fillText(fitLine(c, t.heading, W - pad * 2, 'The heading'), pad, hy)
     hy += Math.round(headPx * 1.05) + Math.round(headGap * 0.5)
   }
   // The range is the honest claim: feed depth is capped per member, not by
   // date, so a deep page can be years old. Never imply recency here.
   c.font = `500 ${metaPx}px ${LABEL}`
   c.fillStyle = PAPER_2
-  c.fillText(ellipsize(c, t.meta, W - pad * 2), pad, hy)
+  c.fillText(fitLine(c, t.meta, W - pad * 2, 'The range line'), pad, hy)
   hy += metaPx
 
   const grid = { x: pad, y: hy + Math.round(pad * (landscape ? 0.3 : 0.5)), w: W - pad * 2 }
@@ -1259,7 +1381,7 @@ async function drawVoicePromptCard(c, W, H, data = {}, text) {
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx)
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx, BRAND, W - pad * 2)
   ty += labelPx + gap
 
   c.font = `800 ${quotePx}px ${DISPLAY}`
@@ -1273,7 +1395,7 @@ async function drawVoicePromptCard(c, W, H, data = {}, text) {
   c.font = `500 ${metaPx}px ${LABEL}`
   for (let i = 0; i < subLines.length; i++) {
     c.fillStyle = i === 0 ? PAPER_2 : PAPER_4
-    c.fillText(ellipsize(c, subLines[i], tw), pad, ty)
+    c.fillText(fitLine(c, subLines[i], tw, i === 0 ? 'The invitation' : 'The extra line'), pad, ty)
     ty += Math.round(metaPx * 1.5)
   }
 
@@ -1296,7 +1418,7 @@ async function drawMilestoneCard(c, W, H, data = {}, text) {
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  if (t.eyebrow) label(c, t.eyebrow, pad, ty, Math.round(W * 0.021))
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, Math.round(W * 0.021), BRAND, W - pad * 2)
   ty += Math.round(W * 0.025) + Math.round(W * 0.01)
 
   c.font = `800 ${numPx}px ${DISPLAY}`
@@ -1306,13 +1428,13 @@ async function drawMilestoneCard(c, W, H, data = {}, text) {
   c.font = `500 ${ofPx}px ${LABEL}`
   c.fillStyle = PAPER_2
   const unitW = W - pad * 2 - numW - Math.round(W * 0.025)
-  c.fillText(ellipsize(c, t.unit1, unitW), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42))
-  c.fillText(ellipsize(c, t.unit2, unitW), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
+  c.fillText(fitLine(c, t.unit1, unitW, 'A line beside the number'), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42))
+  c.fillText(fitLine(c, t.unit2, unitW, 'A line beside the number'), pad + numW + Math.round(W * 0.025), ty + Math.round(numPx * 0.42) + Math.round(ofPx * 1.4))
   ty += Math.round(numPx * 1.05) + gap
 
   c.font = `italic 500 ${thanksPx}px ${DISPLAY}`
   c.fillStyle = PAPER
-  c.fillText(ellipsize(c, t.thanks, W - pad * 2), pad, ty)
+  c.fillText(fitLine(c, t.thanks, W - pad * 2, 'The closing line'), pad, ty)
 
   footer(c, W, H, pad, t.footer)
 }
@@ -1344,7 +1466,7 @@ async function drawEpisodeCard(c, W, H, data = {}, text) {
   let ty = Math.max(pad, Math.round((H - (pad + Math.round(W * 0.045)) - blockH) / 2))
 
   c.textBaseline = 'top'
-  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx)
+  if (t.eyebrow) label(c, t.eyebrow, pad, ty, labelPx, BRAND, W - pad * 2)
   ty += labelPx + gap
   c.font = `800 ${titlePx}px ${DISPLAY}`
   c.fillStyle = PAPER
@@ -1357,13 +1479,13 @@ async function drawEpisodeCard(c, W, H, data = {}, text) {
   for (const [line, color] of [[t.date, PAPER_2], [t.extra, BRAND]]) {
     if (!line) continue
     c.fillStyle = color
-    c.fillText(ellipsize(c, line, tw), pad, ty)
+    c.fillText(fitLine(c, line, tw, 'A detail line'), pad, ty)
     ty += Math.round(metaPx * 1.8)
   }
   c.font = `500 ${Math.round(metaPx * 0.85)}px ${LABEL}`
   c.letterSpacing = '2px'
   c.fillStyle = PAPER_4
-  c.fillText(ellipsize(c, t.cta, tw), pad, ty)
+  c.fillText(fitLine(c, t.cta, tw, 'The call to action'), pad, ty)
   c.letterSpacing = '0px'
 
   footer(c, W, H, pad, t.footer)
@@ -1384,8 +1506,9 @@ const layoutSaves = new Map()   // key -> pending timer, or 'inflight'
 function layoutTarget() {
   if (!POSTER_KINDS.has(cg.kind)) return null
   const ev = currentEvent()
-  if (!ev || !ev.id || !ev.poster) return null
-  return { ev, key: cardLayoutKey(ev.id, cg.size) }
+  if (!ev || !ev.id) return null
+  // An event with no poster still has type sizes to set; it just has no crop.
+  return { ev, key: cardLayoutKey(ev.id, cg.size), poster: !!ev.poster }
 }
 
 function currentLayout() {
@@ -1508,9 +1631,11 @@ function renderTextPanel() {
     <h4>Wording</h4>
     <div class="cg-text-grid">
       ${slots.map(s => `
-        <label class="cg-t${s.edited ? ' edited' : ''}" data-slot="${attr(s.id)}">${escapeHtml(s.label)}
-          <input type="text" id="cg-t-${attr(s.id)}" maxlength="160" autocomplete="off" spellcheck="true"
-                 value="${attr(s.template)}" placeholder="${attr(s.hint || '')}">
+        <label class="cg-t${s.edited ? ' edited' : ''}${s.multiline ? ' wide' : ''}" data-slot="${attr(s.id)}">${escapeHtml(s.label)}${s.multiline ? ' <span class="cg-t-note">press Enter to choose where it breaks</span>' : ''}
+          ${s.multiline
+            ? `<textarea id="cg-t-${attr(s.id)}" rows="3" maxlength="160" spellcheck="true">${escapeHtml(s.template)}</textarea>`
+            : `<input type="text" id="cg-t-${attr(s.id)}" maxlength="160" autocomplete="off" spellcheck="true"
+                 value="${attr(s.template)}" placeholder="${attr(s.hint || '')}">`}
         </label>`).join('')}
     </div>
     <p class="cg-layout-hint muted">Clear a line to remove it.${tokens.length
@@ -1552,11 +1677,15 @@ function scheduleRender() {
   })
 }
 
+const pct = v => `${Math.round(v * 100)}%`
 const LAYOUT_SLIDERS = {
   zoom: { label: 'Zoom', step: 0.01, fmt: v => `${v.toFixed(2)}×` },
-  band: { label: 'Poster size', step: 0.01, fmt: v => `${Math.round(v * 100)}%` },
+  band: { label: 'Poster size', step: 0.01, fmt: pct },
   fade: { label: 'Fade', step: 10, fmt: v => `${Math.round(v)}px` },
-  text: { label: 'Text', step: 0.01, fmt: v => `${Math.round(v * 100)}%` },
+  text: { label: 'All text', step: 0.01, fmt: pct },
+  title: { label: 'Title', step: 0.01, fmt: pct },
+  meta: { label: 'Details', step: 0.01, fmt: pct },
+  label: { label: 'Eyebrow', step: 0.01, fmt: pct },
 }
 
 function renderLayoutPanel() {
@@ -1564,7 +1693,7 @@ function renderLayoutPanel() {
   if (!host) return
   const t = layoutTarget()
   const canvas = document.querySelector('#cg-canvas')
-  if (canvas) canvas.classList.toggle('cg-layout-on', !!t)
+  if (canvas) canvas.classList.toggle('cg-layout-on', !!(t && t.poster))
   if (!t) {
     host.hidden = true
     host.innerHTML = ''
@@ -1572,10 +1701,11 @@ function renderLayoutPanel() {
   }
   host.hidden = false
   // Recap's poster is a full-card ghost: only the crop and the text apply.
-  const keys = cg.kind === 'recap' ? ['zoom', 'text'] : ['zoom', 'band', 'fade', 'text']
+  const crop = !t.poster ? [] : cg.kind === 'recap' ? ['zoom'] : ['zoom', 'band', 'fade']
+  const keys = [...crop, ...LAYOUT_TYPE_KEYS]
   host.innerHTML = `
     <div class="cg-layout-row">
-      ${cg.kind === 'recap' ? '' : `
+      ${cg.kind === 'recap' || !t.poster ? '' : `
       <div class="cg-seg" role="group" aria-label="Poster layout">
         <button type="button" data-mode="band">Band</button><button type="button" data-mode="full">Full-bleed</button>
       </div>`}
@@ -1588,7 +1718,7 @@ function renderLayoutPanel() {
       }).join('')}
       <button type="button" id="cg-l-reset">Reset</button>
     </div>
-    <p class="cg-layout-hint muted">Drag the poster to reposition · scroll over it to zoom · double-click to reset.
+    <p class="cg-layout-hint muted">${t.poster ? 'Drag the poster to reposition · scroll over it to zoom · double-click to reset. ' : ''}
       Saved per event and card size. <span id="cg-l-status" aria-live="polite"></span></p>`
   for (const k of keys) {
     const input = host.querySelector(`#cg-l-${k}`)
@@ -1599,7 +1729,7 @@ function renderLayoutPanel() {
   host.querySelector('#cg-l-reset').addEventListener('click', resetLayout)
   syncLayoutPanel()
   const saved = currentLayout()
-  if (saved && saved.stale) layoutStatus('The saved layout was for a previous poster — showing defaults.')
+  if (saved && saved.stale) layoutStatus('The poster has changed, so the saved crop was reset. Text sizes were kept.')
   else if (layoutSaves.has(t.key)) layoutStatus('Saving…')
 }
 
@@ -1718,9 +1848,17 @@ async function renderCanvas({ quiet = false } = {}) {
     canvas.height = h
     const c = canvas.getContext('2d')
     c.textBaseline = 'alphabetic'
+    // Painted twice. The first pass loads the images, and a newer render can
+    // start while it waits; its fit notes would land in that render's list.
+    // The second pass finds every image cached, so it runs without yielding
+    // to another render and its notes are this card's alone.
+    await drawForKind(c, w, h, data)
+    if (seq !== cg.renderSeq) return
+    const notes = fitNotes = []
     const hit = await drawForKind(c, w, h, data)
     // A superseded paint must not stamp its geometry under the newer target's key.
     if (seq !== cg.renderSeq) return
+    showFitNotes(notes)
     const t = layoutTarget()
     cg.posterHit = hit && t ? { ...hit, key: t.key } : null
   } finally {
@@ -1728,6 +1866,13 @@ async function renderCanvas({ quiet = false } = {}) {
     // not re-enable the buttons while the current paint is still in flight.
     if (seq === cg.renderSeq) setRenderBusy(false)
   }
+}
+
+function showFitNotes(notes) {
+  const el = document.querySelector('#cg-fit')
+  if (!el) return
+  el.hidden = !notes.length
+  el.innerHTML = notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')
 }
 
 // Downloads read cg.diaryPage/cg.size at click time, so they are only honest
@@ -2031,6 +2176,7 @@ export async function renderContentGen(context) {
           ${Object.entries(SIZES).map(([k, s]) => `<button type="button" class="cg-size ${k === cg.size ? 'active' : ''}" data-size="${attr(k)}">${escapeHtml(s.label)} <span class="muted">${s.w}×${s.h}</span></button>`).join('')}
         </div>
         <div class="cg-canvas-wrap"><canvas id="cg-canvas"></canvas></div>
+        <ul class="cg-fit" id="cg-fit" role="status" hidden></ul>
         <div class="cg-layout" id="cg-layout" hidden></div>
         <div class="cg-text" id="cg-text" hidden></div>
         <div class="toolbar">
@@ -2211,5 +2357,5 @@ export async function renderContentGen(context) {
 // only uses renderContentGen.
 export {
   loadFonts, drawEventCard, drawRecapCard, drawRoundupCard, drawDiaryCard, drawVoicePromptCard,
-  drawLineupCard, drawMonthwrapCard, drawEpisodeCard, drawMilestoneCard,
+  drawLineupCard, drawMonthwrapCard, drawEpisodeCard, drawMilestoneCard, takeFitNotes,
 }

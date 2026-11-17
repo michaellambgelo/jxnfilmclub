@@ -214,7 +214,17 @@ export const LAYOUT_LIMITS = {
   band: [0.2, 0.8],
   fade: [0, 600],
   text: [0.7, 1.4],
+  // Per-element size nudges, multiplied onto `text`: the title alone, the
+  // detail lines (date, venue, extra), and the eyebrow label.
+  title: [0.5, 1.6],
+  meta: [0.6, 1.6],
+  label: [0.6, 1.6],
 }
+
+// The knobs that size type rather than crop the poster. They mean the same
+// thing whatever the artwork is, so they survive a poster change (and exist
+// for an event with no poster at all).
+export const LAYOUT_TYPE_KEYS = ['text', 'title', 'meta', 'label']
 
 // `band`/`fade: null` mean "the card's own default for its shape and mode"
 // (resolved by resolveLayout in contentgen.js) — kept distinct from any number
@@ -222,6 +232,7 @@ export const LAYOUT_LIMITS = {
 // the knob.
 export const DEFAULT_LAYOUT = Object.freeze({
   fx: 0.5, fy: 0.5, zoom: 1, band: null, fade: null, mode: 'band', text: 1,
+  title: 1, meta: 1, label: 1,
 })
 
 const clampNum = (v, lo, hi, dflt) => {
@@ -233,7 +244,11 @@ const clampNum = (v, lo, hi, dflt) => {
 export function normalizeLayout(raw, poster) {
   const base = { ...DEFAULT_LAYOUT }
   if (!raw || typeof raw !== 'object') return { ...base, stale: false }
-  if ((raw.poster || '') !== (poster || '')) return { ...base, stale: true }
+  const type = {}
+  for (const k of LAYOUT_TYPE_KEYS) type[k] = clampNum(raw[k], ...LAYOUT_LIMITS[k], base[k])
+  // A crop tuned against a different image is meaningless; the type sizes are
+  // not, so only the crop is dropped.
+  if ((raw.poster || '') !== (poster || '')) return { ...base, ...type, stale: true }
   return {
     fx: clampNum(raw.fx, 0, 1, base.fx),
     fy: clampNum(raw.fy, 0, 1, base.fy),
@@ -241,7 +256,7 @@ export function normalizeLayout(raw, poster) {
     band: clampNum(raw.band, ...LAYOUT_LIMITS.band, null),
     fade: clampNum(raw.fade, ...LAYOUT_LIMITS.fade, null),
     mode: raw.mode === 'full' ? 'full' : 'band',
-    text: clampNum(raw.text, ...LAYOUT_LIMITS.text, base.text),
+    ...type,
     stale: false,
   }
 }
@@ -1180,7 +1195,7 @@ export function cardTextSlots(kind, data = {}) {
     return [
       slot('eyebrow', 'Eyebrow', kind === 'countdown' ? `${BRAND_NAME} · {countdown}` : `${BRAND_NAME} · Next screening`,
         { store: `${kind}.eyebrow` }),
-      slot('title', 'Title', '{title}', { copy: true }),
+      slot('title', 'Title', '{title}', { copy: true, multiline: true }),
       slot('year', 'Year', '{year}', { copy: true }),
       slot('when', 'Date line', v.time ? '{date} · {time}' : '{date}', { copy: true }),
       slot('venue', 'Venue line', '{venue}', { copy: true }),
@@ -1195,7 +1210,7 @@ export function cardTextSlots(kind, data = {}) {
         ? [slot('unit1', 'Beside the count, line 1', 'OF US', { store: 'recap.unit1' }),
            slot('unit2', 'Beside the count, line 2', 'WATCHED', { store: 'recap.unit2' })]
         : [slot('lead', 'Lead-in', 'WE WATCHED', { store: 'recap.lead' })]),
-      slot('title', 'Title', '{title}', { copy: true }),
+      slot('title', 'Title', '{title}', { copy: true, multiline: true }),
       slot('year', 'Year', '{year}', { copy: true }),
       extra('recap.extra'),
       slot('footer', 'Footer', 'jxnfilm.club/events'),
@@ -1256,7 +1271,7 @@ export function cardTextSlots(kind, data = {}) {
   if (kind === 'episode') {
     return [
       slot('eyebrow', 'Eyebrow', `${BRAND_NAME} · New podcast episode`),
-      slot('title', 'Title', '{title}'),
+      slot('title', 'Title', '{title}', { multiline: true }),
       slot('date', 'Date line', '{date}'),
       slot('cta', 'Call to action', 'LISTEN WHEREVER YOU GET PODCASTS'),
       extra(),
@@ -1266,10 +1281,20 @@ export function cardTextSlots(kind, data = {}) {
   return []
 }
 
-// One line of card text: no control characters or line breaks, capped.
-export function cleanCardText(s) {
+// One line of card text: no control characters or line breaks, capped. A
+// `multiline` slot (a title) keeps the operator's own line breaks, up to
+// CARD_TEXT_MAX_BREAKS of them; any further ones become spaces.
+export const CARD_TEXT_MAX_BREAKS = 3
+export function cleanCardText(s, { multiline = false } = {}) {
+  let out = String(s ?? '').replace(/\r\n?/g, '\n')
+  if (!multiline) out = out.replace(/\n+/g, ' ')
   // eslint-disable-next-line no-control-regex
-  return String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, CARD_TEXT_MAX)
+  out = out.replace(/[\u0000-\u0009\u000b-\u001f\u007f]+/g, ' ')
+  if (multiline) {
+    let seen = 0
+    out = out.replace(/\n+/g, () => (++seen <= CARD_TEXT_MAX_BREAKS ? '\n' : ' '))
+  }
+  return out.slice(0, CARD_TEXT_MAX)
 }
 
 // A saved row as read from KV -> a flat map of strings. Anything else (a
@@ -1278,7 +1303,9 @@ export function normalizeCardText(raw) {
   const out = {}
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
   for (const [k, val] of Object.entries(raw)) {
-    if (typeof val === 'string' && /^[a-z0-9.]{1,40}$/.test(k)) out[k] = cleanCardText(val)
+    // Line breaks are kept here and dropped per slot at resolve time, since
+    // only the slot table knows which lines may carry them.
+    if (typeof val === 'string' && /^[a-z0-9.]{1,40}$/.test(k)) out[k] = cleanCardText(val, { multiline: true })
   }
   return out
 }
@@ -1297,10 +1324,10 @@ export function fillCardText(template, values = {}) {
   })
   if (!emptied) return s.trim()
   return s
-    .replace(/(\s*[·|—–-]\s*){2,}/g, ' · ')
+    .replace(/([^\S\n]*[·|—–-][^\S\n]*){2,}/g, ' · ')
     .replace(/^[\s·|—–,-]+|[\s·|—–,-]+$/g, '')
     .replace(/\(\s*\)/g, '')
-    .replace(/\s{2,}/g, ' ')
+    .replace(/[^\S\n]{2,}/g, ' ')
     .trim()
 }
 
@@ -1313,7 +1340,7 @@ export function resolveCardText(kind, data, saved, opts) {
   const text = {}
   const slots = cardTextSlots(kind, data).map(s => {
     const edited = Object.prototype.hasOwnProperty.call(map, s.store) && map[s.store] !== s.def
-    const template = edited ? map[s.store] : s.def
+    const template = edited ? cleanCardText(map[s.store], { multiline: !!s.multiline }) : s.def
     text[s.id] = fillCardText(template, values)
     return { ...s, template, edited }
   })
@@ -1325,7 +1352,7 @@ export function resolveCardText(kind, data, saved, opts) {
 // the caller turns into a KV delete.
 export function setCardText(saved, slot, value) {
   const next = { ...normalizeCardText(saved) }
-  const val = cleanCardText(value)
+  const val = cleanCardText(value, { multiline: !!slot.multiline })
   if (val === slot.def) delete next[slot.store]
   else next[slot.store] = val
   return next
@@ -1364,9 +1391,10 @@ export function cardTextForCopy(kind, data, saved) {
     if (id === 'when') {
       out.when = fillCardText(tpl, values)
       out.whenShort = slot ? short.text.when : fillCardText(tpl, shortValues)
-    } else if (id === 'title') out.name = fillCardText(tpl, values)
-    else out[id] = fillCardText(tpl, values)
+    } else out[id === 'title' ? 'name' : id] = fillCardText(tpl, values)
   }
+  // A caption is running text: the title's line breaks are for the image.
+  for (const k of Object.keys(out)) out[k] = out[k].replace(/\s*\n\s*/g, ' ')
   return Object.keys(out).length ? out : null
 }
 

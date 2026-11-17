@@ -170,9 +170,12 @@ describe('card wording: untrusted input', () => {
     expect(fillCardText('Doors — 7', {})).toBe('Doors — 7')
   })
 
-  it('a saved row is reduced to a flat map of capped, single-line strings', () => {
+  it('a saved row is reduced to a flat map of capped strings', () => {
+    // Breaks survive normalising (only the slot table knows which lines may
+    // carry them) and are flattened per slot when the card is resolved.
     expect(normalizeCardText({ title: 'ok', bad: 4, nested: { a: 1 }, 'Weird Key!': 'x', when: 'a\nb' }))
-      .toEqual({ title: 'ok', when: 'a b' })
+      .toEqual({ title: 'ok', when: 'a\nb' })
+    expect(resolveCardText('announce', DATA, { when: 'a\nb' }).text.when).toBe('a b')
     expect(normalizeCardText('nope')).toEqual({})
     expect(normalizeCardText(['a'])).toEqual({})
     expect(cleanCardText('x'.repeat(500))).toHaveLength(CARD_TEXT_MAX)
@@ -180,6 +183,39 @@ describe('card wording: untrusted input', () => {
 
   it('token values never include private event fields', () => {
     expect(JSON.stringify(cardTextValues('announce', DATA))).not.toMatch(/Hidden Way|gate code/)
+  })
+})
+
+describe('card wording: line breaks in a title', () => {
+  const title = slotOf('announce', DATA, 'title')
+  const venue = slotOf('announce', DATA, 'venue')
+
+  it('a title keeps the breaks the operator typed; other lines never do', () => {
+    expect(title.multiline).toBe(true)
+    const saved = setCardText({}, title, 'Dr. Strangelove or:\r\nHow I Learned to Stop Worrying')
+    expect(saved.title).toBe('Dr. Strangelove or:\nHow I Learned to Stop Worrying')
+    expect(resolveCardText('announce', DATA, saved).text.title).toBe('Dr. Strangelove or:\nHow I Learned to Stop Worrying')
+    expect(setCardText({}, venue, 'The Vault\nupstairs')).toEqual({ venue: 'The Vault upstairs' })
+    // A break smuggled into a single-line slot by a hand-edited row is flattened at resolve.
+    expect(resolveCardText('announce', DATA, { venue: 'The Vault\nupstairs' }).text.venue).toBe('The Vault upstairs')
+  })
+
+  it('caps the number of breaks and collapses blank lines', () => {
+    expect(cleanCardText('a\n\n\nb\nc\nd\ne\nf', { multiline: true })).toBe('a\nb\nc\nd e f')
+    expect(cleanCardText('a\tb\u0000c', { multiline: true })).toBe('a b c')
+  })
+
+  it('a token on its own line still tidies without losing the break', () => {
+    const saved = setCardText({}, title, '{title}\n{year}')
+    expect(resolveCardText('announce', DATA, saved).text.title).toBe('The Passion of Joan of Arc\n1928')
+    const noYear = { ...DATA, event: { ...EVENT, year: undefined } }
+    expect(resolveCardText('announce', noYear, saved).text.title).toBe('The Passion of Joan of Arc')
+  })
+
+  it('captions get the title as running text', () => {
+    const text = cardTextForCopy('announce', DATA, { title: 'Joan\nof Arc' })
+    expect(text.name).toBe('Joan of Arc')
+    expect(buildSocialCopy('announce', 'x', { ...DATA, text })).toContain('Joan of Arc (1928)')
   })
 })
 

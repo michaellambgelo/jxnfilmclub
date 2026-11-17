@@ -77,6 +77,23 @@ describe('normalizeLayout', () => {
     expect(l).toEqual({ ...DEFAULT_LAYOUT, stale: true })
   })
 
+  it('keeps the type sizes when the poster changes: only the crop is tied to the image', () => {
+    const l = normalizeLayout({ poster: 'https://image.tmdb.org/old.jpg', fy: 0.1, zoom: 2, mode: 'full', text: 1.2, title: 0.8, meta: 1.3, label: 0.9 }, poster)
+    expect(l).toEqual({ ...DEFAULT_LAYOUT, text: 1.2, title: 0.8, meta: 1.3, label: 0.9, stale: true })
+  })
+
+  it('an event with no poster can still save type sizes', () => {
+    const l = normalizeLayout({ title: 0.7 }, undefined)
+    expect(l).toMatchObject({ title: 0.7, stale: false })
+    expect(isDefaultLayout(l)).toBe(false)
+    expect(isDefaultLayout(normalizeLayout({ title: 1, meta: 1, label: 1 }, ''))).toBe(true)
+  })
+
+  it('clamps the per-element sizes', () => {
+    expect(normalizeLayout({ poster, title: 9, meta: 0.1, label: 'x' }, poster))
+      .toMatchObject({ title: 1.6, meta: 0.6, label: 1 })
+  })
+
   it('clamps and rejects garbage', () => {
     const l = normalizeLayout({
       poster, fx: 'x', fy: -3, zoom: 99, band: 0.01, fade: -5, mode: 'weird', text: 9,

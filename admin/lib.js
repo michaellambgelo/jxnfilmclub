@@ -340,6 +340,28 @@ export function normalizeLayout(raw, poster) {
   }
 }
 
+// --- Card text geometry (pure, so it can be unit-tested without a canvas) ---
+
+// Where a text block of height `blockH` starts inside [regionTop, limit] for
+// a placement preset. `autoTop` is the card's own default start.
+export function placeBlock(vpos, regionTop, limit, blockH, autoTop) {
+  const last = Math.max(regionTop, limit - blockH)
+  if (vpos === 'top') return regionTop
+  if (vpos === 'middle') return Math.max(regionTop, Math.round((regionTop + limit - blockH) / 2))
+  if (vpos === 'bottom') return last
+  return Math.min(autoTop, last)
+}
+
+// Instagram draws its own header over the top of a story and its reply bar
+// over the bottom, about 250px of 1920 each. On that shape the event cards
+// keep their text (not the artwork) clear of both. Returns the top edge for
+// text and the height to hand footer()/footerTop() so the footer sits above
+// the reply bar; on every other shape these are just `pad` and `H`.
+export function textBounds(W, H, pad) {
+  const safe = H / W > 1.7 ? Math.round(H * 0.13) : 0
+  return { edge: Math.max(pad, safe), footH: H - Math.max(0, safe - pad) }
+}
+
 // True when a layout renders identically to the defaults — nothing to save.
 export function isDefaultLayout(l) {
   return !!l && Object.keys(DEFAULT_LAYOUT).every(k => l[k] === DEFAULT_LAYOUT[k])

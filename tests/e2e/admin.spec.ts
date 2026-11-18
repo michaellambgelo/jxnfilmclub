@@ -841,6 +841,86 @@ test.describe('admin dashboard', () => {
     await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()
   })
 
+  test('Content Gen: with artwork loaded, the band, whole-poster mode, From poster and the story safe area paint as described', async ({ page }) => {
+    // Every other Content Gen test uses a poster URL that never loads, so
+    // nothing above exercises the poster paths. Here the image proxy is
+    // answered with a flat blue 2:3 image, which makes pixels predictable.
+    const poster = 'https://image.tmdb.org/t/p/w500/e2e-artwork.jpg'
+    const ev = { id: 'cg-e2e-artwork', title: 'Art Night', film: 'Metropolis', year: 1927, date: '2030-02-01', time: '19:00', venue: 'The Parlor', poster }
+    const sizes = ['ig-post', 'ig-story']
+    await dropAttendance(page, ...sizes.map(z => `cardlayout:${ev.id}:${z}`))
+    await seedAttendance(page, `event:${ev.id}`, ev)
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas')
+      c.width = 200
+      c.height = 300
+      const x = c.getContext('2d')!
+      x.fillStyle = 'rgb(30,60,200)'
+      x.fillRect(0, 0, 200, 300)
+      return c.toDataURL('image/png').split(',')[1]
+    })
+    await page.route('**/api/img?*', route => route.fulfill({ contentType: 'image/png', body: Buffer.from(png, 'base64') }))
+
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+    const panel = page.locator('#cg-layout')
+    // [r, g, b] of one canvas pixel, once the current paint has finished.
+    const pixel = async (x: number, y: number) => {
+      await expect(page.locator('#cg-download')).toBeEnabled()
+      return page.evaluate(([px, py]) => {
+        const c = document.querySelector('#cg-canvas') as HTMLCanvasElement
+        return Array.from(c.getContext('2d')!.getImageData(px, py, 1, 1).data.slice(0, 3))
+      }, [x, y])
+    }
+    const isBlue = ([r, g, b]: number[]) => b > 150 && b > r * 2
+    const isInk = ([r, g, b]: number[]) => r < 30 && g < 30 && b < 30
+    const isRed = ([r, g, b]: number[]) => r > 180 && g < 90 && b < 90
+
+    // IG post, Band: the artwork fills the band from the top edge, cropped.
+    await expect.poll(async () => isBlue(await pixel(5, 5))).toBe(true)
+    // The band follows the text, and the slider says so.
+    await expect(page.locator('#cg-l-band-out')).toContainText('auto')
+    // The footer rule is the brand red on Night...
+    const rule: [number, number] = [75, 1080 - 70 - 3]
+    expect(isRed(await pixel(...rule))).toBe(true)
+
+    // ...and takes its colour from the artwork with From poster.
+    await panel.locator('[data-theme="poster"]').click()
+    await expect.poll(async () => { const [r, , b] = await pixel(...rule); return b > r }).toBe(true)
+    await panel.locator('[data-theme="night"]').click()
+    await expect.poll(async () => isRed(await pixel(...rule))).toBe(true)
+
+    // Whole poster: the band corner is now the dimmed backdrop, not artwork,
+    // while the centre of the band still shows the poster itself.
+    await panel.locator('[data-mode="fit"]').click()
+    await expect.poll(async () => isBlue(await pixel(5, 5))).toBe(false)
+    expect(isBlue(await pixel(540, 200))).toBe(true)
+    await panel.locator('[data-mode="band"]').click()
+    await expect.poll(async () => isBlue(await pixel(5, 5))).toBe(true)
+
+    // Text on top: the top of the card is ink, and the poster sits below it.
+    await panel.locator('[data-vpos="top"]').click()
+    await expect.poll(async () => isInk(await pixel(5, 5))).toBe(true)
+    expect(isBlue(await pixel(540, 700))).toBe(true)
+    await page.locator('#cg-l-reset').click()
+
+    // IG story: the band grows past its old 52% share, and the footer sits
+    // on the safe line (250px up), leaving the reply-bar zone empty.
+    await page.locator('.cg-size[data-size="ig-story"]').click()
+    await expect(page.locator('#cg-canvas')).toHaveJSProperty('height', 1920)
+    await expect.poll(async () => isBlue(await pixel(540, 800))).toBe(true)
+    // 1040 is past the old band's end (998); it is still artwork, mid-fade.
+    { const [r, , bl] = await pixel(540, 1040); expect(bl).toBeGreaterThan(r * 2) }
+    const share = parseInt((await page.locator('#cg-l-band-out').textContent()) || '0', 10)
+    expect(share).toBeGreaterThan(52)
+    expect(isRed(await pixel(75, 1920 - 250 - 3))).toBe(true)
+    expect(isInk(await pixel(75, 1920 - 70 - 3))).toBe(true)
+
+    await dropAttendance(page, `event:${ev.id}`, ...sizes.map(z => `cardlayout:${ev.id}:${z}`))
+  })
+
   test('Content Gen: the print flyer is Letter-sized, starts on Paper and carries a QR code that scans', async ({ page }) => {
     // No poster: the flyer strip must not depend on artwork.
     const ev = { id: 'cg-e2e-flyer', title: 'Flyer Night', film: 'Metropolis', year: 1927, date: '2030-02-01', time: '19:00', venue: 'The Parlor' }

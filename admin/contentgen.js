@@ -21,6 +21,7 @@ import {
   PLATFORM_LIMITS, PLATFORM_LABELS,
   CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, LAYOUT_TYPE_KEYS, normalizeLayout, isDefaultLayout,
   CARD_THEMES, LAYOUT_THEMES, rgbTriplet, accentFromPixels, qrMatrix, flyerEventUrl,
+  placeBlock, textBounds,
   coverRect, panFocal,
   CARD_TEXT_PREFIX, cardTextKey, resolveCardText, setCardText, clearCardText, cardTextForCopy,
 } from './lib.js'
@@ -651,16 +652,6 @@ function inkFade(c, x0, y0, x1, y1, rx, ry, rw, rh, alpha = 1, rgb = '16,15,14')
   c.fillRect(rx, ry, rw, rh)
 }
 
-// Where a text block of height `blockH` starts inside [regionTop, limit] for
-// a placement preset. `autoTop` is the card's own default start.
-function placeBlock(vpos, regionTop, limit, blockH, autoTop) {
-  const last = Math.max(regionTop, limit - blockH)
-  if (vpos === 'top') return regionTop
-  if (vpos === 'middle') return Math.max(regionTop, Math.round((regionTop + limit - blockH) / 2))
-  if (vpos === 'bottom') return last
-  return Math.min(autoTop, last)
-}
-
 // What the last event-card paint did with a poster band nobody has sized, so
 // the Poster size slider can show the real share instead of a nominal default.
 let paintedBand = null
@@ -735,16 +726,6 @@ function label(c, text, x, y, px, color = BRAND, maxW = 0, center = false) {
   c.fillText(out, center ? x + Math.round(size * 0.11) : x, y)
   c.textAlign = 'left'
   c.letterSpacing = '0px'
-}
-
-// Instagram draws its own header over the top of a story and its reply bar
-// over the bottom, about 250px of 1920 each. On that shape the event cards
-// keep their text (not the artwork) clear of both. Returns the top edge for
-// text and the height to hand footer()/footerTop() so the footer sits above
-// the reply bar; on every other shape these are just `pad` and `H`.
-function textBounds(W, H, pad) {
-  const safe = H / W > 1.7 ? Math.round(H * 0.13) : 0
-  return { edge: Math.max(pad, safe), footH: H - Math.max(0, safe - pad) }
 }
 
 // The print flyer's bottom strip: the club logo, the footer link, and a QR

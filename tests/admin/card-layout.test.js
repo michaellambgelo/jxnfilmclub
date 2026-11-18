@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   coverRect, panFocal, normalizeLayout, isDefaultLayout, cardLayoutKey, DEFAULT_LAYOUT,
   CARD_THEMES, LAYOUT_THEMES, contrastRatio, accentFromPixels,
+  placeBlock, textBounds, rgbTriplet,
 } from '../../admin/lib.js'
 
 // A 2:3 poster into a 1080x562 band (the IG-post announce card's top half).
@@ -186,6 +187,53 @@ describe('card themes', () => {
     expect(accentFromPixels(pixels([[20, 20, 20], 99], [[255, 0, 0], 1]))).toBeNull()
     expect(accentFromPixels(null)).toBeNull()
     expect(accentFromPixels(new Uint8ClampedArray([255, 0, 0, 0]))).toBeNull()
+  })
+})
+
+describe('placeBlock', () => {
+  // A 200px block in a region running 100..900, whose own default start is 300.
+  const at = (vpos, blockH = 200, autoTop = 300) => placeBlock(vpos, 100, 900, blockH, autoTop)
+
+  it('puts each preset where it says', () => {
+    expect(at('top')).toBe(100)
+    expect(at('middle')).toBe(400)
+    expect(at('bottom')).toBe(700)
+  })
+
+  it('auto is the card\'s own start, not an alias for a preset', () => {
+    expect(at('auto')).toBe(300)
+    expect(at(undefined)).toBe(300)
+  })
+
+  it('auto slides up to make room rather than running past the limit', () => {
+    expect(at('auto', 700)).toBe(200)
+    expect(at('auto', 200, 850)).toBe(700)
+  })
+
+  it('never starts above the region, even when the block is taller than it', () => {
+    for (const v of ['auto', 'top', 'middle', 'bottom']) expect(at(v, 1200), v).toBe(100)
+  })
+})
+
+describe('textBounds', () => {
+  it('keeps story text out of the top and bottom 13% that Instagram covers', () => {
+    const { edge, footH } = textBounds(1080, 1920, 70)
+    expect(edge).toBe(250)
+    // The footer is drawn `pad` above footH, so it lands on the safe line.
+    expect(footH - 70).toBe(1920 - 250)
+  })
+
+  it('leaves every other shape on its plain padding', () => {
+    for (const [w, h] of [[1080, 1080], [1080, 1350], [1200, 630], [1200, 675], [800, 1200], [1275, 1650]]) {
+      expect(textBounds(w, h, 70), `${w}x${h}`).toEqual({ edge: 70, footH: h })
+    }
+  })
+})
+
+describe('rgbTriplet', () => {
+  it('turns a theme colour into the r,g,b an rgba() string takes', () => {
+    expect(rgbTriplet('#100f0e')).toBe('16,15,14')
+    expect(rgbTriplet(CARD_THEMES.paper.bg)).toBe('240,235,224')
   })
 })
 

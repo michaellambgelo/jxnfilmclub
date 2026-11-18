@@ -20,6 +20,7 @@ import {
   fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange,
   PLATFORM_LIMITS, PLATFORM_LABELS,
   CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, LAYOUT_TYPE_KEYS, normalizeLayout, isDefaultLayout,
+  CARD_THEMES, LAYOUT_THEMES, rgbTriplet, accentFromPixels,
   coverRect, panFocal,
   CARD_TEXT_PREFIX, cardTextKey, resolveCardText, setCardText, clearCardText, cardTextForCopy,
 } from './lib.js'
@@ -84,6 +85,8 @@ const SIZES = {
   'ig-story': { w: 1080, h: 1920, label: 'IG story' },
   'fb': { w: 1200, h: 630, label: 'Facebook' },
   'x': { w: 1200, h: 675, label: 'Bluesky / X' },
+  // The tall feed post: 4:5, the most a feed post may occupy.
+  'ig-portrait': { w: 1080, h: 1350, label: 'IG portrait' },
   // 2:3, matching .event-poster-wrap on the site — the shape a film poster
   // occupies, so a generated one drops into that slot without letterboxing.
   'poster': { w: 800, h: 1200, label: 'Poster' },
@@ -590,7 +593,7 @@ function drawCover(c, img, x, y, w, h, layout) {
 // A soft, dimmed blow-up of the poster, for a whole (uncropped) poster to sit
 // on. Scaled up from a thumbnail rather than blurred with ctx.filter, which
 // Safari does not implement.
-function drawBackdrop(c, img, x, y, w, h) {
+function drawBackdrop(c, img, x, y, w, h, rgb = '16,15,14') {
   if (w <= 0 || h <= 0) return
   const tw = 24
   const th = Math.max(1, Math.round(tw * h / w))
@@ -603,7 +606,7 @@ function drawBackdrop(c, img, x, y, w, h) {
   c.imageSmoothingEnabled = true
   c.imageSmoothingQuality = 'high'
   c.drawImage(tiny, x, y, w, h)
-  c.fillStyle = 'rgba(16,15,14,0.62)'
+  c.fillStyle = `rgba(${rgb},0.62)`
   c.fillRect(x, y, w, h)
   c.restore()
 }
@@ -624,11 +627,11 @@ function drawWhole(c, img, x, y, w, h, inset) {
 }
 
 // A gradient from clear (at x0,y0) to solid ink (at x1,y1) over the rect.
-function inkFade(c, x0, y0, x1, y1, rx, ry, rw, rh, alpha = 1) {
+function inkFade(c, x0, y0, x1, y1, rx, ry, rw, rh, alpha = 1, rgb = '16,15,14') {
   if (rw <= 0 || rh <= 0) return
   const g = c.createLinearGradient(x0, y0, x1, y1)
-  g.addColorStop(0, 'rgba(16,15,14,0)')
-  g.addColorStop(1, `rgba(16,15,14,${alpha})`)
+  g.addColorStop(0, `rgba(${rgb},0)`)
+  g.addColorStop(1, `rgba(${rgb},${alpha})`)
   c.fillStyle = g
   c.fillRect(rx, ry, rw, rh)
 }
@@ -647,6 +650,34 @@ function placeBlock(vpos, regionTop, limit, blockH, autoTop) {
 // the Poster size slider can show the real share instead of a nominal default.
 let paintedBand = null
 
+// The colours a themed card draws with. `rgb` is the background as "r,g,b",
+// for the fades and veils that blend artwork into it.
+const paletteOf = (name, accent) => {
+  const t = CARD_THEMES[name] || CARD_THEMES.night
+  return { ...t, accent: accent || t.accent, rgb: rgbTriplet(t.bg) }
+}
+const NIGHT = paletteOf('night')
+
+// The "From poster" accent: sampled once per image from a thumbnail. Null
+// when the artwork is near-grey or cannot be read, and the brand red stays.
+const accentCache = new Map()
+function posterAccent(img) {
+  if (!img) return null
+  if (accentCache.has(img.src)) return accentCache.get(img.src)
+  let hex = null
+  try {
+    const t = document.createElement('canvas')
+    t.width = 32
+    t.height = 48
+    const tc = t.getContext('2d', { willReadFrequently: true })
+    tc.drawImage(img, 0, 0, 32, 48)
+    hex = accentFromPixels(tc.getImageData(0, 0, 32, 48).data, CARD_THEMES.poster.bg)
+  } catch { hex = null }
+  accentCache.set(img.src, hex)
+  return hex
+}
+const cardPalette = (L, poster) => paletteOf(L.theme, L.theme === 'poster' ? posterAccent(poster) : null)
+
 // The layout knobs that default per orientation (`null` in a saved layout).
 // Resolved here, in one place, so the drawers and the sliders agree on what
 // "default" currently means for this card shape.
@@ -656,6 +687,7 @@ function resolveLayout(layout, W, H) {
   const full = L.mode === 'full'
   return {
     ...L,
+    theme: L.theme ?? 'night',
     band: L.band ?? (landscape ? 0.36 : H > W ? 0.52 : 0.5),
     // Landscape's side column historically had a hard edge; full-bleed needs
     // a long veil for the text to sit on.
@@ -706,13 +738,13 @@ const footerTop = (W, H, pad) => H - pad - 22 - Math.round(W * 0.024)
 // `x` defaults to the bottom padding; pass it separately when the footer
 // belongs to a side panel rather than the card's left edge.
 // With `center`, `x` is the midpoint the rule and the link are centred on.
-function footer(c, W, H, pad, url, x = pad, center = false) {
+function footer(c, W, H, pad, url, x = pad, center = false, P = NIGHT) {
   const bar = Math.round(W * 0.075)
-  c.fillStyle = BRAND
+  c.fillStyle = P.accent
   c.fillRect(center ? Math.round(x - bar / 2) : x, H - pad - 6, bar, 6)
   c.font = `500 ${Math.round(W * 0.024)}px ${LABEL}`
   c.letterSpacing = '2px'
-  c.fillStyle = PAPER_4
+  c.fillStyle = P.text4
   c.textBaseline = 'alphabetic'
   c.textAlign = center ? 'center' : 'left'
   c.fillText(url.toUpperCase(), center ? x + 1 : x, H - pad - 22)
@@ -737,8 +769,10 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   const L = resolveLayout(layout, W, H)
   const full = !!poster && L.mode === 'full'
   let hit = null
+  const P = cardPalette(L, poster)
+  const fadeTo = (x0, y0, x1, y1, rx, ry, rw, rh, alpha = 1) => inkFade(c, x0, y0, x1, y1, rx, ry, rw, rh, alpha, P.rgb)
 
-  c.fillStyle = INK
+  c.fillStyle = P.bg
   c.fillRect(0, 0, W, H)
 
   // Measure the whole text block before drawing any of it: full-bleed anchors
@@ -746,7 +780,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   // whole block when it would otherwise run into the footer.
   const ts = L.text
   // The dot separator is set wide on the card; the template keeps it plain.
-  const metas = [[t.when.replace(/\s*·\s*/g, '  ·  '), PAPER_2], [t.venue, PAPER_4], [t.extra, BRAND]].filter(([line]) => line)
+  const metas = [[t.when.replace(/\s*·\s*/g, '  ·  '), P.text2], [t.venue, P.text4], [t.extra, P.accent]].filter(([line]) => line)
   const maxLines = Math.max(3, typedLines(name))
   const measure = (k, tw) => {
     const labelPx = Math.round(W * 0.021 * ts * L.label * k)
@@ -790,7 +824,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   // has no crop to drag, so it reports no hit region.
   const posterIn = (x, y, w, h, fades) => {
     let box = null
-    if (fit) drawBackdrop(c, poster, x, y, w, h)
+    if (fit) drawBackdrop(c, poster, x, y, w, h, P.rgb)
     else box = drawCover(c, poster, x, y, w, h, L)
     fades()
     if (fit) drawWhole(c, poster, x, y, w, h, Math.round(pad * 0.6))
@@ -814,10 +848,10 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   } else if (poster && landscape) {
     shape = 'side'
     const pw = Math.round(W * L.band)
-    c.fillStyle = SURFACE
+    c.fillStyle = P.surface
     c.fillRect(0, 0, pw, H)
     const fade = Math.min(pw, L.fade)
-    hit = posterIn(0, 0, pw, H, () => inkFade(c, pw - fade, 0, pw, 0, pw - fade, 0, fade, H))
+    hit = posterIn(0, 0, pw, H, () => fadeTo(pw - fade, 0, pw, 0, pw - fade, 0, fade, H))
     tx = pw + pad
     tw = W - pw - pad * 2
   } else if (poster && vpos === 'top') {
@@ -836,7 +870,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
       paintedBand = ph / H
     }
     const fade = Math.min(ph, L.fade)
-    hit = posterIn(0, 0, W, ph, () => inkFade(c, 0, ph - fade, 0, ph, 0, ph - fade, W, fade))
+    hit = posterIn(0, 0, W, ph, () => fadeTo(0, ph - fade, 0, ph, 0, ph - fade, W, fade))
     const regionTop = ph + Math.round(H * 0.05)
     place = (m) => {
       const top = placeBlock(vpos, regionTop - m.labelPx, limit, m.blockH, regionTop - m.labelPx)
@@ -889,8 +923,8 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
     const py = limit - ph
     const fade = Math.min(Math.round(ph / 2), L.fade)
     hit = posterIn(0, py, W, ph, () => {
-      inkFade(c, 0, py + fade, 0, py, 0, py, W, fade)
-      inkFade(c, 0, limit - fade, 0, limit, 0, limit - fade, W, fade)
+      fadeTo(0, py + fade, 0, py, 0, py, W, fade)
+      fadeTo(0, limit - fade, 0, limit, 0, limit - fade, W, fade)
     })
     if (!sized) paintedBand = ph / H
   }
@@ -898,32 +932,32 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   if (full) {
     // The veil: solid ink behind the text, fading out over `fade` px on any
     // side that still has poster beyond it.
-    const INK9 = 'rgba(16,15,14,0.9)'
+    const INK9 = `rgba(${P.rgb},0.9)`
     const gap = Math.round(H * 0.04)
     const bottomUp = vpos !== 'top' && vpos !== 'middle'
     const v0 = vpos === 'top' ? 0 : top - (bottomUp ? 0 : gap)
     const v1 = bottomUp ? H : top + m.blockH + gap
-    if (v0 > 0) inkFade(c, 0, Math.max(0, v0 - L.fade), 0, v0, 0, Math.max(0, v0 - L.fade), W, v0 - Math.max(0, v0 - L.fade), 0.9)
+    if (v0 > 0) fadeTo(0, Math.max(0, v0 - L.fade), 0, v0, 0, Math.max(0, v0 - L.fade), W, v0 - Math.max(0, v0 - L.fade), 0.9)
     c.fillStyle = INK9
     c.fillRect(0, v0, W, v1 - v0)
     if (v1 < H) {
-      inkFade(c, 0, Math.min(H, v1 + L.fade), 0, v1, 0, v1, W, Math.min(H, v1 + L.fade) - v1, 0.9)
+      fadeTo(0, Math.min(H, v1 + L.fade), 0, v1, 0, v1, W, Math.min(H, v1 + L.fade) - v1, 0.9)
       // The footer still needs ink under it when the veil stops short of it.
       const f0 = footTop - Math.round(H * 0.1)
-      inkFade(c, 0, f0, 0, footTop - Math.round(H * 0.02), 0, f0, W, H - f0, 0.9)
+      fadeTo(0, f0, 0, footTop - Math.round(H * 0.02), 0, f0, W, H - f0, 0.9)
     }
   }
   let ty = top + m.labelPx
 
   const ax = center ? tx + Math.round(tw / 2) : tx
   c.textBaseline = 'alphabetic'
-  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, BRAND, tw, center)
+  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, P.accent, tw, center)
   ty += m.labelGap
 
   // Film title — Playfair, wrapped, shrink-to-fit.
   c.textAlign = center ? 'center' : 'left'
   c.font = `800 ${m.titlePx}px ${DISPLAY}`
-  c.fillStyle = PAPER
+  c.fillStyle = P.text
   c.textBaseline = 'top'
   for (const line of m.lines) {
     c.fillText(line, ax, ty)
@@ -931,7 +965,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   }
   if (t.year) {
     c.font = `italic 500 ${Math.round(m.titlePx * 0.5)}px ${DISPLAY}`
-    c.fillStyle = PAPER_4
+    c.fillStyle = P.text4
     c.fillText(t.year, ax, ty + Math.round(m.titlePx * 0.1))
     ty += m.yearH
   }
@@ -947,7 +981,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
 
   // In the landscape band layout the text sits beside the poster, and so does
   // the footer: at the card's left edge it landed on top of the artwork.
-  footer(c, W, footH, pad, t.footer, ax, center)
+  footer(c, W, footH, pad, t.footer, ax, center, P)
   return hit
 }
 
@@ -1037,16 +1071,17 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
   const L = resolveLayout(layout, W, H)
   const ts = L.text
   let hit = null
+  const P = cardPalette(L, poster)
 
-  c.fillStyle = INK
+  c.fillStyle = P.bg
   c.fillRect(0, 0, W, H)
   if (poster) {
     c.globalAlpha = 0.18
     hit = drawCover(c, poster, 0, 0, W, H, L)
     c.globalAlpha = 1
     const veil = c.createLinearGradient(0, 0, 0, H)
-    veil.addColorStop(0, 'rgba(16,15,14,0.55)')
-    veil.addColorStop(1, 'rgba(16,15,14,0.95)')
+    veil.addColorStop(0, `rgba(${P.rgb},0.55)`)
+    veil.addColorStop(1, `rgba(${P.rgb},0.95)`)
     c.fillStyle = veil
     c.fillRect(0, 0, W, H)
   }
@@ -1098,7 +1133,7 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
   const center = L.align === 'center'
   const ax = center ? Math.round(W / 2) : pad
   let ty = top + m.labelPx
-  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, BRAND, tw, center)
+  if (t.eyebrow) label(c, t.eyebrow, ax, ty, m.labelPx, P.accent, tw, center)
   ty += m.labelGap
   c.textBaseline = 'top'
   c.textAlign = 'left'
@@ -1114,14 +1149,14 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
     const units = [t.unit1 || '', t.unit2 || ''].map(u => fitLine(c, u, unitMax, 'A line beside the count'))
     const rowW = numW + numGap + Math.max(...units.map(u => c.measureText(u).width))
     const rowX = center ? Math.round((W - rowW) / 2) : pad
-    c.fillStyle = PAPER_2
+    c.fillStyle = P.text2
     units.forEach((u, i) => c.fillText(u, rowX + numW + numGap, ty + Math.round(m.numPx * 0.42) + i * Math.round(m.ofPx * 1.4)))
     c.font = `800 ${m.numPx}px ${DISPLAY}`
-    c.fillStyle = BRAND
+    c.fillStyle = P.accent
     c.fillText(String(count), rowX, ty)
   } else {
     c.font = `500 ${m.wePx}px ${LABEL}`
-    c.fillStyle = PAPER_2
+    c.fillStyle = P.text2
     c.textAlign = center ? 'center' : 'left'
     if (t.lead) c.fillText(fitLine(c, t.lead, tw, 'The lead-in'), ax, ty)
   }
@@ -1129,7 +1164,7 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
 
   c.textAlign = center ? 'center' : 'left'
   c.font = `800 ${m.titlePx}px ${DISPLAY}`
-  c.fillStyle = PAPER
+  c.fillStyle = P.text
   for (const line of m.lines) {
     c.fillText(line, ax, ty)
     ty += m.lineH
@@ -1137,12 +1172,12 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
   if (t.extra) {
     ty += Math.round(m.extraPx * 0.6)
     c.font = `500 ${m.extraPx}px ${LABEL}`
-    c.fillStyle = BRAND
+    c.fillStyle = P.accent
     c.fillText(fitLine(c, t.extra, tw, 'The extra line'), ax, ty)
   }
   c.textAlign = 'left'
 
-  footer(c, W, footH, pad, t.footer, ax, center)
+  footer(c, W, footH, pad, t.footer, ax, center, P)
   return hit
 }
 
@@ -1859,6 +1894,9 @@ function renderLayoutPanel() {
       <div class="cg-seg" role="group" aria-label="Text position"><span class="cg-seg-label">Text</span>
         <button type="button" data-vpos="auto">Auto</button><button type="button" data-vpos="top">Top</button><button type="button" data-vpos="middle">Middle</button><button type="button" data-vpos="bottom">Bottom</button>
       </div>
+      <div class="cg-seg" role="group" aria-label="Theme"><span class="cg-seg-label">Theme</span>
+        ${LAYOUT_THEMES.map(k => `<button type="button" data-theme="${k}">${CARD_THEMES[k].label}</button>`).join('')}
+      </div>
       <div class="cg-seg" role="group" aria-label="Text alignment"><span class="cg-seg-label">Align</span>
         <button type="button" data-align="left">Left</button><button type="button" data-align="center">Centred</button>
       </div>
@@ -1878,7 +1916,7 @@ function renderLayoutPanel() {
     const input = host.querySelector(`#cg-l-${k}`)
     input.addEventListener('input', () => setLayout({ [k]: Number(input.value) }))
   }
-  for (const k of ['mode', 'vpos', 'align']) {
+  for (const k of ['mode', 'vpos', 'align', 'theme']) {
     host.querySelectorAll(`[data-${k}]`).forEach(b =>
       b.addEventListener('click', () => setLayout({ [k]: b.dataset[k] })))
   }
@@ -1908,7 +1946,7 @@ function syncLayoutPanel() {
     input.value = String(v)
     host.querySelector(`#cg-l-${k}-out`).textContent = LAYOUT_SLIDERS[k].fmt(v) + (v === L[k] ? '' : ' auto')
   }
-  for (const k of ['mode', 'vpos', 'align']) {
+  for (const k of ['mode', 'vpos', 'align', 'theme']) {
     host.querySelectorAll(`[data-${k}]`).forEach(b => {
       b.classList.toggle('active', b.dataset[k] === L[k])
       b.setAttribute('aria-pressed', String(b.dataset[k] === L[k]))
@@ -1920,6 +1958,14 @@ function syncLayoutPanel() {
   hide('band', L.mode === 'full')
   hide('zoom', L.mode === 'fit')
   hide('crop', L.mode === 'fit')
+  const t = layoutTarget()
+  // Nothing to sample without artwork.
+  const fromPoster = host.querySelector('[data-theme="poster"]')
+  if (fromPoster) {
+    const none = !(t && t.poster)
+    fromPoster.disabled = none
+    fromPoster.title = none ? 'This event has no poster to take a colour from.' : 'Takes the accent colour from the poster.'
+  }
   const drag = host.querySelector('#cg-l-drag')
   if (drag) drag.hidden = L.mode === 'fit'
   // Only worth offering once the band has been sized by hand.
@@ -1928,7 +1974,6 @@ function syncLayoutPanel() {
   // Under a poster band that fills the spare room there is nowhere for the
   // text to move to, so Middle and Bottom would do nothing.
   const { w: cw, h: ch } = SIZES[cg.size]
-  const t = layoutTarget()
   const pinned = !!(t && t.poster) && cg.kind !== 'recap' && L.mode !== 'full' && cw <= ch && raw.band == null
   for (const v of ['middle', 'bottom']) {
     const b = host.querySelector(`[data-vpos="${v}"]`)

@@ -232,7 +232,7 @@ export const LAYOUT_TYPE_KEYS = ['text', 'title', 'meta', 'label']
 // the knob.
 export const DEFAULT_LAYOUT = Object.freeze({
   fx: 0.5, fy: 0.5, zoom: 1, band: null, fade: null, mode: 'band', text: 1,
-  title: 1, meta: 1, label: 1, vpos: 'auto', align: 'left',
+  title: 1, meta: 1, label: 1, vpos: 'auto', align: 'left', theme: null,
 })
 
 // How the poster is shown: cropped into a band, cropped across the whole card,
@@ -243,6 +243,72 @@ export const LAYOUT_MODES = ['band', 'full', 'fit']
 export const LAYOUT_VPOS = ['auto', 'top', 'middle', 'bottom']
 export const LAYOUT_ALIGN = ['left', 'center']
 const oneOf = (v, list) => (list.includes(v) ? v : list[0])
+
+// --- Card themes ---
+//
+// A theme is a whole palette, never one colour, so every combination on offer
+// has been checked for contrast (tests/admin/card-layout.test.js holds each
+// one to WCAG ratios). `text4` is the faintest text a card sets; `accent` is
+// the eyebrow, footer rule, count numeral and extra line.
+export const CARD_THEMES = Object.freeze({
+  night: { label: 'Night', bg: '#100f0e', surface: '#16140f', text: '#f0ebe0', text2: '#c4bdae', text4: '#8f897d', accent: '#d7321f' },
+  paper: { label: 'Paper', bg: '#f0ebe0', surface: '#e8e3d8', text: '#100f0e', text2: '#3a352d', text4: '#55524a', accent: '#b52a19' },
+  red: { label: 'Red', bg: '#c42d1b', surface: '#b52a19', text: '#fff6ea', text2: '#f0ebe0', text4: '#f0ebe0', accent: '#100f0e' },
+  mono: { label: 'Mono', bg: '#100f0e', surface: '#16140f', text: '#f0ebe0', text2: '#c4bdae', text4: '#8f897d', accent: '#f0ebe0' },
+  // Night with the accent sampled from the poster (accentFromPixels); the
+  // accent here is the fallback when there is nothing usable to sample.
+  poster: { label: 'From poster', bg: '#100f0e', surface: '#16140f', text: '#f0ebe0', text2: '#c4bdae', text4: '#8f897d', accent: '#d7321f' },
+})
+export const LAYOUT_THEMES = Object.keys(CARD_THEMES)
+
+const hexRgb = (hex) => [1, 3, 5].map(i => parseInt(String(hex).slice(i, i + 2), 16))
+const rgbHex = (rgb) => '#' + rgb.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')
+// "r,g,b" for building rgba() strings from a theme colour.
+export const rgbTriplet = (hex) => hexRgb(hex).join(',')
+
+const luminance = (hex) => {
+  const [r, g, b] = hexRgb(hex).map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+// WCAG contrast ratio between two #rrggbb colours, 1..21.
+export function contrastRatio(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+// Picks an accent out of a poster's pixels (`data`: RGBA bytes, as from
+// getImageData on a small thumbnail). Takes the dominant vivid hue, then
+// lightens it until it reads on `bg`. Returns null when the artwork is
+// near-grey, so the caller keeps the brand accent rather than a muddy one.
+export function accentFromPixels(data, bg = '#100f0e', minContrast = 4.5) {
+  if (!data || data.length < 4) return null
+  const buckets = Array.from({ length: 12 }, () => ({ w: 0, r: 0, g: 0, b: 0 }))
+  let total = 0, vivid = 0
+  for (let i = 0; i + 3 < data.length; i += 4) {
+    if (data[i + 3] < 128) continue
+    total++
+    const r = data[i], g = data[i + 1], b = data[i + 2]
+    const max = Math.max(r, g, b), min = Math.min(r, g, b)
+    const sat = max === 0 ? 0 : (max - min) / max
+    if (sat < 0.4 || max < 90) continue
+    vivid++
+    const d = max - min
+    let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+    if (h < 0) h += 6
+    const k = buckets[Math.min(11, Math.floor(h * 2))]
+    const w = sat * (max / 255)
+    k.w += w; k.r += r * w; k.g += g * w; k.b += b * w
+  }
+  if (!total || vivid / total < 0.04) return null
+  const top = buckets.reduce((a, b) => (b.w > a.w ? b : a))
+  let rgb = [top.r / top.w, top.g / top.w, top.b / top.w]
+  // Toward white in small steps: keeps the hue, raises the contrast on ink.
+  for (let i = 0; i < 40 && contrastRatio(rgbHex(rgb), bg) < minContrast; i++) {
+    rgb = rgb.map(v => v + (255 - v) * 0.08)
+  }
+  const hex = rgbHex(rgb)
+  return contrastRatio(hex, bg) >= minContrast ? hex : null
+}
 
 const clampNum = (v, lo, hi, dflt) => {
   const n = Number(v)
@@ -257,6 +323,8 @@ export function normalizeLayout(raw, poster) {
   for (const k of LAYOUT_TYPE_KEYS) type[k] = clampNum(raw[k], ...LAYOUT_LIMITS[k], base[k])
   type.vpos = oneOf(raw.vpos, LAYOUT_VPOS)
   type.align = oneOf(raw.align, LAYOUT_ALIGN)
+  // `null` is "this size's own default theme", like band and fade.
+  type.theme = LAYOUT_THEMES.includes(raw.theme) ? raw.theme : null
   // A crop tuned against a different image is meaningless; the type sizes and
   // the text placement are not, so only the crop is dropped.
   if ((raw.poster || '') !== (poster || '')) return { ...base, ...type, stale: true }

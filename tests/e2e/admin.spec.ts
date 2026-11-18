@@ -736,6 +736,9 @@ test.describe('admin dashboard', () => {
     await expect(page.locator('#cg-l-label')).toBeVisible()
     await expect(page.locator('#cg-l-zoom')).toHaveCount(0)
     await expect(panel.locator('[data-mode]')).toHaveCount(0)
+    // No artwork, so no colour to take from it; the other themes still apply.
+    await expect(panel.locator('[data-theme="poster"]')).toBeDisabled()
+    await expect(panel.locator('[data-theme="paper"]')).toBeEnabled()
     // A long title that fits is not a problem worth a warning.
     await expect(page.locator('#cg-fit')).toBeHidden()
 
@@ -811,7 +814,18 @@ test.describe('admin dashboard', () => {
     await panel.locator('[data-fy="0"]').click()
     await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.fy).toBe(0)
 
-    // Per size, and it survives a reload.
+    // A theme is saved with the layout. This poster never loads, so "From
+    // poster" has nothing to sample and falls back without breaking the card.
+    await expect(panel.locator('[data-theme="night"]')).toHaveClass(/active/)
+    await panel.locator('[data-theme="poster"]').click()
+    await expect(page.locator('#cg-download')).toBeEnabled()
+    await panel.locator('[data-theme="paper"]').click()
+    await expect.poll(async () => (await getAttendanceJson(page, layoutKey))?.theme).toBe('paper')
+
+    // Per size, and it survives a reload. The tall feed size is one of them.
+    await page.locator('.cg-size[data-size="ig-portrait"]').click()
+    await expect(page.locator('#cg-canvas')).toHaveJSProperty('height', 1350)
+    await expect(panel.locator('[data-theme="night"]')).toHaveClass(/active/)
     await page.locator('.cg-size[data-size="ig-story"]').click()
     await expect(panel.locator('[data-vpos="auto"]')).toHaveClass(/active/)
     await page.reload()
@@ -820,6 +834,7 @@ test.describe('admin dashboard', () => {
     await page.locator('.cg-size[data-size="ig-post"]').click()
     await expect(panel.locator('[data-vpos="top"]')).toHaveClass(/active/)
     await expect(panel.locator('[data-align="center"]')).toHaveClass(/active/)
+    await expect(panel.locator('[data-theme="paper"]')).toHaveClass(/active/)
 
     await page.locator('#cg-l-reset').click()
     await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()

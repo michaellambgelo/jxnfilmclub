@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   coverRect, panFocal, normalizeLayout, isDefaultLayout, cardLayoutKey, DEFAULT_LAYOUT,
+  CARD_THEMES, LAYOUT_THEMES, contrastRatio, accentFromPixels,
 } from '../../admin/lib.js'
 
 // A 2:3 poster into a 1080x562 band (the IG-post announce card's top half).
@@ -132,6 +133,59 @@ describe('normalizeLayout: placement and poster mode', () => {
   it('a placement alone is worth saving', () => {
     expect(isDefaultLayout(normalizeLayout({ vpos: 'bottom' }, ''))).toBe(false)
     expect(isDefaultLayout(normalizeLayout({ vpos: 'auto', align: 'left' }, ''))).toBe(true)
+  })
+})
+
+describe('card themes', () => {
+  const poster = 'https://image.tmdb.org/p.jpg'
+
+  it('every theme keeps its text and accent readable on its background', () => {
+    for (const [name, t] of Object.entries(CARD_THEMES)) {
+      for (const k of ['text', 'text2', 'text4']) {
+        expect(contrastRatio(t[k], t.bg), `${name}.${k}`).toBeGreaterThanOrEqual(4.5)
+      }
+      // The accent sets a small eyebrow as well as the big numeral, but the
+      // brand red on ink is 3.98, and that pairing is the club's own look.
+      expect(contrastRatio(t.accent, t.bg), `${name}.accent`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('contrastRatio matches the WCAG reference values', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 5)
+    expect(contrastRatio('#ffffff', '#ffffff')).toBe(1)
+    expect(contrastRatio('#777777', '#ffffff')).toBeCloseTo(4.48, 2)
+  })
+
+  it('stores a theme, treats junk as "the size default", and keeps it across a poster change', () => {
+    expect(LAYOUT_THEMES).toEqual(['night', 'paper', 'red', 'mono', 'poster'])
+    expect(normalizeLayout({ poster }, poster).theme).toBeNull()
+    expect(normalizeLayout({ poster, theme: 'neon' }, poster).theme).toBeNull()
+    expect(normalizeLayout({ poster, theme: 'paper' }, poster).theme).toBe('paper')
+    expect(normalizeLayout({ poster: 'https://image.tmdb.org/old.jpg', theme: 'red' }, poster)).toMatchObject({ stale: true, theme: 'red' })
+    expect(isDefaultLayout(normalizeLayout({ theme: 'night' }, ''))).toBe(false)
+    expect(isDefaultLayout(normalizeLayout({ theme: null }, ''))).toBe(true)
+  })
+
+  const pixels = (...colours) => {
+    const out = []
+    for (const [rgb, n] of colours) for (let i = 0; i < n; i++) out.push(...rgb, 255)
+    return new Uint8ClampedArray(out)
+  }
+
+  it('takes the dominant vivid hue from a poster and makes it readable on ink', () => {
+    const hex = accentFromPixels(pixels([[30, 60, 200], 60], [[40, 40, 40], 30], [[220, 30, 30], 10]))
+    expect(hex).toMatch(/^#[0-9a-f]{6}$/)
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+    expect(b).toBeGreaterThan(r)
+    expect(b).toBeGreaterThan(g)
+    expect(contrastRatio(hex, '#100f0e')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('gives up on near-grey artwork, missing data and transparent pixels', () => {
+    expect(accentFromPixels(pixels([[120, 118, 116], 100]))).toBeNull()
+    expect(accentFromPixels(pixels([[20, 20, 20], 99], [[255, 0, 0], 1]))).toBeNull()
+    expect(accentFromPixels(null)).toBeNull()
+    expect(accentFromPixels(new Uint8ClampedArray([255, 0, 0, 0]))).toBeNull()
   })
 })
 

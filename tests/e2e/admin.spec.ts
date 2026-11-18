@@ -1,4 +1,5 @@
 import { test, expect, seedKv, WORKER_ORIGIN } from './fixtures'
+import jsQR from 'jsqr'
 import type { Page } from '@playwright/test'
 
 // Admin dashboard e2e — the SPA served by admin/server.mjs in E2E mode
@@ -838,6 +839,62 @@ test.describe('admin dashboard', () => {
 
     await page.locator('#cg-l-reset').click()
     await expect.poll(() => getAttendanceJson(page, layoutKey)).toBeNull()
+  })
+
+  test('Content Gen: the print flyer is Letter-sized, starts on Paper and carries a QR code that scans', async ({ page }) => {
+    // No poster: the flyer strip must not depend on artwork.
+    const ev = { id: 'cg-e2e-flyer', title: 'Flyer Night', film: 'Metropolis', year: 1927, date: '2030-02-01', time: '19:00', venue: 'The Parlor' }
+    const house = { id: 'cg-e2e-flyer-house', title: 'Living Room Night', film: 'Metropolis', year: 1927, date: '2030-02-02', kind: 'house', hostId: 'm1', hostName: 'A member' }
+    await dropAttendance(page, `cardlayout:${ev.id}:flyer`, `cardlayout:${house.id}:flyer`)
+    await seedAttendance(page, `event:${ev.id}`, ev)
+    await seedAttendance(page, `event:${house.id}`, house)
+
+    await page.goto(`${ADMIN_ORIGIN}/`)
+    await page.locator('#tabs button[data-tab="contentgen"]').click()
+    await page.locator('#cg-event').selectOption(ev.id)
+    await page.locator('.cg-size[data-size="flyer"]').click()
+    const canvas = page.locator('#cg-canvas')
+    await expect(canvas).toHaveJSProperty('width', 2550)
+    await expect(canvas).toHaveJSProperty('height', 3300)
+    // Paper by default on this size only, without anything being saved.
+    await expect(page.locator('#cg-layout [data-theme="paper"]')).toHaveClass(/active/)
+    expect(await getAttendanceJson(page, `cardlayout:${ev.id}:flyer`)).toBeNull()
+    await expect(page.locator('#cg-download')).toBeEnabled()
+    await expect(page.locator('#cg-fit')).toBeHidden()
+
+    // Read the code back off the canvas the operator would download: the
+    // bottom-right tile of the strip, in device pixels.
+    const scan = async () => {
+      await expect(page.locator('#cg-download')).toBeEnabled()
+      const px = await page.evaluate(() => {
+        const c = document.querySelector('#cg-canvas') as HTMLCanvasElement
+        const W = 1275, H = 1650, pad = Math.round(W * 0.065), tile = Math.round(W * 0.15)
+        const d = c.getContext('2d')!.getImageData((W - pad - tile) * 2, (H - pad - tile) * 2, tile * 2, tile * 2)
+        return { data: Array.from(d.data), w: d.width, h: d.height }
+      })
+      const hit = jsQR(new Uint8ClampedArray(px.data), px.w, px.h)
+      return hit ? hit.data : null
+    }
+    await expect.poll(scan).toBe(`https://jxnfilm.club/events?event=${ev.id}`)
+    // The code stays dark-on-white on a dark theme too.
+    await page.locator('#cg-layout [data-theme="night"]').click()
+    // Wait for the repaint, or the scan could read the Paper canvas again.
+    await expect.poll(() => page.evaluate(() => {
+      const c = document.querySelector('#cg-canvas') as HTMLCanvasElement
+      return c.getContext('2d')!.getImageData(20, 1200, 1, 1).data[0]
+    })).toBeLessThan(60)
+    await expect.poll(scan).toBe(`https://jxnfilm.club/events?event=${ev.id}`)
+    await page.locator('#cg-l-reset').click()
+
+    // A house screening has no public page, so its flyer carries no code.
+    await page.locator('#cg-event').selectOption(house.id)
+    await expect(canvas).toHaveJSProperty('width', 2550)
+    await expect.poll(scan).toBeNull()
+
+    // Other sizes are untouched by the flyer's default theme.
+    await page.locator('.cg-size[data-size="ig-post"]').click()
+    await expect(page.locator('#cg-layout [data-theme="night"]')).toHaveClass(/active/)
+    await dropAttendance(page, `event:${ev.id}`, `event:${house.id}`)
   })
 
   test('Content Gen: list and promo card wording saves per item', async ({ page }) => {

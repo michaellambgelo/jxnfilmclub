@@ -252,7 +252,7 @@ const oneOf = (v, list) => (list.includes(v) ? v : list[0])
 // the eyebrow, footer rule, count numeral and extra line.
 export const CARD_THEMES = Object.freeze({
   night: { label: 'Night', bg: '#100f0e', surface: '#16140f', text: '#f0ebe0', text2: '#c4bdae', text4: '#8f897d', accent: '#d7321f' },
-  paper: { label: 'Paper', bg: '#f0ebe0', surface: '#e8e3d8', text: '#100f0e', text2: '#3a352d', text4: '#55524a', accent: '#b52a19' },
+  paper: { label: 'Paper', light: true, bg: '#f0ebe0', surface: '#e8e3d8', text: '#100f0e', text2: '#3a352d', text4: '#55524a', accent: '#b52a19' },
   red: { label: 'Red', bg: '#c42d1b', surface: '#b52a19', text: '#fff6ea', text2: '#f0ebe0', text4: '#f0ebe0', accent: '#100f0e' },
   mono: { label: 'Mono', bg: '#100f0e', surface: '#16140f', text: '#f0ebe0', text2: '#c4bdae', text4: '#8f897d', accent: '#f0ebe0' },
   // Night with the accent sampled from the poster (accentFromPixels); the
@@ -2167,4 +2167,223 @@ export function duplicateSeed(e) {
   // A copied house row would otherwise carry an admission the Worker rejects.
   if (out.kind === 'house') out.admission = 'free'
   return out
+}
+
+// --- QR code (print flyer) ---
+//
+// A small encoder for the one job the flyer has: a URL, byte mode, error
+// correction level M, versions 1-9 (up to 180 bytes). Written here rather
+// than vendored because admin files are served unbundled and every new file
+// needs four registrations. tests/admin/qr.test.js decodes its output with an
+// independent decoder, which is the only proof a QR code is worth anything.
+
+// [ec codewords per block, [blocks, data codewords]...] per version, level M.
+const QR_BLOCKS = [null,
+  [10, [1, 16]], [16, [1, 28]], [26, [1, 44]], [18, [2, 32]], [24, [2, 43]],
+  [16, [4, 27]], [18, [4, 31]], [22, [2, 38], [2, 39]], [22, [3, 36], [2, 37]],
+]
+const QR_ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46]]
+
+const GF_EXP = new Uint8Array(512)
+const GF_LOG = new Uint8Array(256)
+for (let i = 0, x = 1; i < 255; i++) {
+  GF_EXP[i] = x
+  GF_LOG[x] = i
+  x <<= 1
+  if (x & 0x100) x ^= 0x11d
+}
+for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255]
+const gfMul = (a, b) => (a && b ? GF_EXP[GF_LOG[a] + GF_LOG[b]] : 0)
+
+// Reed-Solomon remainder of `data` for `n` error-correction codewords.
+function rsRemainder(data, n) {
+  let gen = [1]
+  for (let i = 0; i < n; i++) {
+    const next = new Array(gen.length + 1).fill(0)
+    for (let j = 0; j < gen.length; j++) {
+      next[j] ^= gen[j]
+      next[j + 1] ^= gfMul(gen[j], GF_EXP[i])
+    }
+    gen = next
+  }
+  const rem = new Array(n).fill(0)
+  for (const byte of data) {
+    const factor = byte ^ rem.shift()
+    rem.push(0)
+    for (let j = 0; j < n; j++) rem[j] ^= gfMul(gen[j + 1], factor)
+  }
+  return rem
+}
+
+// BCH remainder used by the format (15,5) and version (18,6) information.
+function bch(value, poly, bits) {
+  const top = 31 - Math.clz32(poly)
+  let v = value << top
+  for (let i = bits - 1; i >= top; i--) if ((v >>> i) & 1) v ^= poly << (i - top)
+  return (value << top) | v
+}
+
+const QR_MASKS = [
+  (r, c) => (r + c) % 2 === 0,
+  (r) => r % 2 === 0,
+  (r, c) => c % 3 === 0,
+  (r, c) => (r + c) % 3 === 0,
+  (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0,
+  (r, c) => ((r * c) % 2) + ((r * c) % 3) === 0,
+  (r, c) => (((r * c) % 2) + ((r * c) % 3)) % 2 === 0,
+  (r, c) => (((r + c) % 2) + ((r * c) % 3)) % 2 === 0,
+]
+
+function qrPenalty(m) {
+  const n = m.length
+  let score = 0, dark = 0
+  const line = (get) => {
+    for (let i = 0; i < n; i++) {
+      let run = 1
+      for (let j = 1; j <= n; j++) {
+        if (j < n && get(i, j) === get(i, j - 1)) run++
+        else { if (run >= 5) score += run - 2; run = 1 }
+      }
+      for (let j = 0; j + 10 < n; j++) {
+        const s = Array.from({ length: 11 }, (_, k) => (get(i, j + k) ? 1 : 0)).join('')
+        if (s === '10111010000' || s === '00001011101') score += 40
+      }
+    }
+  }
+  line((i, j) => m[i][j])
+  line((i, j) => m[j][i])
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (m[r][c]) dark++
+      if (r + 1 < n && c + 1 < n && m[r][c] === m[r][c + 1] && m[r][c] === m[r + 1][c] && m[r][c] === m[r + 1][c + 1]) score += 3
+    }
+  }
+  return score + Math.floor(Math.abs(dark * 100 / (n * n) - 50) / 5) * 10
+}
+
+// Encodes `text` as a QR code. Returns a square array of rows of booleans
+// (true = dark module), without the quiet zone, or null when the text is too
+// long for the versions supported here.
+export function qrMatrix(text) {
+  const bytes = Array.from(new TextEncoder().encode(String(text)))
+  let version = 0, dataLen = 0
+  for (let v = 1; v < QR_BLOCKS.length; v++) {
+    const [, ...groups] = QR_BLOCKS[v]
+    const cap = groups.reduce((a, [count, len]) => a + count * len, 0)
+    if (bytes.length + 2 <= cap) { version = v; dataLen = cap; break }
+  }
+  if (!version) return null
+
+  // Bit stream: byte mode, 8-bit count, data, terminator, pad to capacity.
+  const bits = []
+  const push = (value, len) => { for (let i = len - 1; i >= 0; i--) bits.push((value >>> i) & 1) }
+  push(0b0100, 4)
+  push(bytes.length, 8)
+  for (const b of bytes) push(b, 8)
+  push(0, Math.min(4, dataLen * 8 - bits.length))
+  while (bits.length % 8) bits.push(0)
+  const data = []
+  for (let i = 0; i < bits.length; i += 8) data.push(bits.slice(i, i + 8).reduce((a, b) => (a << 1) | b, 0))
+  for (let pad = 0xec; data.length < dataLen; pad ^= 0xec ^ 0x11) data.push(pad)
+
+  // Split into blocks, add error correction, interleave.
+  const [ecLen, ...groups] = QR_BLOCKS[version]
+  const blocks = []
+  let at = 0
+  for (const [count, len] of groups) {
+    for (let i = 0; i < count; i++) {
+      const d = data.slice(at, at + len)
+      at += len
+      blocks.push({ d, e: rsRemainder(d, ecLen) })
+    }
+  }
+  const codewords = []
+  const longest = Math.max(...blocks.map(b => b.d.length))
+  for (let i = 0; i < longest; i++) for (const b of blocks) if (i < b.d.length) codewords.push(b.d[i])
+  for (let i = 0; i < ecLen; i++) for (const b of blocks) codewords.push(b.e[i])
+
+  const n = version * 4 + 17
+  const m = Array.from({ length: n }, () => new Array(n).fill(false))
+  const fixed = Array.from({ length: n }, () => new Array(n).fill(false))
+  const set = (r, c, dark) => { if (r >= 0 && r < n && c >= 0 && c < n) { m[r][c] = dark; fixed[r][c] = true } }
+
+  // Finder patterns with their separators.
+  for (const [fr, fc] of [[0, 0], [0, n - 7], [n - 7, 0]]) {
+    for (let r = -1; r <= 7; r++) {
+      for (let c = -1; c <= 7; c++) {
+        const ring = Math.max(Math.abs(r - 3), Math.abs(c - 3))
+        set(fr + r, fc + c, ring !== 2 && ring <= 3)
+      }
+    }
+  }
+  // Alignment patterns, skipping the three that would land on a finder.
+  const centres = QR_ALIGN[version]
+  for (const r of centres) {
+    for (const c of centres) {
+      if (fixed[r][c]) continue
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) set(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1)
+    }
+  }
+  // Timing patterns.
+  for (let i = 8; i < n - 8; i++) {
+    if (!fixed[6][i]) set(6, i, i % 2 === 0)
+    if (!fixed[i][6]) set(i, 6, i % 2 === 0)
+  }
+  // Reserve the format areas and the dark module; version info from v7.
+  for (let i = 0; i < 9; i++) { if (!fixed[8][i]) set(8, i, false); if (!fixed[i][8]) set(i, 8, false) }
+  for (let i = 0; i < 8; i++) { set(8, n - 1 - i, false); set(n - 1 - i, 8, false) }
+  set(n - 8, 8, true)
+  if (version >= 7) {
+    const info = bch(version, 0x1f25, 18)
+    for (let i = 0; i < 18; i++) {
+      const dark = ((info >>> i) & 1) === 1
+      set(Math.floor(i / 3), n - 11 + (i % 3), dark)
+      set(n - 11 + (i % 3), Math.floor(i / 3), dark)
+    }
+  }
+
+  // Data, zig-zagging up and down in two-module columns from the right.
+  const stream = []
+  for (const cw of codewords) for (let i = 7; i >= 0; i--) stream.push((cw >>> i) & 1)
+  let k = 0
+  for (let right = n - 1, up = true; right > 0; right -= 2, up = !up) {
+    if (right === 6) right = 5
+    for (let i = 0; i < n; i++) {
+      const r = up ? n - 1 - i : i
+      for (const c of [right, right - 1]) {
+        if (fixed[r][c]) continue
+        m[r][c] = k < stream.length ? stream[k] === 1 : false
+        k++
+      }
+    }
+  }
+
+  // Try every mask and keep the one that scores best.
+  let best = null
+  for (let mask = 0; mask < 8; mask++) {
+    const out = m.map((row, r) => row.map((dark, c) => (fixed[r][c] ? dark : dark !== QR_MASKS[mask](r, c))))
+    const format = bch(mask, 0x537, 15) ^ 0x5412   // level M is 00, so the data is just the mask
+    for (let i = 0; i < 15; i++) {
+      const dark = ((format >>> i) & 1) === 1
+      // Around the top-left finder...
+      if (i < 6) out[i][8] = dark
+      else if (i < 8) out[i + 1][8] = dark
+      else if (i === 8) out[8][7] = dark
+      else out[8][14 - i] = dark
+      // ...and split between the other two.
+      if (i < 8) out[8][n - 1 - i] = dark
+      else out[n - 15 + i][8] = dark
+    }
+    const score = qrPenalty(out)
+    if (!best || score < best.score) best = { score, out }
+  }
+  return best.out
+}
+
+// The page a flyer's QR code opens, or '' when the event has no public page
+// (a house screening is never advertised to the open internet).
+export function flyerEventUrl(event) {
+  if (!event || !event.id) return ''
+  if (event.kind === 'house' || (!event.kind && event.hostId)) return ''
+  return `https://jxnfilm.club/events?event=${encodeURIComponent(event.id)}`
 }

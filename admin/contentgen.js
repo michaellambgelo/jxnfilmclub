@@ -20,7 +20,7 @@ import {
   fmtSocialDate, fmtShowtime, fmtMonth, fmtDiaryRange,
   PLATFORM_LIMITS, PLATFORM_LABELS,
   CARD_LAYOUT_PREFIX, cardLayoutKey, DEFAULT_LAYOUT, LAYOUT_LIMITS, LAYOUT_TYPE_KEYS, normalizeLayout, isDefaultLayout,
-  CARD_THEMES, LAYOUT_THEMES, rgbTriplet, accentFromPixels,
+  CARD_THEMES, LAYOUT_THEMES, rgbTriplet, accentFromPixels, qrMatrix, flyerEventUrl,
   coverRect, panFocal,
   CARD_TEXT_PREFIX, cardTextKey, resolveCardText, setCardText, clearCardText, cardTextForCopy,
 } from './lib.js'
@@ -90,7 +90,22 @@ const SIZES = {
   // 2:3, matching .event-poster-wrap on the site — the shape a film poster
   // occupies, so a generated one drops into that slot without letterboxing.
   'poster': { w: 800, h: 1200, label: 'Poster' },
+  // US Letter at 300dpi. `scale` draws it as a 1275x1650 card at 2x: the
+  // drawers hold a few absolute pixel sizes tuned for ~1100px-wide cards, and
+  // scaling the context keeps every one of them in proportion.
+  'flyer': { w: 2550, h: 3300, label: 'Print flyer', scale: 2 },
 }
+
+// A size's pixel dimensions (`pw`, `ph`), its context scale `k`, and the
+// logical `w`/`h` the drawers are handed.
+function dims(key) {
+  const s = SIZES[key]
+  const k = s.scale || 1
+  return { pw: s.w, ph: s.h, k, w: s.w / k, h: s.h / k }
+}
+// The print flyer starts on Paper: a dark page is a lot of ink.
+const defaultTheme = (key) => (key === 'flyer' ? 'paper' : 'night')
+const LOGO_URL = 'https://jxnfilm.club/img/logo.png'
 
 const KINDS = {
   announce: 'Event announcement',
@@ -681,13 +696,13 @@ const cardPalette = (L, poster) => paletteOf(L.theme, L.theme === 'poster' ? pos
 // The layout knobs that default per orientation (`null` in a saved layout).
 // Resolved here, in one place, so the drawers and the sliders agree on what
 // "default" currently means for this card shape.
-function resolveLayout(layout, W, H) {
+function resolveLayout(layout, W, H, theme = 'night') {
   const L = { ...DEFAULT_LAYOUT, ...(layout || {}) }
   const landscape = W > H
   const full = L.mode === 'full'
   return {
     ...L,
-    theme: L.theme ?? 'night',
+    theme: L.theme ?? theme,
     band: L.band ?? (landscape ? 0.36 : H > W ? 0.52 : 0.5),
     // Landscape's side column historically had a hard edge; full-bleed needs
     // a long veil for the text to sit on.
@@ -732,6 +747,67 @@ function textBounds(W, H, pad) {
   return { edge: Math.max(pad, safe), footH: H - Math.max(0, safe - pad) }
 }
 
+// The print flyer's bottom strip: the club logo, the footer link, and a QR
+// code to the event. `flyerStrip` is its height; text stays above it.
+const flyerStrip = (W) => Math.round(W * 0.15)
+
+// The QR code is always dark modules on a white plate with a four-module
+// quiet zone, whatever the theme: that is what scanners are built for.
+// Modules are sized in whole device pixels (`k` per logical pixel) so the
+// edges print crisp.
+function drawQr(c, matrix, x, y, size, k) {
+  c.fillStyle = '#ffffff'
+  c.fillRect(x, y, size, size)
+  const n = matrix.length + 8
+  const mod = Math.floor(size * k / n)
+  if (mod < 1) return
+  const off = Math.floor((size * k - mod * n) / 2) + mod * 4
+  c.fillStyle = '#100f0e'
+  for (let r = 0; r < matrix.length; r++) {
+    for (let col = 0; col < matrix.length; col++) {
+      if (matrix[r][col]) c.fillRect(x + (off + col * mod) / k, y + (off + r * mod) / k, mod / k, mod / k)
+    }
+  }
+}
+
+async function drawFlyerStrip(c, W, H, pad, P, { url, qr, center, k }) {
+  const tile = flyerStrip(W)
+  const top = H - pad - tile
+  let left = pad
+  const logo = await loadImage(LOGO_URL)
+  if (logo) {
+    // The logo file has a white ground. On Paper it is multiplied into the
+    // page; on a dark or red page it sits on a white plate like the QR code.
+    c.save()
+    if (P.light) c.globalCompositeOperation = 'multiply'
+    else { c.fillStyle = '#ffffff'; c.fillRect(pad, top, tile, tile) }
+    const inset = P.light ? 0 : Math.round(tile * 0.06)
+    c.drawImage(logo, pad + inset, top + inset, tile - inset * 2, tile - inset * 2)
+    c.restore()
+    left = pad + tile + Math.round(pad * 0.5)
+  }
+  const matrix = qr ? qrMatrix(qr) : null
+  let right = W - pad
+  if (matrix) {
+    right = W - pad - tile
+    drawQr(c, matrix, right, top, tile, k)
+    right -= Math.round(pad * 0.35)
+  } else if (qr) note('The event link is too long for the QR code, so it was left off')
+  if (url) footer(c, W, H, pad, url, center ? Math.round((left + right) / 2) : left, center, P)
+  if (matrix) {
+    // Beside the code, at the top of the strip; the link sits at the bottom.
+    const px = Math.round(W * 0.017)
+    c.font = `600 ${px}px ${LABEL}`
+    c.letterSpacing = '2px'
+    c.fillStyle = P.text4
+    c.textAlign = 'right'
+    c.textBaseline = 'alphabetic'
+    c.fillText('SCAN FOR DETAILS', right, top + px)
+    c.textAlign = 'left'
+    c.letterSpacing = '0px'
+  }
+}
+
 // Top of the footer's text: nothing above it may reach below this.
 const footerTop = (W, H, pad) => H - pad - 22 - Math.round(W * 0.024)
 
@@ -757,7 +833,7 @@ function footer(c, W, H, pad, url, x = pad, center = false, P = NIGHT) {
 // `layout` is optional (and trailing, so the visual-QA harness's existing
 // calls keep working): omitted, the card uses its own defaults for the shape.
 // Returns the poster's hit region, or null when there's no poster.
-async function drawEventCard(c, W, H, event, lead, layout, text) {
+async function drawEventCard(c, W, H, event, lead, layout, text, opts = {}) {
   const e = event || {}
   // `text` is trailing and optional for the same reason `layout` is: without
   // it the card says what it always has.
@@ -766,7 +842,8 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
   const poster = await loadImage(e.poster)
   const landscape = W > H
   const pad = Math.round(W * 0.065)
-  const L = resolveLayout(layout, W, H)
+  const flyer = opts.flyer || null
+  const L = resolveLayout(layout, W, H, flyer ? 'paper' : 'night')
   const full = !!poster && L.mode === 'full'
   let hit = null
   const P = cardPalette(L, poster)
@@ -808,7 +885,7 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
     return { labelPx, labelGap, titlePx, lines, lineH, yearH, metaPx, gap, metaStep, blockH, titleFits }
   }
   const { edge, footH } = textBounds(W, H, pad)
-  const footTop = footerTop(W, footH, pad)
+  const footTop = flyer ? H - pad - flyerStrip(W) : footerTop(W, footH, pad)
   const limit = footTop - Math.round(H * 0.04)
   const center = L.align === 'center'
   const vpos = L.vpos
@@ -981,7 +1058,8 @@ async function drawEventCard(c, W, H, event, lead, layout, text) {
 
   // In the landscape band layout the text sits beside the poster, and so does
   // the footer: at the card's left edge it landed on top of the artwork.
-  footer(c, W, footH, pad, t.footer, ax, center, P)
+  if (flyer) await drawFlyerStrip(c, W, H, pad, P, { url: t.footer, qr: flyer.qr, center, k: flyer.k })
+  else footer(c, W, footH, pad, t.footer, ax, center, P)
   return hit
 }
 
@@ -1062,13 +1140,14 @@ async function drawTitleCard(c, W, H, event) {
 // Takes the same optional layout as drawEventCard, but only its crop (fx, fy,
 // zoom) and text nudge mean anything here — the poster is always a
 // full-card ghost, so band/fade/mode don't apply and the UI hides them.
-async function drawRecapCard(c, W, H, event, count, layout, text) {
+async function drawRecapCard(c, W, H, event, count, layout, text, opts = {}) {
   const e = event || {}
   const t = text || resolveCardText('recap', { event: e, count }).text
   const name = t.title + (t.year ? ` (${t.year})` : '')
   const poster = await loadImage(e.poster)
   const pad = Math.round(W * 0.065)
-  const L = resolveLayout(layout, W, H)
+  const flyer = opts.flyer || null
+  const L = resolveLayout(layout, W, H, flyer ? 'paper' : 'night')
   const ts = L.text
   let hit = null
   const P = cardPalette(L, poster)
@@ -1118,7 +1197,7 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
     return { labelPx, labelGap, numPx, ofPx, wePx, leadH, titlePx, lines, lineH, extraPx, blockH, titleFits }
   }
   const { edge, footH } = textBounds(W, H, pad)
-  const limit = footerTop(W, footH, pad) - Math.round(H * 0.04)
+  const limit = (flyer ? H - pad - flyerStrip(W) : footerTop(W, footH, pad)) - Math.round(H * 0.04)
   let m, top, over
   for (let k = 1; ; k = Math.max(0.6, k - 0.04)) {
     m = measure(k)
@@ -1177,7 +1256,8 @@ async function drawRecapCard(c, W, H, event, count, layout, text) {
   }
   c.textAlign = 'left'
 
-  footer(c, W, footH, pad, t.footer, ax, center, P)
+  if (flyer) await drawFlyerStrip(c, W, H, pad, P, { url: t.footer, qr: '', center, k: flyer.k })
+  else footer(c, W, footH, pad, t.footer, ax, center, P)
   return hit
 }
 
@@ -1936,8 +2016,8 @@ function syncLayoutPanel() {
   const host = document.querySelector('#cg-layout')
   const raw = currentLayout()
   if (!host || !raw) return
-  const { w, h } = SIZES[cg.size]
-  const L = resolveLayout(raw, w, h)
+  const { w, h } = dims(cg.size)
+  const L = resolveLayout(raw, w, h, defaultTheme(cg.size))
   for (const k of Object.keys(LAYOUT_SLIDERS)) {
     const input = host.querySelector(`#cg-l-${k}`)
     if (!input) continue
@@ -1973,7 +2053,7 @@ function syncLayoutPanel() {
   if (auto) auto.hidden = raw.band == null || L.mode === 'full' || !host.querySelector('#cg-l-band')
   // Under a poster band that fills the spare room there is nowhere for the
   // text to move to, so Middle and Bottom would do nothing.
-  const { w: cw, h: ch } = SIZES[cg.size]
+  const { w: cw, h: ch } = dims(cg.size)
   const pinned = !!(t && t.poster) && cg.kind !== 'recap' && L.mode !== 'full' && cw <= ch && raw.band == null
   for (const v of ['middle', 'bottom']) {
     const b = host.querySelector(`[data-vpos="${v}"]`)
@@ -1991,7 +2071,9 @@ function bindCanvasDrag(canvas) {
   let drag = null
   const pt = (ev) => {
     const r = canvas.getBoundingClientRect()
-    return { x: (ev.clientX - r.left) * canvas.width / r.width, y: (ev.clientY - r.top) * canvas.height / r.height }
+    // Canvas pixels, then back to the logical units the hit region is in.
+    const { k } = dims(cg.size)
+    return { x: (ev.clientX - r.left) * canvas.width / r.width / k, y: (ev.clientY - r.top) * canvas.height / r.height / k }
   }
   const hitAt = (p) => {
     const t = layoutTarget()
@@ -2064,16 +2146,17 @@ async function renderCanvas({ quiet = false } = {}) {
   const seq = ++cg.renderSeq
   const canvas = document.querySelector('#cg-canvas')
   if (!canvas) return
-  const { w, h } = SIZES[cg.size]
+  const { pw, ph, k, w, h } = dims(cg.size)
   const data = copyData()
   setRenderBusy(true, quiet)
   try {
     await loadFonts()
     if (cg.kind === 'diary') await Promise.all((data.films || []).map(f => loadImage(f.poster)))
     if (seq !== cg.renderSeq) return          // superseded — leave the bitmap alone
-    canvas.width = w
-    canvas.height = h
+    canvas.width = pw
+    canvas.height = ph
     const c = canvas.getContext('2d')
+    c.setTransform(k, 0, 0, k, 0, 0)
     c.textBaseline = 'alphabetic'
     // Painted twice. The first pass loads the images, and a newer render can
     // start while it waits; its fit notes would land in that render's list.
@@ -2126,10 +2209,17 @@ async function drawForKind(c, w, h, data) {
   else if (cg.kind === 'episode') await drawEpisodeCard(c, w, h, data, text)
   else if (cg.kind === 'voice') await drawVoicePromptCard(c, w, h, data, text)
   else if (cg.kind === 'milestone') await drawMilestoneCard(c, w, h, data, text)
-  else if (cg.kind === 'recap') return drawRecapCard(c, w, h, data.event, data.count, currentLayout(), text)
+  else if (cg.kind === 'recap') return drawRecapCard(c, w, h, data.event, data.count, currentLayout(), text, flyerOpts(data))
   else if (cg.kind === 'titlecard') await drawTitleCard(c, w, h, data.event)
-  else return drawEventCard(c, w, h, data.event, null, currentLayout(), text)
+  else return drawEventCard(c, w, h, data.event, null, currentLayout(), text, flyerOpts(data))
   return null
+}
+
+// What the print flyer adds to an event card: the logo strip, and a QR code
+// to the event's page where it has a public one.
+function flyerOpts(data) {
+  if (cg.size !== 'flyer') return {}
+  return { flyer: { qr: flyerEventUrl(data.event), k: dims('flyer').k } }
 }
 
 const toBlobAsync = (canvas) => new Promise(r => canvas.toBlob(r, 'image/png'))
@@ -2165,17 +2255,17 @@ async function downloadAllDiaryPages(btn) {
   document.querySelectorAll('.cg-size, #cg-pager button, .cg-copy-all, #cg-diary-page, #cg-download')
     .forEach(b => { b.disabled = true })
 
-  const { w, h } = SIZES[cg.size]
+  const { pw, ph, k, w, h } = dims(cg.size)
   const off = document.createElement('canvas')
-  off.width = w
-  off.height = h
+  off.width = pw
+  off.height = ph
   const c = off.getContext('2d')
   await loadFonts()
 
   try {
     for (let i = 0; i < pages.length; i++) {
       if (alive()) btn.textContent = `Generating ${i + 1} / ${pages.length}…`
-      c.setTransform(1, 0, 0, 1, 0, 0)
+      c.setTransform(k, 0, 0, k, 0, 0)
       c.clearRect(0, 0, w, h)
       c.textBaseline = 'alphabetic'
       const pageData = { ...pages[i], page: i + 1, pageCount: pages.length }

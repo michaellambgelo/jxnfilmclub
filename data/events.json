@@ -534,6 +534,7 @@
     "kind": "meetup",
     "time": "20:50",
     "rsvp": true,
+    "ticketUrl": "https://ticketing.useast.veezi.com/purchase/5185?siteToken=ec9jrhkgwvf72npmrh80fkm4jc",
     "ticketed": true,
     "admission": "ticketed"
   },

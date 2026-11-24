@@ -510,6 +510,19 @@
     "admission": "ticketed"
   },
   {
+    "id": "2026-11-25-the-last-waltz",
+    "title": "The Last Waltz (1978) at Fertile Ground in partnership with MS Film Society",
+    "film": "The Last Waltz",
+    "year": 1978,
+    "date": "2026-11-25",
+    "venue": "Fertile Ground Beer Co.",
+    "poster": "https://image.tmdb.org/t/p/w500/2K7CFH0AIHnGrA4yQjPCoIB5CmQ.jpg",
+    "time": "19:00",
+    "rsvp": true,
+    "ticketed": false,
+    "admission": "free"
+  },
+  {
     "id": "2026-11-28-chef",
     "title": "Lydia Martin's Grit and Gratitude art showcase presents CHEF (2014) in partnership with JXN Film Club, MS Film Society, and Vibe Studio",
     "film": "Chef",

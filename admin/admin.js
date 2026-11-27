@@ -380,7 +380,7 @@ async function renderEmails() {
           <h3>${escapeHtml(e.label)}</h3>
           <button data-em-send="${attr(e.type)}" data-em-label="${attr(e.label)}">Send test</button>
         </header>
-        <p class="muted email-subject">${escapeHtml(e.subject)}</p>
+        <p class="muted email-subject">${escapeHtml(e.subject)}${e.calendar ? ' · attaches event.ics' : ''}</p>
         <iframe sandbox data-em-frame="${attr(e.type)}" title="${attr(e.label)} preview"></iframe>
         <details><summary>Plain-text part</summary><pre>${escapeHtml(e.text)}</pre></details>
       </section>`).join('')}

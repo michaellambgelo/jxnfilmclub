@@ -25,6 +25,7 @@ import {
   MAX_STATS_SLUGS, purgeFilmLogs, relinkFilmLogs,
 } from './films.js'
 import { handleSitePage } from './site-meta.js'
+import { buildIcs, icsAttachment } from './ics.js'
 import { ADMISSIONS, eventAdmission, isMembersOnly, reconcileAdmission } from './event-visibility.js'
 
 const OTP_TTL = 600          // 10 min
@@ -3909,6 +3910,55 @@ function fmtScreeningWhen(event) {
   return event.time ? `${event.date} at ${fmtTime(event.time)}` : event.date
 }
 
+// --- Calendar file (.ics) ---
+//
+// Attached to the mails a confirmed RSVP gets — confirmation, guest, reminder,
+// update, cancellation — and to nothing else: someone on a waitlist or in a
+// ticket queue holds no seat, so they get no calendar entry.
+//
+// Events store no end time, so a timed entry runs three hours from showtime;
+// an event with no showtime is an all-day entry.
+const ICS_DURATION_MS = 3 * 3600_000
+// SEQUENCE has to rise with each revision and the event row keeps no counter,
+// so it is the send time in seconds from this epoch (fits in 31 bits for
+// decades). A later update or cancellation therefore always outranks the file
+// that created the entry.
+const ICS_EPOCH_MS = Date.UTC(2026, 0, 1)
+
+const ICS_ATTACHED = 'A calendar file for this event is attached.'
+const ICS_CANCEL_ATTACHED =
+  'The attached calendar file marks the event cancelled. If your calendar still shows it, delete it there.'
+
+// sendEmail() options carrying the calendar file, or {} when the event has no
+// usable date. `address` mirrors the mail body: pass it only where the body
+// prints the house address. Host notes never go in.
+function eventIcsOpts(env, event, { address = false, cancelled = false, now = Date.now() } = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(event.date || '')) return {}
+  const timed = /^\d{1,2}:\d{2}$/.test(event.time || '')
+  const where = [event.venue, address ? String(event.address || '').trim().replace(/\s*\r?\n\s*/g, ', ') : '']
+    .filter(Boolean).join(', ')
+  const url = `${siteOrigin(env)}/events?event=${encodeURIComponent(event.id)}`
+  const description = [
+    event.film ? `Film: ${event.film}${event.year ? ` (${event.year})` : ''}` : '',
+    event.hostId ? `Hosted by: ${event.hostName || 'a member'}` : '',
+    url,
+  ].filter(Boolean).join('\n')
+  const text = buildIcs({
+    uid: `${event.id}@jxnfilm.club`,
+    title: event.title,
+    description,
+    location: where,
+    url,
+    ...(timed
+      ? { startMs: centralInstant(event.date, event.time), durationMs: ICS_DURATION_MS }
+      : { allDayDate: event.date, allDayEnd: addDays(event.date, 1) }),
+    sequence: Math.max(0, Math.floor((now - ICS_EPOCH_MS) / 1000)),
+    nowMs: now,
+    cancelled,
+  })
+  return { attachments: [icsAttachment(text)] }
+}
+
 function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   const lines = [
     opts.intro || `You're confirmed for ${event.title} on ${fmtScreeningWhen(event)}.`,
@@ -3942,6 +3992,7 @@ function rsvpEmailBody(event, address, notes, cancelUrl, opts = {}) {
   if (notes) {
     lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', notes)
   }
+  lines.push('', ICS_ATTACHED)
   lines.push('', ...(opts.cancelLines || [
     "Can't make it? Use the one-click link below to cancel — it opens a spot",
     'for the next person on the waitlist:',
@@ -3963,6 +4014,7 @@ function rsvpEmailHtml(env, subject, event, address, notes, cancelUrl, opts = {}
     blocks.push(noticeHtml(selfOrganizedNotice(event)))
   }
   if (notes) blocks.push(notesHtml(event.hostId ? 'Notes from the host' : 'Notes', notes))
+  blocks.push(paragraphHtml(ICS_ATTACHED, { muted: true }))
   // The text lines are hard-wrapped for plain-text clients and end in a colon
   // that introduces the bare URL; here they are one sentence over a button.
   blocks.push(paragraphHtml((opts.cancelLines || [
@@ -3992,7 +4044,8 @@ async function sendRsvpEmail(env, member, event, origin) {
   const address = event.address || ''
   const notes = event.notes || ''
   await sendEmail(env, member.email, subject, rsvpEmailBody(event, address, notes, cancelUrl),
-    rsvpEmailHtml(env, subject, event, address, notes, cancelUrl))
+    rsvpEmailHtml(env, subject, event, address, notes, cancelUrl),
+    eventIcsOpts(env, event, { address: true }))
 }
 
 // Guest variant: same details, but the intro names who added them and the
@@ -4018,7 +4071,7 @@ async function sendGuestRsvpEmail(env, guest, event, origin) {
     cancelLabel: 'Remove me from the list',
     why: `You're receiving this because ${adder} added this address to the guest list for ${event.title}.`,
   })
-  await sendEmail(env, guest.email, subject, body, html)
+  await sendEmail(env, guest.email, subject, body, html, eventIcsOpts(env, event, { address: true }))
 }
 
 // Acknowledges an RSVP placed before tickets went on sale. Deliberately not
@@ -4110,6 +4163,7 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
   if (event.time) lines.push(`Showtime: ${fmtTime(event.time)}`)
   if (updateAdmissionNotice(event)) lines.push('', updateAdmissionNotice(event))
   if (event.notes) lines.push('', event.hostId ? 'Notes from the host:' : 'Notes:', event.notes)
+  lines.push('', ICS_ATTACHED)
   lines.push('', "Can't make it anymore? One-click cancel:", cancelUrl)
   const subject = `Update: ${event.title} on ${fmtScreeningWhen(event)}`
   // Address as the text part has it (eventWhereLines reads event.address):
@@ -4125,12 +4179,13 @@ async function sendScreeningUpdateEmail(env, member, event, changes, origin) {
       eventCardHtml(event, { address: event.address || '' }),
       updateAdmissionNotice(event) ? noticeHtml(updateAdmissionNotice(event)) : '',
       event.notes ? notesHtml(event.hostId ? 'Notes from the host' : 'Notes', event.notes) : '',
+      paragraphHtml(ICS_ATTACHED, { muted: true }),
       buttonsHtml([{ href: cancelUrl, label: "Can't make it anymore? Cancel", secondary: true }]),
     ],
     why: `You're receiving this because you're on the list for ${event.title}.`,
     siteOrigin: siteOrigin(env),
   })
-  await sendEmail(env, member.email, subject, lines.join('\n'), html)
+  await sendEmail(env, member.email, subject, lines.join('\n'), html, eventIcsOpts(env, event, { address: true }))
 }
 
 // A note from the organizers (POST /admin/events/:id/message). The details
@@ -4220,7 +4275,10 @@ async function sendWaitlistUpdateEmail(env, member, event, changes, position) {
   await sendEmail(env, member.email, subject, lines.join('\n'), html)
 }
 
-async function sendScreeningCancelledEmail(env, member, event) {
+// `calendar: false` is for a recipient who never held a seat (the waitlist on
+// an admin delete): they were never sent a calendar file, so there is nothing
+// for a cancellation file to withdraw.
+async function sendScreeningCancelledEmail(env, member, event, { calendar = true } = {}) {
   if (!member.email) return // name-only guests have nothing to send to
   const subject = `Cancelled: ${event.title} on ${fmtScreeningWhen(event)}`
   const text = [
@@ -4228,6 +4286,7 @@ async function sendScreeningCancelledEmail(env, member, event) {
     `that was scheduled for ${fmtScreeningWhen(event)}.`,
     '',
     'No action needed on your end. Watch the events page for future screenings.',
+    ...(calendar ? ['', ICS_CANCEL_ATTACHED] : []),
   ].join('\n')
   const html = transactionalEmailHtml({
     subject,
@@ -4238,12 +4297,15 @@ async function sendScreeningCancelledEmail(env, member, event) {
       paragraphHtml(`Sorry — ${eventRunner(event)} cancelled ${eventNoun(event)} "${event.title}" that was scheduled for ${fmtScreeningWhen(event)}.`),
       eventCardHtml(event, { cancelled: true }),
       paragraphHtml('No action needed on your end. Watch the events page for future screenings.'),
+      calendar ? paragraphHtml(ICS_CANCEL_ATTACHED, { muted: true }) : '',
       buttonsHtml([{ href: `${siteOrigin(env)}/events`, label: 'See upcoming events' }]),
     ],
     why: `You're receiving this because you were on the list for ${event.title}.`,
     siteOrigin: siteOrigin(env),
   })
-  await sendEmail(env, member.email, subject, text, html)
+  // Never the address: the body of this mail does not carry it either.
+  await sendEmail(env, member.email, subject, text, html,
+    calendar ? eventIcsOpts(env, event, { cancelled: true }) : {})
 }
 
 // Two days out (see sendEventReminders): the confirmation again, re-sent so
@@ -4285,7 +4347,7 @@ async function sendEventReminderEmail(env, entry, event, origin) {
       why: `You're receiving this because you RSVP'd to ${event.title}.`,
     }),
   })
-  await sendEmail(env, entry.email, subject, body, html)
+  await sendEmail(env, entry.email, subject, body, html, eventIcsOpts(env, event, { address: true }))
 }
 
 // --- Screening route handlers ---
@@ -5117,9 +5179,11 @@ async function handleAdminEventDelete(request, env, eventId) {
   let notified = 0
   const past = event.date && event.date < centralToday()
   if (!past) {
+    const seated = new Set(rsvp.confirmed)
     for (const r of [...rsvp.confirmed, ...rsvp.waitlist]) {
       try {
-        await sendScreeningCancelledEmail(env, { id: r.memberId, email: r.email, name: r.name }, event)
+        await sendScreeningCancelledEmail(env, { id: r.memberId, email: r.email, name: r.name }, event,
+          { calendar: seated.has(r) })
         notified++
       } catch (e) { console.error('cancellation email failed:', e?.message || e) }
     }
@@ -5842,15 +5906,20 @@ async function sendLoginEmail(env, to, code) {
 // `html` is optional and always accompanies `text`, never replaces it: the
 // text part is what plain-text clients and screen readers fall back on, and
 // what the tests and the e2e stash pin wording against.
-async function sendEmail(env, to, subject, text, html) {
+//
+// `attachments` is the Resend shape ({ filename, content: base64,
+// content_type }). It rides through the preview capture and the e2e stash as
+// well as the real send, so all three show what is actually mailed.
+async function sendEmail(env, to, subject, text, html, { attachments } = {}) {
+  const extra = attachments?.length ? { attachments } : {}
   // The admin preview gallery runs the real senders against an env carrying
   // this array, so what it shows is exactly what would be mailed.
   if (env.__emailCapture) {
-    env.__emailCapture.push({ to, subject, text, html })
+    env.__emailCapture.push({ to, subject, text, html, ...extra })
     return
   }
   if (env.E2E_MODE === 'true') {
-    await env.MEMBERS_KV.put('__last_email__', JSON.stringify({ to, subject, text, html }))
+    await env.MEMBERS_KV.put('__last_email__', JSON.stringify({ to, subject, text, html, ...extra }))
     return
   }
   const res = await fetch('https://api.resend.com/emails', {
@@ -5865,6 +5934,7 @@ async function sendEmail(env, to, subject, text, html) {
       subject,
       text,
       ...(html ? { html } : {}),
+      ...extra,
     }),
   })
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`)
@@ -5947,17 +6017,26 @@ async function handleEmailPreview(request, env) {
   }
 
   const emails = []
+  // Kept beside the gallery rows rather than in them: the gallery response is
+  // what the admin tab renders, a test send is what needs the file itself.
+  let testAttachments
   for (const [t, label] of EMAIL_PREVIEW_TYPES) {
     if (testTo !== undefined && t !== type) continue
     const capture = []
     await senders[t]({ ...env, __emailCapture: capture })
     const [mail] = capture
-    if (mail) emails.push({ type: t, label, subject: mail.subject, text: mail.text, html: mail.html })
+    if (mail) {
+      emails.push({
+        type: t, label, subject: mail.subject, text: mail.text, html: mail.html,
+        calendar: !!mail.attachments?.length,
+      })
+      testAttachments = mail.attachments
+    }
   }
 
   if (testTo !== undefined) {
     const [mail] = emails
-    await sendEmail(env, testTo, `[Test] ${mail.subject}`, mail.text, mail.html)
+    await sendEmail(env, testTo, `[Test] ${mail.subject}`, mail.text, mail.html, { attachments: testAttachments })
     return json(env, { ok: true, sent: mail.type })
   }
   return json(env, { event: { id: event.id, title: event.title }, emails })

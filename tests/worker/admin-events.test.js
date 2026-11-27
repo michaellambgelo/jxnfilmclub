@@ -40,6 +40,15 @@ async function seedRsvp(id, confirmed, waitlist = []) {
   await env.ATTENDANCE_KV.put(`rsvp:${id}`, JSON.stringify({ confirmed, waitlist }))
 }
 
+// The decoded .ics text of a captured mail, unfolded so a long value reads as
+// one line; '' when the mail carries no calendar file.
+function icsOf(mail) {
+  const file = (mail.attachments || []).find(a => a.filename === 'event.ics')
+  if (!file) return ''
+  const bytes = Uint8Array.from(atob(file.content), c => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes).replace(/\r\n /g, '')
+}
+
 const rsvper = (n) => ({ memberId: `m${n}`, name: `Member ${n}`, email: `m${n}@example.com`, at: n })
 
 afterEach(() => { vi.restoreAllMocks() })
@@ -158,6 +167,33 @@ describe('PUT /admin/events/:id — the postponement workflow', () => {
     expect(confirmedMail.html).toContain('<s style="color:#6b675f">2099-08-01</s>')
     expect(confirmedMail.html).toContain('<strong style="color:#100f0e">2099-09-01</strong>')
     expect(waitMail.html).toContain('#1 on the waitlist')
+
+    // The confirmed seat gets a calendar file at the new date (no showtime, so
+    // all-day); the waitlist holds no seat and gets none.
+    const ics = icsOf(confirmedMail)
+    expect(ics).toContain('UID:p2@jxnfilm.club')
+    expect(ics).toContain('DTSTART;VALUE=DATE:20990901')
+    expect(ics).toContain('DTEND;VALUE=DATE:20990902')
+    expect(ics).toContain('LOCATION:Banner Hall')
+    expect(waitMail.attachments).toBeUndefined()
+  })
+
+  it('puts the house address in a confirmed seat\'s calendar file, and never the notes', async () => {
+    await env.ATTENDANCE_KV.put('event:p9', JSON.stringify({
+      id: 'p9', title: 'House Night', date: '2099-07-15', time: '19:30', kind: 'house', capacity: 1,
+      address: '9 Private Rd\nJackson, MS', notes: 'Buzzer 5', hostId: 'h1', hostName: 'Hana', rsvp: true,
+    }))
+    await seedRsvp('p9', [rsvper(1)], [rsvper(2)])
+    const sent = captureEmails()
+    await put('p9', { title: 'House Night', date: '2099-07-16', time: '19:30', kind: 'house', capacity: 1, address: '9 Private Rd\nJackson, MS', notes: 'Buzzer 5', rsvp: true }, true)
+
+    const ics = icsOf(sent.find(e => e.to === 'm1@example.com'))
+    expect(ics).toContain('LOCATION:9 Private Rd\\, Jackson\\, MS')
+    expect(ics).not.toContain('Buzzer 5')
+    // 19:30 CDT is 00:30 UTC the next day.
+    expect(ics).toContain('DTSTART:20990717T003000Z')
+    expect(ics).toContain('METHOD:PUBLISH')
+    expect(sent.find(e => e.to === 'm2@example.com').attachments).toBeUndefined()
   })
 
   it('never mails the private address to a waitlisted member', async () => {
@@ -307,6 +343,17 @@ describe('DELETE /admin/events/:id', () => {
     expect(sent.map(e => e.to).sort()).toEqual(['m1@example.com', 'm2@example.com'])
     expect(sent[0].subject).toMatch(/^Cancelled: Doomed/)
     expect(sent[0].text).toContain('Jackson Film Club cancelled the event')
+
+    // The confirmed seat gets a cancellation for the entry it was sent; the
+    // waitlist was never sent one, so it gets the notice alone.
+    const seatMail = sent.find(e => e.to === 'm1@example.com')
+    const ics = icsOf(seatMail)
+    expect(ics).toContain('METHOD:CANCEL')
+    expect(ics).toContain('STATUS:CANCELLED')
+    expect(ics).toContain('UID:d1@jxnfilm.club')
+    const waitMail = sent.find(e => e.to === 'm2@example.com')
+    expect(waitMail.attachments).toBeUndefined()
+    expect(waitMail.text).not.toContain('calendar file')
 
     expect(await env.ATTENDANCE_KV.get('event:d1')).toBeNull()
     expect(await env.ATTENDANCE_KV.get('rsvp:d1')).toBeNull()
